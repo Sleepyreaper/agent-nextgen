@@ -49,23 +49,33 @@ jobs:
 
     - name: Create deployment package
       run: |
-        zip -r app.zip . -x ".git/*" ".venv/*" "venv/*" "env/*" "__pycache__/*"
+        # Create .deployment file with custom deploy script that skips Oryx
+        mkdir -p deploy
+        cat > deploy/.deployment << 'EOF'
+        [config]
+        command = bash deploy.sh
+        EOF
+        
+        cat > deploy/deploy.sh << 'EOF'
+        #!/bin/bash
+        # Skip Oryx, just copy files to wwwroot
+        cp -r /tmp/zipdeploy/extracted/* /home/site/wwwroot/
+        echo "Deploy complete - files copied to wwwroot"
+        EOF
+        
+        chmod +x deploy/deploy.sh
+        
+        # Create zip with all files including deploy scripts
+        zip -r app.zip . -x ".git/*" ".venv/*" "venv/*" "env/*" "__pycache__/*" "deploy/*"
+        zip -r app.zip deploy/
+        ls -lh app.zip
     
-    - name: Deploy to Azure Web App
+    - name: Deploy to Azure App Service
       uses: azure/webapps-deploy@v2
       with:
         app-name: ${{ secrets.AZURE_WEBAPP_NAME }}
         publish-profile: ${{ secrets.AZURE_WEBAPP_PUBLISH_PROFILE }}
-        package: app.zip    
-    - name: Configure App Service to run from package
-      uses: azure/CLI@v1
-      with:
-        azcliversion: latest
-        inlineScript: |
-          az webapp config appsettings set \
-            --resource-group ${{ secrets.AZURE_RESOURCE_GROUP }} \
-            --name ${{ secrets.AZURE_WEBAPP_NAME }} \
-            --settings SCM_DO_BUILD_DURING_DEPLOYMENT=false WEBSITE_RUN_FROM_PACKAGE=1
+        package: app.zip
   notification:
     needs: [test, deploy]
     runs-on: ubuntu-latest
