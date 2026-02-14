@@ -1,0 +1,92 @@
+{% extends "base.html" %}
+
+{% block title %}Upload Application{% endblock %}
+
+{% block content %}
+<div class="card">
+    <h2>📤 Upload Application</h2>
+    <p style="color: #6b7280; margin: 1rem 0;">Upload a new application or add an "excellent" training example.</p>
+
+    <form method="POST" enctype="multipart/form-data" style="margin-top: 2rem;">
+        <div style="margin-bottom: 1.5rem;">
+            <label style="display: block; font-weight: 600; margin-bottom: 0.5rem;">
+                Applicant Name *
+            </label>
+            <input type="text" name="applicant_name" required
+                   style="width: 100%; padding: 0.75rem; border: 1px solid #d1d5db; border-radius: 5px; font-size: 1rem;">
+        </div>
+
+        <div style="margin-bottom: 1.5rem;">
+            <label style="display: block; font-weight: 600; margin-bottom: 0.5rem;">
+                Email
+            </label>
+            <input type="email" name="email"
+                   style="width: 100%; padding: 0.75rem; border: 1px solid #d1d5db; border-radius: 5px; font-size: 1rem;">
+        </div>
+
+        <div style="margin-bottom: 1.5rem;">
+            <label style="display: block; font-weight: 600; margin-bottom: 0.5rem;">
+                Position/Role
+            </label>
+            <input type="text" name="position"
+                   style="width: 100%; padding: 0.75rem; border: 1px solid #d1d5db; border-radius: 5px; font-size: 1rem;">
+        </div>
+
+        <div style="margin-bottom: 1.5rem;">
+            <label style="display: block; font-weight: 600; margin-bottom: 0.5rem;">
+                Application Document * (PDF, DOCX, or TXT)
+            </label>
+            <input type="file" name="file" required accept=".pdf,.docx,.doc,.txt"
+                   style="width: 100%; padding: 0.75rem; border: 1px solid #d1d5db; border-radius: 5px; font-size: 1rem;">
+            <small style="color: #6b7280;">Max file size: 16MB</small>
+        </div>
+
+        <div style="margin-bottom: 1.5rem; padding: 1rem; background: #f9fafb; border-radius: 5px; border-left: 4px solid #667eea;">
+            <label style="display: flex; align-items: center; cursor: pointer;">
+                <input type="checkbox" name="is_training" onchange="toggleTrainingOptions()" 
+                       style="margin-right: 0.5rem; width: 18px; height: 18px;">
+                <strong>This is an "Excellent" Training Example</strong>
+            </label>
+            <p style="color: #6b7280; margin-top: 0.5rem; font-size: 0.9rem;">
+                Check this if you're uploading a previously selected excellent application 
+                to help train the AI on what excellence looks like.
+            </p>
+            
+            <div id="trainingOptions" style="display: none; margin-top: 1rem; padding-top: 1rem; border-top: 1px solid #e5e7eb;">
+                <label style="display: flex; align-items: center; cursor: pointer;">
+                    <input type="checkbox" name="was_selected" 
+                           style="margin-right: 0.5rem; width: 18px; height: 18px;">
+                    <span>This applicant was selected/hired</span>
+                </label>
+            </div>
+        </div>
+
+        <div style="display: flex; gap: 1rem;">
+            <button type="submit" class="btn btn-success">
+                📥 Upload Application
+            </button>
+            <a href="{{ url_for('index') }}" class="btn btn-secondary">
+                Cancel
+            </a>
+        </div>
+    </form>
+</div>
+
+<div class="card">
+    <h3>💡 Tips</h3>
+    <ul style="margin-left: 1.5rem; color: #6b7280;">
+        <li>Upload regular applications for AI evaluation</li>
+        <li>Upload "excellent" training examples to improve AI accuracy</li>
+        <li>Supported formats: PDF, Word (.docx), and plain text (.txt)</li>
+        <li>The AI will analyze technical skills, communication, experience, and cultural fit</li>
+    </ul>
+</div>
+
+<script>
+function toggleTrainingOptions() {
+    const checkbox = document.querySelector('input[name="is_training"]');
+    const options = document.getElementById('trainingOptions');
+    options.style.display = checkbox.checked ? 'block' : 'none';
+}
+</script>
+{% endblock %}

@@ -1,0 +1,32 @@
+{
+  "name": "NextGen Agent System",
+  "description": "Azure AI-powered application evaluation system",
+  "version": "1.0.0",
+  "runtime": {
+    "name": "Python",
+    "version": "3.9"
+  },
+  "startup": {
+    "type": "wsgi",
+    "wsgi_app": "wsgi:app",
+    "workers": 4,
+    "worker_class": "sync",
+    "threads": 2,
+    "timeout": 60,
+    "access_log": true,
+    "error_log": true
+  },
+  "requirements": {
+    "python": ">=3.9",
+    "pip": "requirements.txt"
+  },
+  "env": {
+    "AZURE_KEY_VAULT_NAME": "nextgen-agents-kv",
+    "FLASK_ENV": "production",
+    "GUNICORN_WORKERS": "4"
+  },
+  "health_check": {
+    "enabled": true,
+    "path": "/"
+  }
+}
