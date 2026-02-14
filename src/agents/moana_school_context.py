@@ -1,0 +1,720 @@
+"""Moana School Context Analyzer - Discovers school environment and program access context."""
+
+from typing import Dict, List, Any, Optional, Tuple
+from openai import AzureOpenAI
+from src.agents.base_agent import BaseAgent
+import re
+import json
+
+
+class MoanaSchoolContext(BaseAgent):
+    """
+    Specialized agent (Moana) for deeply understanding a student's school context.
+    
+    This agent analyzes:
+    - The high school itself: type, size, location (rural/urban/suburban)
+    - What programs the school offers (AP classes, IB, Honors, STEM)
+    - School resources compared to other schools
+    - Socioeconomic factors affecting school quality
+    - How much of the school's available resources the student utilized
+    
+    Key insight: A 4.0 GPA from a school with 2 AP classes is different 
+    from a 4.0 GPA from a school with 20 AP classes. This agent provides that context.
+    """
+    
+    def __init__(
+        self,
+        name: str,
+        client: AzureOpenAI,
+        model: str,
+        db_connection=None
+    ):
+        """
+        Initialize Moana School Context Analyzer.
+        
+        Args:
+            name: Agent name (typically "Moana School Context")
+            client: Azure OpenAI client
+            model: Model deployment name
+            db_connection: Database connection for storing/retrieving school data
+        """
+        super().__init__(name, client)
+        self.model = model
+        self.db = db_connection
+        
+        # Cache for school lookups to avoid redundant API calls
+        self.school_cache: Dict[str, Dict[str, Any]] = {}
+        
+        # Georgia School Data Source
+        # Public data available at: https://gaawards.gosa.ga.gov/analytics/saw.dll?dashboard
+        # Provides: enrollment, demographics, AP/IB offerings, graduation rates, test scores, etc.
+        self.georgia_data_source = "https://gaawards.gosa.ga.gov/analytics/saw.dll?dashboard"
+        self.georgia_schools_cache: Dict[str, Dict[str, Any]] = {}
+    
+    async def analyze_student_school_context(
+        self,
+        application: Dict[str, Any],
+        transcript_text: str,
+        rapunzel_grades_data: Optional[Dict[str, Any]] = None
+    ) -> Dict[str, Any]:
+        """
+        Analyze student's school context and program access.
+        
+        Args:
+            application: Application data
+            transcript_text: Grade report text
+            rapunzel_grades_data: Data from Rapunzel Grade Reader (contains school hints)
+            
+        Returns:
+            Comprehensive school context analysis
+        """
+        self.add_to_history("user", f"Analyze school context for {application.get('ApplicantName', 'candidate')}")
+        
+        student_name = application.get('ApplicantName', 'Unknown')
+        print(f"\n🌊 {self.name}: Discovering educational context for {student_name}...")
+        
+        try:
+            # Step 1: Extract school name and location
+            school_info = await self._extract_school_info(transcript_text, application)
+            
+            if not school_info.get('school_name') or school_info.get('school_name') == 'High School':
+                print(f"⚠ Could not identify school from available data")
+                return {
+                    'status': 'incomplete',
+                    'student_name': student_name,
+                    'error': 'School identification failed',
+                    'confidence': 0
+                }
+            
+            print(f"  School Identified: {school_info['school_name']}")
+            
+            # Check if Georgia school (can access public data)
+            is_georgia_school = school_info.get('state', '').upper() in ['GA', 'GEORGIA']
+            if is_georgia_school:
+                print(f"  ✓ Georgia school detected - public data available")
+                school_info['georgia_data_available'] = True
+                school_info['data_source_url'] = self.georgia_data_source
+            
+            # Step 2: Extract programs from transcript
+            program_participation = await self._extract_program_participation(
+                transcript_text,
+                student_name
+            )
+            
+            # Step 3: Look up school in database or create profile
+            school_profile = await self._get_or_create_school_profile(school_info)
+            
+            # Step 4: Analyze SES context
+            ses_context = await self._analyze_socioeconomic_context(school_profile)
+            
+            # Step 4b: Analyze school resources and comparisons
+            school_resources = self._analyze_school_resources(
+                school_profile,
+                school_info,
+                ses_context
+            )
+            
+            # Step 5: Score student's access and participation
+            scores = self._calculate_opportunity_scores(
+                school_profile,
+                program_participation,
+                ses_context
+            )
+            
+            # Compile comprehensive analysis
+            analysis = {
+                'status': 'success',
+                'student_name': student_name,
+                'school': {
+                    'name': school_info['school_name'],
+                    'city': school_info.get('city'),
+                    'state': school_info.get('state'),
+                    'identification_confidence': school_info.get('confidence', 0.7)
+                },
+                'school_profile': school_profile,
+                'ses_context': ses_context,
+                'program_participation': program_participation,
+                'school_resources': school_resources,
+                'opportunity_scores': scores,
+                'contextual_summary': self._build_summary(
+                    student_name,
+                    school_info,
+                    program_participation,
+                    scores,
+                    ses_context,
+                    school_resources
+                ),
+                'model_used': self.model
+            }
+            
+            self.add_to_history("assistant", json.dumps(analysis, default=str)[:1000])
+            return analysis
+        
+        except Exception as e:
+            import traceback
+            error_detail = traceback.format_exc()
+            print(f"⚠ Exception in analyze_student_school_context: {e}")
+            print(f"  Traceback: {error_detail[:200]}")
+            return {
+                'status': 'error',
+                'student_name': student_name,
+                'error': str(e),
+                'error_type': type(e).__name__
+            }
+    
+    async def _extract_school_info(
+        self,
+        transcript_text: str,
+        application: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """Extract school name and location from transcript and application."""
+        
+        school_name = None
+        
+        # First, try very specific patterns for well-formatted transcripts
+        # Look for school name near the beginning of document
+        first_500_chars = transcript_text[:500].upper()
+        if 'HIGH SCHOOL' in first_500_chars:
+            # Find the school name pattern
+            match = re.search(r'([A-Z][A-Za-z\s&\-\']*)\s*(?:HIGH\s*SCHOOL|SCHOOL)\s*\n', transcript_text, re.IGNORECASE)
+            if match:
+                school_name = match.group(1).strip()
+        
+        # Fallback patterns
+        if not school_name:
+            patterns = [
+                r'([A-Z][A-Za-z\s&\-\']{3,50})\s*HIGH\s*SCHOOL',  # "Westview High School"
+                r'SCHOOL[:\s]+([A-Za-z\s&\-\']{3,})',
+                r'FROM:\s*([A-Za-z\s&\-\']+)\s*(?:HIGH|SCHOOL)',
+            ]
+            for pattern in patterns:
+                match = re.search(pattern, transcript_text, re.IGNORECASE)
+                if match:
+                    candidate = match.group(1).strip()
+                    # Verify it's not a false positive
+                    if len(candidate) > 2 and len(candidate) < 100:
+                        if not any(bad in candidate.upper() for bad in ['TRANSCRIPT', 'RECORD', 'OF RECORD', 'STUDENT ID']):
+                            school_name = candidate
+                            break
+        
+        # Extract location
+        location_patterns = [
+            r'(?:CITY|LOCATION|ADDRESS)[:\s]+([A-Z][a-z\s]+),?\s*([A-Z]{2})',
+            r'([A-Z][a-z\s]+),\s*([A-Z]{2})\s*\d{5}',
+        ]
+        
+        city = None
+        state = None
+        for pattern in location_patterns:
+            match = re.search(pattern, transcript_text)
+            if match:
+                city = match.group(1).strip()
+                state = match.group(2).strip()
+                break
+        
+        # If no location found, use generic
+        if not city:
+            city = "Unknown City"
+        if not state:
+            state = "Unknown"
+        
+        return {
+            'school_name': school_name or 'High School',
+            'city': city,
+            'state': state,
+            'confidence': 0.8 if school_name and school_name.lower() != 'high school' else 0.4,
+            'extraction_method': 'transcript_parsing'
+        }
+    
+    async def _extract_program_participation(
+        self,
+        transcript_text: str,
+        student_name: str
+    ) -> Dict[str, Any]:
+        """Extract which advanced programs the student participated in."""
+        
+        participation = {
+            'ap_courses_taken': [],
+            'ib_courses_taken': [],
+            'honors_courses_taken': [],
+            'stem_courses': [],
+            'gt_program': False,
+            'other_programs': []
+        }
+        
+        # Count AP courses
+        ap_matches = re.findall(r'AP\s+([A-Za-z\s&]+):\s*([A-F\+\-])', transcript_text, re.IGNORECASE)
+        participation['ap_courses_taken'] = [course for course, _ in ap_matches]
+        
+        # Count Honors courses
+        honors_matches = re.findall(r'\(Honors\):\s*([A-F\+\-])', transcript_text)
+        participation['honors_courses_taken'] = len(honors_matches)
+        
+        # Look for STEM indicators
+        stem_keywords = ['STEM', 'Computer Science', 'Physics', 'Chemistry', 'Biology', 'Mathematics', 'Engineering']
+        for keyword in stem_keywords:
+            if keyword.lower() in transcript_text.lower():
+                if keyword not in participation['stem_courses']:
+                    participation['stem_courses'].append(keyword)
+        
+        # Check for gifted program
+        if re.search(r'gifted|accelerated|advanced placement', transcript_text, re.IGNORECASE):
+            participation['gt_program'] = True
+        
+        # Count total advanced courses
+        participation['total_advanced_courses'] = (
+            len(participation['ap_courses_taken']) +
+            participation['honors_courses_taken'] +
+            len(participation['stem_courses'])
+        )
+        
+        return participation
+    
+    async def _get_or_create_school_profile(
+        self,
+        school_info: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """
+        Get school profile from database or create one with AI analysis.
+        
+        For Georgia schools, notes that real public data is available at:
+        https://gaawards.gosa.ga.gov/analytics/saw.dll?dashboard
+        
+        For production, would query:
+        - NCES (National Center for Education Statistics) database
+        - Georgia Governor's Office of Student Achievement (for GA schools)
+        - State education department APIs
+        """
+        
+        school_name = school_info['school_name']
+        is_georgia = school_info.get('state', '').upper() in ['GA', 'GEORGIA']
+        
+        # Check Georgia-specific cache first
+        if is_georgia and school_name in self.georgia_schools_cache:
+            return self.georgia_schools_cache[school_name]
+        
+        # Check general cache
+        if school_name in self.school_cache:
+            return self.school_cache[school_name]
+        
+        # Create AI-informed school profile
+        georgia_note = ""
+        if is_georgia:
+            georgia_note = "\n\nNOTE: This is a Georgia school. Real public data is available at https://gaawards.gosa.ga.gov/analytics/saw.dll?dashboard including exact enrollment, AP/IB offerings, demographics, graduation rates, and college readiness scores. For now, provide best estimates."
+        
+        profile_prompt = f"""Based on the school name "{school_name}" {f'in {school_info.get("city")}, {school_info.get("state")}' if school_info.get('city') else ''},
+provide a realistic assessment of:
+1. School type (Public/Private/Charter)
+2. Number of AP courses offered (estimate: 5-20 for typical schools)
+3. Number of IB courses (if applicable): 0-8
+4. Honors program scope (courses available)
+5. STEM programs offered (robotics, engineering, computer science, etc)
+6. Estimated number of students in advanced programs (estimate total enrollment ~1500-2500)
+7. Typical SES level of the area (based on school name/location if identifiable){georgia_note}
+
+Provide realistic, conservative estimates. Format as clear categories."""
+
+        try:
+            response = self.client.chat.completions.create(
+                model=self.model,
+                messages=[
+                    {
+                        "role": "system",
+                        "content": "You are an education data analyst. Provide realistic assessments of high schools based on common patterns. Be specific with numbers."
+                    },
+                    {
+                        "role": "user",
+                        "content": profile_prompt
+                    }
+                ],
+                max_completion_tokens=1200,
+                temperature=1
+            )
+            
+            profile_text = response.choices[0].message.content
+            
+            # Parse AI response into structured data
+            profile = {
+                'school_name': school_name,
+                'school_type': self._extract_field(profile_text, 'school type', 'Public'),
+                'ap_courses_available': self._extract_number(profile_text, 'AP courses', 12),
+                'ib_courses_available': self._extract_number(profile_text, 'IB courses', 0),
+                'honors_courses_available': self._extract_number(profile_text, 'honors', 25),
+                'stem_programs': self._extract_programs(profile_text, 'STEM'),
+                'total_students': self._extract_number(profile_text, 'enrollment', 2000),
+                'advanced_program_students': self._extract_number(profile_text, 'advanced', 400),
+                'raw_analysis': profile_text[:500],
+                'data_source': 'AI_estimated',
+                'state': school_info.get('state', 'Unknown')
+            }
+            
+            # Add Georgia-specific metadata if applicable
+            if is_georgia:
+                profile['georgia_data_available'] = True
+                profile['georgia_data_source'] = self.georgia_data_source
+                profile['data_source'] = 'AI_estimated_with_GA_data_available'
+                profile['note'] = f"Real data for {school_name} available at Georgia Governor's Office of Student Achievement dashboard"
+                self.georgia_schools_cache[school_name] = profile
+            
+            self.school_cache[school_name] = profile
+            return profile
+            
+        except Exception as e:
+            print(f"Error creating school profile: {e}")
+            return {
+                'school_name': school_name,
+                'error': str(e)
+            }
+    
+    async def _analyze_socioeconomic_context(
+        self,
+        school_profile: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """Analyze the SES context of the school area."""
+        
+        school_name = school_profile.get('school_name', '')
+        
+        # SES indicators based on school characteristics
+        # (In production, would use Census data, NCES data, etc.)
+        ses_analysis = {
+            'analysis_method': 'school_characteristics',
+            'median_household_income': None,
+            'free_lunch_percentage': None,
+            'ses_level': 'Medium',  # Default
+            'opportunity_level': 'Moderate',
+            'data_reliability': 'Estimated'
+        }
+        
+        # Heuristics based on school name
+        if any(word in school_name.lower() for word in ['academy', 'prep', 'international']):
+            ses_analysis['ses_level'] = 'High'
+            ses_analysis['opportunity_level'] = 'Extensive'
+            ses_analysis['median_household_income'] = 95000
+            ses_analysis['free_lunch_percentage'] = 15
+        elif any(word in school_name.lower() for word in ['central', 'north', 'south', 'east', 'west']):
+            ses_analysis['ses_level'] = 'Medium'
+            ses_analysis['opportunity_level'] = 'Moderate'
+            ses_analysis['median_household_income'] = 65000
+            ses_analysis['free_lunch_percentage'] = 35
+        
+        return ses_analysis
+    
+    def _analyze_school_resources(
+        self,
+        school_profile: Dict[str, Any],
+        school_info: Dict[str, Any],
+        ses_context: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """Analyze the school's academic resources and compare to typical peers."""
+        ap_available = school_profile.get('ap_courses_available', 0)
+        ib_available = school_profile.get('ib_courses_available', 0)
+        honors_available = school_profile.get('honors_courses_available', 0)
+        stem_count = len(school_profile.get('stem_programs', []))
+        is_georgia = school_profile.get('georgia_data_available', False)
+        
+        locale = self._infer_locale(school_info)
+        ses_level = ses_context.get('ses_level', 'Medium')
+        
+        resource_score = (
+            (ap_available / 20) * 35 +
+            (ib_available / 8) * 15 +
+            (min(honors_available, 30) / 30) * 25 +
+            (stem_count / 5) * 15 +
+            10
+        )
+        
+        if ses_level == 'High':
+            resource_score += 5
+        elif ses_level == 'Low':
+            resource_score -= 5
+        
+        resource_score = max(0, min(100, resource_score))
+        
+        if resource_score >= 80:
+            resource_tier = 'High-resource'
+        elif resource_score >= 55:
+            resource_tier = 'Moderate-resource'
+        else:
+            resource_tier = 'Limited-resource'
+        
+        comparison_notes = (
+            f"{resource_tier} school with {ap_available} AP courses and {honors_available} honors courses. "
+            f"Locale: {locale}. SES: {ses_level}."
+        )
+        
+        if is_georgia:
+            comparison_notes += f" [Georgia school - verified data available at {self.georgia_data_source}]"
+        
+        return {
+            'ap_courses_available': ap_available,
+            'ib_courses_available': ib_available,
+            'honors_courses_available': honors_available,
+            'stem_programs_count': stem_count,
+            'locale': locale,
+            'resource_score': round(resource_score, 1),
+            'resource_tier': resource_tier,
+            'comparison_notes': comparison_notes,
+            'georgia_data_available': is_georgia,
+            'data_source_url': self.georgia_data_source if is_georgia else None
+        }
+    
+    def _calculate_opportunity_scores(
+        self,
+        school_profile: Dict[str, Any],
+        program_participation: Dict[str, Any],
+        ses_context: Dict[str, Any]
+    ) -> Dict[str, float]:
+        """Calculate comprehensive opportunity and access scores."""
+        
+        # Program Access Score (0-100): What programs are available
+        ap_available = school_profile.get('ap_courses_available', 0)
+        ib_available = school_profile.get('ib_courses_available', 0)
+        honors_available = school_profile.get('honors_courses_available', 0)
+        stem_count = len(school_profile.get('stem_programs', []))
+        
+        program_access = min(100, (
+            (ap_available / 20) * 30 +  # AP courses (out of 20 possible)
+            (ib_available / 8) * 15 +   # IB (out of 8)
+            (min(honors_available, 30) / 30) * 20 +  # Honors
+            (stem_count / 5) * 15 +     # STEM programs
+            20  # Base for any access
+        ))
+        
+        # Program Participation Score (0-100): How many programs student used
+        ap_taken = len(program_participation.get('ap_courses_taken', []))
+        honors_taken = program_participation.get('honors_courses_taken', 0)
+        stem_taken = len(program_participation.get('stem_courses', []))
+        
+        program_participation_score = min(100, (
+            (ap_taken / 8) * 40 +       # AP participation (out of 8 typical max)
+            (min(honors_taken, 10) / 10) * 40 +  # Honors participation
+            (stem_taken / 5) * 20       # STEM participation
+        ))
+        
+        # Relative Advantage Score (0-100): Student usage vs peer opportunities
+        # If student used 70% of what's available, they're ahead of peers
+        program_availability = ap_available + ib_available
+        programs_used = ap_taken + (ib_available if program_participation.get('ib_courses_taken') else 0)
+        
+        if program_availability > 0:
+            utilization_rate = (programs_used / program_availability) * 100
+            relative_advantage = min(100, utilization_rate * 1.2)  # Score higher if using proportionally more
+        else:
+            relative_advantage = 50  # Default if no programs available
+        
+        result = {
+            'program_access_score': round(program_access, 1),
+            'program_participation_score': round(program_participation_score, 1),
+            'relative_advantage_score': round(relative_advantage, 1),
+            'overall_opportunity_score': round(
+                (program_access + program_participation_score + relative_advantage) / 3,
+                1
+            ),
+            'interpretation': self._interpret_scores(program_access, program_participation_score, ses_context)
+        }
+        
+        return result
+    
+    def _interpret_scores(
+        self,
+        access_score: float,
+        participation_score: float,
+        ses_context: Dict[str, Any]
+    ) -> str:
+        """Generate interpretation of opportunity scores."""
+        
+        if access_score < 30:
+            access_level = "Limited access to advanced programs"
+        elif access_score < 60:
+            access_level = "Moderate access to advanced programs"
+        elif access_score < 85:
+            access_level = "Extensive access to advanced programs"
+        else:
+            access_level = "Exceptional access to advanced programs"
+        
+        if participation_score < 30:
+            participation_level = "took few advanced courses"
+        elif participation_score < 60:
+            participation_level = "took several advanced courses"
+        elif participation_score < 85:
+            participation_level = "actively pursued advanced coursework"
+        else:
+            participation_level = "maximized available advanced opportunities"
+        
+        return f"Student had {access_level.lower()} and {participation_level}."
+    
+    def _build_summary(
+        self,
+        student_name: str,
+        school_info: Dict[str, Any],
+        participation: Dict[str, Any],
+        scores: Dict[str, Any],
+        ses_context: Dict[str, Any],
+        school_resources: Dict[str, Any]
+    ) -> str:
+        """Build a comprehensive summary of school context."""
+        
+        summary_parts = [
+            f"{student_name} attended {school_info['school_name']}",
+            f"in an area with {ses_context.get('ses_level', 'medium-income')} socioeconomic indicators.",
+            "",
+            f"Program Participation:",
+            f"• AP Courses: {len(participation.get('ap_courses_taken', []))} courses",
+            f"• Honors Courses: {participation.get('honors_courses_taken', 0)} courses",
+            f"• STEM Programs: {len(participation.get('stem_courses', []))} areas",
+        ]
+        
+        summary_parts.extend([
+            "",
+            f"School Resources:",
+            f"• AP Courses Available: {school_resources.get('ap_courses_available', 0)}",
+            f"• IB Courses Available: {school_resources.get('ib_courses_available', 0)}",
+            f"• Honors Courses Available: {school_resources.get('honors_courses_available', 0)}",
+            f"• STEM Programs Available: {school_resources.get('stem_programs_count', 0)}",
+            f"• School Resource Tier: {school_resources.get('resource_tier', 'Unknown')}",
+            f"• Locale: {school_resources.get('locale', 'Unknown')}",
+        ])
+        
+        summary_parts.extend([
+            "",
+            f"Opportunity Analysis:",
+            f"• School Program Access: {scores.get('program_access_score', 0)}/100",
+            f"• Student Participation: {scores.get('program_participation_score', 0)}/100",
+            f"• Relative Advantage: {scores.get('relative_advantage_score', 0)}/100",
+            f"• OVERALL OPPORTUNITY SCORE: {scores.get('overall_opportunity_score', 0)}/100",
+            "",
+            f"Context: {scores.get('interpretation', 'Analysis complete')}"
+        ])
+
+        return "\n".join(summary_parts)
+
+    def _infer_locale(self, school_info: Dict[str, Any]) -> str:
+        """Infer school locale (rural/urban/suburban) from available clues."""
+        city = (school_info.get('city') or '').lower()
+        name = (school_info.get('school_name') or '').lower()
+        
+        if any(keyword in city for keyword in ['rural', 'county', 'valley', 'mount', 'mountain']):
+            return 'Rural'
+        if any(keyword in name for keyword in ['county', 'regional', 'valley']):
+            return 'Rural'
+        if any(keyword in city for keyword in ['downtown', 'city', 'metro']):
+            return 'Urban'
+        if any(keyword in name for keyword in ['central', 'east', 'west', 'north', 'south']):
+            return 'Suburban'
+        
+        return 'Unknown'
+    
+    def _extract_field(self, text: str, field: str, default: str) -> str:
+        """Extract a single field from AI response."""
+        pattern = rf'{field}[:\s]+([^\n]+)'
+        match = re.search(pattern, text, re.IGNORECASE)
+        return match.group(1).strip() if match else default
+    
+    def _extract_number(self, text: str, field: str, default: int) -> int:
+        """Extract a number from AI response."""
+        pattern = rf'{field}[:\s]+(\d+)'
+        match = re.search(pattern, text, re.IGNORECASE)
+        if match:
+            try:
+                return int(match.group(1))
+            except ValueError:
+                return default
+        return default
+    
+    def _extract_programs(self, text: str, category: str) -> List[str]:
+        """Extract programs from AI response."""
+        pattern = rf'{category}[:\s]+([A-Za-z\s,&\-]+)'
+        match = re.search(pattern, text, re.IGNORECASE)
+        if match:
+            programs = [p.strip() for p in match.group(1).split(',')]
+            return [p for p in programs if p]
+        return []
+    
+    def get_georgia_school_data_instructions(self, school_name: str) -> Dict[str, str]:
+        """
+        Get instructions for manually looking up Georgia school data.
+        
+        Args:
+            school_name: Name of the Georgia high school
+            
+        Returns:
+            Dictionary with lookup instructions and data points to collect
+        """
+        return {
+            'data_source': self.georgia_data_source,
+            'school_name': school_name,
+            'lookup_instructions': f"""
+To get verified data for {school_name}:
+
+1. Visit: {self.georgia_data_source}
+2. Search for: "{school_name}"
+3. Collect the following data points:
+   
+   ACADEMIC PROGRAMS:
+   - Number of AP courses offered
+   - Number of IB courses offered
+   - Honors program availability
+   - STEM program offerings
+   
+   STUDENT BODY:
+   - Total enrollment
+   - Students in advanced programs
+   - Demographics breakdown
+   
+   PERFORMANCE METRICS:
+   - Graduation rate
+   - College readiness score
+   - SAT/ACT average scores
+   - AP exam pass rates
+   
+   RESOURCES:
+   - Free/reduced lunch percentage (SES indicator)
+   - Student-teacher ratio
+   - Per-pupil expenditure
+   
+   CONTEXT:
+   - School locale (urban/suburban/rural)
+   - District information
+   - School type (public/charter/private)
+
+This data will provide accurate context for evaluating student opportunity and achievement.
+            """.strip(),
+            'data_points': [
+                'ap_courses_offered',
+                'ib_courses_offered',
+                'total_enrollment',
+                'graduation_rate',
+                'college_readiness_score',
+                'free_reduced_lunch_pct',
+                'student_teacher_ratio',
+                'ap_pass_rate'
+            ]
+        }
+    
+    async def process(self, message: str) -> str:
+        """Process a general message."""
+        self.add_to_history("user", message)
+        
+        messages = [
+            {
+                "role": "system",
+                "content": "You are Moana, an expert in education systems and school contexts. You understand socioeconomic factors, advanced programs, and educational opportunities."
+            }
+        ] + self.conversation_history
+        
+        try:
+            response = self.client.chat.completions.create(
+                model=self.model,
+                messages=messages,
+                max_completion_tokens=1500,
+                temperature=1
+            )
+            
+            assistant_message = response.choices[0].message.content
+            self.add_to_history("assistant", assistant_message)
+            return assistant_message
+            
+        except Exception as e:
+            error_message = f"Moana encountered an error: {str(e)}"
+            print(error_message)
+            return error_message

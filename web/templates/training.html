@@ -1,0 +1,161 @@
+{% extends "base.html" %}
+
+{% block title %}Training Data{% endblock %}
+
+{% block content %}
+<div class="card">
+    <div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 2rem;">
+        <div>
+            <h2>📚 Training Data</h2>
+            <p style="color: #6b7280; margin-top: 0.5rem;">
+                Historical applications used to train agents on what makes excellent applicants
+            </p>
+        </div>
+        <a href="{{ url_for('upload') }}" class="btn btn-primary">
+            ➕ Add Training Example
+        </a>
+    </div>
+
+    <!-- Statistics -->
+    <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 1rem; margin-bottom: 2rem;">
+        <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 1.5rem; border-radius: 8px; text-align: center;">
+            <div style="font-size: 2rem; font-weight: bold;">{{ total_count }}</div>
+            <div style="opacity: 0.9; margin-top: 0.5rem;">Total Examples</div>
+        </div>
+        <div style="background: linear-gradient(135deg, #10b981 0%, #059669 100%); color: white; padding: 1.5rem; border-radius: 8px; text-align: center;">
+            <div style="font-size: 2rem; font-weight: bold;">{{ selected_count }}</div>
+            <div style="opacity: 0.9; margin-top: 0.5rem;">✓ Selected</div>
+        </div>
+        <div style="background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%); color: white; padding: 1.5rem; border-radius: 8px; text-align: center;">
+            <div style="font-size: 2rem; font-weight: bold;">{{ not_selected_count }}</div>
+            <div style="opacity: 0.9; margin-top: 0.5rem;">✗ Not Selected</div>
+        </div>
+    </div>
+
+    <!-- Search and Filter -->
+    <form method="GET" style="margin-bottom: 2rem;">
+        <div style="display: grid; grid-template-columns: 1fr auto auto; gap: 1rem;">
+            <input type="text" name="search" placeholder="🔍 Search by name or email..." 
+                   value="{{ search_query or '' }}"
+                   style="padding: 0.75rem; border: 1px solid #d1d5db; border-radius: 5px; font-size: 1rem;">
+            
+            <select name="filter" style="padding: 0.75rem; border: 1px solid #d1d5db; border-radius: 5px; font-size: 1rem;">
+                <option value="">All Examples</option>
+                <option value="selected" {% if filter_selected == 'selected' %}selected{% endif %}>✓ Selected Only</option>
+                <option value="not_selected" {% if filter_selected == 'not_selected' %}selected{% endif %}>✗ Not Selected</option>
+            </select>
+            
+            <button type="submit" class="btn btn-primary">Search</button>
+        </div>
+    </form>
+
+    <!-- Training Data Table -->
+    {% if training_data %}
+    <div style="overflow-x: auto;">
+        <table style="width: 100%; border-collapse: collapse;">
+            <thead>
+                <tr style="background: #f9fafb; border-bottom: 2px solid #e5e7eb;">
+                    <th style="padding: 1rem; text-align: left; font-weight: 600;">ID</th>
+                    <th style="padding: 1rem; text-align: left; font-weight: 600;">Name</th>
+                    <th style="padding: 1rem; text-align: left; font-weight: 600;">Email</th>
+                    <th style="padding: 1rem; text-align: left; font-weight: 600;">Status</th>
+                    <th style="padding: 1rem; text-align: left; font-weight: 600;">Uploaded</th>
+                    <th style="padding: 1rem; text-align: left; font-weight: 600;">File</th>
+                    <th style="padding: 1rem; text-align: left; font-weight: 600;">Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for example in training_data %}
+                <tr style="border-bottom: 1px solid #e5e7eb;">
+                    <td style="padding: 1rem; font-family: monospace; color: #6b7280;">
+                        #{{ example.applicationid }}
+                    </td>
+                    <td style="padding: 1rem; font-weight: 500;">
+                        {{ example.applicantname or 'N/A' }}
+                    </td>
+                    <td style="padding: 1rem; color: #6b7280;">
+                        {{ example.email or 'N/A' }}
+                    </td>
+                    <td style="padding: 1rem;">
+                        {% if example.wasselected %}
+                        <span style="background: #d1fae5; color: #065f46; padding: 0.25rem 0.75rem; border-radius: 20px; font-size: 0.875rem; font-weight: 600;">
+                            ✓ Selected
+                        </span>
+                        {% elif example.wasselected == False %}
+                        <span style="background: #fee2e2; color: #991b1b; padding: 0.25rem 0.75rem; border-radius: 20px; font-size: 0.875rem; font-weight: 600;">
+                            ✗ Not Selected
+                        </span>
+                        {% else %}
+                        <span style="background: #f3f4f6; color: #6b7280; padding: 0.25rem 0.75rem; border-radius: 20px; font-size: 0.875rem;">
+                            Unknown
+                        </span>
+                        {% endif %}
+                    </td>
+                    <td style="padding: 1rem; color: #6b7280; font-size: 0.875rem;">
+                        {{ example.uploadeddate.strftime('%Y-%m-%d') if example.uploadeddate else 'N/A' }}
+                    </td>
+                    <td style="padding: 1rem; color: #6b7280; font-size: 0.875rem;">
+                        {{ example.originalfilename or 'N/A' }}
+                        <span style="background: #e5e7eb; padding: 0.125rem 0.5rem; border-radius: 3px; font-size: 0.75rem; margin-left: 0.25rem;">
+                            {{ example.filetype or 'N/A' }}
+                        </span>
+                    </td>
+                    <td style="padding: 1rem;">
+                        <div style="display: flex; gap: 0.5rem;">
+                            <a href="{{ url_for('view_training_detail', application_id=example.applicationid) }}" 
+                               class="btn btn-secondary" style="padding: 0.5rem 1rem; font-size: 0.875rem;">
+                                👁️ View
+                            </a>
+                            <form method="POST" action="{{ url_for('delete_training', application_id=example.applicationid) }}" 
+                                  style="display: inline;"
+                                  onsubmit="return confirm('Are you sure you want to delete this training example?');">
+                                <button type="submit" class="btn" 
+                                        style="background: #ef4444; color: white; padding: 0.5rem 1rem; font-size: 0.875rem;">
+                                    🗑️ Delete
+                                </button>
+                            </form>
+                        </div>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <div style="text-align: center; padding: 3rem; color: #6b7280;">
+        <div style="font-size: 3rem; margin-bottom: 1rem;">📚</div>
+        <h3 style="margin-bottom: 0.5rem;">No Training Data Found</h3>
+        <p>Upload historical applications to help train the AI agents.</p>
+        <a href="{{ url_for('upload') }}" class="btn btn-primary" style="margin-top: 1rem;">
+            ➕ Upload Your First Training Example
+        </a>
+    </div>
+    {% endif %}
+</div>
+
+<!-- Info Card -->
+<div class="card" style="background: #f0f9ff; border-left: 4px solid #3b82f6;">
+    <h3 style="color: #1e40af; margin-bottom: 1rem;">💡 About Training Data</h3>
+    <div style="color: #1e3a8a; line-height: 1.8;">
+        <p style="margin-bottom: 1rem;">
+            Training data helps agents understand what makes excellent applicants by learning from historical examples. 
+            Each training example should include:
+        </p>
+        <ul style="margin-left: 1.5rem; margin-bottom: 1rem;">
+            <li><strong>Application materials</strong> - Essays, transcripts, recommendations</li>
+            <li><strong>Selection outcome</strong> - Whether the student was selected or not</li>
+            <li><strong>Historical context</strong> - Previous years' successful candidates</li>
+        </ul>
+        <p style="margin-bottom: 1rem;">
+            <strong>How Agents Use This Data:</strong>
+        </p>
+        <ul style="margin-left: 1.5rem;">
+            <li>🧙 <strong>Merlin</strong> compares new applicants against historical excellence</li>
+            <li>🌊 <strong>Moana</strong> learns patterns from schools that produced successful students</li>
+            <li>💇 <strong>Rapunzel</strong> calibrates grade expectations based on past selections</li>
+            <li>👸 <strong>Tiana</strong> identifies essay qualities that correlate with success</li>
+            <li>🗡️ <strong>Mulan</strong> weights recommendation attributes from past winners</li>
+        </ul>
+    </div>
+</div>
+{% endblock %}

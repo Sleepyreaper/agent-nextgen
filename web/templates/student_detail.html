@@ -1,0 +1,486 @@
+{% extends "base.html" %}
+
+{% block title %}{{ application.applicantname }} - Student Summary{% endblock %}
+
+{% block extra_css %}
+<style>
+    .progress-bar {
+        background: #e5e7eb;
+        border-radius: 10px;
+        overflow: hidden;
+        height: 8px;
+        margin: 0.5rem 0;
+    }
+    .progress-fill {
+        background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
+        height: 100%;
+        transition: width 0.3s;
+    }
+    .agent-card {
+        background: #f9fafb;
+        padding: 1.5rem;
+        border-radius: 8px;
+        margin-bottom: 1rem;
+        border-left: 4px solid #667eea;
+    }
+    .agent-card.complete {
+        border-left-color: #10b981;
+        background: #f0fdf4;
+    }
+    .agent-card.pending {
+        border-left-color: #f59e0b;
+        background: #fffbeb;
+    }
+    .grade-badge {
+        display: inline-block;
+        padding: 0.5rem 1rem;
+        border-radius: 5px;
+        font-weight: bold;
+        font-size: 1.2rem;
+    }
+    .grade-a { background: #d1fae5; color: #065f46; }
+    .grade-b { background: #dbeafe; color: #1e40af; }
+    .grade-c { background: #fef3c7; color: #92400e; }
+    .grade-d { background: #fee2e2; color: #991b1b; }
+    .summary-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+        gap: 1.5rem;
+        margin-top: 1.5rem;
+    }
+    .info-box {
+        background: white;
+        padding: 1.5rem;
+        border-radius: 8px;
+        border: 1px solid #e5e7eb;
+    }
+    .info-label {
+        color: #6b7280;
+        font-size: 0.875rem;
+        margin-bottom: 0.25rem;
+    }
+    .info-value {
+        font-size: 1.1rem;
+        font-weight: 600;
+        color: #1f2937;
+    }
+    .score-circle {
+        width: 120px;
+        height: 120px;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 2rem;
+        font-weight: bold;
+        margin: 0 auto;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<!-- Student Header -->
+<div class="card" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white;">
+    <div style="display: flex; justify-content: space-between; align-items: start;">
+        <div>
+            <h1 style="margin-bottom: 0.5rem;">{{ application.applicantname }}</h1>
+            <p style="opacity: 0.9;">📧 {{ application.email or 'No email provided' }}</p>
+            <p style="opacity: 0.9;">📅 Applied: {{ application.uploadeddate.strftime('%B %d, %Y') if application.uploadeddate else 'Unknown' }}</p>
+        </div>
+        <div>
+            <span class="badge" style="background: rgba(255,255,255,0.2); color: white; font-size: 1rem; padding: 0.5rem 1rem;">
+                {{ application.status or 'Pending' }}
+            </span>
+        </div>
+    </div>
+</div>
+
+<!-- Requirements Status (What Information is Available) -->
+<div class="card" id="requirements-card" style="border-left: 4px solid #3b82f6;">
+    <div style="display: flex; justify-content: space-between; align-items: start;">
+        <div>
+            <h2>📋 Information Requirements</h2>
+            <p style="color: #6b7280; margin-top: 0.5rem;">What agents need to work effectively</p>
+        </div>
+        <button onclick="refreshRequirements()" class="btn btn-secondary" style="font-size: 0.9rem;">
+            🔄 Refresh Status
+        </button>
+    </div>
+    
+    <div id="requirements-content" style="margin-top: 1.5rem;">
+        <div style="text-align: center; color: #6b7280; padding: 2rem;">
+            <div class="spinner" style="margin: 0 auto 1rem;"></div>
+            <p>Checking requirements...</p>
+        </div>
+    </div>
+</div>
+
+<!-- Agent Processing Status -->
+<div class="card">
+    <h2>🤖 Agent Processing Status</h2>
+    <div style="margin-top: 1.5rem;">
+        {% set agents_status = {
+            'Tiana': tiana is not none,
+            'Rapunzel': rapunzel is not none,
+            'Moana': moana is not none,
+            'Mulan': mulan and mulan|length > 0,
+            'Merlin': merlin is not none
+        } %}
+        
+        {% set completed = agents_status.values()|select|list|length %}
+        {% set total = 5 %}
+        {% set progress = (completed / total * 100)|int %}
+        
+        <div style="margin-bottom: 1rem;">
+            <div style="display: flex; justify-content: space-between; margin-bottom: 0.5rem;">
+                <span><strong>{{ completed }}</strong> of <strong>{{ total }}</strong> agents completed</span>
+                <span><strong>{{ progress }}%</strong></span>
+            </div>
+            <div class="progress-bar">
+                <div class="progress-fill" style="width: {{ progress }}%;"></div>
+            </div>
+        </div>
+
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; margin-top: 1.5rem;">
+            {% for agent_name, is_complete in agents_status.items() %}
+            <div class="agent-card {{ 'complete' if is_complete else 'pending' }}">
+                <div style="display: flex; justify-content: space-between; align-items: center;">
+                    <strong>{{ agent_name }}</strong>
+                    <span>{{ '✅' if is_complete else '⏳' }}</span>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+
+        {% if progress < 100 %}
+        <div style="margin-top: 1.5rem; text-align: center;">
+            <a href="{{ url_for('process_student', application_id=application.applicationid) }}" 
+               class="btn btn-success">▶️ Run All Agents</a>
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+<!-- Merlin's Overall Assessment (if available) -->
+{% if merlin %}
+{% set score_bg = '#d1fae5' if merlin.OverallScore >= 85 else '#dbeafe' if merlin.OverallScore >= 70 else '#fef3c7' if merlin.OverallScore >= 60 else '#fee2e2' %}
+{% set score_color = '#065f46' if merlin.OverallScore >= 85 else '#1e40af' if merlin.OverallScore >= 70 else '#92400e' if merlin.OverallScore >= 60 else '#991b1b' %}
+{% set rec_color = '#065f46' if 'Recommend' in merlin.Recommendation else '#92400e' if 'Consider' in merlin.Recommendation else '#991b1b' %}
+<div class="card" style="border: 2px solid #667eea;">
+    <h2>🧙 Merlin's Overall Assessment</h2>
+    
+    <div style="display: grid; grid-template-columns: 150px 1fr; gap: 2rem; margin-top: 1.5rem;">
+        <div>
+            <div class="score-circle" style="background: {{ score_bg }}; color: {{ score_color }};">
+                {{ merlin.OverallScore|round|int }}
+            </div>
+            <p style="text-align: center; margin-top: 0.5rem; color: #6b7280;">Overall Score</p>
+        </div>
+        
+        <div>
+            <div class="info-box" style="margin-bottom: 1rem;">
+                <div class="info-label">Recommendation</div>
+                <div class="info-value" style="color: {{ rec_color }};">
+                    {{ merlin.Recommendation }}
+                </div>
+            </div>
+            
+            <div class="info-box">
+                <div class="info-label">Rationale</div>
+                <div style="margin-top: 0.5rem; line-height: 1.6;">
+                    {{ merlin.Rationale }}
+                </div>
+            </div>
+        </div>
+    </div>
+
+    {% if merlin.ParsedJson %}
+    {% set merlin_data = merlin.ParsedJson|safe if merlin.ParsedJson is string else merlin.ParsedJson %}
+    {% if merlin_data %}
+    <div style="margin-top: 1.5rem; padding-top: 1.5rem; border-top: 1px solid #e5e7eb;">
+        <h3 style="margin-bottom: 1rem;">📋 Detailed Analysis</h3>
+        <div class="summary-grid">
+            {% if merlin_data.key_strengths %}
+            <div class="info-box">
+                <div class="info-label">✅ Key Strengths</div>
+                <ul style="margin-top: 0.5rem; padding-left: 1.5rem;">
+                    {% for strength in merlin_data.key_strengths %}
+                    <li>{{ strength }}</li>
+                    {% endfor %}
+                </ul>
+            </div>
+            {% endif %}
+            
+            {% if merlin_data.key_risks %}
+            <div class="info-box">
+                <div class="info-label">⚠️ Key Considerations</div>
+                <ul style="margin-top: 0.5rem; padding-left: 1.5rem;">
+                    {% for risk in merlin_data.key_risks %}
+                    <li>{{ risk }}</li>
+                    {% endfor %}
+                </ul>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+    {% endif %}
+    {% endif %}
+</div>
+{% endif %}
+
+<!-- Individual Agent Results -->
+<div class="summary-grid">
+    <!-- Tiana Application Summary -->
+    {% if tiana %}
+    <div class="card">
+        <h3>👸 Tiana: Application Profile</h3>
+        <div style="margin-top: 1rem;">
+            <div class="info-box" style="margin-bottom: 1rem;">
+                <div class="info-label">Analysis</div>
+                <div style="margin-top: 0.5rem;">{{ tiana.DetailedAnalysis or 'Analysis pending' }}</div>
+            </div>
+            
+            {% if tiana.Recommendation %}
+            <div class="info-box">
+                <div class="info-label">Recommendation</div>
+                <div class="info-value">{{ tiana.Recommendation }}</div>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- Rapunzel Grade Analysis -->
+    {% if rapunzel %}
+    <div class="card">
+        <h3>💇 Rapunzel: Academic Performance</h3>
+        <div style="margin-top: 1rem;">
+            <div class="info-box" style="margin-bottom: 1rem;">
+                <div class="info-label">Overall Score</div>
+                <div class="info-value">{{ rapunzel.OverallScore|round|int }}/100</div>
+            </div>
+            
+            <div class="info-box">
+                <div class="info-label">Strengths</div>
+                <div style="margin-top: 0.5rem;">{{ rapunzel.Strengths }}</div>
+            </div>
+            
+            <div class="info-box">
+                <div class="info-label">Weaknesses</div>
+                <div style="margin-top: 0.5rem;">{{ rapunzel.Weaknesses }}</div>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- Moana School Context -->
+    {% if moana %}
+    <div class="card">
+        <h3>🌊 Moana: School Context</h3>
+        <div style="margin-top: 1rem;">
+            <div class="info-box" style="margin-bottom: 1rem;">
+                <div class="info-label">School</div>
+                <div class="info-value">{{ moana.get('SchoolName', 'Unknown') }}</div>
+            </div>
+            
+            {% if moana.get('City') %}
+            <div class="info-box" style="margin-bottom: 1rem;">
+                <div class="info-label">Location</div>
+                <div class="info-value">{{ moana.get('City') }}, {{ moana.get('State') }}</div>
+            </div>
+            {% endif %}
+            
+            {% if moana.get('LongDescription') %}
+            <div class="info-box">
+                <div class="info-label">School Info</div>
+                <div style="margin-top: 0.5rem; font-size: 0.95rem;">{{ moana.get('LongDescription') }}</div>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- Mulan Recommendations -->
+    {% if mulan and mulan|length > 0 %}
+    <div class="card">
+        <h3>🗡️ Mulan: Recommendations</h3>
+        <div style="margin-top: 1rem;">
+            {% for rec in mulan %}
+            <div class="info-box" style="margin-bottom: 1rem;">
+                <div class="info-label">{{ rec.RecommenderName or 'Recommender' }}</div>
+                <div class="info-value">{{ rec.RecommenderRole or 'N/A' }}</div>
+                {% if rec.EndorsementStrength %}
+                <div style="margin-top: 0.5rem;">
+                    <div class="progress-bar">
+                        <div class="progress-fill" style="width: {{ rec.EndorsementStrength }}%;"></div>
+                    </div>
+                    <span style="font-size: 0.875rem; color: #6b7280;">Endorsement Strength: {{ rec.EndorsementStrength|round|int }}%</span>
+                </div>
+                {% endif %}
+            </div>
+            {% endfor %}
+        </div>
+   </div>
+    {% endif %}
+</div>
+
+<!-- Application Text -->
+<div class="card">
+    <h2>📄 Application Text</h2>
+    <div style="margin-top: 1rem; background: #f9fafb; padding: 1.5rem; border-radius: 5px; white-space: pre-wrap; font-family: monospace;">{{ application.ApplicationText or 'No application text available' }}</div>
+</div>
+
+<!-- Action Buttons -->
+<div style="display: flex; gap: 1rem; margin-top: 2rem;">
+    <a href="{{ url_for('students') }}" class="btn btn-secondary">← Back to Students</a>
+    {% if application.status != 'Evaluated' %}
+    <a href="{{ url_for('process_student', application_id=application.applicationid) }}" 
+       class="btn btn-success">▶️ Process with Agents</a>
+    {% endif %}
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+const APPLICATION_ID = '{{ application.applicationid }}';
+
+async function loadRequirements() {
+    try {
+        const response = await fetch(`/api/status/${APPLICATION_ID}`);
+        const data = await response.json();
+        
+        if (!data.success) {
+            throw new Error(data.error || 'Failed to load requirements');
+        }
+        
+        displayRequirements(data.status);
+    } catch (error) {
+        console.error('Error loading requirements:', error);
+        document.getElementById('requirements-content').innerHTML = `
+            <div style="text-align: center; color: #ef4444; padding: 2rem;">
+                <p>⚠️ Error loading requirements: ${error.message}</p>
+                <button onclick="loadRequirements()" class="btn btn-secondary" style="margin-top: 1rem;">
+                    🔄 Try Again
+                </button>
+            </div>
+        `;
+    }
+}
+
+function displayRequirements(status) {
+    const readiness = status.readiness;
+    const agents = status.agents;
+    const missing = status.missing_information;
+    
+    // Determine overall status color
+    let statusColor = '#10b981'; // green
+    let statusBg = '#d1fae5';
+    let statusText = 'All Information Available';
+    
+    if (readiness.overall_status === 'not_ready') {
+        statusColor = '#ef4444';
+        statusBg = '#fee2e2';
+        statusText = 'Missing Required Information';
+    } else if (readiness.overall_status === 'partial') {
+        statusColor = '#f59e0b';
+        statusBg = '#fef3c7';
+        statusText = 'Partial Information Available';
+    }
+    
+    let html = `
+        <!-- Overall Readiness -->
+        <div style="padding: 1.5rem; background: ${statusBg}; border-radius: 8px; border-left: 4px solid ${statusColor}; margin-bottom: 1.5rem;">
+            <div style="display: flex; justify-content: between; align-items: center;">
+                <div style="flex: 1;">
+                    <h3 style="color: ${statusColor}; margin-bottom: 0.5rem;">${statusText}</h3>
+                    <p style="color: ${statusColor}; opacity: 0.8;">
+                        ${readiness.ready_count} of ${readiness.total_count} agents have required information (${readiness.percentage}%)
+                    </p>
+                </div>
+                <div style="font-size: 2rem;">${readiness.overall_status === 'ready' ? '✅' : readiness.overall_status === 'partial' ? '⚠️' : '❌'}</div>
+            </div>
+        </div>
+        
+        <!-- Agent Requirements -->
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 1rem; margin-bottom: 1.5rem;">
+    `;
+    
+    for (const [agentId, agentInfo] of Object.entries(agents)) {
+        const icon = agentInfo.status === 'ready' ? '✅' : agentInfo.status === 'waiting' ? '⏳' : '⚠️';
+        const borderColor = agentInfo.status === 'ready' ? '#10b981' : agentInfo.status === 'waiting' ? '#6b7280' : '#f59e0b';
+        const bgColor = agentInfo.status === 'ready' ? '#f0fdf4' : '#f9fafb';
+        
+        html += `
+            <div style="padding: 1rem; border: 2px solid ${borderColor}; border-radius: 8px; background: ${bgColor};">
+                <div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 0.75rem;">
+                    <strong style="font-size: 0.95rem;">${agentInfo.agent_name}</strong>
+                    <span style="font-size: 1.5rem;">${icon}</span>
+                </div>
+                <div style="font-size: 0.85rem; color: #6b7280; margin-bottom: 0.5rem;">
+                    <strong>Needs:</strong> ${agentInfo.required.join(', ')}
+                </div>
+                ${agentInfo.data_source ? `
+                    <div style="font-size: 0.8rem; color: #059669; margin-bottom: 0.5rem;">
+                        📂 ${agentInfo.data_source.replace(/_/g, ' ')}
+                    </div>
+                ` : ''}
+                ${agentInfo.missing.length > 0 ? `
+                    <div style="font-size: 0.8rem; color: #dc2626; background: #fee2e2; padding: 0.5rem; border-radius: 4px; margin-top: 0.5rem;">
+                        ⚠️ <strong>Missing:</strong> ${agentInfo.missing.join(', ')}
+                    </div>
+                ` : ''}
+            </div>
+        `;
+    }
+    
+    html += '</div>';
+    
+    // Missing information summary
+    if (missing.length > 0) {
+        html += `
+            <div style="padding: 1.5rem; background: #fef3c7; border-radius: 8px; border-left: 4px solid #f59e0b;">
+                <h3 style="color: #92400e; margin-bottom: 1rem;">📤 Upload These Documents</h3>
+                <ul style="margin-left: 1.5rem; color: #78350f;">
+        `;
+        missing.forEach(item => {
+            html += `<li style="margin-bottom: 0.5rem;">${item}</li>`;
+        });
+        html += `
+                </ul>
+                <div style="margin-top: 1rem; padding: 1rem; background: white; border-radius: 5px;">
+                    <strong style="color: #92400e;">💡 Recommendation:</strong>
+                    <p style="color: #78350f; margin-top: 0.25rem;">${status.recommendation}</p>
+                </div>
+                <div style="margin-top: 1rem;">
+                    <a href="{{ url_for('upload') }}" class="btn btn-primary">📤 Upload Additional Documents</a>
+                </div>
+            </div>
+        `;
+    } else if (readiness.overall_status === 'ready') {
+        html += `
+            <div style="padding: 1.5rem; background: #d1fae5; border-radius: 8px; border-left: 4px solid #10b981; text-align: center;">
+                <h3 style="color: #065f46; margin-bottom: 0.5rem;">🎉 Ready to Process!</h3>
+                <p style="color: #047857; margin-bottom: 1rem;">All agents have the information they need.</p>
+                <a href="{{ url_for('process_student', application_id=application.applicationid) }}" 
+                   class="btn btn-success">▶️ Run All Agents Now</a>
+            </div>
+        `;
+    }
+    
+    document.getElementById('requirements-content').innerHTML = html;
+}
+
+function refreshRequirements() {
+    document.getElementById('requirements-content').innerHTML = `
+        <div style="text-align: center; color: #6b7280; padding: 2rem;">
+            <div class="spinner" style="margin: 0 auto 1rem;"></div>
+            <p>Refreshing requirements...</p>
+        </div>
+    `;
+    loadRequirements();
+}
+
+// Load requirements on page load
+document.addEventListener('DOMContentLoaded', loadRequirements);
+</script>
+{% endblock %}

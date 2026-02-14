@@ -1,64 +1,60 @@
 """Initialize the database schema."""
 
-import pyodbc
-import os
+import psycopg
 from src.config import config
 
 def init_database():
     """Initialize database with schema."""
     
-    server = os.getenv("SQL_SERVER", "nextgen-sql-server.database.windows.net")
-    database = os.getenv("SQL_DATABASE", "ApplicationsDB")
-    
-    # Connection string with Azure AD auth
-    connection_string = f"""
-        Driver={{ODBC Driver 18 for SQL Server}};
-        Server=tcp:{server},1433;
-        Database={database};
-        Authentication=ActiveDirectoryInteractive;
-        Encrypt=yes;
-        TrustServerCertificate=no;
-    """
-    
-    print("Connecting to Azure SQL Database...")
+    if config.postgres_url:
+        connection_string = config.postgres_url
+    else:
+        connection_string = (
+            f"host={config.postgres_host} "
+            f"port={config.postgres_port} "
+            f"dbname={config.postgres_database} "
+            f"user={config.postgres_username} "
+            f"password={config.postgres_password} "
+            "sslmode=prefer"
+        )
+
+    print("Connecting to PostgreSQL...")
     try:
-        conn = pyodbc.connect(connection_string)
+        conn = psycopg.connect(connection_string)
         cursor = conn.cursor()
         
         print("Reading schema.sql...")
         with open('database/schema.sql', 'r') as f:
             schema_sql = f.read()
         
-        # Split by GO statements and execute each batch
-        batches = [batch.strip() for batch in schema_sql.split('GO') if batch.strip()]
-        
-        if not batches:
-            # If no GO statements, split by semicolon
-            batches = [stmt.strip() + ';' for stmt in schema_sql.split(';') if stmt.strip()]
-        
-        print(f"Executing {len(batches)} SQL batches...")
-        for i, batch in enumerate(batches, 1):
-            if batch.strip():
+        # Split by semicolons and execute each statement
+        statements = [stmt.strip() for stmt in schema_sql.split(';') if stmt.strip()]
+
+        print(f"Executing {len(statements)} SQL statements...")
+        for i, statement in enumerate(statements, 1):
+            if statement:
                 try:
-                    cursor.execute(batch)
+                    cursor.execute(statement)
                     conn.commit()
-                    print(f"  ✓ Batch {i} executed successfully")
+                    print(f"  ✓ Statement {i} executed successfully")
                 except Exception as e:
                     if "already exists" in str(e).lower():
-                        print(f"  ⚠ Batch {i}: Object already exists (skipping)")
+                        print(f"  ⚠ Statement {i}: Object already exists (skipping)")
                     else:
-                        print(f"  ✗ Batch {i} failed: {str(e)}")
+                        print(f"  ✗ Statement {i} failed: {str(e)}")
                         raise
         
         print("\n✅ Database schema initialized successfully!")
         
         # Verify tables exist
-        cursor.execute("""
-            SELECT TABLE_NAME 
-            FROM INFORMATION_SCHEMA.TABLES 
-            WHERE TABLE_TYPE = 'BASE TABLE'
-            ORDER BY TABLE_NAME
-        """)
+        cursor.execute(
+            """
+            SELECT table_name
+            FROM information_schema.tables
+            WHERE table_schema = 'public'
+            ORDER BY table_name
+            """
+        )
         
         tables = [row[0] for row in cursor.fetchall()]
         print(f"\n📊 Created tables: {', '.join(tables)}")
@@ -69,9 +65,9 @@ def init_database():
     except Exception as e:
         print(f"\n❌ Error initializing database: {str(e)}")
         print("\nMake sure you:")
-        print("  1. Are logged in with 'az login'")
-        print("  2. Have ODBC Driver 18 for SQL Server installed")
-        print("  3. Have permissions on the Azure SQL Database")
+        print("  1. Have the correct Postgres credentials configured")
+        print("  2. Allowed your IP in the Postgres firewall rules")
+        print("  3. Have permissions on the Postgres database")
         raise
 
 

@@ -114,6 +114,17 @@
         .badge-evaluated { background: #dbeafe; color: #1e40af; }
         .badge-approved { background: #d1fae5; color: #065f46; }
         .badge-rejected { background: #fee2e2; color: #991b1b; }
+        .spinner {
+            width: 40px;
+            height: 40px;
+            border: 4px solid #e5e7eb;
+            border-top-color: #667eea;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
         .stats {
             display: grid;
             grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
@@ -145,7 +156,10 @@
             <p>Powered by Azure AI & Next-Gen Agents</p>
             <nav>
                 <a href="{{ url_for('index') }}">📊 Dashboard</a>
+                <a href="{{ url_for('students') }}">👥 2026 Applicants</a>
+                <a href="{{ url_for('training') }}">📚 Training Data</a>
                 <a href="{{ url_for('upload') }}">📤 Upload Application</a>
+                <a href="{{ url_for('test') }}" style="color: #fbbf24; font-weight: bold;">🧪 Test System</a>
             </nav>
         </header>
 

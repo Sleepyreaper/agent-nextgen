@@ -13,16 +13,17 @@
         <div class="stat-label">Evaluated</div>
     </div>
     <div class="stat-card">
-        <div class="stat-value">{{ applications|length }}</div>
-        <div class="stat-label">Total Applications</div>
+        <div class="stat-value">{{ total_count }}</div>
+        <div class="stat-label">Total Students</div>
     </div>
 </div>
 
 <div class="card">
     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem;">
-        <h2>📋 Applications</h2>
-        <div>
-            <button class="btn btn-success" onclick="evaluateAll()">🤖 Evaluate All Pending</button>
+        <h2>📋 Recent Applications</h2>
+        <div style="display: flex; gap: 1rem;">
+            <a href="{{ url_for('students') }}" class="btn btn-secondary">👥 View All Students</a>
+            <a href="{{ url_for('upload') }}" class="btn btn-success">+ Add New Student</a>
         </div>
     </div>
 
@@ -32,10 +33,7 @@
             <tr>
                 <th>ID</th>
                 <th>Applicant</th>
-                <th>Position</th>
                 <th>Status</th>
-                <th>Score</th>
-                <th>Recommendation</th>
                 <th>Uploaded</th>
                 <th>Actions</th>
             </tr>
@@ -43,44 +41,32 @@
         <tbody>
             {% for app in applications %}
             <tr>
-                <td>#{{ app.ApplicationID }}</td>
-                <td>{{ app.ApplicantName }}</td>
-                <td>{{ app.Position or 'N/A' }}</td>
+                <td>#{{ app.applicationid }}</td>
+                <td>{{ app.applicantname }}</td>
                 <td>
-                    <span class="badge badge-{{ app.Status.lower() }}">
-                        {{ app.Status }}
+                    <span class="badge badge-{{ app.status.lower() if app.status else 'pending' }}">
+                        {{ app.status or 'Pending' }}
                     </span>
                 </td>
+                <td>{{ app.uploadeddate.strftime('%Y-%m-%d') if app.uploadeddate else 'N/A' }}</td>
                 <td>
-                    {% if app.OverallScore %}
-                        <strong>{{ "%.1f"|format(app.OverallScore) }}</strong>/100
-                    {% else %}
-                        -
-                    {% endif %}
-                </td>
-                <td>
-                    {% if app.Recommendation %}
-                        {{ app.Recommendation }}
-                    {% else %}
-                        -
-                    {% endif %}
-                </td>
-                <td>{{ app.UploadedDate.strftime('%Y-%m-%d') if app.UploadedDate else 'N/A' }}</td>
-                <td>
-                    <a href="{{ url_for('view_application', application_id=app.ApplicationID) }}" 
+                    <a href="{{ url_for('student_detail', application_id=app.applicationid) }}" 
                        class="btn btn-secondary" style="padding: 0.5rem 1rem;">View</a>
-                    {% if app.Status == 'Pending' %}
-                    <button class="btn btn-success" style="padding: 0.5rem 1rem;" 
-                            data-app-id="{{ app.ApplicationID }}" onclick="evaluateOne(this)">Evaluate</button>
+                    {% if app.status == 'Pending' %}
+                    <a href="{{ url_for('process_student', application_id=app.applicationid) }}" 
+                       class="btn btn-success" style="padding: 0.5rem 1rem;">Process</a>
                     {% endif %}
                 </td>
             </tr>
             {% endfor %}
         </tbody>
     </table>
+    <div style="margin-top: 1rem; text-align: center;">
+        <a href="{{ url_for('students') }}" class="btn btn-secondary">View All {{ total_count }} Students →</a>
+    </div>
     {% else %}
     <p style="text-align: center; padding: 3rem; color: #6b7280;">
-        No applications yet. <a href="{{ url_for('upload') }}">Upload your first application</a>
+        No applications yet. <a href="{{ url_for('upload') }}">Upload your first student application</a>
     </p>
     {% endif %}
 </div>
