@@ -1,4 +1,4 @@
-"""Evaluator agent for assessing job/internship applications."""
+"""Gaston Evaluator - evaluates and assesses job/internship applications."""
 
 import time
 import json
@@ -7,8 +7,8 @@ from openai import AzureOpenAI
 from src.agents.base_agent import BaseAgent
 
 
-class EvaluatorAgent(BaseAgent):
-    """AI agent that evaluates applications against excellence criteria."""
+class GastonEvaluator(BaseAgent):
+    """Gaston - AI agent that evaluates applications against excellence criteria."""
     
     def __init__(
         self,
