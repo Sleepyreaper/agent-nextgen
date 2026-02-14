@@ -1,0 +1,117 @@
+name: Code Quality & Security Checks
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+
+env:
+  PYTHON_VERSION: '3.9'
+
+jobs:
+  security-scan:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Run Trivy vulnerability scanner
+      uses: aquasecurity/trivy-action@master
+      with:
+        scan-type: 'fs'
+        scan-ref: '.'
+        format: 'sarif'
+        output: 'trivy-results.sarif'
+      continue-on-error: true
+    
+    - name: Upload Trivy results to GitHub Security
+      uses: github/codeql-action/upload-sarif@v2
+      with:
+        sarif_file: 'trivy-results.sarif'
+      continue-on-error: true
+    
+    - name: Check for exposed secrets
+      uses: gitleaks/gitleaks-action@v2
+      continue-on-error: true
+
+  test:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ env.PYTHON_VERSION }}
+        cache: 'pip'
+    
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+    
+    - name: Check for hardcoded credentials
+      run: |
+        python -c "
+import os
+import re
+sensitive_patterns = [
+    r'password\s*=\s*[\'\"](.*?)[\'\"]',
+    r'api[_-]?key\s*=\s*[\'\"](.*?)[\'\"]',
+    r'secret\s*=\s*[\'\"](.*?)[\'\"]',
+]
+excluded_files = ['.env.example', 'DEPLOYMENT_SUCCESS.md', 'POSTGRES_MIGRATION.md']
+found_issues = False
+for root, dirs, files in os.walk('.'):
+    dirs[:] = [d for d in dirs if d not in ['.git', '__pycache__', '.venv', 'venv', 'env', 'node_modules']]
+    for file in files:
+        if file.endswith(('.py', '.js', '.ts', '.json', '.yaml', '.yml')):
+            filepath = os.path.join(root, file)
+            if any(excluded in filepath for excluded in excluded_files):
+                continue
+            try:
+                with open(filepath, 'r', encoding='utf-8', errors='ignore') as f:
+                    content = f.read()
+                    for pattern in sensitive_patterns:
+                        if re.search(pattern, content, re.IGNORECASE):
+                            print(f'⚠️ Potential credential in {filepath}')
+                            found_issues = True
+            except:
+                pass
+if not found_issues:
+    print('✅ No obvious hardcoded credentials detected')
+        "
+    
+    - name: Validate app modules
+      run: |
+        python -c "
+import app
+import src.config
+import src.database
+import src.document_processor
+import src.storage
+from src.agents import BaseAgent
+print('✅ All app modules load successfully')
+        "
+
+  dependency-audit:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ env.PYTHON_VERSION }}
+    
+    - name: Install pip-audit
+      run: |
+        python -m pip install --upgrade pip
+        pip install pip-audit
+    
+    - name: Audit dependencies for vulnerabilities
+      run: pip-audit
+      continue-on-error: true

@@ -1,0 +1,351 @@
+{% extends "base.html" %}
+
+{% block title %}Test Results - {{ student.name }}{% endblock %}
+
+{% block extra_css %}
+<style>
+    .progress-bar {
+        background: #e5e7eb;
+        border-radius: 10px;
+        overflow: hidden;
+        height: 8px;
+    }
+    .progress-fill {
+        background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
+        height: 100%;
+        transition: width 0.3s;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<!-- Header -->
+<div class="card">
+    <div style="display: flex; justify-content: space-between; align-items: start;">
+        <div>
+            <h2>{{ student.name }}</h2>
+            <p style="color: #6b7280; margin-top: 0.5rem;">{{ student.email }}</p>
+            <p style="margin-top: 0.5rem;">
+                <span style="background: {% if student.status == 'COMPLETE' %}#d1fae5; color: #065f46{% else %}#fef3c7; color: #92400e{% endif %}; padding: 0.25rem 0.75rem; border-radius: 20px; font-size: 0.9rem; font-weight: 600;">
+                    {% if student.status == 'COMPLETE' %}✅ Complete{% else %}⚠️ Partial{% endif %} Application
+                </span>
+            </p>
+        </div>
+        <a href="{{ url_for('test') }}" class="btn btn-secondary">← Back to Test List</a>
+    </div>
+</div>
+
+<!-- Merlin's Overall Assessment (Paragraph Format) -->
+<div class="card" style="border-left: 4px solid #667eea; background: linear-gradient(to bottom right, #f0f9ff, #f5f7fa);">
+    <div style="display: flex; align-items: start; margin-bottom: 1rem;">
+        <span style="font-size: 2rem; margin-right: 1rem;">🧙</span>
+        <div style="flex: 1;">
+            <h2 style="color: #1e40af; margin-bottom: 0.5rem;">Merlin's Overall Assessment</h2>
+            <p style="color: #3b82f6; font-size: 0.9rem;">Final evaluation synthesizing all agent findings</p>
+        </div>
+    </div>
+
+    <!-- Score Circle -->
+    <div style="display: flex; align-items: center; gap: 2rem; margin-bottom: 2rem;">
+        <div style="width: 120px; height: 120px; border-radius: 50%; background: {% if student.merlin_summary.score >= 80 %}#d1fae5{% elif student.merlin_summary.score >= 70 %}#dbeafe{% elif student.merlin_summary.score >= 60 %}#fef3c7{% else %}#fee2e2{% endif %}; display: flex; align-items: center; justify-content: center; flex-direction: column;">
+            <div style="font-size: 2.5rem; font-weight: bold; color: {% if student.merlin_summary.score >= 80 %}#065f46{% elif student.merlin_summary.score >= 70 %}#1e40af{% elif student.merlin_summary.score >= 60 %}#92400e{% else %}#991b1b{% endif %};">
+                {{ student.merlin_summary.score }}
+            </div>
+            <div style="font-size: 0.8rem; color: {% if student.merlin_summary.score >= 80 %}#065f46{% elif student.merlin_summary.score >= 70 %}#1e40af{% elif student.merlin_summary.score >= 60 %}#92400e{% else %}#991b1b{% endif %}; font-weight: 600;">out of 100</div>
+        </div>
+        
+        <div>
+            <div style="margin-bottom: 1.5rem;">
+                <p style="color: #6b7280; font-weight: 600; margin-bottom: 0.5rem;">RECOMMENDATION</p>
+                <p style="font-size: 1.2rem; font-weight: bold; color: {% if 'STRONGLY' in student.merlin_summary.recommendation %}#065f46{% elif 'CONSIDER' in student.merlin_summary.recommendation %}#92400e{% else %}#991b1b{% endif %};">
+                    {{ student.merlin_summary.recommendation }}
+                </p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Overall Narrative -->
+    <div style="padding: 1.5rem; background: white; border-radius: 8px; border-left: 3px solid #3b82f6; margin-bottom: 1.5rem;">
+        <p style="color: #2c3e50; line-height: 1.8; font-size: 1rem;">
+            {{ student.merlin_summary.overall }}
+        </p>
+    </div>
+
+    <!-- Key Strengths -->
+    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem;">
+        <div>
+            <h4 style="color: #065f46; margin-bottom: 1rem; display: flex; align-items: center; gap: 0.5rem;">
+                <span>✅ Key Strengths</span>
+            </h4>
+            <ul style="list-style: none; margin: 0; padding: 0;">
+                {% for strength in student.merlin_summary.key_strengths %}
+                <li style="padding: 0.75rem; margin-bottom: 0.5rem; background: #d1fae5; border-radius: 5px; color: #065f46;">
+                    • {{ strength }}
+                </li>
+                {% endfor %}
+            </ul>
+        </div>
+        
+        <div>
+            <h4 style="color: #92400e; margin-bottom: 1rem; display: flex; align-items: center; gap: 0.5rem;">
+                <span>⚠️ Considerations</span>
+            </h4>
+            <ul style="list-style: none; margin: 0; padding: 0;">
+                {% for consideration in student.merlin_summary.considerations %}
+                <li style="padding: 0.75rem; margin-bottom: 0.5rem; background: #fef3c7; border-radius: 5px; color: #92400e;">
+                    • {{ consideration }}
+                </li>
+                {% endfor %}
+            </ul>
+        </div>
+    </div>
+</div>
+
+<!-- Supporting Agent Data -->
+<h3 style="margin-top: 2.5rem; margin-bottom: 1.5rem; color: #1f2937;">Supporting Agent Analysis</h3>
+
+<!-- Agent Results -->
+{% for agent_id, agent_data in student.agents.items() %}
+<div class="card" style="border-left: 4px solid 
+    {% if '✅' in agent_data.status %}#10b981
+    {% elif '⚠️' in agent_data.status %}#f59e0b
+    {% else %}#6b7280{% endif %}; margin-bottom: 1.5rem;">
+    
+    <div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 1.5rem;">
+        <div>
+            <h3 style="margin-bottom: 0.5rem;">{{ agent_data.name }}</h3>
+            <p style="color: #6b7280; font-size: 0.95rem;">
+                {% if '✅' in agent_data.status %}
+                    {{ agent_data.status }}
+                {% elif '⚠️' in agent_data.status %}
+                    {{ agent_data.status }}
+                {% else %}
+                    {{ agent_data.status }}
+                {% endif %}
+            </p>
+        </div>
+        <span style="font-size: 1.5rem;">
+            {% if '✅' in agent_data.status %}✅{% elif '⚠️' in agent_data.status %}⚠️{% else %}ℹ️{% endif %}
+        </span>
+    </div>
+
+    <!-- Agent-specific content -->
+    <div style="background: #f9fafb; padding: 1.5rem; border-radius: 8px;">
+        {% if agent_data.score %}
+        <div style="margin-bottom: 1rem;">
+            <p style="color: #6b7280; font-weight: 600; margin-bottom: 0.5rem;">{{ agent_data.name.split('-')[0].strip() }} Score</p>
+            <div class="progress-bar" style="margin-bottom: 0.5rem;">
+                <div class="progress-fill" style="width: {{ agent_data.score }}%;"></div>
+            </div>
+            <p style="font-size: 1.1rem; font-weight: bold; color: #1f2937;">{{ agent_data.score }}/100</p>
+        </div>
+        {% endif %}
+
+        {% if agent_data.gpa %}
+        <div style="margin-bottom: 1rem; padding: 1rem; background: white; border-radius: 5px;">
+            <p style="color: #6b7280; font-weight: 600;">GPA</p>
+            <p style="font-size: 1.2rem; font-weight: bold; color: #1f2937;">{{ agent_data.gpa }}</p>
+        </div>
+        {% endif %}
+
+        {% if agent_data.academic_score %}
+        <div style="margin-bottom: 1rem;">
+            <p style="color: #6b7280; font-weight: 600; margin-bottom: 0.5rem;">Academic Score</p>
+            <div class="progress-bar" style="margin-bottom: 0.5rem;">
+                <div class="progress-fill" style="width: {{ agent_data.academic_score }}%;"></div>
+            </div>
+            <p style="font-size: 1.1rem; font-weight: bold; color: #1f2937;">{{ agent_data.academic_score }}/100</p>
+        </div>
+        {% endif %}
+
+        {% if agent_data.school_name %}
+        <div style="margin-bottom: 1rem; padding: 1rem; background: white; border-radius: 5px;">
+            <p style="color: #6b7280; font-weight: 600; margin-bottom: 0.25rem;">School</p>
+            <p style="font-size: 1.1rem; font-weight: bold; color: #1f2937;">{{ agent_data.school_name }}</p>
+            {% if agent_data.location %}
+            <p style="color: #6b7280; font-size: 0.95rem;">{{ agent_data.location }}</p>
+            {% endif %}
+        </div>
+        {% endif %}
+
+        {% if agent_data.school_ranking %}
+        <div style="margin-bottom: 1rem; padding: 1rem; background: #ecfdf5; border-radius: 5px;">
+            <p style="color: #047857; font-weight: 600;">School Ranking</p>
+            <p style="font-size: 1rem; font-weight: bold; color: #065f46;">{{ agent_data.school_ranking }}</p>
+        </div>
+        {% endif %}
+
+        {% if agent_data.courses_analyzed %}
+        <div style="margin-bottom: 1rem; padding: 1rem; background: white; border-radius: 5px;">
+            <p style="color: #6b7280; font-weight: 600; margin-bottom: 0.5rem;">Courses Analyzed</p>
+            <p style="color: #2c3e50; line-height: 1.6;">{{ agent_data.courses_analyzed }}</p>
+        </div>
+        {% endif %}
+
+        {% if agent_data.recommendation_count is defined %}
+        <div style="margin-bottom: 1rem; padding: 1rem; background: white; border-radius: 5px;">
+            <p style="color: #6b7280; font-weight: 600;">Recommendations Provided</p>
+            <p style="font-size: 1.2rem; font-weight: bold; color: #1f2937;">{{ agent_data.recommendation_count }}</p>
+        </div>
+        {% endif %}
+
+        {% if agent_data.endorsement_strength %}
+        <div style="margin-bottom: 1rem;">
+            <p style="color: #6b7280; font-weight: 600; margin-bottom: 0.5rem;">Endorsement Strength</p>
+            <div class="progress-bar" style="margin-bottom: 0.5rem;">
+                <div class="progress-fill" style="width: {{ agent_data.endorsement_strength }}%;"></div>
+            </div>
+            <p style="font-size: 1.1rem; font-weight: bold; color: #1f2937;">{{ agent_data.endorsement_strength }}%</p>
+        </div>
+        {% endif %}
+
+        {% if agent_data.analysis %}
+        <div style="padding: 1rem; background: white; border-radius: 5px; margin-bottom: 1rem;">
+            <p style="color: #6b7280; font-weight: 600; margin-bottom: 0.5rem;">Analysis</p>
+            <p style="color: #2c3e50; line-height: 1.7;">{{ agent_data.analysis }}</p>
+        </div>
+        {% endif %}
+
+        {% if agent_data.school_info %}
+        <div style="padding: 1rem; background: white; border-radius: 5px; margin-bottom: 1rem;">
+            <p style="color: #6b7280; font-weight: 600; margin-bottom: 0.5rem;">School Context</p>
+            <p style="color: #2c3e50; line-height: 1.7;">{{ agent_data.school_info }}</p>
+        </div>
+        {% endif %}
+
+        {% if agent_data.grade_trends %}
+        <div style="padding: 1rem; background: white; border-radius: 5px; margin-bottom: 1rem;">
+            <p style="color: #6b7280; font-weight: 600; margin-bottom: 0.5rem;">Grade Trends</p>
+            <p style="color: #2c3e50;">{{ agent_data.grade_trends }}</p>
+        </div>
+        {% endif %}
+
+        {% if agent_data.grade_pattern %}
+        <div style="padding: 1rem; background: white; border-radius: 5px; margin-bottom: 1rem;">
+            <p style="color: #6b7280; font-weight: 600; margin-bottom: 0.5rem;">Grade Pattern</p>
+            <p style="color: #2c3e50;">{{ agent_data.grade_pattern }}</p>
+        </div>
+        {% endif %}
+
+        {% if agent_data.rec1 %}
+        <div style="padding: 1rem; background: white; border-radius: 5px; margin-bottom: 1rem;">
+            <p style="color: #6b7280; font-weight: 600; margin-bottom: 0.5rem;">Teacher Recommendation 1</p>
+            <p style="color: #2c3e50;">{{ agent_data.rec1 }}</p>
+        </div>
+        {% endif %}
+
+        {% if agent_data.rec2 %}
+        <div style="padding: 1rem; background: white; border-radius: 5px; margin-bottom: 1rem;">
+            <p style="color: #6b7280; font-weight: 600; margin-bottom: 0.5rem;">Teacher Recommendation 2</p>
+            <p style="color: #2c3e50;">{{ agent_data.rec2 }}</p>
+        </div>
+        {% endif %}
+
+        {% if agent_data.missing %}
+        <div style="padding: 1rem; background: #fee2e2; border-radius: 5px; border-left: 3px solid #dc2626;">
+            <p style="color: #991b1b; font-weight: 600;">❌ Missing Information</p>
+            <p style="color: #7f1d1d;">{{ agent_data.missing }}</p>
+        </div>
+        {% endif %}
+
+        {% if agent_data.limitation %}
+        <div style="padding: 1rem; background: #fef3c7; border-radius: 5px; border-left: 3px solid #f59e0b;">
+            <p style="color: #92400e; font-weight: 600;">⚠️ Limitation</p>
+            <p style="color: #78350f;">{{ agent_data.limitation }}</p>
+        </div>
+        {% endif %}
+
+        {% if agent_data.needed %}
+        <div style="padding: 1rem; background: #fef3c7; border-radius: 5px; border-left: 3px solid #f59e0b;">
+            <p style="color: #92400e; font-weight: 600;">📋 Information Needed</p>
+            <p style="color: #78350f;">{{ agent_data.needed }}</p>
+        </div>
+        {% endif %}
+
+        {% if agent_data.critical %}
+        <div style="padding: 1rem; background: #fee2e2; border-radius: 5px; border-left: 3px solid #dc2626;">
+            <p style="color: #991b1b; font-weight: 600;">🔴 Critical Gap</p>
+            <p style="color: #7f1d1d;">{{ agent_data.critical }}</p>
+        </div>
+        {% endif %}
+
+        <!-- Key Findings/Qualities -->
+        {% if agent_data.key_findings %}
+        <div>
+            <p style="color: #6b7280; font-weight: 600; margin-bottom: 0.5rem;">📊 Key Findings</p>
+            <ul style="margin: 0; padding-left: 1.5rem; color: #2c3e50;">
+                {% for finding in agent_data.key_findings %}
+                <li style="margin-bottom: 0.25rem;">{{ finding }}</li>
+                {% endfor %}
+            </ul>
+        </div>
+        {% endif %}
+
+        {% if agent_data.key_qualities %}
+        <div style="margin-top: 1rem;">
+            <p style="color: #6b7280; font-weight: 600; margin-bottom: 0.5rem;">⭐ Qualities Demonstrated</p>
+            <ul style="margin: 0; padding-left: 1.5rem; color: #2c3e50;">
+                {% for quality in agent_data.key_qualities %}
+                <li style="margin-bottom: 0.25rem;">{{ quality }}</li>
+                {% endfor %}
+            </ul>
+        </div>
+        {% endif %}
+
+        {% if agent_data.key_context %}
+        <div style="margin-top: 1rem;">
+            <p style="color: #6b7280; font-weight: 600; margin-bottom: 0.5rem;">🏫 School Context</p>
+            <ul style="margin: 0; padding-left: 1.5rem; color: #2c3e50;">
+                {% for context in agent_data.key_context %}
+                <li style="margin-bottom: 0.25rem;">{{ context }}</li>
+                {% endfor %}
+            </ul>
+        </div>
+        {% endif %}
+
+        {% if agent_data.key_endorsements %}
+        <div style="margin-top: 1rem;">
+            <p style="color: #047857; font-weight: 600; margin-bottom: 0.5rem;">🌟 Key Endorsements</p>
+            <ul style="margin: 0; padding-left: 1.5rem; color: #065f46;">
+                {% for endorsement in agent_data.key_endorsements %}
+                <li style="margin-bottom: 0.25rem;">{{ endorsement }}</li>
+                {% endfor %}
+            </ul>
+        </div>
+        {% endif %}
+
+        {% if agent_data.observations %}
+        <div style="margin-top: 1rem;">
+            <p style="color: #6b7280; font-weight: 600; margin-bottom: 0.5rem;">👀 Observations</p>
+            <ul style="margin: 0; padding-left: 1.5rem; color: #2c3e50;">
+                {% for obs in agent_data.observations %}
+                <li style="margin-bottom: 0.25rem;">{{ obs }}</li>
+                {% endfor %}
+            </ul>
+        </div>
+        {% endif %}
+
+        {% if agent_data.strengths_found %}
+        <div style="margin-top: 1rem; padding: 1rem; background: #d1fae5; border-radius: 5px;">
+            <p style="color: #065f46; font-weight: 600;">✅ Strengths Found</p>
+            <p style="color: #065f46;">{{ agent_data.strengths_found }}</p>
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endfor %}
+
+<!-- Application Text -->
+<div class="card">
+    <h3 style="margin-bottom: 1rem;">📄 Original Application Text</h3>
+    <div style="padding: 1.5rem; background: #f9fafb; border-radius: 8px; white-space: pre-wrap; font-family: monospace; max-height: 400px; overflow-y: auto; line-height: 1.6;">
+        {{ student.application_text }}
+    </div>
+</div>
+
+<!-- Navigation -->
+<div style="display: flex; gap: 1rem; margin-top: 2rem;">
+    <a href="{{ url_for('test') }}" class="btn btn-secondary">← Back to Test List</a>
+</div>
+
+{% endblock %}

@@ -1,0 +1,118 @@
+"""Mulan Recommendation Reader - Parses recommendation letters into structured insights."""
+
+import json
+from typing import Dict, Any, Optional
+from openai import AzureOpenAI
+from src.agents.base_agent import BaseAgent
+
+
+class MulanRecommendationReader(BaseAgent):
+    """
+    Specialized agent (Mulan) for reading recommendation letters and extracting:
+    - Strengths and growth areas
+    - Evidence and specificity
+    - Comparative statements
+    - Endorsement strength and credibility
+    """
+
+    def __init__(self, name: str, client: AzureOpenAI, model: str, db_connection=None):
+        super().__init__(name, client)
+        self.model = model
+        self.db = db_connection
+
+    async def parse_recommendation(self, recommendation_text: str, applicant_name: str = "Unknown", application_id: Optional[int] = None) -> Dict[str, Any]:
+        """Parse a recommendation letter into structured data."""
+        prompt = self._build_prompt(applicant_name, recommendation_text)
+
+        try:
+            response = self.client.chat.completions.create(
+                model=self.model,
+                messages=[
+                    {
+                        "role": "system",
+                        "content": "You are Mulan, an expert at reading recommendation letters and extracting reliable, structured insights. Return valid JSON only."
+                    },
+                    {"role": "user", "content": prompt}
+                ],
+                max_completion_tokens=1200,
+                temperature=1,
+                response_format={"type": "json_object"}
+            )
+
+            payload = response.choices[0].message.content
+            data = json.loads(payload)
+            data["status"] = "success"
+            data["agent"] = self.name
+
+            if self.db and application_id:
+                self.db.save_mulan_recommendation(
+                    application_id=application_id,
+                    agent_name=self.name,
+                    recommender_name=data.get("recommender_name"),
+                    recommender_role=data.get("recommender_role"),
+                    endorsement_strength=data.get("endorsement_strength"),
+                    specificity_score=data.get("specificity_score"),
+                    summary=data.get("summary"),
+                    raw_text=recommendation_text,
+                    parsed_json=json.dumps(data, ensure_ascii=True)
+                )
+            return data
+
+        except Exception as e:
+            return {
+                "status": "error",
+                "agent": self.name,
+                "error": str(e)
+            }
+
+    def _build_prompt(self, applicant_name: str, recommendation_text: str) -> str:
+        """Build the prompt for parsing recommendation letters."""
+        prompt_parts = [
+            "You are parsing a recommendation letter for a competitive internship program.",
+            "Return a JSON object with the fields below.",
+            "",
+            f"Applicant: {applicant_name}",
+            "",
+            "Recommendation letter:",
+            recommendation_text,
+            "",
+            "Required JSON fields:",
+            "{",
+            "  \"applicant_name\": \"\",",
+            "  \"recommender_name\": \"\",",
+            "  \"recommender_role\": \"\",",
+            "  \"relationship\": \"\",",
+            "  \"duration_known\": \"\",",
+            "  \"key_strengths\": [\"\"],",
+            "  \"growth_areas\": [\"\"],",
+            "  \"comparative_statements\": [\"\"],",
+            "  \"evidence_examples\": [\"\"],",
+            "  \"endorsement_strength\": 0,",
+            "  \"specificity_score\": 0,",
+            "  \"credibility_notes\": \"\",",
+            "  \"summary\": \"\",",
+            "  \"confidence\": \"High|Medium|Low\"",
+            "}"
+        ]
+
+        return "\n".join(prompt_parts)
+
+    async def process(self, message: str) -> str:
+        """Process a general message."""
+        self.add_to_history("user", message)
+        messages = [
+            {
+                "role": "system",
+                "content": "You are Mulan, a recommendation reader who extracts structured insights from recommendation letters."
+            }
+        ] + self.conversation_history
+
+        response = self.client.chat.completions.create(
+            model=self.model,
+            messages=messages,
+            max_completion_tokens=1000,
+            temperature=1
+        )
+        assistant_message = response.choices[0].message.content
+        self.add_to_history("assistant", assistant_message)
+        return assistant_message

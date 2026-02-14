@@ -49,9 +49,18 @@ class Config:
         self.subscription_id: str = self._get_secret("azure-subscription-id", "AZURE_SUBSCRIPTION_ID")
         self.resource_group: str = self._get_secret("azure-resource-group", "AZURE_RESOURCE_GROUP")
         
-        # SQL Database configuration
-        self.sql_server: str = self._get_secret("sql-server", "SQL_SERVER")
-        self.sql_database: str = self._get_secret("sql-database", "SQL_DATABASE")
+        # PostgreSQL Database configuration
+        self.postgres_url: str = self._get_secret("postgres-url", "DATABASE_URL")
+        self.postgres_host: str = self._get_secret("postgres-host", "POSTGRES_HOST")
+        self.postgres_port: str = self._get_secret("postgres-port", "POSTGRES_PORT") or "5432"
+        self.postgres_database: str = self._get_secret("postgres-database", "POSTGRES_DB")
+        self.postgres_username: str = self._get_secret("postgres-username", "POSTGRES_USER")
+        self.postgres_password: str = self._get_secret("postgres-password", "POSTGRES_PASSWORD")
+        
+        # Azure Storage configuration
+        self.storage_account_name: str = self._get_secret("storage-account-name", "AZURE_STORAGE_ACCOUNT_NAME") or "nextgenagentsstorage"
+        self.storage_account_key: str = self._get_secret("storage-account-key", "AZURE_STORAGE_ACCOUNT_KEY")
+        self.storage_container_name: str = self._get_secret("storage-container-name", "AZURE_STORAGE_CONTAINER_NAME") or "student-uploads"
         
         # Flask configuration
         self.flask_secret_key: str = self._get_secret("flask-secret-key", "FLASK_SECRET_KEY")
@@ -105,10 +114,15 @@ class Config:
             missing.append("azure-openai-endpoint (Key Vault) or AZURE_OPENAI_ENDPOINT (env)")
         if not self.deployment_name:
             missing.append("azure-deployment-name (Key Vault) or AZURE_DEPLOYMENT_NAME (env)")
-        if not self.sql_server:
-            missing.append("sql-server (Key Vault) or SQL_SERVER (env)")
-        if not self.sql_database:
-            missing.append("sql-database (Key Vault) or SQL_DATABASE (env)")
+        if not self.postgres_url:
+            if not self.postgres_host:
+                missing.append("postgres-host (Key Vault) or POSTGRES_HOST (env)")
+            if not self.postgres_database:
+                missing.append("postgres-database (Key Vault) or POSTGRES_DB (env)")
+            if not self.postgres_username:
+                missing.append("postgres-username (Key Vault) or POSTGRES_USER (env)")
+            if not self.postgres_password:
+                missing.append("postgres-password (Key Vault) or POSTGRES_PASSWORD (env)")
         
         return missing
     
@@ -120,8 +134,11 @@ Configuration Summary:
   Azure OpenAI Endpoint: {self.azure_openai_endpoint[:30] + '...' if self.azure_openai_endpoint else 'Not set'}
   Deployment Name: {self.deployment_name or 'Not set'}
   API Version: {self.api_version}
-  SQL Server: {self.sql_server[:30] + '...' if self.sql_server else 'Not set'}
-  SQL Database: {self.sql_database or 'Not set'}
+    Postgres URL: {'Set' if self.postgres_url else 'Not set'}
+    Postgres Host: {self.postgres_host[:30] + '...' if self.postgres_host else 'Not set'}
+    Postgres DB: {self.postgres_database or 'Not set'}
+        Postgres User: {'Set' if self.postgres_username else 'Not set'}
+        Postgres Password: {'Set' if self.postgres_password else 'Not set'}
 """
 
 

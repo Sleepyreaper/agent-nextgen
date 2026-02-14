@@ -1,0 +1,222 @@
+{% extends "base.html" %}
+
+{% block title %}Processing {{ application.applicantname }} - Student Evaluation{% endblock %}
+
+{% block extra_css %}
+<style>
+    .processing-container {
+        max-width: 800px;
+        margin: 0 auto;
+    }
+    .agent-step {
+        background: white;
+        padding: 1.5rem;
+        border-radius: 8px;
+        margin-bottom: 1rem;
+        border-left: 4px solid #e5e7eb;
+        transition: all 0.3s;
+    }
+    .agent-step.processing {
+        border-left-color: #667eea;
+        background: #f5f7fa;
+    }
+    .agent-step.complete {
+        border-left-color: #10b981;
+        background: #f0fdf4;
+    }
+    .agent-step.error {
+        border-left-color: #ef4444;
+        background: #fef2f2;
+    }
+    .spinner {
+        border: 3px solid #f3f3f3;
+        border-top: 3px solid #667eea;
+        border-radius: 50%;
+        width: 40px;
+        height: 40px;
+        animation: spin 1s linear infinite;
+        display: inline-block;
+        margin-right: 1rem;
+    }
+    @keyframes spin {
+        0% { transform: rotate(0deg); }
+        100% { transform: rotate(360deg); }
+    }
+    .progress-bar {
+        background: #e5e7eb;
+        border-radius: 10px;
+        overflow: hidden;
+        height: 10px;
+        margin: 1rem 0;
+    }
+    .progress-fill {
+        background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
+        height: 100%;
+        transition: width 0.5s;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="processing-container">
+    <div class="card" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white;">
+        <h1>🤖 Processing Student Application</h1>
+        <p style="font-size: 1.2rem; margin-top: 0.5rem;">{{ application.applicantname }}</p>
+    </div>
+
+    <div class="card">
+        <div id="overall-status">
+            <h2>Processing Status</h2>
+            <div class="progress-bar">
+                <div class="progress-fill" id="progress-bar" style="width: 0%;"></div>
+            </div>
+            <p id="status-text" style="text-align: center; color: #6b7280;">Initializing...</p>
+        </div>
+
+        <div id="agent-steps" style="margin-top: 2rem;">
+            <!-- Agent steps will be populated here -->
+        </div>
+
+        <div id="error-container" style="display: none; margin-top: 2rem; padding: 1rem; background: #fef2f2; border-left: 4px solid #ef4444; border-radius: 5px;">
+            <strong style="color: #991b1b;">Error:</strong>
+            <p id="error-message" style="color: #991b1b; margin-top: 0.5rem;"></p>
+        </div>
+
+        <div id="complete-container" style="display: none; margin-top: 2rem; text-align: center;">
+            <div style="font-size: 4rem; margin-bottom: 1rem;">✅</div>
+            <h2 style="color: #10b981;">Processing Complete!</h2>
+            <p style="color: #6b7280; margin: 1rem 0;">All agents have finished analyzing {{ application.applicantname }}'s application.</p>
+            <a href="{{ url_for('student_detail', application_id=application_id) }}" class="btn btn-success">View Student Summary →</a>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+const APPLICATION_ID = '{{ application_id }}';
+const AGENT_NAMES = {
+    'application_reader': '👸 Tiana - Application Reader',
+    'grade_reader': '💇 Rapunzel - Grade Reader',  
+    'recommendation_reader': '🗡️ Mulan - Recommendation Reader',
+    'school_context': '🌊 Moana - School Context',
+    'student_evaluator': '🧙 Merlin - Final Evaluator'
+};
+
+let currentStep = 0;
+const totalSteps = Object.keys(AGENT_NAMES).length;
+
+function createAgentSteps() {
+    const container = document.getElementById('agent-steps');
+    container.innerHTML = '';
+    
+    Object.entries(AGENT_NAMES).forEach(([agentId, agentName], index) => {
+        const step = document.createElement('div');
+        step.className = 'agent-step';
+        step.id = `step-${agentId}`;
+        step.innerHTML = `
+            <div style="display: flex; align-items: center;">
+                <span class="status-icon" style="font-size: 1.5rem; margin-right: 1rem;">⏸️</span>
+                <div style="flex: 1;">
+                    <strong>${agentName}</strong>
+                    <div class="status-message" style="color: #6b7280; margin-top: 0.25rem;">Waiting...</div>
+                </div>
+            </div>
+        `;
+        container.appendChild(step);
+    });
+}
+
+function updateAgentStatus(agentId, status, message) {
+    const step = document.getElementById(`step-${agentId}`);
+    if (!step) return;
+    
+    const statusIcon = step.querySelector('.status-icon');
+    const statusMessage = step.querySelector('.status-message');
+    
+    step.className = 'agent-step ' + status;
+    
+    if (status === 'processing') {
+        statusIcon.innerHTML = '<div class="spinner"></div>';
+        statusMessage.textContent = message || 'Processing...';
+    } else if (status === 'complete') {
+        statusIcon.textContent = '✅';
+        statusMessage.textContent = message || 'Complete';
+        statusMessage.style.color = '#10b981';
+    } else if (status === 'error') {
+        statusIcon.textContent = '❌';
+        statusMessage.textContent = message || 'Error';
+        statusMessage.style.color = '#ef4444';
+    }
+}
+
+function updateProgress(percentage) {
+    document.getElementById('progress-bar').style.width = percentage + '%';
+    document.getElementById('status-text').textContent = `${Math.round(percentage)}% Complete (${currentStep}/${totalSteps} agents)`;
+}
+
+async function processStudent() {
+    try {
+        // Create agent step UI
+        createAgentSteps();
+        
+        // Start processing
+        updateProgress(0);
+        document.getElementById('status-text').textContent = 'Starting Smee orchestrator...';
+        
+        // Simulate agent processing (in real version, this would poll server)
+        const agents = Object.keys(AGENT_NAMES);
+        
+        // Call the API endpoint
+        const response = await fetch(`/api/process/${APPLICATION_ID}`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            }
+        });
+        
+        if (!response.ok) {
+            const error = await response.json();
+            throw new Error(error.error || 'Processing failed');
+        }
+        
+        // Simulate progress for each agent
+        for (let i = 0; i < agents.length; i++) {
+            const agentId = agents[i];
+            currentStep = i + 1;
+            const progress = (currentStep / totalSteps) * 100;
+            
+            updateAgentStatus(agentId, 'processing', 'Analyzing...');
+            updateProgress(progress - 10); // Show progress before completion
+            
+            // Simulate processing time
+            await new Promise(resolve => setTimeout(resolve, 2000));
+            
+            updateAgentStatus(agentId, 'complete', 'Analysis complete');
+            updateProgress(progress);
+        }
+        
+        // Show completion
+        document.getElementById('overall-status').style.display = 'none';
+        document.getElementById('complete-container').style.display = 'block';
+        
+    } catch (error) {
+        console.error('Processing error:', error);
+        document.getElementById('error-message').textContent = error.message;
+        document.getElementById('error-container').style.display = 'block';
+        document.getElementById('status-text').textContent = 'Processing failed';
+        
+        // Mark current step as error
+        if (currentStep < totalSteps) {
+            const agents = Object.keys(AGENT_NAMES);
+            updateAgentStatus(agents[currentStep], 'error', error.message);
+        }
+    }
+}
+
+// Start processing when page loads
+window.addEventListener('load', () => {
+    processStudent();
+});
+</script>
+{% endblock %}

@@ -5,88 +5,171 @@
 {% block content %}
 <div class="card">
     <h2>📤 Upload Application</h2>
-    <p style="color: #6b7280; margin: 1rem 0;">Upload a new application or add an "excellent" training example.</p>
-
-    <form method="POST" enctype="multipart/form-data" style="margin-top: 2rem;">
-        <div style="margin-bottom: 1.5rem;">
-            <label style="display: block; font-weight: 600; margin-bottom: 0.5rem;">
-                Applicant Name *
-            </label>
-            <input type="text" name="applicant_name" required
-                   style="width: 100%; padding: 0.75rem; border: 1px solid #d1d5db; border-radius: 5px; font-size: 1rem;">
-        </div>
-
-        <div style="margin-bottom: 1.5rem;">
-            <label style="display: block; font-weight: 600; margin-bottom: 0.5rem;">
-                Email
-            </label>
-            <input type="email" name="email"
-                   style="width: 100%; padding: 0.75rem; border: 1px solid #d1d5db; border-radius: 5px; font-size: 1rem;">
-        </div>
-
-        <div style="margin-bottom: 1.5rem;">
-            <label style="display: block; font-weight: 600; margin-bottom: 0.5rem;">
-                Position/Role
-            </label>
-            <input type="text" name="position"
-                   style="width: 100%; padding: 0.75rem; border: 1px solid #d1d5db; border-radius: 5px; font-size: 1rem;">
-        </div>
-
-        <div style="margin-bottom: 1.5rem;">
-            <label style="display: block; font-weight: 600; margin-bottom: 0.5rem;">
-                Application Document * (PDF, DOCX, or TXT)
-            </label>
-            <input type="file" name="file" required accept=".pdf,.docx,.doc,.txt"
-                   style="width: 100%; padding: 0.75rem; border: 1px solid #d1d5db; border-radius: 5px; font-size: 1rem;">
-            <small style="color: #6b7280;">Max file size: 16MB</small>
-        </div>
-
-        <div style="margin-bottom: 1.5rem; padding: 1rem; background: #f9fafb; border-radius: 5px; border-left: 4px solid #667eea;">
-            <label style="display: flex; align-items: center; cursor: pointer;">
-                <input type="checkbox" name="is_training" onchange="toggleTrainingOptions()" 
-                       style="margin-right: 0.5rem; width: 18px; height: 18px;">
-                <strong>This is an "Excellent" Training Example</strong>
-            </label>
-            <p style="color: #6b7280; margin-top: 0.5rem; font-size: 0.9rem;">
-                Check this if you're uploading a previously selected excellent application 
-                to help train the AI on what excellence looks like.
-            </p>
-            
-            <div id="trainingOptions" style="display: none; margin-top: 1rem; padding-top: 1rem; border-top: 1px solid #e5e7eb;">
-                <label style="display: flex; align-items: center; cursor: pointer;">
-                    <input type="checkbox" name="was_selected" 
-                           style="margin-right: 0.5rem; width: 18px; height: 18px;">
-                    <span>This applicant was selected/hired</span>
-                </label>
-            </div>
-        </div>
-
-        <div style="display: flex; gap: 1rem;">
-            <button type="submit" class="btn btn-success">
-                📥 Upload Application
-            </button>
-            <a href="{{ url_for('index') }}" class="btn btn-secondary">
-                Cancel
-            </a>
-        </div>
-    </form>
+    <p style="color: #6b7280; margin: 1rem 0;">
+        Upload a student application file. Smee will extract the student info automatically and organize it.
+    </p>
 </div>
 
 <div class="card">
-    <h3>💡 Tips</h3>
-    <ul style="margin-left: 1.5rem; color: #6b7280;">
-        <li>Upload regular applications for AI evaluation</li>
-        <li>Upload "excellent" training examples to improve AI accuracy</li>
-        <li>Supported formats: PDF, Word (.docx), and plain text (.txt)</li>
-        <li>The AI will analyze technical skills, communication, experience, and cultural fit</li>
-    </ul>
+    <form method="POST" enctype="multipart/form-data" style="margin-top: 1.5rem;">
+        <!-- File Upload -->
+        <div style="margin-bottom: 2rem;">
+            <label style="display: block; font-weight: 600; margin-bottom: 0.75rem; color: #1f2937;">
+                📄 Application File *
+            </label>
+            <div style="border: 2px dashed #667eea; border-radius: 8px; padding: 2rem; text-align: center; cursor: pointer; transition: all 0.2s;" 
+                 onmouseover="this.style.background='#f0f9ff'; this.style.borderColor='#3b82f6'"
+                 onmouseout="this.style.background=''; this.style.borderColor='#667eea'"
+                 onclick="document.getElementById('fileInput').click()">
+                <input type="file" id="fileInput" name="file" required accept=".pdf,.docx,.doc,.txt,.text"
+                       style="display: none;" onchange="updateFileName(this)">
+                <svg style="width: 48px; height: 48px; margin-bottom: 1rem;" viewBox="0 0 24 24" fill="none" stroke="#667eea" stroke-width="2">
+                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                    <polyline points="17 8 12 3 7 8"></polyline>
+                    <line x1="12" y1="3" x2="12" y2="15"></line>
+                </svg>
+                <p style="font-weight: 600; color: #667eea; margin-bottom: 0.5rem;">
+                    Drag & drop or click to select file
+                </p>
+                <p style="color: #6b7280; font-size: 0.9rem;">
+                    Supported: PDF, DOCX, DOC, TXT (Max 16MB)
+                </p>
+                <p id="fileName" style="color: #10b981; font-weight: 600; margin-top: 1rem; display: none;"></p>
+            </div>
+        </div>
+
+        <!-- Training Data Toggle -->
+        <div style="margin-bottom: 2rem; padding: 1.5rem; background: #f9fafb; border-radius: 8px; border: 2px solid #e5e7eb;">
+            <label style="display: flex; align-items: center; cursor: pointer; font-weight: 600;">
+                <input type="checkbox" name="is_training" id="isTraining" onchange="updateApplicationType()"
+                       style="margin-right: 0.75rem; width: 20px; height: 20px;">
+                <span style="color: #1f2937;">📚 This is historical training data</span>
+            </label>
+            <p style="color: #6b7280; margin-top: 0.5rem; font-size: 0.9rem;">
+                Check this box if this is from a previous year and should be used as training data. Otherwise, it will be processed as a 2026 applicant.
+            </p>
+        </div>
+
+        <!-- Selection Status (shown only for training data) -->
+        <div id="selectionStatus" style="display: none; margin-bottom: 2rem; padding: 1.5rem; background: #fef3c7; border-radius: 8px; border: 2px solid #fcd34d;">
+            <label style="display: flex; align-items: center; cursor: pointer; font-weight: 600;">
+                <input type="checkbox" name="was_selected" id="wasSelected"
+                       style="margin-right: 0.75rem; width: 20px; height: 20px;">
+                <span style="color: #78350f;">✅ This student was selected</span>
+            </label>
+            <p style="color: #92400e; margin-top: 0.5rem; font-size: 0.9rem;">
+                Mark whether this student was ultimately accepted. This helps train our models to identify successful applicants.
+            </p>
+        </div>
+
+        <!-- Application Type Display -->
+        <div id="typeDisplay" style="padding: 1.5rem; background: #f0fdf4; border-left: 4px solid #10b981; border-radius: 8px; margin-bottom: 2rem;">
+            <h3 style="color: #065f46; margin-bottom: 0.5rem;">🆕 2026 Applicant</h3>
+            <p style="color: #047857; margin: 0;">This will be processed immediately by Smee and all agents for evaluation.</p>
+        </div>
+
+        <!-- Submit Button -->
+        <button type="submit" class="btn btn-success" style="padding: 0.75rem 2rem; font-size: 1rem;">
+            📥 Upload File
+        </button>
+    </form>
+</div>
+
+<!-- Info Card -->
+<div class="card" style="background: #f0f9ff; border-left: 4px solid #3b82f6;">
+    <h3 style="color: #1e40af; margin-bottom: 1rem;">ℹ️ What Happens Next</h3>
+    <div style="color: #1e40af; line-height: 1.8;">
+        <ol style="margin-left: 1.5rem;">
+            <li style="margin-bottom: 0.75rem;">
+                <strong>File Upload:</strong> Your document is uploaded to Azure Storage
+            </li>
+            <li style="margin-bottom: 0.75rem;">
+                <strong>Student ID Created:</strong> Smee generates a unique ID for this student
+            </li>
+            <li style="margin-bottom: 0.75rem;">
+                <strong>Student Info Extracted:</strong> Name, email, and application text are automatically extracted
+            </li>
+            <li style="margin-bottom: 0.75rem;">
+                <strong>Organized in Storage:</strong> Files organized by type (2026/training/test) and student ID
+            </li>
+            <li>
+                <strong>Processing Begins:</strong> All agents analyze the application automatically
+            </li>
+        </ol>
+    </div>
 </div>
 
 <script>
-function toggleTrainingOptions() {
-    const checkbox = document.querySelector('input[name="is_training"]');
-    const options = document.getElementById('trainingOptions');
-    options.style.display = checkbox.checked ? 'block' : 'none';
+function updateFileName(input) {
+    const fileName = document.getElementById('fileName');
+    if (input.files && input.files[0]) {
+        fileName.textContent = '✓ ' + input.files[0].name;
+        fileName.style.display = 'block';
+    }
+}
+
+function updateApplicationType() {
+    const isTraining = document.getElementById('isTraining').checked;
+    const typeDisplay = document.getElementById('typeDisplay');
+    const selectionStatus = document.getElementById('selectionStatus');
+    
+    if (isTraining) {
+        typeDisplay.innerHTML = `
+            <h3 style="color: #b45309; margin-bottom: 0.5rem;">📚 Training Data</h3>
+            <p style="color: #92400e; margin: 0;">This will be saved as historical training data for agents to learn from.</p>
+        `;
+        typeDisplay.style.background = '#fef3c7';
+        typeDisplay.style.borderLeft = '4px solid #f59e0b';
+        selectionStatus.style.display = 'block';
+    } else {
+        typeDisplay.innerHTML = `
+            <h3 style="color: #065f46; margin-bottom: 0.5rem;">🆕 2026 Applicant</h3>
+            <p style="color: #047857; margin: 0;">This will be processed immediately by Smee and all agents for evaluation.</p>
+        `;
+        typeDisplay.style.background = '#f0fdf4';
+        typeDisplay.style.borderLeft = '4px solid #10b981';
+        selectionStatus.style.display = 'none';
+        document.getElementById('wasSelected').checked = false;
+    }
+}
+
+// Drag and drop
+const dropZone = document.querySelector('[style*="border: 2px dashed"]');
+['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+    dropZone.addEventListener(eventName, preventDefaults, false);
+});
+
+function preventDefaults(e) {
+    e.preventDefault();
+    e.stopPropagation();
+}
+
+['dragenter', 'dragover'].forEach(eventName => {
+    dropZone.addEventListener(eventName, highlight, false);
+});
+
+['dragleave', 'drop'].forEach(eventName => {
+    dropZone.addEventListener(eventName, unhighlight, false);
+});
+
+function highlight(e) {
+    dropZone.style.background = '#f0f9ff';
+    dropZone.style.borderColor = '#3b82f6';
+}
+
+function unhighlight(e) {
+    dropZone.style.background = '';
+    dropZone.style.borderColor = '#667eea';
+}
+
+dropZone.addEventListener('drop', handleDrop, false);
+
+function handleDrop(e) {
+    const dt = e.dataTransfer;
+    const files = dt.files;
+    document.getElementById('fileInput').files = files;
+    updateFileName(document.getElementById('fileInput'));
 }
 </script>
+
 {% endblock %}
