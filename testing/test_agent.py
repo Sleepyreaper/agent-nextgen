@@ -4,7 +4,7 @@ import asyncio
 from openai import AzureOpenAI
 from azure.identity import DefaultAzureCredential, get_bearer_token_provider
 from src.config import config
-from src.agents import SimpleAgent
+from src.agents import BashfulAgent
 
 
 async def test_agent():
@@ -42,7 +42,7 @@ async def test_agent():
         print("🔗 Connected to Azure OpenAI\n")
         
         # Create agent
-        agent = SimpleAgent(
+        agent = BashfulAgent(
             name="TestAgent",
             client=client,
             system_prompt="You are a helpful AI assistant.",

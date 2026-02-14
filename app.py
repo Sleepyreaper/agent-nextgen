@@ -16,14 +16,15 @@ from src.database import db
 from src.document_processor import DocumentProcessor
 from src.storage import storage
 from src.agents import (
-    EvaluatorAgent,
+    GastonEvaluator,
     SmeeOrchestrator,
     RapunzelGradeReader,
     MoanaSchoolContext,
     TianaApplicationReader,
     MulanRecommendationReader,
     MerlinStudentEvaluator,
-    PresenterAgent
+    PresenterAgent,
+    BelleDocumentAnalyzer
 )
 
 # Initialize Flask app
@@ -51,20 +52,33 @@ def get_ai_client():
 # Initialize evaluator agent
 evaluator_agent = None
 orchestrator_agent = None
+belle_analyzer = None
 
 def get_evaluator():
-    """Get or create evaluator agent."""
+    """Get or create Gaston evaluator agent."""
     global evaluator_agent
     if not evaluator_agent:
         client = get_ai_client()
         training_examples = db.get_training_examples()
-        evaluator_agent = EvaluatorAgent(
-            name="ApplicationEvaluator",
+        evaluator_agent = GastonEvaluator(
+            name="GastonEvaluator",
             client=client,
             model=config.deployment_name,
             training_examples=training_examples
         )
     return evaluator_agent
+
+
+def get_belle():
+    """Get or create Belle document analyzer."""
+    global belle_analyzer
+    if not belle_analyzer:
+        client = get_ai_client()
+        belle_analyzer = BelleDocumentAnalyzer(
+            client=client,
+            model=config.deployment_name
+        )
+    return belle_analyzer
 
 
 def get_orchestrator():
@@ -213,6 +227,18 @@ def upload():
                 flash(f"Error uploading to storage: {storage_result.get('error')}", 'error')
                 return redirect(request.url)
             
+            # Use Belle to analyze the document and extract structured data
+            try:
+                belle = get_belle()
+                doc_analysis = belle.analyze_document(application_text, filename)
+            except Exception as e:
+                print(f"Warning: Belle analysis failed: {e}")
+                doc_analysis = {
+                    "document_type": "unknown",
+                    "confidence": 0,
+                    "extracted_data": {}
+                }
+            
             # Extract student info from text
             student_name = extract_student_name(application_text)
             student_email = extract_student_email(application_text)
@@ -228,12 +254,16 @@ def upload():
                 was_selected=was_selected
             )
             
-            # Flash success message with student ID
+            # Flash success message with student ID and Belle's analysis
             if is_training:
                 flash(f'✅ Training data uploaded! Student ID: {student_id}', 'success')
+                if doc_analysis.get('document_type') != 'unknown':
+                    flash(f"📖 Belle identified: {doc_analysis['document_type'].replace('_', ' ').title()}", 'info')
                 return redirect(url_for('training'))
             else:
                 flash(f'✅ Application uploaded! Student ID: {student_id}. Processing with Smee...', 'success')
+                if doc_analysis.get('document_type') != 'unknown':
+                    flash(f"📖 Belle identified: {doc_analysis['document_type'].replace('_', ' ').title()}", 'info')
                 return redirect(url_for('process_student', application_id=application_id))
             
         except Exception as e:

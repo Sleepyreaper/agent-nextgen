@@ -1,4 +1,4 @@
-"""Simple example agent using Azure AI Foundry."""
+"""Bashful agent - a simple example agent using Azure AI Foundry."""
 
 from typing import Optional
 from azure.ai.projects import AIProjectClient
@@ -7,8 +7,8 @@ from azure.ai.inference.models import SystemMessage, UserMessage
 from .base_agent import BaseAgent
 
 
-class SimpleAgent(BaseAgent):
-    """A simple agent that uses Azure AI Foundry for chat completions."""
+class BashfulAgent(BaseAgent):
+    """A simple agent (Bashful) that uses Azure AI Foundry for chat completions."""
     
     def __init__(
         self, 

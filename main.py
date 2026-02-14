@@ -4,7 +4,7 @@ import asyncio
 from openai import AzureOpenAI
 from azure.identity import DefaultAzureCredential, get_bearer_token_provider
 from src.config import config
-from src.agents import SimpleAgent
+from src.agents import BashfulAgent
 
 
 async def main():
@@ -68,8 +68,8 @@ async def main():
             
             print("✅ Connected to Azure AI Foundry")
         
-        # Create a simple agent
-        agent = SimpleAgent(
+        # Create a Bashful agent
+        agent = BashfulAgent(
             name="Assistant",
             client=client,
             system_prompt="You are a helpful AI assistant.",
