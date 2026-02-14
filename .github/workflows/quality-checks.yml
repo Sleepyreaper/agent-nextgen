@@ -85,6 +85,8 @@ if not found_issues:
         "
     
     - name: Validate app modules
+      env:
+        DATABASE_URL: postgresql://user:pass@localhost:5432/appdb
       run: |
         python -c "
 import app

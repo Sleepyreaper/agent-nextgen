@@ -34,6 +34,8 @@ jobs:
       continue-on-error: true
     
     - name: Quick validation
+      env:
+        DATABASE_URL: postgresql://user:pass@localhost:5432/appdb
       run: |
         python -c "import app; import src.config; print('✓ App modules load successfully')"
 
