@@ -1,0 +1,74 @@
+"""Simple example agent using Azure AI Foundry."""
+
+from typing import Optional
+from azure.ai.projects import AIProjectClient
+from azure.ai.inference import ChatCompletionsClient
+from azure.ai.inference.models import SystemMessage, UserMessage
+from .base_agent import BaseAgent
+
+
+class SimpleAgent(BaseAgent):
+    """A simple agent that uses Azure AI Foundry for chat completions."""
+    
+    def __init__(
+        self, 
+        name: str, 
+        client: AIProjectClient,
+        system_prompt: Optional[str] = None,
+        model: Optional[str] = None
+    ):
+        """
+        Initialize the simple agent.
+        
+        Args:
+            name: The name of the agent
+            client: Azure AI Project client instance
+            system_prompt: Optional system prompt for the agent
+            model: Optional model name to use
+        """
+        super().__init__(name, client)
+        self.system_prompt = system_prompt or "You are a helpful AI assistant."
+        self.model = model
+    
+    async def process(self, message: str) -> str:
+        """
+        Process a message and return a response.
+        
+        Args:
+            message: The input message to process
+            
+        Returns:
+            The agent's response
+        """
+        # Add user message to history
+        self.add_to_history("user", message)
+        
+        # Build messages for the API
+        messages = [{"role": "system", "content": self.system_prompt}]
+        
+        for msg in self.conversation_history:
+            messages.append({
+                "role": msg["role"],
+                "content": msg["content"]
+            })
+        
+        try:
+            # Make the API call to Azure OpenAI
+            response = self.client.chat.completions.create(
+                model=self.model,
+                messages=messages,
+                max_completion_tokens=800
+            )
+            
+            # Extract the response content
+            assistant_message = response.choices[0].message.content
+            
+            # Add assistant response to history
+            self.add_to_history("assistant", assistant_message)
+            
+            return assistant_message
+            
+        except Exception as e:
+            error_message = f"Error processing message: {str(e)}"
+            print(f"[{self.name}] {error_message}")
+            return error_message

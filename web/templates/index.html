@@ -1,0 +1,143 @@
+{% extends "base.html" %}
+
+{% block title %}Dashboard - Application Evaluation{% endblock %}
+
+{% block content %}
+<div class="stats">
+    <div class="stat-card">
+        <div class="stat-value">{{ pending_count }}</div>
+        <div class="stat-label">Pending Review</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-value">{{ evaluated_count }}</div>
+        <div class="stat-label">Evaluated</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-value">{{ applications|length }}</div>
+        <div class="stat-label">Total Applications</div>
+    </div>
+</div>
+
+<div class="card">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem;">
+        <h2>📋 Applications</h2>
+        <div>
+            <button class="btn btn-success" onclick="evaluateAll()">🤖 Evaluate All Pending</button>
+        </div>
+    </div>
+
+    {% if applications %}
+    <table>
+        <thead>
+            <tr>
+                <th>ID</th>
+                <th>Applicant</th>
+                <th>Position</th>
+                <th>Status</th>
+                <th>Score</th>
+                <th>Recommendation</th>
+                <th>Uploaded</th>
+                <th>Actions</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for app in applications %}
+            <tr>
+                <td>#{{ app.ApplicationID }}</td>
+                <td>{{ app.ApplicantName }}</td>
+                <td>{{ app.Position or 'N/A' }}</td>
+                <td>
+                    <span class="badge badge-{{ app.Status.lower() }}">
+                        {{ app.Status }}
+                    </span>
+                </td>
+                <td>
+                    {% if app.OverallScore %}
+                        <strong>{{ "%.1f"|format(app.OverallScore) }}</strong>/100
+                    {% else %}
+                        -
+                    {% endif %}
+                </td>
+                <td>
+                    {% if app.Recommendation %}
+                        {{ app.Recommendation }}
+                    {% else %}
+                        -
+                    {% endif %}
+                </td>
+                <td>{{ app.UploadedDate.strftime('%Y-%m-%d') if app.UploadedDate else 'N/A' }}</td>
+                <td>
+                    <a href="{{ url_for('view_application', application_id=app.ApplicationID) }}" 
+                       class="btn btn-secondary" style="padding: 0.5rem 1rem;">View</a>
+                    {% if app.Status == 'Pending' %}
+                    <button class="btn btn-success" style="padding: 0.5rem 1rem;" 
+                            data-app-id="{{ app.ApplicationID }}" onclick="evaluateOne(this)">Evaluate</button>
+                    {% endif %}
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <p style="text-align: center; padding: 3rem; color: #6b7280;">
+        No applications yet. <a href="{{ url_for('upload') }}">Upload your first application</a>
+    </p>
+    {% endif %}
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+async function evaluateOne(button) {
+    if (!confirm('Evaluate this application with AI?')) return;
+    
+    const applicationId = button.dataset.appId;
+    button.disabled = true;
+    button.textContent = 'Evaluating...';
+    
+    try {
+        const response = await fetch(`/evaluate/${applicationId}`, { method: 'POST' });
+        const data = await response.json();
+        
+        if (response.ok) {
+            alert(`Evaluation complete!\nScore: ${data.overall_score}/100\nRecommendation: ${data.recommendation}`);
+            location.reload();
+        } else {
+            alert(`Error: ${data.error}`);
+            btn.disabled = false;
+            btn.textContent = 'Evaluate';
+        }
+    } catch (error) {
+        alert(`Error: ${error.message}`);
+        btn.disabled = false;
+        btn.textContent = 'Evaluate';
+    }
+}
+
+async function evaluateAll() {
+    if (!confirm('Evaluate all pending applications? This may take a few minutes.')) return;
+    
+    const btn = event.target;
+    btn.disabled = true;
+    btn.textContent = 'Evaluating...';
+    
+    try {
+        const response = await fetch('/evaluate_all', { method: 'POST' });
+        const data = await response.json();
+        
+        if (response.ok) {
+            alert(`Evaluated ${data.evaluations.length} applications!`);
+            location.reload();
+        } else {
+            alert(`Error: ${data.error}`);
+            btn.disabled = false;
+            btn.textContent = '🤖 Evaluate All Pending';
+        }
+    } catch (error) {
+        alert(`Error: ${error.message}`);
+        btn.disabled = false;
+        btn.textContent = '🤖 Evaluate All Pending';
+    }
+}
+</script>
+{% endblock %}
