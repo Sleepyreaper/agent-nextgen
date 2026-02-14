@@ -58,7 +58,7 @@ class Config:
         self.postgres_password: str = self._get_secret("postgres-password", "POSTGRES_PASSWORD")
         
         # Azure Storage configuration
-        self.storage_account_name: str = self._get_secret("storage-account-name", "AZURE_STORAGE_ACCOUNT_NAME") or "nextgenagentsstorage"
+        self.storage_account_name: str = self._get_secret("storage-account-name", "AZURE_STORAGE_ACCOUNT_NAME") or "nextgendata2452"
         self.storage_account_key: str = self._get_secret("storage-account-key", "AZURE_STORAGE_ACCOUNT_KEY")
         self.storage_container_name: str = self._get_secret("storage-container-name", "AZURE_STORAGE_CONTAINER_NAME") or "student-uploads"
         
