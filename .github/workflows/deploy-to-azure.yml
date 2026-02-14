@@ -47,17 +47,6 @@ jobs:
     steps:
     - uses: actions/checkout@v3
 
-    - name: Configure App Service settings
-      uses: azure/appservice-settings@v1
-      with:
-        app-name: ${{ secrets.AZURE_WEBAPP_NAME }}
-        publish-profile: ${{ secrets.AZURE_WEBAPP_PUBLISH_PROFILE }}
-        app-settings-json: |
-          [
-            {"name": "SCM_DO_BUILD_DURING_DEPLOYMENT", "value": "false"},
-            {"name": "WEBSITE_RUN_FROM_PACKAGE", "value": "1"}
-          ]
-    
     - name: Create deployment package
       run: |
         zip -r app.zip . -x ".git/*" ".venv/*" "venv/*" "env/*" "__pycache__/*"
@@ -67,8 +56,16 @@ jobs:
       with:
         app-name: ${{ secrets.AZURE_WEBAPP_NAME }}
         publish-profile: ${{ secrets.AZURE_WEBAPP_PUBLISH_PROFILE }}
-        package: app.zip
-
+        package: app.zip    
+    - name: Configure App Service to run from package
+      uses: azure/CLI@v1
+      with:
+        azcliversion: latest
+        inlineScript: |
+          az webapp config appsettings set \
+            --resource-group ${{ secrets.AZURE_RESOURCE_GROUP }} \
+            --name ${{ secrets.AZURE_WEBAPP_NAME }} \
+            --settings SCM_DO_BUILD_DURING_DEPLOYMENT=false WEBSITE_RUN_FROM_PACKAGE=1
   notification:
     needs: [test, deploy]
     runs-on: ubuntu-latest
