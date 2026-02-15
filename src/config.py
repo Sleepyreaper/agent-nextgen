@@ -105,6 +105,9 @@ class Config:
         
         # PostgreSQL Database configuration (primary - now using Azure PostgreSQL)
         self.postgres_url: str = self._get_secret("postgres-connection-string", "DATABASE_URL")
+        if not self.postgres_url:
+            # Backward-compatible secret name used in this vault
+            self.postgres_url = self._get_secret("postgres-url", "DATABASE_URL")
         self.postgres_host: str = self._get_secret("postgres-host", "POSTGRES_HOST")
         self.postgres_port: str = self._get_secret("postgres-port", "POSTGRES_PORT") or "5432"
         self.postgres_database: str = self._get_secret("postgres-database", "POSTGRES_DB")
