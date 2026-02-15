@@ -15,6 +15,7 @@ from src.config import config
 from src.database import db
 from src.document_processor import DocumentProcessor
 from src.storage import storage
+from src.test_data_generator import test_data_generator
 from src.agents import (
     GastonEvaluator,
     SmeeOrchestrator,
@@ -495,122 +496,6 @@ def test():
         flash(f'Error loading test page: {str(e)}', 'error')
         return render_template('test.html')
 
-
-@app.route('/test/<student_id>')
-def test_detail(student_id):
-    """Detailed test results for a specific student."""
-    try:
-        # Define test students with detailed data anchored in what they provided
-        test_students = {
-            'alex': {
-                'name': 'Alex Johnson',
-                'email': 'alex.johnson@example.com',
-                'status': 'COMPLETE',
-                'application_text': "I am Alex Johnson from Lincoln High School. My passion for STEM has driven me throughout my academic career. I have maintained a 3.85 GPA while taking 5 AP courses including AP Biology, AP Chemistry, and Calculus. In my junior year, I founded the Science Club which now has 40+ members. I served as President of the Student Government Council and led multiple community service projects. I believe education is transformative and I am committed to pursuing engineering in college.",
-                'merlin_summary': {
-                    'score': 88,
-                    'recommendation': 'STRONGLY RECOMMEND',
-                    'overall': "Alex Johnson presents a compelling candidacy with exceptional academic achievement and demonstrated leadership. With a 3.85 GPA and completion of five AP courses, Alex has consistently demonstrated mastery of advanced coursework. Most notably, the founding and leadership of the Science Club (growing to 40+ members) shows genuine initiative and community impact. The personal statement reveals a thoughtful student with clear calling toward engineering and a genuine passion for STEM. Teacher recommendations emphasize Alex's work ethic, intellectual curiosity, and ability to inspire peers. The combination of rigorous academics, proven leadership, and authentic passion makes Alex an excellent candidate who will likely thrive at the university level and contribute meaningfully to campus intellectual life.",
-                    'key_strengths': ['3.85 GPA with rigorous curriculum', 'Founded and expanded Science Club to 40+ members', 'Clear career direction (engineering)', 'Strong teacher endorsements', 'Demonstrated leadership as Student Government President', 'Community service commitment'],
-                    'considerations': ['Out-of-state applicant (requires no sponsorship)', 'Well-prepared for advanced coursework']
-                },
-                'agents': {
-                    'tiana': {
-                        'name': '👸 Tiana - Application Reader',
-                        'status': '✅ Complete',
-                        'score': 85,
-                        'analysis': "Alex's personal statement is well-written and demonstrates clear self-awareness. The writing is organized, articulate, and provides specific examples of leadership and passion. The applicant effectively communicates their journey from discovering STEM interest to founding the Science Club. The essay shows maturity and purpose.",
-                        'key_qualities': ['Clear writing style', 'Specific examples and stories', 'Demonstrates reflection and self-awareness', 'Authentic voice', 'Well-organized narrative'],
-                        'strengths_found': 'Alex communicates strong motivation for STEM with concrete evidence through club founding and leadership.'
-                    },
-                    'rapunzel': {
-                        'name': '💇 Rapunzel - Grade Reader',
-                        'status': '✅ Complete',
-                        'gpa': 3.85,
-                        'academic_score': 92,
-                        'courses_analyzed': 'AP Biology (A), AP Chemistry (A-), Calculus (A), AP US History (A), Regular English (A-)',
-                        'grade_trends': 'Consistent high grades throughout; slight upward trend from freshman to junior year',
-                        'key_findings': ['Rigorous curriculum selection', 'Consistent excellence across STEM and humanities', 'Balanced course load shows versatility', '5 AP courses completed', 'No grade decline detected']
-                    },
-                    'moana': {
-                        'name': '🌊 Moana - School Context',
-                        'status': '✅ Complete',
-                        'school_name': 'Lincoln High School',
-                        'location': 'Lincoln, Nebraska',
-                        'school_ranking': 'Top 15% in state',
-                        'school_info': 'Lincoln High School is a well-funded public school in an affluent district with strong STEM program. Known for rigorous academics and high college placement rates.',
-                        'key_context': ['School offers 12+ AP courses', 'Science curriculum is well-developed with lab facilities', 'Strong teacher network and mentorship available', 'High college acceptance rate indicates good college prep']
-                    },
-                    'mulan': {
-                        'name': '🗡️ Mulan - Recommendation Reader',
-                        'status': '✅ Complete',
-                        'recommendation_count': 2,
-                        'endorsement_strength': 95,
-                        'rec1': 'AP Biology teacher emphasizes Alex\'s intellectual curiosity, exceptional work ethic, and ability to synthesize complex concepts.',
-                        'rec2': 'Science Club member testimonial praises Alex\'s genuine passion and inclusive leadership style that made the club welcoming to all.',
-                        'key_endorsements': ['Exceptional scientific thinking', 'Inspires peers through authentic passion', 'Collaborative and inclusive leader', 'Reliable and committed', 'Demonstrates maturity beyond grade level']
-                    }
-                }
-            },
-            'jordan': {
-                'name': 'Jordan Smith',
-                'email': 'jordan.smith@example.com',
-                'status': 'PARTIAL',
-                'application_text': "I am Jordan Smith. I go to a public school without many advanced opportunities. I have worked hard to maintain good grades with a 3.45 GPA. I haven't taken many AP courses but I am interested in environmental science and plan to study that in college.",
-                'merlin_summary': {
-                    'score': 65,
-                    'recommendation': 'CONSIDER - Recommend gathering more information',
-                    'overall': "Jordan Smith demonstrates solid academic fundamentals with a 3.45 GPA and commitment to learning despite limited advanced offerings at school. The interest in environmental science is clear and genuine. However, the application is incomplete - we lack critical information about teacher endorsements which would help assess Jordan's potential for college-level work. The limited enrollment in AP-level courses makes academic comparison more difficult. To make a full evaluation, we recommend requesting teacher recommendation letters and potentially additional documentation about advanced work undertaken within available constraints.",
-                    'key_strengths': ['Good GPA given school resources', 'Clear field of interest (environmental science)', 'Honest and straightforward communication'],
-                    'missing_context': ['No teacher recommendations provided', 'Limited AP/advanced coursework documented', 'School context unclear (affects grade interpretation)', 'Insufficient evidence of leadership or initiative']
-                },
-                'agents': {
-                    'tiana': {
-                        'name': '👸 Tiana - Application Reader',
-                        'status': '✅ Complete',
-                        'score': 72,
-                        'analysis': "Jordan's statement is brief and lacks detailed examples or personal narrative. While the interest in environmental science is stated, there is limited evidence of how this passion developed or what specific actions demonstrate commitment. The writing is clear but lacks the depth and reflection seen in more compelling applications.",
-                        'observations': ['Brief statement', 'Some personal voice present', 'Lacks specific examples', 'Interest stated but not demonstrated', 'Could benefit from more detail']
-                    },
-                    'rapunzel': {
-                        'name': '💇 Rapunzel - Grade Reader',
-                        'status': '✅ Complete',
-                        'gpa': 3.45,
-                        'academic_score': 78,
-                        'courses_analyzed': '2 AP courses total (AP Environmental Science, AP World History)',
-                        'grade_pattern': 'Solid B+/A- grades consistently',
-                        'key_findings': ['Respectable GPA given limited AP availability', 'Limited advanced coursework limits assessment', 'No grade decline shown', 'Could have taken more challenging courses']
-                    },
-                    'moana': {
-                        'name': '🌊 Moana - School Context',
-                        'status': '⚠️ Insufficient data',
-                        'school_info': 'School not specified in application',
-                        'limitation': 'Without school name and context, difficult to assess how rigorous the GPA is relative to available opportunities.',
-                        'needed': 'School name, location, and available AP courses would help contextualize grades'
-                    },
-                    'mulan': {
-                        'name': '🗡️ Mulan - Recommendation Reader',
-                        'status': '⚠️ Missing',
-                        'recommendation_count': 0,
-                        'missing': 'No recommendation letters provided',
-                        'critical': 'Recommendations from teachers would be essential to assess Jordan\'s potential, work ethic, and character.'
-                    }
-                }
-            }
-        }
-        
-        student = test_students.get(student_id)
-
-        if not student:
-            flash('Student not found. Please use the Quick Test buttons (Alex or Jordan) to run a test.', 'error')
-            return redirect(url_for('test'))
-        
-        return render_template('test_detail.html', student=student)
-    except Exception as e:
-        flash(f'Error loading test details: {str(e)}', 'error')
-        return redirect(url_for('test'))
-
-
 @app.route('/student/<int:application_id>')
 def student_detail(application_id):
     """View comprehensive student summary."""
@@ -803,8 +688,8 @@ aurora = AuroraAgent()
 def generate_session_updates(session_id):
     """
     Generator function for SSE updates during test processing.
-    Yields status updates as agents process students using static test fixtures.
-    This is a DEMO mode - no database writes occur for test data.
+    Creates real test applications in DB and runs full agent pipeline.
+    Test data is marked with IsTrainingExample = TRUE.
     """
     submission = test_submissions.get(session_id)
     if not submission:
@@ -815,43 +700,79 @@ def generate_session_updates(session_id):
     yield f"data: {json.dumps({'type': 'connected', 'message': 'Connected to test stream'})}\n\n"
     time.sleep(0.1)
     
-    # Simulate agent pipeline with status updates
+    # Get generated test students
     students = submission['students']
+    orchestrator = get_orchestrator()
     
-    # Define agent processing order with display names and emojis
-    agents = [
-        ('tiana', '👸', 'Reading application'),
-        ('rapunzel', '💇', 'Analyzing grades'),
-        ('mulan', '🗡️', 'Reviewing recommendations'),
-        ('moana', '🌊', 'Researching school context'),
-        ('merlin', '🧙', 'Evaluating overall'),
-        ('aurora', '👑', 'Presenting results')
+    # Define agent processing order
+    agent_display = [
+        ('tiana', '👸'),
+        ('rapunzel', '💇'),
+        ('mulan', '🗡️'),
+        ('moana', '🌊'),
+        ('merlin', '🧙'),
+        ('aurora', '👑')
     ]
     
     for idx, student in enumerate(students):
-        name = (student.get('name') or '').strip()
-        name_key = name.lower()
+        name = student['name']
+        email = student['email']
+        application_text = student['application_text']
         
-        # Map to test fixture IDs (alex or jordan)
-        if name_key.startswith('alex'):
-            student_id = 'alex'
-        elif name_key.startswith('jordan'):
-            student_id = 'jordan'
-        else:
-            # For other names, use alex as default demo
-            student_id = 'alex'
+        # Create database record as TRAINING EXAMPLE
+        application_id = db.create_application(
+            applicant_name=name,
+            email=email,
+            application_text=application_text,
+            file_name=f"test_{name.replace(' ', '_').lower()}.txt",
+            file_type="txt",
+            is_training=True,  # Mark as training/test data
+            was_selected=None
+        )
+        
+        submission['application_ids'].append(application_id)
+        student_id = f"student_{idx}"
         
         # Student submitted
-        yield f"data: {json.dumps({'type': 'student_submitted', 'student': student, 'student_id': student_id})}\n\n"
+        yield f"data: {json.dumps({'type': 'student_submitted', 'student': {'name': name, 'email': email}, 'student_id': student_id})}\n\n"
         
-        # Simulate each agent processing with delays
-        for agent_name, emoji, action in agents:
+        # Run REAL agent pipeline
+        evaluation_steps = ['application_reader', 'grade_reader', 'recommendation_reader', 'school_context', 'student_evaluator']
+        
+        for agent_name, emoji in agent_display[:-1]:  # Skip aurora (presentation happens after)
             yield f"data: {json.dumps({'type': 'agent_start', 'agent': agent_name, 'student_id': student_id, 'emoji': emoji})}\n\n"
-            time.sleep(0.8)  # Simulate processing time
-            yield f"data: {json.dumps({'type': 'agent_complete', 'agent': agent_name, 'student_id': student_id, 'status': 'complete'})}\n\n"
         
-        # Results ready - link to test detail page (not student page)
-        yield f"data: {json.dumps({'type': 'results_ready', 'student_id': student_id, 'results_url': f'/test/{student_id}'})}\n\n"
+        try:
+            # Run orchestration
+            asyncio.run(
+                orchestrator.coordinate_evaluation(
+                    application=db.get_application(application_id),
+                    evaluation_steps=evaluation_steps
+                )
+            )
+            
+            # Update status
+            db.execute_non_query(
+                "UPDATE Applications SET Status = 'Evaluated' WHERE ApplicationID = %s",
+                (application_id,)
+            )
+            
+            # Mark agents complete
+            for agent_name, _ in agent_display[:-1]:
+                yield f"data: {json.dumps({'type': 'agent_complete', 'agent': agent_name, 'student_id': student_id, 'status': 'complete'})}\n\n"
+            
+            # Aurora presentation
+            yield f"data: {json.dumps({'type': 'agent_start', 'agent': 'aurora', 'student_id': student_id, 'emoji': '👑'})}\n\n"
+            yield f"data: {json.dumps({'type': 'agent_complete', 'agent': 'aurora', 'student_id': student_id, 'status': 'complete'})}\n\n"
+            
+            # Results ready - link to REAL student detail page with DB data
+            yield f"data: {json.dumps({'type': 'results_ready', 'student_id': student_id, 'results_url': f'/student/{application_id}', 'application_id': application_id})}\n\n"
+            
+        except Exception as e:
+            yield f"data: {json.dumps({'type': 'error', 'student_id': student_id, 'error': str(e)})}\n\n"
+    
+    # All complete
+    yield f"data: {json.dumps({'type': 'all_complete', 'application_ids': submission['application_ids']})}\n\n"
 
 
 @app.route('/api/test/stream/<session_id>')
@@ -871,15 +792,12 @@ def test_stream(session_id):
 @app.route('/api/test/submit', methods=['POST'])
 def submit_test_data():
     """
-    Accept test student submissions and start processing pipeline.
+    Generate synthetic test students and start processing pipeline.
     Returns a session ID to stream updates from.
     """
     try:
-        data = request.json
-        students = data.get('students', [])
-        
-        if not students:
-            return jsonify({'error': 'No students provided'}), 400
+        # Generate 3-8 random test students with realistic data
+        students = test_data_generator.generate_batch()
         
         # Generate session ID
         session_id = str(uuid.uuid4())
@@ -887,7 +805,7 @@ def submit_test_data():
         # Track submission
         test_submissions[session_id] = {
             'students': students,
-            'results': {},
+            'application_ids': [],
             'created_at': time.time(),
             'status': 'processing'
         }
