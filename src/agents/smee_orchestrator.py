@@ -3,6 +3,7 @@
 from typing import Dict, List, Any, Optional
 from openai import AzureOpenAI
 from src.agents.base_agent import BaseAgent
+from src.agents.system_prompts import SMEE_ORCHESTRATOR_PROMPT
 
 
 class SmeeOrchestrator(BaseAgent):
