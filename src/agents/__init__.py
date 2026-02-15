@@ -10,7 +10,7 @@ from .tiana_application_reader import TianaApplicationReader
 from .mulan_recommendation_reader import MulanRecommendationReader
 from .merlin_student_evaluator import MerlinStudentEvaluator
 from .presenter_agent import PresenterAgent
-from .belle_document_analyzer import BelleDocumentAnalyzer
+from .aurora_agent import AuroraAgent
 
 __all__ = [
 	"BaseAgent",
@@ -22,7 +22,7 @@ __all__ = [
 	"TianaApplicationReader",
 	"MulanRecommendationReader",
 	"MerlinStudentEvaluator",
-	"PresenterAgent",
+	"AuroraAgent",
 	"BelleDocumentAnalyzer"
 ]
 

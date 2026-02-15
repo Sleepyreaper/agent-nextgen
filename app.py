@@ -23,7 +23,7 @@ from src.agents import (
     TianaApplicationReader,
     MulanRecommendationReader,
     MerlinStudentEvaluator,
-    PresenterAgent,
+    AuroraAgent,
     BelleDocumentAnalyzer
 )
 
@@ -613,7 +613,7 @@ def test_detail(student_id):
 
 @app.route('/student/<int:application_id>')
 def student_detail(application_id):
-    """View comprehensive student summary built by Merlin."""
+    """View comprehensive student summary."""
     try:
         # Get main application record
         application = db.get_application(application_id)
@@ -621,43 +621,33 @@ def student_detail(application_id):
             flash('Student not found', 'error')
             return redirect(url_for('students'))
         
-        # Get all agent outputs
-        tiana_data = db.execute_query(
-            "SELECT * FROM TianaApplications WHERE ApplicationID = %s ORDER BY CreatedAt DESC LIMIT 1",
-            (application_id,)
-        )
+        # Try to get any existing evaluations for this student
+        evaluation = None
+        try:
+            results = db.execute_query(
+                "SELECT TOP 1 * FROM AIEvaluations WHERE ApplicationID = ? ORDER BY EvaluationDate DESC",
+                (application_id,)
+            )
+            evaluation = results[0] if results else None
+        except:
+            evaluation = None
         
-        rapunzel_data = db.execute_query(
-            "SELECT * FROM AIEvaluations WHERE ApplicationID = %s AND AgentName = 'Rapunzel' ORDER BY EvaluationDate DESC LIMIT 1",
-            (application_id,)
-        )
-        
-        moana_data = db.get_student_school_context(application_id)
-        
-        mulan_data = db.execute_query(
-            "SELECT * FROM MulanRecommendations WHERE ApplicationID = %s ORDER BY CreatedAt DESC",
-            (application_id,)
-        )
-        
-        merlin_data = db.execute_query(
-            "SELECT * FROM MerlinEvaluations WHERE ApplicationID = %s ORDER BY CreatedAt DESC LIMIT 1",
-            (application_id,)
-        )
-        
-        # Get agent processing status
-        audit_logs = db.execute_query(
-            "SELECT * FROM AgentAuditLogs WHERE ApplicationID = %s ORDER BY CreatedAt DESC",
-            (application_id,)
-        )
+        # Generate a summary of the application
+        summary = {
+            'name': application.get('ApplicantName', 'Unknown'),
+            'email': application.get('Email', 'N/A'),
+            'uploaded_date': application.get('UploadedDate'),
+            'file_name': application.get('OriginalFileName'),
+            'is_training': application.get('IsTrainingExample', False),
+            'was_selected': application.get('WasSelected'),
+            'text_preview': application.get('ApplicationText', '')[:500],
+            'word_count': len(application.get('ApplicationText', '').split())
+        }
         
         return render_template('student_detail.html',
                              application=application,
-                             tiana=tiana_data[0] if tiana_data else None,
-                             rapunzel=rapunzel_data[0] if rapunzel_data else None,
-                             moana=moana_data,
-                             mulan=mulan_data,
-                             merlin=merlin_data[0] if merlin_data else None,
-                             audit_logs=audit_logs)
+                             summary=summary,
+                             evaluation=evaluation)
         
     except Exception as e:
         flash(f'Error loading student: {str(e)}', 'error')
@@ -806,7 +796,7 @@ def delete_training(application_id):
 
 # In-memory tracking of test submissions and processing status
 test_submissions = {}  # {session_id: {student_list, status_updates}}
-presenter = PresenterAgent()
+aurora = AuroraAgent()
 
 
 def generate_session_updates(session_id):
