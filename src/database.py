@@ -54,10 +54,10 @@ class Database:
     
     def execute_query(self, query: str, params: tuple = None) -> List[Dict[str, Any]]:
         """Execute a SELECT query and return results."""
-        conn = self.connect()
-        cursor = conn.cursor()
-        
         try:
+            conn = self.connect()
+            cursor = conn.cursor()
+            
             if params:
                 cursor.execute(query, params)
             else:
@@ -68,18 +68,15 @@ class Database:
             for row in cursor.fetchall():
                 results.append(dict(zip(columns, row)))
             
-            conn.commit()
+            cursor.close()
             return results
         except Exception as e:
             try:
-                conn.rollback()
+                self.connection.rollback()
+                self.connection = None
             except:
-                pass
-            # Close the connection to force a fresh one on next call
-            self.connection = None
+                self.connection = None
             raise e
-        finally:
-            cursor.close()
     
     def execute_non_query(self, query: str, params: tuple = None) -> int:
         """Execute INSERT, UPDATE, or DELETE and return affected rows."""
@@ -107,28 +104,30 @@ class Database:
     
     def execute_scalar(self, query: str, params: tuple = None) -> Any:
         """Execute a query and return a single value."""
-        conn = self.connect()
-        cursor = conn.cursor()
-        
         try:
+            conn = self.connect()
+            cursor = conn.cursor()
+            
             if params:
                 cursor.execute(query, params)
             else:
                 cursor.execute(query)
             
             result = cursor.fetchone()
-            conn.commit()
+            cursor.close()
+            
+            # For INSERT/UPDATE/DELETE, commit the transaction
+            if any(keyword in query.upper() for keyword in ['INSERT', 'UPDATE', 'DELETE']):
+                conn.commit()
+            
             return result[0] if result else None
         except Exception as e:
             try:
-                conn.rollback()
+                self.connection.rollback()
+                self.connection = None
             except:
-                pass
-            # Close the connection to force a fresh one on next call
-            self.connection = None
+                self.connection = None
             raise e
-        finally:
-            cursor.close()
     
     def create_application(self, applicant_name: str, email: str, application_text: str,
                           file_name: str, file_type: str, is_training: bool = False,
