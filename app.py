@@ -602,32 +602,7 @@ def test_detail(student_id):
         student = test_students.get(student_id)
 
         if not student:
-            # Try to resolve from the latest test submissions
-            fallback = None
-            for submission in test_submissions.values():
-                candidate = submission.get('results', {}).get(student_id)
-                if candidate:
-                    fallback = candidate
-                    break
-
-            if fallback:
-                student = {
-                    'name': fallback.get('name', 'Test Student'),
-                    'email': fallback.get('email', 'unknown@example.com'),
-                    'status': 'PARTIAL',
-                    'application_text': "Test submission captured from live run.",
-                    'merlin_summary': {
-                        'score': 70,
-                        'recommendation': 'CONSIDER',
-                        'overall': "This is a placeholder summary generated from live test data. Run a full evaluation to generate the complete report.",
-                        'key_strengths': ['Live test submission received', 'Basic student info captured'],
-                        'considerations': ['Full evaluation not yet generated']
-                    },
-                    'agents': {}
-                }
-
-        if not student:
-            flash('Student not found', 'error')
+            flash('Student not found. Please use the Quick Test buttons (Alex or Jordan) to run a test.', 'error')
             return redirect(url_for('test'))
         
         return render_template('test_detail.html', student=student)
@@ -650,11 +625,12 @@ def student_detail(application_id):
         evaluation = None
         try:
             results = db.execute_query(
-                "SELECT TOP 1 * FROM AIEvaluations WHERE ApplicationID = ? ORDER BY EvaluationDate DESC",
+                "SELECT * FROM AIEvaluations WHERE ApplicationID = %s ORDER BY EvaluationDate DESC LIMIT 1",
                 (application_id,)
             )
             evaluation = results[0] if results else None
-        except:
+        except Exception as eval_err:
+            print(f"Error fetching evaluation: {eval_err}")
             evaluation = None
         
         # Generate a summary of the application
@@ -827,7 +803,8 @@ aurora = AuroraAgent()
 def generate_session_updates(session_id):
     """
     Generator function for SSE updates during test processing.
-    Yields status updates as agents process students.
+    Yields status updates as agents process students using static test fixtures.
+    This is a DEMO mode - no database writes occur for test data.
     """
     submission = test_submissions.get(session_id)
     if not submission:
@@ -841,82 +818,40 @@ def generate_session_updates(session_id):
     # Simulate agent pipeline with status updates
     students = submission['students']
     
+    # Define agent processing order with display names and emojis
+    agents = [
+        ('tiana', '👸', 'Reading application'),
+        ('rapunzel', '💇', 'Analyzing grades'),
+        ('mulan', '🗡️', 'Reviewing recommendations'),
+        ('moana', '🌊', 'Researching school context'),
+        ('merlin', '🧙', 'Evaluating overall'),
+        ('aurora', '👑', 'Presenting results')
+    ]
+    
     for idx, student in enumerate(students):
         name = (student.get('name') or '').strip()
-        email = student.get('email', 'unknown@example.com')
         name_key = name.lower()
+        
+        # Map to test fixture IDs (alex or jordan)
         if name_key.startswith('alex'):
             student_id = 'alex'
         elif name_key.startswith('jordan'):
             student_id = 'jordan'
         else:
-            student_id = f"student_{idx}"
-
-        # Create a real application record for test data
-        application_text = (
-            f"Test application for {name}.\n"
-            f"Email: {email}\n"
-            "This test submission should be processed through the full agent pipeline."
-        )
-
-        application_id = db.create_application(
-            applicant_name=name or f"Test Student {idx + 1}",
-            email=email,
-            application_text=application_text,
-            file_name=f"test_{student_id}.txt",
-            file_type="txt",
-            is_training=False,
-            was_selected=None
-        )
-
-        submission['results'][student_id] = {
-            'name': name or f"Test Student {idx + 1}",
-            'email': email,
-            'application_id': application_id
-        }
-
+            # For other names, use alex as default demo
+            student_id = 'alex'
+        
         # Student submitted
         yield f"data: {json.dumps({'type': 'student_submitted', 'student': student, 'student_id': student_id})}\n\n"
-
-        # Run the real evaluation pipeline
-        orchestrator = get_orchestrator()
-        evaluation_steps = ['application_reader', 'grade_reader', 'recommendation_reader', 'school_context', 'student_evaluator']
-        agent_map = {
-            'application_reader': ('tiana', '👸'),
-            'grade_reader': ('rapunzel', '💇'),
-            'recommendation_reader': ('mulan', '🗡️'),
-            'school_context': ('moana', '🌊'),
-            'student_evaluator': ('merlin', '🧙')
-        }
-
-        for step in evaluation_steps:
-            agent_name, emoji = agent_map.get(step, (step, '✨'))
+        
+        # Simulate each agent processing with delays
+        for agent_name, emoji, action in agents:
             yield f"data: {json.dumps({'type': 'agent_start', 'agent': agent_name, 'student_id': student_id, 'emoji': emoji})}\n\n"
-
-        try:
-            asyncio.run(
-                orchestrator.coordinate_evaluation(
-                    application=db.get_application(application_id),
-                    evaluation_steps=evaluation_steps
-                )
-            )
-
-            db.execute_non_query(
-                "UPDATE Applications SET Status = 'Evaluated' WHERE ApplicationID = %s",
-                (application_id,)
-            )
-
-            for step in evaluation_steps:
-                agent_name, _ = agent_map.get(step, (step, '✨'))
-                yield f"data: {json.dumps({'type': 'agent_complete', 'agent': agent_name, 'student_id': student_id, 'status': 'complete'})}\n\n"
-
-            # Aurora formats results (logical end)
-            yield f"data: {json.dumps({'type': 'agent_complete', 'agent': 'aurora', 'student_id': student_id, 'status': 'complete'})}\n\n"
-
-            # Results ready
-            yield f"data: {json.dumps({'type': 'results_ready', 'student_id': student_id, 'results_url': f'/student/{application_id}'})}\n\n"
-        except Exception as e:
-            yield f"data: {json.dumps({'type': 'error', 'student_id': student_id, 'error': str(e)})}\n\n"
+            time.sleep(0.8)  # Simulate processing time
+            yield f"data: {json.dumps({'type': 'agent_complete', 'agent': agent_name, 'student_id': student_id, 'status': 'complete'})}\n\n"
+        
+        # Results ready - link to test detail page (not student page)
+        yield f"data: {json.dumps({'type': 'results_ready', 'student_id': student_id, 'results_url': f'/test/{student_id}'})}\n\n"
 
 
 @app.route('/api/test/stream/<session_id>')
