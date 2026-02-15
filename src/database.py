@@ -331,7 +331,7 @@ class Database:
         """Get all applications (non-training examples)."""
         query = """
             SELECT * FROM Applications 
-            WHERE IsTrainingExample = FALSE
+            WHERE IsTrainingExample = 0
             ORDER BY UploadedDate DESC
         """
         return self.execute_query(query)

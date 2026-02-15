@@ -421,7 +421,7 @@ def students():
             # Search by name or email
             query = """
                 SELECT * FROM Applications 
-                WHERE IsTrainingExample = FALSE 
+                WHERE IsTrainingExample = 0 
                 AND (ApplicantName ILIKE %s OR Email ILIKE %s)
                 ORDER BY UploadedDate DESC
             """
@@ -430,7 +430,7 @@ def students():
             # Get all real students (not training examples)
             query = """
                 SELECT * FROM Applications 
-                WHERE IsTrainingExample = FALSE 
+                WHERE IsTrainingExample = 0 
                 ORDER BY UploadedDate DESC
             """
             applications = db.execute_query(query)
