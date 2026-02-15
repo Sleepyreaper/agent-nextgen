@@ -1,9 +1,11 @@
-name: Deploy to Azure Web App
+name: Deploy to Azure Web App (DISABLED - using deploy-to-azure.yml instead)
 
 on:
-  push:
-    branches: [ main ]
   workflow_dispatch:
+
+# This workflow is disabled to prevent conflicts with deploy-to-azure.yml
+# Both were triggering on push to main, causing 409 errors
+# Only manual triggers allowed now
 
 env:
   REGISTRY: ghcr.io
