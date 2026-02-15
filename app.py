@@ -652,9 +652,21 @@ def api_get_status(application_id):
 
 
 @app.route('/application/<int:application_id>')
-def view_application(application_id):
-    """Legacy view - redirect to new student detail page."""
-    return redirect(url_for('student_detail', application_id=application_id))
+def student_detail(application_id):
+    """View details of a student application."""
+    try:
+        application = db.get_application(application_id)
+        if not application:
+            flash('Student not found', 'error')
+            return redirect(url_for('students'))
+        
+        return render_template('application.html', 
+                             application=application,
+                             is_training=application.get('istrainingexample', False))
+        
+    except Exception as e:
+        flash(f'Error loading student: {str(e)}', 'error')
+        return redirect(url_for('students'))
 
 
 @app.route('/training/<int:application_id>')
