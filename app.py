@@ -817,7 +817,13 @@ def generate_session_updates(session_id):
     students = submission['students']
     
     for idx, student in enumerate(students):
-        student_id = f"student_{idx}"
+        name = (student.get('name') or '').strip().lower()
+        if name.startswith('alex'):
+            student_id = 'alex'
+        elif name.startswith('jordan'):
+            student_id = 'jordan'
+        else:
+            student_id = f"student_{idx}"
         
         # Student submitted
         yield f"data: {json.dumps({'type': 'student_submitted', 'student': student, 'student_id': student_id})}\n\n"
