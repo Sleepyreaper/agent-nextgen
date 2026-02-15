@@ -3,12 +3,17 @@
 import os
 import sys
 import logging
+import signal
 from typing import Optional, Dict
 from dotenv import load_dotenv
 from pathlib import Path
 
 # Suppress Azure SDK warnings for local development
 logging.getLogger('azure').setLevel(logging.ERROR)
+
+# Timeout handler for Key Vault initialization
+def _timeout_handler(signum, frame):
+    raise TimeoutError("Key Vault initialization timeout")
 
 # Load environment variables from .env file (fallback for local development)
 # Try .env.local first for local dev, then .env
@@ -62,12 +67,21 @@ class Config:
                     old_stderr = sys.stderr
                     sys.stderr = open(os.devnull, 'w')
                     
+                    # Set a timeout for Key Vault initialization (10 seconds max)
+                    signal.signal(signal.SIGALRM, _timeout_handler)
+                    signal.alarm(10)
+                    
                     try:
                         credential = DefaultAzureCredential()
                         vault_url = f"https://{self.key_vault_name}.vault.azure.net/"
                         self._secret_client = SecretClient(vault_url=vault_url, credential=credential)
+                        signal.alarm(0)  # Cancel alarm
                         sys.stderr = old_stderr
                         # print(f"✓ Connected to Azure Key Vault: {self.key_vault_name}")
+                    except TimeoutError:
+                        signal.alarm(0)  # Cancel alarm
+                        sys.stderr = old_stderr
+                        self._secret_client = None
                     finally:
                         sys.stderr = old_stderr
                 except Exception as e:
