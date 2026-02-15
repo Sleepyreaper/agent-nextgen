@@ -80,7 +80,7 @@
         {{ evaluation.detailedanalysis or 'Evaluation completed. Full analysis is available below.' }}
     </p>
     {% else %}
-    <p style="color: #6b7280;">No evaluation has been generated yet. <a href="{{ url_for('process_student', application_id=application.applicationid) }}">Process this student</a></p>
+    <p style="color: #6b7280;">No evaluation has been generated yet.</p>
     {% endif %}
 </div>
 
