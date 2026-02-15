@@ -68,7 +68,16 @@ class Database:
             for row in cursor.fetchall():
                 results.append(dict(zip(columns, row)))
             
+            conn.commit()
             return results
+        except Exception as e:
+            try:
+                conn.rollback()
+            except:
+                pass
+            # Close the connection to force a fresh one on next call
+            self.connection = None
+            raise e
         finally:
             cursor.close()
     
@@ -86,7 +95,12 @@ class Database:
             conn.commit()
             return cursor.rowcount
         except Exception as e:
-            conn.rollback()
+            try:
+                conn.rollback()
+            except:
+                pass
+            # Close the connection to force a fresh one on next call
+            self.connection = None
             raise e
         finally:
             cursor.close()
@@ -103,7 +117,16 @@ class Database:
                 cursor.execute(query)
             
             result = cursor.fetchone()
+            conn.commit()
             return result[0] if result else None
+        except Exception as e:
+            try:
+                conn.rollback()
+            except:
+                pass
+            # Close the connection to force a fresh one on next call
+            self.connection = None
+            raise e
         finally:
             cursor.close()
     
