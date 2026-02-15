@@ -179,15 +179,19 @@ class Config:
                 self._secrets_cache[key_vault_secret_name] = value
                 return value
             except Exception as e:
-                # Disable Key Vault after first failure to avoid repeated crashes/log spam.
-                self._key_vault_enabled = False
-                self._secret_client = None
-                if not self._key_vault_error_logged:
-                    logging.warning(
-                        "Key Vault access failed; falling back to environment variables.",
-                        exc_info=True
-                    )
-                    self._key_vault_error_logged = True
+                # If the secret is missing, keep Key Vault enabled for other secrets.
+                error_code = getattr(e, "error_code", "")
+                is_not_found = error_code == "SecretNotFound" or "SecretNotFound" in str(e)
+                if not is_not_found:
+                    # Disable Key Vault after connection/auth failures to avoid repeated crashes/log spam.
+                    self._key_vault_enabled = False
+                    self._secret_client = None
+                    if not self._key_vault_error_logged:
+                        logging.warning(
+                            "Key Vault access failed; falling back to environment variables.",
+                            exc_info=True
+                        )
+                        self._key_vault_error_logged = True
         
         # Fall back to environment variable
         value = os.getenv(env_var_name)
