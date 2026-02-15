@@ -895,9 +895,42 @@ def generate_session_updates(session_id):
         except Exception as e:
             yield f"data: {json.dumps({'type': 'error', 'student_id': student_id, 'error': f'Status update failed: {str(e)}'})}\n\n"
         
-        # Aurora presentation
-        yield f"data: {json.dumps({'type': 'agent_start', 'agent': 'aurora', 'student_id': student_id, 'emoji': '👑'})}\n\n"
-        yield f"data: {json.dumps({'type': 'agent_complete', 'agent': 'aurora', 'student_id': student_id, 'status': 'complete'})}\n\n"
+        # Aurora presentation - format results based on Merlin's assessment
+        try:
+            yield f"data: {json.dumps({'type': 'agent_start', 'agent': 'aurora', 'student_id': student_id, 'emoji': '👑'})}\n\n"
+            
+            # Get Aurora agent
+            aurora_agent = orchestrator.agents.get('aurora')
+            if aurora_agent and hasattr(aurora_agent, 'format_results') and overall_success:
+                # Run Aurora to format results
+                merlin_result = agent_results.get('student_evaluator', {})
+                
+                async def run_aurora_async():
+                    return await aurora_agent.format_results(
+                        application_data={
+                            'name': application_data.get('applicantname'),
+                            'email': application_data.get('email'),
+                            'applicationtext': application_data.get('applicationtext')
+                        },
+                        agent_outputs={
+                            'tiana': agent_results.get('application_reader'),
+                            'rapunzel': agent_results.get('grade_reader'),
+                            'moana': agent_results.get('school_context'),
+                            'mulan': agent_results.get('recommendation_reader')
+                        },
+                        merlin_assessment=merlin_result
+                    )
+                
+                aurora_summary = asyncio.run(
+                    asyncio.wait_for(run_aurora_async(), timeout=60.0)
+                )
+                
+                # Store Aurora's formatted summary in agent_results
+                agent_results['aurora'] = aurora_summary
+            
+            yield f"data: {json.dumps({'type': 'agent_complete', 'agent': 'aurora', 'student_id': student_id, 'status': 'complete'})}\n\n"
+        except Exception as e:
+            yield f"data: {json.dumps({'type': 'agent_error', 'agent': 'aurora', 'student_id': student_id, 'error': f'Aurora formatting failed: {str(e)}'})}\n\n"
         
         # Results ready - link to REAL student detail page with DB data
         yield f"data: {json.dumps({'type': 'results_ready', 'student_id': student_id, 'results_url': f'/student/{application_id}', 'application_id': application_id, 'success': overall_success})}\n\n"

@@ -155,10 +155,9 @@ class SmeeOrchestrator(BaseAgent):
         if not merlin_run and 'student_evaluator' in self.agents:
             await self._run_merlin_after_agents(application)
         
-        self.workflow_state = "synthesizing"
-        # Synthesize final recommendation
-        final_rec = await self._synthesize_results(application)
-        self.evaluation_results['final_recommendation'] = final_rec
+        self.workflow_state = "formatting"
+        # Let Aurora format and summarize all results
+        await self._run_aurora_after_merlin(application)
         
         self.workflow_state = "complete"
         print(f"\n{'='*60}")
@@ -196,6 +195,51 @@ class SmeeOrchestrator(BaseAgent):
                 'status': 'failed'
             }
             self._write_audit(application, merlin.name)
+
+    async def _run_aurora_after_merlin(self, application: Dict[str, Any]) -> None:
+        """
+        Run Aurora after Merlin completes to format and summarize results for presentation.
+        Aurora reads Merlin's evaluation and creates an elegant summary.
+        """
+        aurora = self.agents.get('aurora')
+        if not aurora:
+            print("⚠ Smee: Aurora agent not found. Skipping formatting.")
+            return
+
+        print("\n[Final] Smee: Delegating to Aurora for elegant presentation...")
+        try:
+            # Aurora formats all results based on Merlin's assessment
+            merlin_result = self.evaluation_results['results'].get('student_evaluator', {})
+            
+            # Get all agent data for Aurora to work with
+            aurora_summary = await aurora.format_results(
+                application_data={
+                    'name': application.get('ApplicantName'),
+                    'email': application.get('Email'),
+                    'applicationtext': application.get('ApplicationText')
+                },
+                agent_outputs={
+                    'tiana': self.evaluation_results['results'].get('application_reader'),
+                    'rapunzel': self.evaluation_results['results'].get('grade_reader'),
+                    'moana': self.evaluation_results['results'].get('school_context'),
+                    'mulan': self.evaluation_results['results'].get('recommendation_reader')
+                },
+                merlin_assessment=merlin_result
+            )
+            
+            # Store Aurora's formatted summary
+            self.evaluation_results['results']['aurora'] = aurora_summary
+            self.evaluation_results['aurora_summary'] = aurora_summary.get('merlin_summary', {})
+            self._write_audit(application, aurora.name)
+            print(f"✓ {aurora.name} completed successfully - Results formatted for presentation")
+            
+        except Exception as e:
+            print(f"✗ {aurora.name} encountered an error: {str(e)}")
+            self.evaluation_results['results']['aurora'] = {
+                'error': str(e),
+                'status': 'failed'
+            }
+            self._write_audit(application, aurora.name)
 
     def determine_agents_for_upload(
         self,
