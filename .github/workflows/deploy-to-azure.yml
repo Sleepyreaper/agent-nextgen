@@ -49,25 +49,11 @@ jobs:
 
     - name: Create deployment package
       run: |
-        # Create .deployment file with custom deploy script that skips Oryx
-        mkdir -p deploy
-        cat > deploy/.deployment << 'EOF'
-        [config]
-        command = bash deploy.sh
-        EOF
-        
-        cat > deploy/deploy.sh << 'EOF'
-        #!/bin/bash
-        # Skip Oryx, just copy files to wwwroot
-        cp -r /tmp/zipdeploy/extracted/* /home/site/wwwroot/
-        echo "Deploy complete - files copied to wwwroot"
-        EOF
-        
-        chmod +x deploy/deploy.sh
-        
-        # Create zip with all files including deploy scripts
-        zip -r app.zip . -x ".git/*" ".venv/*" "venv/*" "env/*" "__pycache__/*" "deploy/*"
-        zip -r app.zip deploy/
+        mkdir -p deployment
+        cp -r app.py wsgi.py startup.py src web database uploads requirements.txt deployment/ 2>/dev/null || true
+        cd deployment
+        zip -r ../app.zip . -x "*.git*" "__pycache__/*" "*.pyc" ".venv/*"
+        cd ..
         ls -lh app.zip
     
     - name: Deploy to Azure App Service
