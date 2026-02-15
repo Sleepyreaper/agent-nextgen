@@ -1,8 +1,120 @@
 {% extends "base.html" %}
 
-{% block title %}{{ application.applicantname }} - Student Summary{% endblock %}
+{% block title %}{{ summary.name }} - Student Summary{% endblock %}
 
 {% block extra_css %}
+<style>
+    .stat-box { padding: 1.5rem; background: #f9fafb; border-radius: 8px; text-align: center; }
+    .stat-value { font-size: 2rem; font-weight: bold; color: var(--emory-blue); }
+    .stat-label { color: #6b7280; font-size: 0.9rem; margin-top: 0.5rem; }
+    .badge { display: inline-block; padding: 0.4rem 0.8rem; border-radius: 4px; font-size: 0.85rem; font-weight: 500; }
+    .badge-training { background: #dbeafe; color: #1e40af; }
+    .badge-selected { background: #d1fae5; color: #065f46; }
+    .section-title { color: var(--emory-blue); border-bottom: 2px solid var(--accent-teal); padding-bottom: 0.5rem; margin-bottom: 1rem; }
+</style>
+{% endblock %}
+
+{% block content %}
+<!-- Student Header -->
+<div class="card" style="background: linear-gradient(135deg, var(--emory-blue) 0%, #004080 100%); color: white; margin-bottom: 2rem;">
+    <div style="display: flex; justify-content: space-between; align-items: start;">
+        <div>
+            <h1 style="margin-bottom: 0.5rem; font-size: 2.5rem;">{{ summary.name }}</h1>
+            <p style="opacity: 0.95; margin-bottom: 0.5rem;">📧 {{ summary.email }}</p>
+            <p style="opacity: 0.95;">📅 Uploaded: {{ summary.uploaded_date.strftime('%B %d, %Y') if summary.uploaded_date else 'Unknown' }}</p>
+        </div>
+        <div style="text-align: right;">
+            <span style="font-size: 3rem; margin-bottom: 0.5rem; display: block;">
+                {% if summary.is_training %} 🎓 {% else %} 📝 {% endif %}
+            </span>
+            {% if summary.is_training %}
+                <span class="badge badge-training">Training Data</span>
+                {% if summary.was_selected %}
+                    <span class="badge badge-selected">Selected</span>
+                {% endif %}
+            {% endif %}
+        </div>
+    </div>
+</div>
+
+<!-- Quick Stats -->
+<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; margin-bottom: 2rem;">
+    <div class="stat-box">
+        <div class="stat-value">{{ summary.word_count }}</div>
+        <div class="stat-label">Words</div>
+    </div>
+    <div class="stat-box">
+        <div class="stat-value">{{ summary.file_name.split('.')[-1].upper() if summary.file_name else 'TXT' }}</div>
+        <div class="stat-label">File Type</div>
+    </div>
+    <div class="stat-box">
+        <div class="stat-value">{{ 'Yes' if evaluation else 'No' }}</div>
+        <div class="stat-label">Evaluated</div>
+    </div>
+</div>
+
+<!-- Application Content -->
+<div class="card">
+    <h2 class="section-title">📖 Application Content</h2>
+    <div style="background: #f9fafb; padding: 1.5rem; border-radius: 6px; border-left: 4px solid var(--accent-teal);">
+        <p style="line-height: 1.8; color: #2c3e50; white-space: pre-wrap; word-wrap: break-word;">{{ summary.text_preview }}</p>
+        {% if summary.word_count > 250 %}
+            <p style="color: #6b7280; font-size: 0.9rem; margin-top: 1rem; font-style: italic;">... [{{ summary.word_count - 250 }} more words]</p>
+        {% endif %}
+    </div>
+</div>
+
+<!-- Evaluation Results (if available) -->
+{% if evaluation %}
+<div class="card">
+    <h2 class="section-title">📊 AI Evaluation Results</h2>
+    
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 1rem; margin-bottom: 1.5rem;">
+        <div class="stat-box">
+            <div class="stat-value" style="color: var(--emory-gold);">{{ evaluation.OverallScore|round|int }}/100</div>
+            <div class="stat-label">Overall Score</div>
+        </div>
+        <div class="stat-box">
+            <div class="stat-value">{{ evaluation.Recommendation or 'Pending' }}</div>
+            <div class="stat-label">Recommendation</div>
+        </div>
+    </div>
+
+    <div style="background: white; padding: 1.5rem; border: 1px solid #e5e7eb; border-radius: 6px;">
+        {% if evaluation.Strengths %}
+        <div style="margin-bottom: 1.5rem;">
+            <h3 style="color: var(--emory-blue); margin-bottom: 0.5rem;">✨ Key Strengths</h3>
+            <p style="white-space: pre-wrap;">{{ evaluation.Strengths }}</p>
+        </div>
+        {% endif %}
+        
+        {% if evaluation.Weaknesses %}
+        <div style="margin-bottom: 1.5rem;">
+            <h3 style="color: var(--emory-blue); margin-bottom: 0.5rem;">🎯 Areas for Growth</h3>
+            <p style="white-space: pre-wrap;">{{ evaluation.Weaknesses }}</p>
+        </div>
+        {% endif %}
+        
+        {% if evaluation.DetailedAnalysis %}
+        <div>
+            <h3 style="color: var(--emory-blue); margin-bottom: 0.5rem;">📝 Detailed Analysis</h3>
+            <p style="white-space: pre-wrap; line-height: 1.8;">{{ evaluation.DetailedAnalysis }}</p>
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% else %}
+<div class="card" style="background: #fffbeb; border-left: 4px solid var(--emory-gold);">
+    <h2 class="section-title">📊 Evaluation Status</h2>
+    <p style="color: #92400e;">This student has not yet been evaluated by the agent system. <a href="{{ url_for('upload') }}" style="color: var(--emory-blue); font-weight: 600;">Process this student →</a></p>
+</div>
+{% endif %}
+
+<!-- Return to Students -->
+<div style="margin-top: 2rem; text-align: center;">
+    <a href="{{ url_for('students') }}" class="btn">← Back to Students</a>
+</div>
+{% endblock %}
 <style>
     .progress-bar {
         background: #e5e7eb;

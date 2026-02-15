@@ -1,6 +1,6 @@
 """
-Presenter Agent - Formats and validates consistent result pages for all students.
-Works with Merlin and Smee to ensure uniform presentation across evaluations.
+Aurora Agent - Elegantly formats and presents final evaluation results.
+Works with Merlin and Smee to ensure uniform, polished presentation across evaluations.
 """
 
 import asyncio
@@ -9,9 +9,9 @@ from typing import Dict, Any, Optional, List
 from src.agents.base_agent import BaseAgent
 
 
-class PresenterAgent(BaseAgent):
+class AuroraAgent(BaseAgent):
     """
-    Presenter Agent - Ensures consistent formatting of result pages.
+    Aurora Agent - Elegantly formats and presents final evaluation results.
     
     This agent:
     1. Takes outputs from all agents (Tiana, Rapunzel, Moana, Mulan)
@@ -22,11 +22,11 @@ class PresenterAgent(BaseAgent):
     """
     
     def __init__(self):
-        # Note: We don't need Azure OpenAI client for Presenter since it just formats data
-        # Pass None for client - Presenter doesn't make API calls
-        super().__init__(name="Presenter", client=None)
-        self.emoji = "🎨"
-        self.description = "Formats consistent result pages with Merlin and Smee"
+        # Note: We don't need Azure OpenAI client for Aurora since it just formats data
+        # Pass None for client - Aurora doesn't make API calls
+        super().__init__(name="Aurora", client=None)
+        self.emoji = "👑"
+        self.description = "Elegantly presents polished final results with Merlin and Smee"
         
         # Template for consistent result structure
         self.result_template = {
