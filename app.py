@@ -160,6 +160,17 @@ def get_orchestrator():
     return orchestrator_agent
 
 
+# Health check endpoint - no dependencies
+@app.route('/health')
+def health():
+    """Health check endpoint."""
+    return jsonify({
+        'status': 'healthy',
+        'app': 'nextgen-agents-api',
+        'version': '1.0.0'
+    }), 200
+
+
 @app.route('/')
 def index():
     """Home page - Dashboard."""
