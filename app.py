@@ -861,9 +861,9 @@ def generate_session_updates(session_id):
                     else:
                         return await agent.process(f"Evaluate: {application_data.get('applicationtext', '')}")
                 
-                # Run with 60 second timeout
+                # Run with 10 minute timeout (deep thinking takes time)
                 result = asyncio.run(
-                    asyncio.wait_for(run_agent_async(), timeout=60.0)
+                    asyncio.wait_for(run_agent_async(), timeout=600.0)
                 )
                 
                 agent_results[step_name] = result
@@ -872,7 +872,7 @@ def generate_session_updates(session_id):
                 yield f"data: {json.dumps({'type': 'agent_complete', 'agent': display_name, 'student_id': student_id, 'status': 'complete'})}\n\n"
                 
             except asyncio.TimeoutError:
-                error_msg = f'{display_name} timed out after 60 seconds'
+                error_msg = f'{display_name} timed out after 10 minutes (deep analysis in progress - this may indicate an issue)'
                 yield f"data: {json.dumps({'type': 'agent_error', 'agent': display_name, 'student_id': student_id, 'error': error_msg})}\n\n"
                 overall_success = False
             except Exception as e:
