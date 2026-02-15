@@ -804,40 +804,103 @@ def generate_session_updates(session_id):
         # Student submitted
         yield f"data: {json.dumps({'type': 'student_submitted', 'student': {'name': name, 'email': email}, 'student_id': student_id})}\n\n"
         
-        # Run REAL agent pipeline
-        evaluation_steps = ['application_reader', 'grade_reader', 'recommendation_reader', 'school_context', 'student_evaluator']
+        # Run REAL agent pipeline with real-time updates
+        evaluation_steps = [
+            ('application_reader', 'tiana', '👸'),
+            ('grade_reader', 'rapunzel', '💇'),
+            ('recommendation_reader', 'mulan', '🗡️'),
+            ('school_context', 'moana', '🌊'),
+            ('student_evaluator', 'merlin', '🧙')
+        ]
         
-        for agent_name, emoji in agent_display[:-1]:  # Skip aurora (presentation happens after)
-            yield f"data: {json.dumps({'type': 'agent_start', 'agent': agent_name, 'student_id': student_id, 'emoji': emoji})}\n\n"
+        application_data = db.get_application(application_id)
+        agent_results = {}
+        overall_success = True
         
-        try:
-            # Run orchestration
-            asyncio.run(
-                orchestrator.coordinate_evaluation(
-                    application=db.get_application(application_id),
-                    evaluation_steps=evaluation_steps
+        for step_name, display_name, emoji in evaluation_steps:
+            # Agent starts
+            yield f"data: {json.dumps({'type': 'agent_start', 'agent': display_name, 'student_id': student_id, 'emoji': emoji})}\n\n"
+            
+            try:
+                # Get the specific agent
+                agent = orchestrator.agents.get(step_name)
+                if not agent:
+                    yield f"data: {json.dumps({'type': 'agent_error', 'agent': display_name, 'student_id': student_id, 'error': f'Agent {step_name} not found'})}\n\n"
+                    overall_success = False
+                    continue
+                
+                # Run this specific agent with timeout
+                import asyncio
+                import concurrent.futures
+                
+                async def run_agent_async():
+                    if hasattr(agent, 'evaluate_student'):
+                        # Merlin needs previous results
+                        return await agent.evaluate_student(application_data, agent_results)
+                    elif hasattr(agent, 'parse_application'):
+                        return await agent.parse_application(application_data)
+                    elif hasattr(agent, 'parse_grades'):
+                        return await agent.parse_grades(
+                            application_data.get('applicationtext', ''),
+                            application_data.get('applicantname', '')
+                        )
+                    elif hasattr(agent, 'parse_recommendation'):
+                        rec_text = application_data.get('recommendationtext') or application_data.get('applicationtext', '')
+                        return await agent.parse_recommendation(
+                            rec_text,
+                            application_data.get('applicantname', ''),
+                            application_id
+                        )
+                    elif hasattr(agent, 'analyze_student_school_context'):
+                        rapunzel_data = agent_results.get('grade_reader')
+                        return await agent.analyze_student_school_context(
+                            application=application_data,
+                            transcript_text=application_data.get('applicationtext', ''),
+                            rapunzel_grades_data=rapunzel_data
+                        )
+                    else:
+                        return await agent.process(f"Evaluate: {application_data.get('applicationtext', '')}")
+                
+                # Run with 60 second timeout
+                result = asyncio.run(
+                    asyncio.wait_for(run_agent_async(), timeout=60.0)
                 )
-            )
-            
-            # Update status
-            db.execute_non_query(
-                "UPDATE Applications SET Status = 'Evaluated' WHERE ApplicationID = %s",
-                (application_id,)
-            )
-            
-            # Mark agents complete
-            for agent_name, _ in agent_display[:-1]:
-                yield f"data: {json.dumps({'type': 'agent_complete', 'agent': agent_name, 'student_id': student_id, 'status': 'complete'})}\n\n"
-            
-            # Aurora presentation
-            yield f"data: {json.dumps({'type': 'agent_start', 'agent': 'aurora', 'student_id': student_id, 'emoji': '👑'})}\n\n"
-            yield f"data: {json.dumps({'type': 'agent_complete', 'agent': 'aurora', 'student_id': student_id, 'status': 'complete'})}\n\n"
-            
-            # Results ready - link to REAL student detail page with DB data
-            yield f"data: {json.dumps({'type': 'results_ready', 'student_id': student_id, 'results_url': f'/student/{application_id}', 'application_id': application_id})}\n\n"
-            
+                
+                agent_results[step_name] = result
+                
+                # Agent completed successfully
+                yield f"data: {json.dumps({'type': 'agent_complete', 'agent': display_name, 'student_id': student_id, 'status': 'complete'})}\n\n"
+                
+            except asyncio.TimeoutError:
+                error_msg = f'{display_name} timed out after 60 seconds'
+                yield f"data: {json.dumps({'type': 'agent_error', 'agent': display_name, 'student_id': student_id, 'error': error_msg})}\n\n"
+                overall_success = False
+            except Exception as e:
+                error_msg = f'{display_name} error: {str(e)}'
+                yield f"data: {json.dumps({'type': 'agent_error', 'agent': display_name, 'student_id': student_id, 'error': error_msg})}\n\n"
+                overall_success = False
+        
+        # Update status
+        try:
+            if overall_success:
+                db.execute_non_query(
+                    "UPDATE Applications SET Status = 'Evaluated' WHERE ApplicationID = %s",
+                    (application_id,)
+                )
+            else:
+                db.execute_non_query(
+                    "UPDATE Applications SET Status = 'Error' WHERE ApplicationID = %s",
+                    (application_id,)
+                )
         except Exception as e:
-            yield f"data: {json.dumps({'type': 'error', 'student_id': student_id, 'error': str(e)})}\n\n"
+            yield f"data: {json.dumps({'type': 'error', 'student_id': student_id, 'error': f'Status update failed: {str(e)}'})}\n\n"
+        
+        # Aurora presentation
+        yield f"data: {json.dumps({'type': 'agent_start', 'agent': 'aurora', 'student_id': student_id, 'emoji': '👑'})}\n\n"
+        yield f"data: {json.dumps({'type': 'agent_complete', 'agent': 'aurora', 'student_id': student_id, 'status': 'complete'})}\n\n"
+        
+        # Results ready - link to REAL student detail page with DB data
+        yield f"data: {json.dumps({'type': 'results_ready', 'student_id': student_id, 'results_url': f'/student/{application_id}', 'application_id': application_id, 'success': overall_success})}\n\n"
     
     # All complete
     yield f"data: {json.dumps({'type': 'all_complete', 'application_ids': submission['application_ids']})}\n\n"
