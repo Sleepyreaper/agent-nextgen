@@ -506,13 +506,65 @@ def test():
         flash(f'Error loading test page: {str(e)}', 'error')
         return render_template('test.html')
 
-@app.route('/student/<int:application_id>')
-def student_detail(application_id):
-    """View comprehensive student summary with all agent evaluations."""
+
+def cleanup_test_data():
+    """
+    Delete all old test data (applications marked with IsTrainingExample = TRUE).
+    Called at the start of each new test run to ensure clean slate.
+    """
     try:
-        # Get main application record
-        application = db.get_application(application_id)
-        if not application:
+        # Delete all related evaluation data first (foreign key constraints)
+        test_app_ids = db.execute_query(
+            "SELECT ApplicationID FROM Applications WHERE IsTrainingExample = TRUE"
+        )
+        
+        for app_record in test_app_ids:
+            app_id = app_record.get('applicationid')
+            
+            # Delete from specialized agent tables
+            try:
+                db.execute_non_query("DELETE FROM TianaApplications WHERE ApplicationID = %s", (app_id,))
+            except:
+                pass
+            
+            try:
+                db.execute_non_query("DELETE FROM MulanRecommendations WHERE ApplicationID = %s", (app_id,))
+            except:
+                pass
+            
+            try:
+                db.execute_non_query("DELETE FROM MerlinEvaluations WHERE ApplicationID = %s", (app_id,))
+            except:
+                pass
+            
+            try:
+                db.execute_non_query("DELETE FROM StudentSchoolContext WHERE ApplicationID = %s", (app_id,))
+            except:
+                pass
+            
+            try:
+                db.execute_non_query("DELETE FROM Grades WHERE ApplicationID = %s", (app_id,))
+            except:
+                pass
+            
+            try:
+                db.execute_non_query("DELETE FROM AIEvaluations WHERE ApplicationID = %s", (app_id,))
+            except:
+                pass
+            
+            try:
+                db.execute_non_query("DELETE FROM AgentAuditLogs WHERE ApplicationID = %s", (app_id,))
+            except:
+                pass
+        
+        # Now delete the applications themselves
+        db.execute_non_query("DELETE FROM Applications WHERE IsTrainingExample = TRUE")
+        
+        print(f"✓ Cleaned up {len(test_app_ids)} old test applications and their related data")
+        
+    except Exception as e:
+        print(f"⚠ Warning during test data cleanup: {str(e)}")
+        # Don't fail the test if cleanup has issues - just log and continue
             flash('Student not found', 'error')
             return redirect(url_for('students'))
         
@@ -957,9 +1009,13 @@ def test_stream(session_id):
 def submit_test_data():
     """
     Generate synthetic test students and start processing pipeline.
+    Cleans up old test data first, then creates new test students.
     Returns a session ID to stream updates from.
     """
     try:
+        # CLEANUP: Delete old test data (all applications marked as training examples)
+        cleanup_test_data()
+        
         # Generate 3-8 random test students with realistic data
         students = test_data_generator.generate_batch()
         
@@ -982,6 +1038,61 @@ def submit_test_data():
         
     except Exception as e:
         return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/test/cleanup', methods=['POST'])
+def cleanup_test_endpoint():
+    """
+    API endpoint to manually clear all test data from the database.
+    Useful for starting fresh without running a full test.
+    """
+    try:
+        cleanup_test_data()
+        
+        # Count remaining test data
+        remaining = db.execute_query(
+            "SELECT COUNT(*) as count FROM Applications WHERE IsTrainingExample = TRUE"
+        )
+        count = remaining[0].get('count', 0) if remaining else 0
+        
+        return jsonify({
+            'status': 'success',
+            'message': 'Test data cleaned up successfully',
+            'remaining_test_apps': count
+        })
+    except Exception as e:
+        return jsonify({
+            'status': 'error',
+            'error': str(e)
+        }), 500
+
+
+@app.route('/api/test/stats', methods=['GET'])
+def test_stats():
+    """
+    Get statistics about test data currently in the database.
+    """
+    try:
+        test_count = db.execute_query(
+            "SELECT COUNT(*) as count FROM Applications WHERE IsTrainingExample = TRUE"
+        )
+        count = test_count[0].get('count', 0) if test_count else 0
+        
+        # Get list of test students
+        test_apps = db.execute_query(
+            "SELECT ApplicationID, ApplicantName, Status, UploadedDate FROM Applications WHERE IsTrainingExample = TRUE ORDER BY UploadedDate DESC"
+        )
+        
+        return jsonify({
+            'status': 'success',
+            'test_count': count,
+            'test_applications': test_apps
+        })
+    except Exception as e:
+        return jsonify({
+            'status': 'error',
+            'error': str(e)
+        }), 500
 
 
 if __name__ == '__main__':
