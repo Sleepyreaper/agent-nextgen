@@ -660,8 +660,32 @@ def student_detail(application_id):
             flash('Student not found', 'error')
             return redirect(url_for('students'))
         
+        # Fetch Merlin evaluation if available
+        evaluation = None
+        try:
+            merlin_results = db.execute_query(
+                "SELECT * FROM MerlinEvaluations WHERE ApplicationID = %s ORDER BY CreatedAt DESC LIMIT 1",
+                (application_id,)
+            )
+            if merlin_results:
+                evaluation = merlin_results[0]
+                # Parse JSON if available to make fields accessible
+                if evaluation.get('ParsedJson'):
+                    try:
+                        import json
+                        parsed = json.loads(evaluation['ParsedJson'])
+                        # Merge parsed fields into evaluation dict
+                        for key, value in parsed.items():
+                            if key not in evaluation or not evaluation[key]:
+                                evaluation[key] = value
+                    except:
+                        pass
+        except:
+            pass
+        
         return render_template('application.html', 
                              application=application,
+                             evaluation=evaluation,
                              is_training=application.get('istrainingexample', False))
         
     except Exception as e:
@@ -865,6 +889,23 @@ def generate_session_updates(session_id):
                 )
         except Exception as e:
             yield f"data: {json.dumps({'type': 'error', 'student_id': student_id, 'error': f'Status update failed: {str(e)}'})}\n\n"
+        
+        # Save Merlin evaluation to database
+        try:
+            merlin_result = agent_results.get('student_evaluator', {})
+            if merlin_result and merlin_result.get('status') == 'success' and overall_success:
+                import json
+                db.save_merlin_evaluation(
+                    application_id=application_id,
+                    agent_name='Merlin',
+                    overall_score=merlin_result.get('overall_score'),
+                    recommendation=merlin_result.get('recommendation'),
+                    rationale=merlin_result.get('rationale'),
+                    confidence=merlin_result.get('confidence'),
+                    parsed_json=json.dumps(merlin_result, ensure_ascii=True, default=str)
+                )
+        except Exception as e:
+            print(f"Warning: Failed to save Merlin evaluation: {str(e)}")
         
         # Aurora presentation - format results based on Merlin's assessment
         try:
