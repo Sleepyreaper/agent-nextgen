@@ -751,8 +751,8 @@ aurora = AuroraAgent()
 def generate_session_updates(session_id):
     """
     Generator function for SSE updates during test processing.
-    Creates real test applications in DB and runs full agent pipeline.
-    Test data is marked with IsTrainingExample = TRUE.
+    Creates real test applications in DB and has Smee orchestrate batch processing.
+    All students are processed in parallel for efficiency.
     """
     submission = test_submissions.get(session_id)
     if not submission:
@@ -761,193 +761,136 @@ def generate_session_updates(session_id):
     
     # Send initial connected message
     yield f"data: {json.dumps({'type': 'connected', 'message': 'Connected to test stream'})}\n\n"
-    time.sleep(0.1)
     
     # Get generated test students
     students = submission['students']
     orchestrator = get_orchestrator()
     
-    # Define agent processing order
-    agent_display = [
-        ('tiana', '👸'),
-        ('rapunzel', '💇'),
-        ('mulan', '🗡️'),
-        ('moana', '🌊'),
-        ('merlin', '🧙'),
-        ('aurora', '👑')
-    ]
-    
+    # STEP 1: Create all student records in database first
+    application_data_list = []
     for idx, student in enumerate(students):
         name = student['name']
         email = student['email']
         application_text = student['application_text']
         
-        # Create database record as TRAINING EXAMPLE
-        application_id = db.create_application(
-            applicant_name=name,
-            email=email,
-            application_text=application_text,
-            file_name=f"test_{name.replace(' ', '_').lower()}.txt",
-            file_type="txt",
-            is_training=True,  # Mark as training/test data
-            was_selected=None
-        )
-        
-        submission['application_ids'].append(application_id)
-        student_id = f"student_{idx}"
-        
-        # Student submitted
-        yield f"data: {json.dumps({'type': 'student_submitted', 'student': {'name': name, 'email': email}, 'student_id': student_id})}\n\n"
-        
-        # Run REAL agent pipeline with real-time updates
-        evaluation_steps = [
-            ('application_reader', 'tiana', '👸'),
-            ('grade_reader', 'rapunzel', '💇'),
-            ('recommendation_reader', 'mulan', '🗡️'),
-            ('school_context', 'moana', '🌊'),
-            ('student_evaluator', 'merlin', '🧙')
-        ]
-        
-        application_data = db.get_application(application_id)
-        agent_results = {}
-        overall_success = True
-        
-        for step_name, display_name, emoji in evaluation_steps:
-            # Agent starts
-            yield f"data: {json.dumps({'type': 'agent_start', 'agent': display_name, 'student_id': student_id, 'emoji': emoji})}\n\n"
+        try:
+            application_id = db.create_application(
+                applicant_name=name,
+                email=email,
+                application_text=application_text,
+                file_name=f"test_{name.replace(' ', '_').lower()}.txt",
+                file_type="txt",
+                is_training=True,
+                was_selected=None
+            )
             
-            try:
-                # Get the specific agent
-                agent = orchestrator.agents.get(step_name)
-                if not agent:
-                    yield f"data: {json.dumps({'type': 'agent_error', 'agent': display_name, 'student_id': student_id, 'error': f'Agent {step_name} not found'})}\n\n"
-                    overall_success = False
-                    continue
-                
-                # Run this specific agent with timeout
-                import asyncio
-                import concurrent.futures
-                
-                async def run_agent_async():
-                    if hasattr(agent, 'evaluate_student'):
-                        # Merlin needs previous results
-                        return await agent.evaluate_student(application_data, agent_results)
-                    elif hasattr(agent, 'parse_application'):
-                        return await agent.parse_application(application_data)
-                    elif hasattr(agent, 'parse_grades'):
-                        return await agent.parse_grades(
-                            application_data.get('applicationtext', ''),
-                            application_data.get('applicantname', '')
-                        )
-                    elif hasattr(agent, 'parse_recommendation'):
-                        rec_text = application_data.get('recommendationtext') or application_data.get('applicationtext', '')
-                        return await agent.parse_recommendation(
-                            rec_text,
-                            application_data.get('applicantname', ''),
-                            application_id
-                        )
-                    elif hasattr(agent, 'analyze_student_school_context'):
-                        rapunzel_data = agent_results.get('grade_reader')
-                        return await agent.analyze_student_school_context(
-                            application=application_data,
-                            transcript_text=application_data.get('applicationtext', ''),
-                            rapunzel_grades_data=rapunzel_data
-                        )
-                    else:
-                        return await agent.process(f"Evaluate: {application_data.get('applicationtext', '')}")
-                
-                # Run with 10 minute timeout (deep thinking takes time)
-                result = asyncio.run(
-                    asyncio.wait_for(run_agent_async(), timeout=600.0)
-                )
-                
-                agent_results[step_name] = result
-                
-                # Agent completed successfully
-                yield f"data: {json.dumps({'type': 'agent_complete', 'agent': display_name, 'student_id': student_id, 'status': 'complete'})}\n\n"
-                
-            except asyncio.TimeoutError:
-                error_msg = f'{display_name} timed out after 10 minutes (deep analysis in progress - this may indicate an issue)'
-                yield f"data: {json.dumps({'type': 'agent_error', 'agent': display_name, 'student_id': student_id, 'error': error_msg})}\n\n"
-                overall_success = False
-            except Exception as e:
-                error_msg = f'{display_name} error: {str(e)}'
-                yield f"data: {json.dumps({'type': 'agent_error', 'agent': display_name, 'student_id': student_id, 'error': error_msg})}\n\n"
-                overall_success = False
-        
-        # Update status
-        try:
-            if overall_success:
-                db.execute_non_query(
-                    "UPDATE Applications SET Status = 'Evaluated' WHERE ApplicationID = %s",
-                    (application_id,)
-                )
-            else:
-                db.execute_non_query(
-                    "UPDATE Applications SET Status = 'Error' WHERE ApplicationID = %s",
-                    (application_id,)
-                )
-        except Exception as e:
-            yield f"data: {json.dumps({'type': 'error', 'student_id': student_id, 'error': f'Status update failed: {str(e)}'})}\n\n"
-        
-        # Save Merlin evaluation to database
-        try:
-            merlin_result = agent_results.get('student_evaluator', {})
-            if merlin_result and merlin_result.get('status') == 'success' and overall_success:
-                import json
-                db.save_merlin_evaluation(
-                    application_id=application_id,
-                    agent_name='Merlin',
-                    overall_score=merlin_result.get('overall_score'),
-                    recommendation=merlin_result.get('recommendation'),
-                    rationale=merlin_result.get('rationale'),
-                    confidence=merlin_result.get('confidence'),
-                    parsed_json=json.dumps(merlin_result, ensure_ascii=True, default=str)
-                )
-        except Exception as e:
-            print(f"Warning: Failed to save Merlin evaluation: {str(e)}")
-        
-        # Aurora presentation - format results based on Merlin's assessment
-        try:
-            yield f"data: {json.dumps({'type': 'agent_start', 'agent': 'aurora', 'student_id': student_id, 'emoji': '👑'})}\n\n"
+            submission['application_ids'].append(application_id)
+            application_data = db.get_application(application_id)
+            student_id = f"student_{idx}"
             
-            # Get Aurora agent
-            aurora_agent = orchestrator.agents.get('aurora')
-            if aurora_agent and hasattr(aurora_agent, 'format_results') and overall_success:
-                # Run Aurora to format results
-                merlin_result = agent_results.get('student_evaluator', {})
-                
-                async def run_aurora_async():
-                    return await aurora_agent.format_results(
-                        application_data={
-                            'name': application_data.get('applicantname'),
-                            'email': application_data.get('email'),
-                            'applicationtext': application_data.get('applicationtext')
-                        },
-                        agent_outputs={
-                            'tiana': agent_results.get('application_reader'),
-                            'rapunzel': agent_results.get('grade_reader'),
-                            'moana': agent_results.get('school_context'),
-                            'mulan': agent_results.get('recommendation_reader')
-                        },
-                        merlin_assessment=merlin_result
+            application_data_list.append({
+                'student_id': student_id,
+                'application_id': application_id,
+                'application_data': application_data,
+                'name': name,
+                'email': email
+            })
+            
+            # Notify of student submission
+            yield f"data: {json.dumps({'type': 'student_submitted', 'student': {'name': name, 'email': email}, 'student_id': student_id})}\n\n"
+        except Exception as e:
+            yield f"data: {json.dumps({'type': 'error', 'error': f'Failed to create student record: {str(e)}'})}\n\n"
+    
+    if not application_data_list:
+        yield f"data: {json.dumps({'type': 'error', 'error': 'No students could be created'})}\n\n"
+        return
+    
+    # STEP 2: Use Smee to orchestrate parallel processing of all students
+    yield f"data: {json.dumps({'type': 'orchestrator_start', 'message': 'Smee is coordinating evaluation of all students in parallel'})}\n\n"
+    
+    async def process_student_with_updates(app_data):
+        """Process a single student and handle all agent updates."""
+        student_id = app_data['student_id']
+        application_id = app_data['application_id']
+        application_data = app_data['application_data']
+        
+        try:
+            # Run the full agent pipeline through Smee
+            evaluation_steps = [
+                'application_reader',
+                'grade_reader', 
+                'recommendation_reader',
+                'school_context',
+                'student_evaluator',
+                'aurora'
+            ]
+            
+            result = await orchestrator.coordinate_evaluation(
+                application=application_data,
+                evaluation_steps=evaluation_steps
+            )
+            
+            # Save Merlin evaluation to database
+            if 'results' in result and 'student_evaluator' in result['results']:
+                merlin_result = result['results']['student_evaluator']
+                if merlin_result and merlin_result.get('status') == 'success':
+                    db.save_merlin_evaluation(
+                        application_id=application_id,
+                        agent_name='Merlin',
+                        overall_score=merlin_result.get('overall_score'),
+                        recommendation=merlin_result.get('recommendation'),
+                        rationale=merlin_result.get('rationale'),
+                        confidence=merlin_result.get('confidence'),
+                        parsed_json=json.dumps(merlin_result, ensure_ascii=True, default=str)
                     )
-                
-                aurora_summary = asyncio.run(
-                    asyncio.wait_for(run_aurora_async(), timeout=60.0)
-                )
-                
-                # Store Aurora's formatted summary in agent_results
-                agent_results['aurora'] = aurora_summary
             
-            yield f"data: {json.dumps({'type': 'agent_complete', 'agent': 'aurora', 'student_id': student_id, 'status': 'complete'})}\n\n"
+            return {
+                'student_id': student_id,
+                'application_id': application_id,
+                'success': True,
+                'result': result
+            }
         except Exception as e:
-            yield f"data: {json.dumps({'type': 'agent_error', 'agent': 'aurora', 'student_id': student_id, 'error': f'Aurora formatting failed: {str(e)}'})}\n\n"
+            return {
+                'student_id': student_id,
+                'application_id': application_id,
+                'success': False,
+                'error': str(e)
+            }
+    
+    # Run all students in parallel
+    try:
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
         
-        # Results ready - link to REAL student detail page with DB data
-        yield f"data: {json.dumps({'type': 'results_ready', 'student_id': student_id, 'results_url': f'/application/{application_id}', 'application_id': application_id, 'success': overall_success})}\n\n"
+        # Process all students concurrently
+        tasks = [process_student_with_updates(app_data) for app_data in application_data_list]
+        results = loop.run_until_complete(asyncio.gather(*tasks, return_exceptions=True))
+        loop.close()
+        
+        # Send results as they complete
+        for result in results:
+            if isinstance(result, Exception):
+                yield f"data: {json.dumps({'type': 'error', 'error': str(result)})}\n\n"
+            elif result.get('success'):
+                yield f"data: {json.dumps({
+                    'type': 'results_ready',
+                    'student_id': result['student_id'],
+                    'application_id': result['application_id'],
+                    'results_url': f'/application/{result["application_id"]}',
+                    'success': True
+                })}\n\n"
+            else:
+                yield f"data: {json.dumps({
+                    'type': 'agent_error',
+                    'student_id': result['student_id'],
+                    'error': result.get('error', 'Unknown error')
+                })}\n\n"
+    except Exception as e:
+        yield f"data: {json.dumps({'type': 'error', 'error': f'Orchestration failed: {str(e)}'})}\n\n"
     
     # All complete
+    yield f"data: {json.dumps({'type': 'all_complete', 'application_ids': submission['application_ids']})}\n\n"
     yield f"data: {json.dumps({'type': 'all_complete', 'application_ids': submission['application_ids']})}\n\n"
 
 
