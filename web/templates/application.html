@@ -40,85 +40,146 @@
         <div>
             <h3>🤖 AI Evaluation</h3>
             <div style="margin-top: 1rem;">
+                {% if evaluation.OverallScore %}
                 <div style="font-size: 3rem; font-weight: bold; color: #667eea; text-align: center;">
                     {{ "%.1f"|format(evaluation.OverallScore) }}
                 </div>
                 <div style="text-align: center; color: #6b7280; margin-top: 0.5rem;">
                     Overall Score / 100
                 </div>
+                {% endif %}
+                {% if evaluation.Recommendation %}
                 <div style="text-align: center; margin-top: 1rem;">
                     <span class="badge" style="background: #667eea; color: white; padding: 0.5rem 1rem; font-size: 1rem;">
                         {{ evaluation.Recommendation }}
                     </span>
                 </div>
+                {% endif %}
+                {% if evaluation.Confidence %}
+                <div style="text-align: center; margin-top: 0.5rem; color: #6b7280;">
+                    Confidence: {{ evaluation.Confidence }}
+                </div>
+                {% endif %}
             </div>
         </div>
         {% endif %}
     </div>
 
     {% if evaluation %}
+    {% if evaluation.TechnicalSkillsScore or evaluation.CommunicationScore or evaluation.ExperienceScore or evaluation.CulturalFitScore %}
     <div style="background: #f9fafb; padding: 1.5rem; border-radius: 5px; margin-bottom: 2rem;">
         <h3>📊 Detailed Scores</h3>
         <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 1rem; margin-top: 1rem;">
+            {% if evaluation.TechnicalSkillsScore %}
             <div style="text-align: center;">
                 <div style="font-size: 1.5rem; font-weight: bold; color: #667eea;">
                     {{ "%.0f"|format(evaluation.TechnicalSkillsScore) }}
                 </div>
                 <div style="color: #6b7280; font-size: 0.875rem;">Technical Skills</div>
             </div>
+            {% endif %}
+            {% if evaluation.CommunicationScore %}
             <div style="text-align: center;">
                 <div style="font-size: 1.5rem; font-weight: bold; color: #10b981;">
                     {{ "%.0f"|format(evaluation.CommunicationScore) }}
                 </div>
                 <div style="color: #6b7280; font-size: 0.875rem;">Communication</div>
             </div>
+            {% endif %}
+            {% if evaluation.ExperienceScore %}
             <div style="text-align: center;">
                 <div style="font-size: 1.5rem; font-weight: bold; color: #f59e0b;">
                     {{ "%.0f"|format(evaluation.ExperienceScore) }}
                 </div>
                 <div style="color: #6b7280; font-size: 0.875rem;">Experience</div>
             </div>
+            {% endif %}
+            {% if evaluation.CulturalFitScore %}
             <div style="text-align: center;">
                 <div style="font-size: 1.5rem; font-weight: bold; color: #8b5cf6;">
                     {{ "%.0f"|format(evaluation.CulturalFitScore) }}
                 </div>
                 <div style="color: #6b7280; font-size: 0.875rem;">Cultural Fit</div>
             </div>
+            {% endif %}
         </div>
     </div>
+    {% endif %}
 
+    {% if evaluation.Strengths or evaluation.key_strengths %}
     <div style="margin-bottom: 2rem;">
         <h3>✅ Strengths</h3>
         <div style="background: #d1fae5; padding: 1rem; border-radius: 5px; margin-top: 0.5rem; white-space: pre-line;">
+            {% if evaluation.Strengths %}
             {{ evaluation.Strengths }}
+            {% elif evaluation.key_strengths %}
+            {% for strength in evaluation.key_strengths %}
+            • {{ strength }}
+            {% endfor %}
+            {% endif %}
         </div>
     </div>
+    {% endif %}
 
+    {% if evaluation.Weaknesses or evaluation.key_risks %}
     <div style="margin-bottom: 2rem;">
         <h3>⚠️ Areas for Improvement</h3>
         <div style="background: #fef3c7; padding: 1rem; border-radius: 5px; margin-top: 0.5rem; white-space: pre-line;">
+            {% if evaluation.Weaknesses %}
             {{ evaluation.Weaknesses }}
+            {% elif evaluation.key_risks %}
+            {% for risk in evaluation.key_risks %}
+            • {{ risk }}
+            {% endfor %}
+            {% endif %}
         </div>
     </div>
+    {% endif %}
 
+    {% if evaluation.DetailedAnalysis %}
     <div style="margin-bottom: 2rem;">
         <h3>📝 Detailed Analysis</h3>
         <div style="background: #f9fafb; padding: 1rem; border-radius: 5px; margin-top: 0.5rem; white-space: pre-line;">
             {{ evaluation.DetailedAnalysis }}
         </div>
     </div>
+    {% endif %}
 
+    {% if evaluation.Rationale %}
     <div style="margin-bottom: 2rem;">
-        <h3>🎯 Comparison to Excellence</h3>
+        <h3>📋 Evaluation Rationale</h3>
         <div style="background: #dbeafe; padding: 1rem; border-radius: 5px; margin-top: 0.5rem; white-space: pre-line;">
-            {{ evaluation.ComparisonToExcellence }}
+            {{ evaluation.Rationale }}
         </div>
     </div>
+    {% endif %}
+
+    {% if evaluation.ComparisonToExcellence or evaluation.context_factors %}
+    <div style="margin-bottom: 2rem;">
+        <h3>🎯 Context & Factors</h3>
+        <div style="background: #f5f3ff; padding: 1rem; border-radius: 5px; margin-top: 0.5rem; white-space: pre-line;">
+            {% if evaluation.ComparisonToExcellence %}
+            {{ evaluation.ComparisonToExcellence }}
+            {% elif evaluation.context_factors %}
+            {% for factor in evaluation.context_factors %}
+            • {{ factor }}
+            {% endfor %}
+            {% endif %}
+        </div>
+    </div>
+    {% endif %}
 
     <div style="font-size: 0.875rem; color: #6b7280; padding-top: 1rem; border-top: 1px solid #e5e7eb;">
-        <strong>Evaluated by:</strong> {{ evaluation.AgentName }} using {{ evaluation.ModelUsed }}<br>
+        <strong>Evaluated by:</strong> {{ evaluation.AgentName or 'AI Agent' }}<br>
+        {% if evaluation.EvaluationDate %}
         <strong>Evaluation date:</strong> {{ evaluation.EvaluationDate.strftime('%Y-%m-%d %H:%M') if evaluation.EvaluationDate else 'N/A' }}<br>
+        {% endif %}
+        {% if evaluation.CreatedAt %}
+        <strong>Created:</strong> {{ evaluation.CreatedAt.strftime('%Y-%m-%d %H:%M') if evaluation.CreatedAt else 'N/A' }}<br>
+        {% endif %}
+        {% if evaluation.ProcessingTimeMs %}
         <strong>Processing time:</strong> {{ evaluation.ProcessingTimeMs }}ms
+        {% endif %}
     </div>
     {% else %}
     <div style="text-align: center; padding: 3rem; background: #f9fafb; border-radius: 5px;">
