@@ -5,6 +5,7 @@ import json
 from typing import Dict, List, Any, Optional
 from openai import AzureOpenAI
 from src.agents.base_agent import BaseAgent
+from src.agents.system_prompts import GASTON_EVALUATOR_PROMPT
 
 
 class GastonEvaluator(BaseAgent):
@@ -35,59 +36,55 @@ class GastonEvaluator(BaseAgent):
         self.training_examples = examples
     
     def _build_evaluation_prompt(self, application: Dict[str, Any]) -> str:
-        """Build the evaluation prompt with context."""
+        """Build the evaluation prompt with context and deep reasoning."""
         prompt_parts = [
-            "You are an expert hiring manager evaluating internship/job applications.",
+            GASTON_EVALUATOR_PROMPT,
             "",
-            "# EVALUATION CRITERIA",
-            "Evaluate the application on these dimensions (0-100 scale):",
-            "1. **Technical Skills** - Relevant technical knowledge and abilities",
-            "2. **Communication** - Clarity, professionalism, and articulation",
-            "3. **Experience** - Relevant work, projects, or academic experience",
-            "4. **Cultural Fit** - Alignment with company values and team dynamics",
-            ""
-        ]
-        
-        # Add training examples if available
-        if self.training_examples:
-            prompt_parts.append("# EXCELLENT APPLICATION EXAMPLES")
-            prompt_parts.append("Here are examples of previously selected excellent applications:")
-            prompt_parts.append("")
-            
-            for idx, example in enumerate(self.training_examples[:3], 1):  # Show top 3
-                prompt_parts.append(f"## Example {idx}: {example.get('ApplicantName', 'Anonymous')}")
-                prompt_parts.append(f"{example.get('ApplicationText', '')[:500]}...")
-                prompt_parts.append(f"**Why selected:** {example.get('Notes', 'Exceptional candidate')}")
-                prompt_parts.append("")
-        
-        # Add the application to evaluate
-        prompt_parts.extend([
             "# APPLICATION TO EVALUATE",
             f"**Applicant:** {application.get('ApplicantName', 'Unknown')}",
             f"**Email:** {application.get('Email', 'N/A')}",
-            f"**Position:** {application.get('Position', 'N/A')}",
-            "",
-            "**Application Content:**",
+            f"**Student ID:** {application.get('StudentID', 'N/A')}",
+            ""
+        ]
+        
+        # Add training examples for reference
+        if self.training_examples:
+            prompt_parts.append("# COMPELLING EXAMPLES FROM OUR PROGRAM")
+            prompt_parts.append("Study these examples of students who thrived in our program:")
+            prompt_parts.append("")
+            
+            for idx, example in enumerate(self.training_examples[:3], 1):
+                prompt_parts.append(f"## Example {idx}: {example.get('ApplicantName', 'Anonymous')}")
+                prompt_parts.append(f"{example.get('ApplicationText', '')[:400]}...")
+                prompt_parts.append("")
+        
+        prompt_parts.extend([
+            "# APPLICATION CONTENT",
             application.get('ApplicationText', ''),
             "",
-            "# YOUR TASK",
-            "Provide a comprehensive evaluation in JSON format with these fields:",
+            "# EVALUATION TASK",
+            "Provide detailed evaluation in JSON format.",
+            "Include specific quotes from the application to support each score.",
+            "",
             "```json",
             "{",
-            '  "technical_skills_score": <0-100>,',
+            '  "technical_foundation_score": <0-100>,',
             '  "communication_score": <0-100>,',
-            '  "experience_score": <0-100>,',
-            '  "cultural_fit_score": <0-100>,',
+            '  "intellectual_curiosity_score": <0-100>,',
+            '  "growth_potential_score": <0-100>,',
+            '  "team_contribution_score": <0-100>,',
             '  "overall_score": <0-100>,',
-            '  "strengths": "<bullet points of key strengths>",',
-            '  "weaknesses": "<bullet points of areas for improvement>",',
-            '  "recommendation": "<Strongly Recommend|Recommend|Consider|Reject>",',
-            '  "detailed_analysis": "<2-3 paragraph detailed analysis>",',
-            '  "comparison_to_excellence": "<how this compares to excellent examples>"',
+            '  "key_strengths": [<3-4 specific strengths with evidence>],',
+            '  "growth_areas": [<2-3 areas for development>],',
+            '  "evidence_quotes": [<direct quotes supporting your scores>],',
+            '  "detailed_analysis": "<3-4 paragraph holistic assessment considering what this student COULD become>",',
+            '  "fit_for_nextgen": "<Why this student will or won\'t thrive in our diverse STEM community>",',
+            '  "recommendation": "<STRONG ADMIT|ADMIT|WAITLIST|RECONSIDER>",',
+            '  "reasoning": "<Concise explanation of your recommendation>"',
             "}",
             "```",
             "",
-            "Provide ONLY the JSON response, no additional text."
+            "**Important:** Be fair to students from all backgrounds. Look for potential, not pedigree."
         ])
         
         return "\n".join(prompt_parts)

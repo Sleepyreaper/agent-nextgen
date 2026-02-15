@@ -1,26 +1,31 @@
 {% extends "base.html" %}
 
-{% block title %}Dashboard - Application Evaluation{% endblock %}
+{% block title %}NextGen Dashboard - Application Evaluation{% endblock %}
 
 {% block content %}
+<div style="background: linear-gradient(135deg, rgba(0,51,102,0.05) 0%, rgba(0,153,169,0.05) 100%); padding: 2rem; border-radius: 8px; margin-bottom: 2rem; border-left: 4px solid var(--accent-teal);">
+    <h2 style="color: var(--emory-blue); margin-bottom: 0.5rem;">NextGen High School Internship Program</h2>
+    <p style="color: #555;">Our mission: Recognizing that our differences make us stronger, we actively recruit and support learners from all backgrounds in STEM to improve outcomes for our entire community.</p>
+</div>
+
 <div class="stats">
     <div class="stat-card">
-        <div class="stat-value">{{ pending_count }}</div>
+        <div class="stat-value" style="color: var(--emory-blue);">{{ pending_count }}</div>
         <div class="stat-label">Pending Review</div>
     </div>
     <div class="stat-card">
-        <div class="stat-value">{{ evaluated_count }}</div>
+        <div class="stat-value" style="color: var(--accent-teal);">{{ evaluated_count }}</div>
         <div class="stat-label">Evaluated</div>
     </div>
     <div class="stat-card">
-        <div class="stat-value">{{ total_count }}</div>
+        <div class="stat-value" style="color: var(--emory-gold);">{{ total_count }}</div>
         <div class="stat-label">Total Students</div>
     </div>
 </div>
 
 <div class="card">
-    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem;">
-        <h2>📋 Recent Applications</h2>
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem; border-bottom: 1px solid #eee; padding-bottom: 1rem;">
+        <h2 style="color: var(--emory-blue);">📋 Recent Applications</h2>
         <div style="display: flex; gap: 1rem;">
             <a href="{{ url_for('students') }}" class="btn btn-secondary">👥 View All Students</a>
             <a href="{{ url_for('upload') }}" class="btn btn-success">+ Add New Student</a>
@@ -30,7 +35,7 @@
     {% if applications %}
     <table>
         <thead>
-            <tr>
+            <tr style="background: #f8f9fa; border-bottom: 2px solid var(--accent-teal);">
                 <th>ID</th>
                 <th>Applicant</th>
                 <th>Status</th>
@@ -40,9 +45,9 @@
         </thead>
         <tbody>
             {% for app in applications %}
-            <tr>
+            <tr style="border-bottom: 1px solid #eee;">
                 <td>#{{ app.applicationid }}</td>
-                <td>{{ app.applicantname }}</td>
+                <td><strong>{{ app.applicantname }}</strong></td>
                 <td>
                     <span class="badge badge-{{ app.status.lower() if app.status else 'pending' }}">
                         {{ app.status or 'Pending' }}
@@ -51,10 +56,10 @@
                 <td>{{ app.uploadeddate.strftime('%Y-%m-%d') if app.uploadeddate else 'N/A' }}</td>
                 <td>
                     <a href="{{ url_for('student_detail', application_id=app.applicationid) }}" 
-                       class="btn btn-secondary" style="padding: 0.5rem 1rem;">View</a>
+                       class="btn btn-secondary" style="padding: 0.5rem 1rem; font-size: 0.9rem;">View</a>
                     {% if app.status == 'Pending' %}
                     <a href="{{ url_for('process_student', application_id=app.applicationid) }}" 
-                       class="btn btn-success" style="padding: 0.5rem 1rem;">Process</a>
+                       class="btn btn-success" style="padding: 0.5rem 1rem; font-size: 0.9rem;">Process</a>
                     {% endif %}
                 </td>
             </tr>
@@ -62,11 +67,11 @@
         </tbody>
     </table>
     <div style="margin-top: 1rem; text-align: center;">
-        <a href="{{ url_for('students') }}" class="btn btn-secondary">View All {{ total_count }} Students →</a>
+        <a href="{{ url_for('students') }}" class="btn">View All {{ total_count }} Students →</a>
     </div>
     {% else %}
-    <p style="text-align: center; padding: 3rem; color: #6b7280;">
-        No applications yet. <a href="{{ url_for('upload') }}">Upload your first student application</a>
+    <p style="text-align: center; padding: 3rem; color: #999;">
+        No applications yet. <a href="{{ url_for('upload') }}" style="color: var(--emory-blue); font-weight: 600;">Upload your first student application</a>
     </p>
     {% endif %}
 </div>

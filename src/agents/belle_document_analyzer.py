@@ -2,7 +2,7 @@
 
 Belle loves to read and understand complex information. Like Belle analyzing books in her library,
 this agent analyzes student documents to extract structured data (grades, recommendations, 
-applications, transcripts, etc.) and categorizes the information.
+applications, transcripts, etc.) and categorizes the information with deep understanding.
 """
 
 import json
@@ -10,6 +10,7 @@ import re
 from typing import Dict, List, Any, Optional, Tuple
 from openai import AzureOpenAI
 from src.agents.base_agent import BaseAgent
+from src.agents.system_prompts import BELLE_ANALYZER_PROMPT
 
 
 class BelleDocumentAnalyzer(BaseAgent):
