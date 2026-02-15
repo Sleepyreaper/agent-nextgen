@@ -1,5 +1,6 @@
 """Smee - The orchestrator agent that coordinates all other agents."""
 
+import asyncio
 from typing import Dict, List, Any, Optional
 from openai import AzureOpenAI
 from src.agents.base_agent import BaseAgent
@@ -174,27 +175,60 @@ class SmeeOrchestrator(BaseAgent):
         return steps
 
     async def _run_merlin_after_agents(self, application: Dict[str, Any]) -> None:
-        """Run Merlin after all other agents and record its result."""
+        """Run Merlin after all other agents and record its result with heartbeat check-ins."""
         merlin = self.agents.get('student_evaluator')
         if not merlin:
             return
 
         print("\n[Final] Smee: Delegating to Merlin Student Evaluator...")
-        try:
-            result = await merlin.evaluate_student(
+        print("         (Merlin is analyzing all specialist evaluations - this may take a few minutes)")
+        
+        # Create the Merlin evaluation task
+        merlin_task = asyncio.create_task(
+            merlin.evaluate_student(
                 application,
                 self.evaluation_results['results']
             )
-
+        )
+        
+        # Create and run heartbeat task concurrently
+        heartbeat_task = asyncio.create_task(self._heartbeat_during_merlin())
+        
+        try:
+            # Wait for Merlin to complete, heartbeat runs in background
+            result = await merlin_task
+            
             self.evaluation_results['results']['student_evaluator'] = result
             self._write_audit(application, merlin.name)
             print(f"✓ {merlin.name} completed successfully")
+            
         except Exception as e:
             self.evaluation_results['results']['student_evaluator'] = {
                 'error': str(e),
                 'status': 'failed'
             }
             self._write_audit(application, merlin.name)
+        finally:
+            # Cancel the heartbeat task
+            heartbeat_task.cancel()
+            try:
+                await heartbeat_task
+            except asyncio.CancelledError:
+                pass
+
+    async def _heartbeat_during_merlin(self) -> None:
+        """Print periodic check-in messages while Merlin is evaluating."""
+        check_in_interval = 120  # Check in every 2 minutes
+        check_in_count = 0
+        
+        try:
+            while True:
+                await asyncio.sleep(check_in_interval)
+                check_in_count += 1
+                elapsed_minutes = check_in_count * (check_in_interval // 60)
+                print(f"         ✓ Smee check-in: Merlin is still working hard ({elapsed_minutes}+ minutes elapsed, evaluating all specialist reports...)")
+        except asyncio.CancelledError:
+            pass
 
     async def _run_aurora_after_merlin(self, application: Dict[str, Any]) -> None:
         """
