@@ -46,13 +46,16 @@ class Config:
         """
         self._secrets_cache: Dict[str, str] = {}
         self._secret_client: Optional[SecretClient] = None
+        self._key_vault_enabled = True
+        self._key_vault_error_logged = False
         
         # Determine Key Vault name - skip if using local dev env file
         env_local_path = Path(".env.local")
-        if env_local_path.exists():
+        if env_local_path.exists() or os.getenv("AZURE_KEY_VAULT_DISABLED") == "1":
             # Local development mode - use environment variables only
             self.key_vault_name = None
             self._secret_client = None
+            self._key_vault_enabled = False
         else:
             # Production/Staging mode - try Key Vault
             self.key_vault_name = key_vault_name or os.getenv("AZURE_KEY_VAULT_NAME")
@@ -82,13 +85,16 @@ class Config:
                         signal.alarm(0)  # Cancel alarm
                         sys.stderr = old_stderr
                         self._secret_client = None
+                        self._key_vault_enabled = False
                     finally:
                         sys.stderr = old_stderr
                 except Exception as e:
                     # Silently fall back to env variables in local dev
                     self._secret_client = None
+                    self._key_vault_enabled = False
             else:
                 self._secret_client = None
+                self._key_vault_enabled = False
         
         # Load configuration
         self.azure_openai_endpoint: str = self._get_secret("azure-openai-endpoint", "AZURE_OPENAI_ENDPOINT")
@@ -163,14 +169,22 @@ class Config:
             return self._secrets_cache[key_vault_secret_name]
         
         # Try Key Vault first
-        if self._secret_client:
+        if self._secret_client and self._key_vault_enabled:
             try:
                 secret = self._secret_client.get_secret(key_vault_secret_name)
                 value = secret.value
                 self._secrets_cache[key_vault_secret_name] = value
                 return value
             except Exception as e:
-                print(f"  Could not retrieve '{key_vault_secret_name}' from Key Vault: {e}")
+                # Disable Key Vault after first failure to avoid repeated crashes/log spam.
+                self._key_vault_enabled = False
+                self._secret_client = None
+                if not self._key_vault_error_logged:
+                    logging.warning(
+                        "Key Vault access failed; falling back to environment variables.",
+                        exc_info=True
+                    )
+                    self._key_vault_error_logged = True
         
         # Fall back to environment variable
         value = os.getenv(env_var_name)
