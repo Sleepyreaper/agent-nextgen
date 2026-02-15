@@ -878,7 +878,7 @@ def generate_session_updates(session_id):
         time.sleep(0.5)
         
         # Results ready
-        yield f"data: {json.dumps({'type': 'results_ready', 'student_id': student_id, 'results_url': url_for('test_detail', student_id=student_id)})}\n\n"
+        yield f"data: {json.dumps({'type': 'results_ready', 'student_id': student_id, 'results_url': f'/test/detail/{student_id}'})}\n\n"
         time.sleep(0.2)
 
 
