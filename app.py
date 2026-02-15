@@ -904,7 +904,7 @@ def generate_session_updates(session_id):
             yield f"data: {json.dumps({'type': 'agent_error', 'agent': 'aurora', 'student_id': student_id, 'error': f'Aurora formatting failed: {str(e)}'})}\n\n"
         
         # Results ready - link to REAL student detail page with DB data
-        yield f"data: {json.dumps({'type': 'results_ready', 'student_id': student_id, 'results_url': f'/student/{application_id}', 'application_id': application_id, 'success': overall_success})}\n\n"
+        yield f"data: {json.dumps({'type': 'results_ready', 'student_id': student_id, 'results_url': f'/application/{application_id}', 'application_id': application_id, 'success': overall_success})}\n\n"
     
     # All complete
     yield f"data: {json.dumps({'type': 'all_complete', 'application_ids': submission['application_ids']})}\n\n"
