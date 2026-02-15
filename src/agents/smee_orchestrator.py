@@ -110,7 +110,6 @@ class SmeeOrchestrator(BaseAgent):
                 elif hasattr(agent, 'parse_application'):
                     # For TianaApplicationReader
                     result = await agent.parse_application(application)
-                    await self._run_mulan_from_tiana(application, result)
                 elif hasattr(agent, 'parse_recommendation'):
                     # For MulanRecommendationReader
                     recommendation_text = application.get('RecommendationText') or application.get('ApplicationText', '')
@@ -198,41 +197,6 @@ class SmeeOrchestrator(BaseAgent):
             }
             self._write_audit(application, merlin.name)
 
-    async def _run_mulan_from_tiana(self, application: Dict[str, Any], tiana_result: Dict[str, Any]) -> None:
-        """Run Mulan on recommendation text extracted by Tiana."""
-        mulan = self.agents.get('recommendation_reader')
-        if not mulan:
-            return
-
-        if not isinstance(tiana_result, dict):
-            return
-
-        recommendation_texts = tiana_result.get('recommendation_texts')
-        if not isinstance(recommendation_texts, list) or not recommendation_texts:
-            return
-
-        for idx, rec_text in enumerate(recommendation_texts, 1):
-            if not rec_text or not isinstance(rec_text, str):
-                continue
-
-            print(f"\n[Auto] Smee: Delegating to Mulan Recommendation Reader (rec {idx})...")
-            try:
-                result = await mulan.parse_recommendation(
-                    rec_text,
-                    application.get('ApplicantName', ''),
-                    application.get('ApplicationID')
-                )
-                result_key = f"recommendation_reader_{idx}"
-                self.evaluation_results['results'][result_key] = result
-                self._write_audit(application, mulan.name)
-                print(f"✓ {mulan.name} completed successfully")
-            except Exception as e:
-                result_key = f"recommendation_reader_{idx}"
-                self.evaluation_results['results'][result_key] = {
-                    'error': str(e),
-                    'status': 'failed'
-                }
-                self._write_audit(application, mulan.name)
     def determine_agents_for_upload(
         self,
         file_name: str,
