@@ -204,23 +204,24 @@
 
     <!-- Submission Form -->
     <div class="submission-form">
-        <h3 style="margin-bottom: 1.5rem;">Start a Test Run</h3>
+        <h3 style="margin-bottom: 1.5rem;">🧪 Start Test Run</h3>
         
         <div class="form-group">
-            <label class="form-label">Choose Test Scenario</label>
-            <p class="form-description">Select pre-defined test students to process</p>
+            <p class="form-description">
+                Generates 3-8 random synthetic students with varying quality levels (high/medium/low). 
+                Each student is stored in the database as test data and processed through the full agent pipeline.
+            </p>
             
             <div class="test-buttons">
-                <button class="btn-test btn-test-quick" onclick="submitQuickTest('alex-jordan')">
-                    ⚡ Quick Test (Alex + Jordan)
-                </button>
-                <button class="btn-test btn-test-quick" onclick="submitQuickTest('alex-only')">
-                    📝 Single Student (Alex)
-                </button>
-                <button class="btn-test btn-test-custom" onclick="submitQuickTest('custom')">
-                    🎯 Custom Students
+                <button class="btn btn-primary" onclick="submitTestRun()" style="font-size: 1.1rem; padding: 1rem 2rem;">
+                    🚀 Generate & Process Test Students
                 </button>
             </div>
+            
+            <p style="margin-top: 1rem; color: #6b7280; font-size: 0.9rem;">
+                <strong>What happens:</strong> Creates realistic test applications → Stores in database as training examples → 
+                Runs full agent pipeline (Tiana, Rapunzel, Mulan, Moana, Merlin) → Aurora presents results
+            </p>
         </div>
     </div>
 
@@ -240,66 +241,30 @@
             </div>
         </div>
     </div>
-
-    <!-- Sample Results Info -->
-    <div class="card" style="background: #f0f9ff; border-left: 4px solid #3b82f6;">
-        <h3 style="color: #1e40af; margin-bottom: 1rem;">📊 Sample Results</h3>
-        <p style="color: #1e40af; margin-bottom: 1rem;">View pre-computed sample results:</p>
-        <div style="display: flex; gap: 1rem; flex-wrap: wrap;">
-            <a href="{{ url_for('test_detail', student_id='alex') }}" class="btn btn-secondary">
-                👤 Alex Johnson (Complete)
-            </a>
-            <a href="{{ url_for('test_detail', student_id='jordan') }}" class="btn btn-secondary">
-                👤 Jordan Smith (Partial)
-            </a>
-        </div>
-    </div>
 </div>
 
 <script>
-const agents = ['tiana', 'rapunzel', 'moana', 'mulan', 'merlin', 'smee', 'aurora'];
+const agents = ['tiana', 'rapunzel', 'moana', 'mulan', 'merlin', 'aurora'];
 const agentEmojis = {
     'tiana': '👸',
     'rapunzel': '💇',
     'moana': '🌊',
     'mulan': '🗡️',
     'merlin': '🧙',
-    'smee': '🎩',
     'aurora': '👑'
 };
 
-function submitQuickTest(scenario) {
-    let students = [];
-    
-    if (scenario === 'alex-jordan') {
-        students = [
-            {name: 'Alex Johnson', email: 'alex.johnson@example.com'},
-            {name: 'Jordan Smith', email: 'jordan.smith@example.com'}
-        ];
-    } else if (scenario === 'alex-only') {
-        students = [
-            {name: 'Alex Johnson', email: 'alex.johnson@example.com'}
-        ];
-    } else if (scenario === 'custom') {
-        // TODO: Show form to enter custom students
-        alert('Custom student entry coming soon');
-        return;
-    }
-    
-    startTestRun(students);
-}
-
-function startTestRun(students) {
+function submitTestRun() {
     // Show stream container
     document.getElementById('stream-container').style.display = 'block';
     const streamEl = document.getElementById('live-stream');
-    streamEl.innerHTML = '';
+    streamEl.innerHTML = '<div class="loading-spinner"></div><p>Generating test students...</p>';
     
-    // Submit students for processing
+    // Submit request to generate and process test students
     fetch('/api/test/submit', {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({students: students})
+        body: JSON.stringify({})  // Server generates students
     })
     .then(r => r.json())
     .then(data => {
@@ -307,6 +272,8 @@ function startTestRun(students) {
             streamEl.innerHTML = `<div class="card" style="background: #fee2e2; border-left: 4px solid #ef4444;"><p style="color: #991b1b;">${data.error}</p></div>`;
             return;
         }
+        
+        streamEl.innerHTML = `<p style="color: #6b7280;">Generated ${data.student_count} test students. Starting evaluation...</p>`;
         
         // Connect to SSE stream
         connectStream(data.stream_url);
