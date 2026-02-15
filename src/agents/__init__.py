@@ -9,8 +9,8 @@ from .moana_school_context import MoanaSchoolContext
 from .tiana_application_reader import TianaApplicationReader
 from .mulan_recommendation_reader import MulanRecommendationReader
 from .merlin_student_evaluator import MerlinStudentEvaluator
-from .presenter_agent import PresenterAgent
 from .aurora_agent import AuroraAgent
+from .belle_document_analyzer import BelleDocumentAnalyzer
 
 __all__ = [
 	"BaseAgent",
