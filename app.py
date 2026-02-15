@@ -842,71 +842,81 @@ def generate_session_updates(session_id):
     students = submission['students']
     
     for idx, student in enumerate(students):
-        name = (student.get('name') or '').strip().lower()
-        if name.startswith('alex'):
+        name = (student.get('name') or '').strip()
+        email = student.get('email', 'unknown@example.com')
+        name_key = name.lower()
+        if name_key.startswith('alex'):
             student_id = 'alex'
-        elif name.startswith('jordan'):
+        elif name_key.startswith('jordan'):
             student_id = 'jordan'
         else:
             student_id = f"student_{idx}"
-        
-        # Store basic student info for test detail fallback
+
+        # Create a real application record for test data
+        application_text = (
+            f"Test application for {name}.\n"
+            f"Email: {email}\n"
+            "This test submission should be processed through the full agent pipeline."
+        )
+
+        application_id = db.create_application(
+            applicant_name=name or f"Test Student {idx + 1}",
+            email=email,
+            application_text=application_text,
+            file_name=f"test_{student_id}.txt",
+            file_type="txt",
+            is_training=False,
+            was_selected=None
+        )
+
         submission['results'][student_id] = {
-            'name': student.get('name', 'Test Student'),
-            'email': student.get('email', 'unknown@example.com')
+            'name': name or f"Test Student {idx + 1}",
+            'email': email,
+            'application_id': application_id
         }
 
         # Student submitted
         yield f"data: {json.dumps({'type': 'student_submitted', 'student': student, 'student_id': student_id})}\n\n"
-        time.sleep(1)
-        
-        # Tiana starts
-        yield f"data: {json.dumps({'type': 'agent_start', 'agent': 'tiana', 'student_id': student_id, 'emoji': '👸'})}\n\n"
-        time.sleep(1.5)
-        
-        # Tiana completes
-        yield f"data: {json.dumps({'type': 'agent_complete', 'agent': 'tiana', 'student_id': student_id, 'status': 'complete'})}\n\n"
-        time.sleep(0.5)
-        
-        # Rapunzel starts
-        yield f"data: {json.dumps({'type': 'agent_start', 'agent': 'rapunzel', 'student_id': student_id, 'emoji': '💇'})}\n\n"
-        time.sleep(1.5)
-        yield f"data: {json.dumps({'type': 'agent_complete', 'agent': 'rapunzel', 'student_id': student_id, 'status': 'complete'})}\n\n"
-        time.sleep(0.5)
-        
-        # Moana starts
-        yield f"data: {json.dumps({'type': 'agent_start', 'agent': 'moana', 'student_id': student_id, 'emoji': '🌊'})}\n\n"
-        time.sleep(1.5)
-        yield f"data: {json.dumps({'type': 'agent_complete', 'agent': 'moana', 'student_id': student_id, 'status': 'complete'})}\n\n"
-        time.sleep(0.5)
-        
-        # Mulan starts
-        yield f"data: {json.dumps({'type': 'agent_start', 'agent': 'mulan', 'student_id': student_id, 'emoji': '🗡️'})}\n\n"
-        time.sleep(1.5)
-        yield f"data: {json.dumps({'type': 'agent_complete', 'agent': 'mulan', 'student_id': student_id, 'status': 'complete'})}\n\n"
-        time.sleep(0.5)
-        
-        # Merlin starts
-        yield f"data: {json.dumps({'type': 'agent_start', 'agent': 'merlin', 'student_id': student_id, 'emoji': '🧙'})}\n\n"
-        time.sleep(2)
-        yield f"data: {json.dumps({'type': 'agent_complete', 'agent': 'merlin', 'student_id': student_id, 'status': 'complete'})}\n\n"
-        time.sleep(0.5)
-        
-        # Smee verifies
-        yield f"data: {json.dumps({'type': 'agent_start', 'agent': 'smee', 'student_id': student_id, 'emoji': '🎩'})}\n\n"
-        time.sleep(1)
-        yield f"data: {json.dumps({'type': 'agent_complete', 'agent': 'smee', 'student_id': student_id, 'status': 'complete', 'verified': True})}\n\n"
-        time.sleep(0.5)
-        
-        # Aurora formats results
-        yield f"data: {json.dumps({'type': 'agent_start', 'agent': 'aurora', 'student_id': student_id, 'emoji': '👑'})}\n\n"
-        time.sleep(1)
-        yield f"data: {json.dumps({'type': 'agent_complete', 'agent': 'aurora', 'student_id': student_id, 'status': 'complete'})}\n\n"
-        time.sleep(0.5)
-        
-        # Results ready
-        yield f"data: {json.dumps({'type': 'results_ready', 'student_id': student_id, 'results_url': f'/test/{student_id}'})}\n\n"
-        time.sleep(0.2)
+
+        # Run the real evaluation pipeline
+        orchestrator = get_orchestrator()
+        evaluation_steps = ['application_reader', 'grade_reader', 'recommendation_reader', 'school_context', 'student_evaluator']
+        agent_map = {
+            'application_reader': ('tiana', '👸'),
+            'grade_reader': ('rapunzel', '💇'),
+            'recommendation_reader': ('mulan', '🗡️'),
+            'school_context': ('moana', '🌊'),
+            'student_evaluator': ('merlin', '🧙')
+        }
+
+        for step in evaluation_steps:
+            agent_name, emoji = agent_map.get(step, (step, '✨'))
+            yield f"data: {json.dumps({'type': 'agent_start', 'agent': agent_name, 'student_id': student_id, 'emoji': emoji})}\n\n"
+
+        try:
+            asyncio.run(
+                orchestrator.coordinate_evaluation(
+                    application=db.get_application(application_id),
+                    evaluation_steps=evaluation_steps
+                )
+            )
+
+            db.execute_non_query(
+                "UPDATE Applications SET Status = 'Evaluated' WHERE ApplicationID = %s",
+                (application_id,)
+            )
+
+            for step in evaluation_steps:
+                agent_name, _ = agent_map.get(step, (step, '✨'))
+                yield f"data: {json.dumps({'type': 'agent_complete', 'agent': agent_name, 'student_id': student_id, 'status': 'complete'})}\n\n"
+
+            # Aurora formats results (logical end)
+            yield f"data: {json.dumps({'type': 'agent_complete', 'agent': 'aurora', 'student_id': student_id, 'status': 'complete'})}\n\n"
+
+            # Results ready
+            yield f"data: {json.dumps({'type': 'results_ready', 'student_id': student_id, 'results_url': f'/student/{application_id}'})}\n\n"
+        except Exception as e:
+            yield f"data: {json.dumps({'type': 'error', 'student_id': student_id, 'error': str(e)})}\n\n"
 
 
 @app.route('/api/test/stream/<session_id>')
