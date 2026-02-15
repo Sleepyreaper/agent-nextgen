@@ -498,7 +498,7 @@ def test():
 
 @app.route('/student/<int:application_id>')
 def student_detail(application_id):
-    """View comprehensive student summary."""
+    """View comprehensive student summary with all agent evaluations."""
     try:
         # Get main application record
         application = db.get_application(application_id)
@@ -506,7 +506,65 @@ def student_detail(application_id):
             flash('Student not found', 'error')
             return redirect(url_for('students'))
         
-        # Try to get any existing evaluations for this student
+        # Get all agent results from specialized tables
+        agent_results = {}
+        
+        # Tiana (Application Reader)
+        try:
+            tiana_results = db.execute_query(
+                "SELECT * FROM TianaApplications WHERE ApplicationID = %s ORDER BY CreatedAt DESC LIMIT 1",
+                (application_id,)
+            )
+            if tiana_results:
+                agent_results['tiana'] = tiana_results[0]
+        except Exception as e:
+            print(f"Tiana query error: {e}")
+        
+        # Rapunzel (Grade Reader) - stored in Grades table
+        try:
+            grade_results = db.execute_query(
+                "SELECT * FROM Grades WHERE ApplicationID = %s ORDER BY Date DESC",
+                (application_id,)
+            )
+            if grade_results:
+                agent_results['rapunzel'] = {'grades': grade_results}
+        except Exception as e:
+            print(f"Rapunzel query error: {e}")
+        
+        # Mulan (Recommendation Reader)
+        try:
+            mulan_results = db.execute_query(
+                "SELECT * FROM MulanRecommendations WHERE ApplicationID = %s ORDER BY CreatedAt DESC",
+                (application_id,)
+            )
+            if mulan_results:
+                agent_results['mulan'] = mulan_results
+        except Exception as e:
+            print(f"Mulan query error: {e}")
+        
+        # Moana (School Context)
+        try:
+            moana_results = db.execute_query(
+                "SELECT * FROM StudentSchoolContext WHERE ApplicationID = %s ORDER BY AnalysisDate DESC LIMIT 1",
+                (application_id,)
+            )
+            if moana_results:
+                agent_results['moana'] = moana_results[0]
+        except Exception as e:
+            print(f"Moana query error: {e}")
+        
+        # Merlin (Student Evaluator)
+        try:
+            merlin_results = db.execute_query(
+                "SELECT * FROM MerlinEvaluations WHERE ApplicationID = %s ORDER BY CreatedAt DESC LIMIT 1",
+                (application_id,)
+            )
+            if merlin_results:
+                agent_results['merlin'] = merlin_results[0]
+        except Exception as e:
+            print(f"Merlin query error: {e}")
+        
+        # AI Evaluations (general evaluations from any agent)
         evaluation = None
         try:
             results = db.execute_query(
@@ -516,24 +574,24 @@ def student_detail(application_id):
             evaluation = results[0] if results else None
         except Exception as eval_err:
             print(f"Error fetching evaluation: {eval_err}")
-            evaluation = None
         
         # Generate a summary of the application
         summary = {
-            'name': application.get('ApplicantName', 'Unknown'),
-            'email': application.get('Email', 'N/A'),
-            'uploaded_date': application.get('UploadedDate'),
-            'file_name': application.get('OriginalFileName'),
-            'is_training': application.get('IsTrainingExample', False),
-            'was_selected': application.get('WasSelected'),
-            'text_preview': application.get('ApplicationText', '')[:500],
-            'word_count': len(application.get('ApplicationText', '').split())
+            'name': application.get('applicantname', 'Unknown'),
+            'email': application.get('email', 'N/A'),
+            'uploaded_date': application.get('uploadeddate'),
+            'file_name': application.get('originalfilename'),
+            'is_training': application.get('istrainingexample', False),
+            'was_selected': application.get('wasselected'),
+            'text_preview': application.get('applicationtext', '')[:500],
+            'word_count': len(application.get('applicationtext', '').split())
         }
         
         return render_template('student_detail.html',
                              application=application,
                              summary=summary,
-                             evaluation=evaluation)
+                             evaluation=evaluation,
+                             agent_results=agent_results)
         
     except Exception as e:
         flash(f'Error loading student: {str(e)}', 'error')

@@ -57,12 +57,30 @@
 <!-- Aurora Summary -->
 <div class="card aurora-block">
     <h2 class="section-title">👑 Aurora Summary</h2>
-    {% if evaluation %}
+    {% if agent_results.get('merlin') %}
     <p style="line-height: 1.8; color: #2c3e50;">
-        {{ evaluation.DetailedAnalysis or 'Evaluation completed. Full analysis is available below.' }}
+        {{ agent_results.merlin.rationale or agent_results.merlin.parsedjson or 'Evaluation completed. See agent details below.' }}
+    </p>
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 1rem; margin-top: 1rem;">
+        <div class="stat-box">
+            <div class="stat-value" style="color: var(--emory-gold);">{{ agent_results.merlin.overallscore|round|int if agent_results.merlin.overallscore else 'N/A' }}/100</div>
+            <div class="stat-label">Overall Score</div>
+        </div>
+        <div class="stat-box">
+            <div class="stat-value">{{ agent_results.merlin.recommendation or 'Pending' }}</div>
+            <div class="stat-label">Recommendation</div>
+        </div>
+        <div class="stat-box">
+            <div class="stat-value">{{ agent_results.merlin.confidence or 'N/A' }}</div>
+            <div class="stat-label">Confidence</div>
+        </div>
+    </div>
+    {% elif evaluation %}
+    <p style="line-height: 1.8; color: #2c3e50;">
+        {{ evaluation.detailedanalysis or 'Evaluation completed. Full analysis is available below.' }}
     </p>
     {% else %}
-    <p style="color: #6b7280;">No evaluation has been generated yet.</p>
+    <p style="color: #6b7280;">No evaluation has been generated yet. <a href="{{ url_for('process_student', application_id=application.applicationid) }}">Process this student</a></p>
     {% endif %}
 </div>
 
@@ -77,8 +95,125 @@
     </div>
 </div>
 
-<!-- Evaluation Results (if available) -->
-{% if evaluation %}
+<!-- Individual Agent Results -->
+{% if agent_results %}
+<div class="card">
+    <h2 class="section-title">🤖 Agent Evaluations</h2>
+    
+    <!-- Tiana (Application Reader) -->
+    {% if agent_results.get('tiana') %}
+    <div style="margin-bottom: 2rem; padding: 1rem; background: #fef3c7; border-left: 4px solid #f59e0b; border-radius: 6px;">
+        <h3 style="color: #92400e; margin-bottom: 0.75rem;">👸 Tiana - Application Reader</h3>
+        {% if agent_results.tiana.essaysummary %}
+            <p style="margin-bottom: 0.5rem;"><strong>Essay Summary:</strong></p>
+            <p style="color: #78350f; margin-bottom: 1rem;">{{ agent_results.tiana.essaysummary }}</p>
+        {% endif %}
+        {% if agent_results.tiana.readinessscore %}
+            <p><strong>Readiness Score:</strong> {{ agent_results.tiana.readinessscore }}/100</p>
+        {% endif %}
+        {% if agent_results.tiana.confidence %}
+            <p><strong>Confidence:</strong> {{ agent_results.tiana.confidence }}</p>
+        {% endif %}
+    </div>
+    {% endif %}
+    
+    <!-- Rapunzel (Grade Reader) -->
+    {% if agent_results.get('rapunzel') %}
+    <div style="margin-bottom: 2rem; padding: 1rem; background: #fce7f3; border-left: 4px solid #ec4899; border-radius: 6px;">
+        <h3 style="color: #831843; margin-bottom: 0.75rem;">💇 Rapunzel - Grade Reader</h3>
+        {% if agent_results.rapunzel.grades %}
+            <p style="margin-bottom: 0.5rem;"><strong>Grades Found:</strong> {{ agent_results.rapunzel.grades|length }}</p>
+            <div style="max-height: 200px; overflow-y: auto;">
+                <table style="width: 100%; font-size: 0.9rem;">
+                    <thead>
+                        <tr style="background: #fce7f3;">
+                            <th style="padding: 0.5rem; text-align: left;">Subject</th>
+                            <th style="padding: 0.5rem; text-align: left;">Grade</th>
+                            <th style="padding: 0.5rem; text-align: left;">Type</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for grade in agent_results.rapunzel.grades %}
+                        <tr>
+                            <td style="padding: 0.5rem;">{{ grade.subject or 'N/A' }}</td>
+                            <td style="padding: 0.5rem;">{{ grade.gradevalue or 'N/A' }}{% if grade.maxvalue %}/{{ grade.maxvalue }}{% endif %}</td>
+                            <td style="padding: 0.5rem;">{{ grade.gradetype or 'N/A' }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        {% else %}
+            <p style="color: #831843;">No grades parsed yet.</p>
+        {% endif %}
+    </div>
+    {% endif %}
+    
+    <!-- Mulan (Recommendation Reader) -->
+    {% if agent_results.get('mulan') %}
+    <div style="margin-bottom: 2rem; padding: 1rem; background: #dbeafe; border-left: 4px solid #3b82f6; border-radius: 6px;">
+        <h3 style="color: #1e3a8a; margin-bottom: 0.75rem;">🗡️ Mulan - Recommendation Reader</h3>
+        {% for rec in agent_results.mulan %}
+        <div style="margin-bottom: 1rem; padding: 0.75rem; background: white; border-radius: 4px;">
+            {% if rec.recommendername %}
+                <p style="margin-bottom: 0.25rem;"><strong>From:</strong> {{ rec.recommendername }}{% if rec.recommenderrole %} ({{ rec.recommenderrole }}){% endif %}</p>
+            {% endif %}
+            {% if rec.endorsementstrength %}
+                <p style="margin-bottom: 0.25rem;"><strong>Strength:</strong> {{ rec.endorsementstrength }}/100</p>
+            {% endif %}
+            {% if rec.summary %}
+                <p style="margin-top: 0.5rem; color: #1e40af;">{{ rec.summary }}</p>
+            {% endif %}
+        </div>
+        {% endfor %}
+    </div>
+    {% endif %}
+    
+    <!-- Moana (School Context) -->
+    {% if agent_results.get('moana') %}
+    <div style="margin-bottom: 2rem; padding: 1rem; background: #dcfce7; border-left: 4px solid #10b981; border-radius: 6px;">
+        <h3 style="color: #065f46; margin-bottom: 0.75rem;">🌊 Moana - School Context</h3>
+        {% if agent_results.moana.schoolname %}
+            <p style="margin-bottom: 0.5rem;"><strong>School:</strong> {{ agent_results.moana.schoolname }}</p>
+        {% endif %}
+        {% if agent_results.moana.schoolseslevel %}
+            <p style="margin-bottom: 0.5rem;"><strong>SES Level:</strong> {{ agent_results.moana.schoolseslevel }}</p>
+        {% endif %}
+        {% if agent_results.moana.apcoursesavailable or agent_results.moana.apcoursestaken %}
+            <p style="margin-bottom: 0.5rem;"><strong>AP Courses:</strong> {{ agent_results.moana.apcoursestaken or 0 }} taken / {{ agent_results.moana.apcoursesavailable or 0 }} available</p>
+        {% endif %}
+        {% if agent_results.moana.programaccessscore %}
+            <p style="margin-bottom: 0.5rem;"><strong>Program Access Score:</strong> {{ agent_results.moana.programaccessscore }}/100</p>
+        {% endif %}
+        {% if agent_results.moana.comparisonnotes %}
+            <p style="margin-top: 0.5rem; color: #065f46;">{{ agent_results.moana.comparisonnotes }}</p>
+        {% endif %}
+    </div>
+    {% endif %}
+    
+    <!-- Merlin (Student Evaluator) -->
+    {% if agent_results.get('merlin') %}
+    <div style="margin-bottom: 2rem; padding: 1rem; background: #f3e8ff; border-left: 4px solid #a855f7; border-radius: 6px;">
+        <h3 style="color: #581c87; margin-bottom: 0.75rem;">🧙 Merlin - Student Evaluator</h3>
+        {% if agent_results.merlin.overallscore %}
+            <p style="margin-bottom: 0.5rem;"><strong>Overall Score:</strong> {{ agent_results.merlin.overallscore }}/100</p>
+        {% endif %}
+        {% if agent_results.merlin.recommendation %}
+            <p style="margin-bottom: 0.5rem;"><strong>Recommendation:</strong> {{ agent_results.merlin.recommendation }}</p>
+        {% endif %}
+        {% if agent_results.merlin.confidence %}
+            <p style="margin-bottom: 0.5rem;"><strong>Confidence:</strong> {{ agent_results.merlin.confidence }}</p>
+        {% endif %}
+        {% if agent_results.merlin.rationale %}
+            <p style="margin-top: 0.75rem; color: #581c87; line-height: 1.6;">{{ agent_results.merlin.rationale }}</p>
+        {% endif %}
+    </div>
+    {% endif %}
+</div>
+{% endif %}
+
+<!-- Legacy Evaluation Result (if available but no agent results) -->
+{% if evaluation and not agent_results %}
 <div class="card">
     <h2 class="section-title">📊 AI Evaluation Results</h2>
     
