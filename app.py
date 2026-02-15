@@ -164,6 +164,16 @@ def index():
         return render_template('index.html', applications=[], pending_count=0, evaluated_count=0, total_count=0)
 
 
+@app.route('/health')
+def health():
+    """Health check endpoint for Azure App Service."""
+    return jsonify({
+        'status': 'healthy',
+        'app': 'NextGen Agent System',
+        'version': '1.0'
+    }), 200
+
+
 @app.route('/upload', methods=['GET', 'POST'])
 def upload():
     """
