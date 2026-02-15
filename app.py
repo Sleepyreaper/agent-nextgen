@@ -599,11 +599,36 @@ def test_detail(student_id):
             }
         }
         
-        if student_id not in test_students:
+        student = test_students.get(student_id)
+
+        if not student:
+            # Try to resolve from the latest test submissions
+            fallback = None
+            for submission in test_submissions.values():
+                candidate = submission.get('results', {}).get(student_id)
+                if candidate:
+                    fallback = candidate
+                    break
+
+            if fallback:
+                student = {
+                    'name': fallback.get('name', 'Test Student'),
+                    'email': fallback.get('email', 'unknown@example.com'),
+                    'status': 'PARTIAL',
+                    'application_text': "Test submission captured from live run.",
+                    'merlin_summary': {
+                        'score': 70,
+                        'recommendation': 'CONSIDER',
+                        'overall': "This is a placeholder summary generated from live test data. Run a full evaluation to generate the complete report.",
+                        'key_strengths': ['Live test submission received', 'Basic student info captured'],
+                        'considerations': ['Full evaluation not yet generated']
+                    },
+                    'agents': {}
+                }
+
+        if not student:
             flash('Student not found', 'error')
             return redirect(url_for('test'))
-        
-        student = test_students[student_id]
         
         return render_template('test_detail.html', student=student)
     except Exception as e:
@@ -825,6 +850,12 @@ def generate_session_updates(session_id):
         else:
             student_id = f"student_{idx}"
         
+        # Store basic student info for test detail fallback
+        submission['results'][student_id] = {
+            'name': student.get('name', 'Test Student'),
+            'email': student.get('email', 'unknown@example.com')
+        }
+
         # Student submitted
         yield f"data: {json.dumps({'type': 'student_submitted', 'student': student, 'student_id': student_id})}\n\n"
         time.sleep(1)
@@ -911,6 +942,7 @@ def submit_test_data():
         # Track submission
         test_submissions[session_id] = {
             'students': students,
+            'results': {},
             'created_at': time.time(),
             'status': 'processing'
         }
