@@ -11,6 +11,8 @@ from typing import Dict, List, Any, Optional, Tuple
 from openai import AzureOpenAI
 from src.agents.base_agent import BaseAgent
 from src.agents.system_prompts import BELLE_ANALYZER_PROMPT
+from src.config import config
+from src.services.content_processing_client import ContentProcessingClient
 
 
 class BelleDocumentAnalyzer(BaseAgent):
@@ -37,17 +39,27 @@ class BelleDocumentAnalyzer(BaseAgent):
         self.model = model
         self.emoji = "📖"
         self.description = "Analyzes documents and extracts structured data"
+        self.content_processing_client: Optional[ContentProcessingClient] = None
+
+        if config.content_processing_enabled and config.content_processing_endpoint:
+            self.content_processing_client = ContentProcessingClient(
+                endpoint=config.content_processing_endpoint,
+                api_key=config.content_processing_api_key,
+                api_key_header=config.content_processing_api_key_header
+            )
         
         # Define document type detection patterns
         self.document_types = {
-            "transcript": ["transcript", "grade report", "academic record", "gpa", "course"],
-            "letter_of_recommendation": ["letter of recommendation", "recommendation", "character reference", "endorsed", "recommends"],
-            "application": ["application", "apply for", "student application", "job application", "cover letter"],
-            "grades": ["grades", "mark", "score", "test result", "exam", "final grade", "assignment grade"],
-            "test_scores": ["sat", "act", "gre", "gmat", "test score", "standardized test"],
-            "resume": ["resume", "cv", "curriculum vitae", "experience", "employment history"],
-            "essay": ["essay", "personal statement", "written response", "reflection"],
-            "achievement": ["award", "scholarship", "honor", "recognition", "achievement", "accomplishment"]
+            "transcript": ["transcript", "grade report", "academic record", "gpa", "course", "grades", "mark", "semester", "major"],
+            "letter_of_recommendation": ["letter of recommendation", "recommendation", "character reference", "endorsed", "recommends", "dear admissions", "to whom"],
+            "application": ["application", "apply for", "student application", "job application", "cover letter", "statement of purpose"],
+            "personal_statement": ["personal statement", "essay", "written response", "reflection", "why i want", "my background"],
+            "grades": ["grades", "mark", "score", "test result", "exam", "final grade", "assignment grade", "gpa", "honors"],
+            "test_scores": ["sat", "act", "gre", "gmat", "test score", "standardized test", "scores"],
+            "resume": ["resume", "cv", "curriculum vitae", "experience", "employment history", "skills", "certifications"],
+            "essay": ["essay", "personal statement", "written response", "reflection", "about me"],
+            "achievement": ["award", "scholarship", "honor", "recognition", "achievement", "accomplishment", "dean's list"],
+            "school_info": ["school district", "high school", "school name", "institution", "university", "college", "campus"]
         }
     
     def analyze_document(self, text_content: str, original_filename: str) -> Dict[str, Any]:
@@ -69,25 +81,94 @@ class BelleDocumentAnalyzer(BaseAgent):
         
         # Step 1: Identify document type
         doc_type, confidence = self._identify_document_type(text_content, original_filename)
-        
+
         # Step 2: Extract type-specific data
         extracted_data = self._extract_data_by_type(text_content, doc_type)
-        
+
         # Step 3: Extract common student info across all documents
         student_info = self._extract_student_info(text_content)
-        
+
         # Step 4: Generate summary
         summary = self._generate_summary(text_content, doc_type, extracted_data)
+
+        enhanced = self._run_content_processing(text_content, original_filename)
+        raw_extraction = enhanced if isinstance(enhanced, dict) else None
+
+        if raw_extraction:
+            enhanced_text = raw_extraction.get("text") or raw_extraction.get("extracted_text")
+            enhanced_doc_type = raw_extraction.get("document_type") or raw_extraction.get("doc_type")
+            enhanced_confidence = raw_extraction.get("confidence")
+            enhanced_extracted = raw_extraction.get("extracted_data") or raw_extraction.get("fields") or {}
+            enhanced_student = raw_extraction.get("student_info") or {}
+            enhanced_summary = raw_extraction.get("summary")
+
+            if isinstance(enhanced_extracted, dict):
+                extracted_data = self._merge_dicts(extracted_data, enhanced_extracted)
+            if isinstance(enhanced_student, dict):
+                student_info = self._merge_dicts(student_info, enhanced_student)
+            if enhanced_doc_type:
+                doc_type = enhanced_doc_type
+            if isinstance(enhanced_confidence, (int, float)):
+                confidence = float(enhanced_confidence)
+            if enhanced_summary:
+                summary = enhanced_summary
+            if enhanced_text:
+                text_content = enhanced_text
         
+        # Map to agent-needed fields
+        agent_fields = {}
+        if doc_type in {"transcript", "grades", "academic_record"}:
+            agent_fields["transcript_text"] = text_content
+        if doc_type in {"letter_of_recommendation", "recommendation"}:
+            agent_fields["recommendation_text"] = text_content
+        if doc_type in {"application", "personal_statement", "essay"}:
+            agent_fields["application_text"] = text_content
+        if student_info.get("school_name"):
+            agent_fields["school_name"] = student_info.get("school_name")
+
+        if extracted_data.get("gpa") is not None:
+            agent_fields["gpa"] = extracted_data.get("gpa")
+        if extracted_data.get("ap_courses"):
+            agent_fields["ap_courses"] = extracted_data.get("ap_courses")
+        if extracted_data.get("activities"):
+            agent_fields["activities"] = extracted_data.get("activities")
+        if extracted_data.get("interest"):
+            agent_fields["interest"] = extracted_data.get("interest")
+
         return {
             "document_type": doc_type,
             "confidence": confidence,
             "student_info": student_info,
             "extracted_data": extracted_data,
+            "agent_fields": agent_fields,
             "summary": summary,
+            "raw_extraction": raw_extraction,
             "original_filename": original_filename,
             "text_preview": text_content[:500] if len(text_content) > 500 else text_content
         }
+
+    async def process(self, message: str) -> str:
+        """Process text content and return a JSON summary string."""
+        result = self.analyze_document(message, "")
+        return json.dumps(result, ensure_ascii=True)
+
+    def _run_content_processing(self, text: str, filename: str) -> Optional[Dict[str, Any]]:
+        if not self.content_processing_client:
+            return None
+        return self.content_processing_client.analyze_text(text, filename)
+
+    @staticmethod
+    def _merge_dicts(base: Dict[str, Any], override: Dict[str, Any]) -> Dict[str, Any]:
+        merged = dict(base)
+        for key, value in override.items():
+            if value is None:
+                continue
+            if isinstance(value, (list, dict)) and not value:
+                continue
+            if isinstance(value, str) and not value.strip():
+                continue
+            merged[key] = value
+        return merged
     
     def _identify_document_type(self, text: str, filename: str) -> Tuple[str, float]:
         """Identify the type of document based on content and filename."""
@@ -113,15 +194,18 @@ class BelleDocumentAnalyzer(BaseAgent):
         return best_type, confidence
     
     def _extract_student_info(self, text: str) -> Dict[str, Optional[str]]:
-        """Extract common student information from any document."""
+        """Extract common student information from any document using AI and pattern matching."""
         
         student_info = {
             "name": None,
+            "first_name": None,
+            "last_name": None,
             "email": None,
             "student_id": None,
             "phone": None,
             "major": None,
-            "graduation_year": None
+            "graduation_year": None,
+            "school_name": None
         }
         
         # Email pattern
@@ -149,16 +233,109 @@ class BelleDocumentAnalyzer(BaseAgent):
         if major_match:
             student_info["major"] = major_match.group(1).strip()
         
-        # Name extraction (heuristic: appears at top of document)
-        lines = text.split('\n')
-        for line in lines[:10]:  # Check first 10 lines
-            if len(line.strip()) > 2 and len(line.strip()) < 60:
-                words = line.strip().split()
-                if len(words) <= 4 and all(w[0].isupper() for w in words if len(w) > 1):
-                    student_info["name"] = line.strip()
-                    break
+        # Name extraction using AI
+        student_info["name"] = self._extract_name_with_ai(text)
+
+        # First/Last name explicit fields
+        first_match = re.search(r'First\s*Name\s*[:\-]?\s*([A-Za-z\'\-]+)', text, re.IGNORECASE)
+        last_match = re.search(r'Last\s*Name\s*[:\-]?\s*([A-Za-z\'\-]+)', text, re.IGNORECASE)
+        if first_match:
+            student_info["first_name"] = first_match.group(1).strip()
+        if last_match:
+            student_info["last_name"] = last_match.group(1).strip()
+        if student_info.get("first_name") and student_info.get("last_name"):
+            student_info["name"] = f"{student_info['first_name']} {student_info['last_name']}".strip()
+
+        # School name extraction
+        school_match = re.search(r'(?:School|High School|School Name)\s*[:\-]?\s*([A-Za-z0-9\s\'\-\.]+)', text, re.IGNORECASE)
+        if school_match:
+            student_info["school_name"] = school_match.group(1).strip()
         
         return {k: v for k, v in student_info.items() if v is not None}
+    
+    def _extract_name_with_ai(self, text: str) -> Optional[str]:
+        """Use AI to intelligently extract student name from document."""
+        try:
+            # First try pattern-based extraction for speed
+            name = self._extract_name_pattern(text)
+            if name:
+                return name
+            
+            # Fallback to AI if pattern matching fails
+            prompt = f"""Extract ONLY the student's full name from this document. 
+Return just the name, nothing else. If no clear name found, return 'Unknown'.
+
+Document excerpt:
+{text[:500]}"""
+            
+            messages = [
+                {"role": "system", "content": "You are an expert at extracting student names from documents. Be precise and return only the name."},
+                {"role": "user", "content": prompt}
+            ]
+            
+            response = self.client.chat.completions.create(
+                model=self.model,
+                messages=messages,
+                max_completion_tokens=50,
+                temperature=0
+            )
+            
+            name = response.choices[0].message.content.strip()
+            if name and name != "Unknown" and len(name) > 2 and len(name) < 100:
+                return name
+            
+            return None
+        except Exception as e:
+            # If AI fails, fall back to pattern matching
+            return self._extract_name_pattern(text)
+    
+    def _extract_name_pattern(self, text: str) -> Optional[str]:
+        """Extract name using pattern matching with multiple strategies."""
+        lines = text.split('\n')
+
+        def normalize_name_part(part: str) -> str:
+            cleaned = part.strip()
+            return cleaned.title() if cleaned.isupper() else cleaned
+
+        # Strategy 0: Explicit First Name / Last Name fields
+        first_match = re.search(r'First\s*Name\s*[:\-]?\s*([A-Za-z\'\-]+)', text, re.IGNORECASE)
+        last_match = re.search(r'Last\s*Name\s*[:\-]?\s*([A-Za-z\'\-]+)', text, re.IGNORECASE)
+        if first_match and last_match:
+            first = normalize_name_part(first_match.group(1))
+            last = normalize_name_part(last_match.group(1))
+            return f"{first} {last}".strip()
+        
+        # Strategy 1: Look for explicit name patterns first (most reliable)
+        name_patterns = [
+            r"My name is\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)+)",
+            r"I am\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)+)",
+            r"(?:my name|student name|applicant name)\s*:?\s*([A-Z][a-z]+(?:\s+[A-Z][a-z]+)+)",
+            r"^([A-Z][a-z]+(?:\s+[A-Z][a-z]+)+)(?:\s+from|\s+at|\s+studies|$)"
+        ]
+        
+        for pattern in name_patterns:
+            match = re.search(pattern, text, re.IGNORECASE | re.MULTILINE)
+            if match:
+                candidate = match.group(1).strip()
+                # Validate it looks like a name
+                if len(candidate) > 2 and len(candidate) < 100:
+                    return candidate
+        
+        # Strategy 2: Check first 20 lines for capitalized names
+        for line in lines[:20]:
+            line = line.strip()
+            if len(line) > 4 and len(line) < 80:
+                words = line.split()
+                # Check if looks like a name (2-4 capitalized words, each word 2+ chars)
+                if 2 <= len(words) <= 4 and all(len(w) > 1 for w in words):
+                    # All major words capitalized
+                    if all(w[0].isupper() for w in words):
+                        # Avoid common false positives
+                        text_lower = line.lower()
+                        if not any(x in text_lower for x in ['high school', 'university', 'college', 'academy', 'institute', 'department']):
+                            return line
+        
+        return None
     
     def _extract_data_by_type(self, text: str, doc_type: str) -> Dict[str, Any]:
         """Extract type-specific data from the document."""

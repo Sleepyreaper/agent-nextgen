@@ -23,8 +23,8 @@ class MerlinStudentEvaluator(BaseAgent):
         agent_outputs: Dict[str, Any]
     ) -> Dict[str, Any]:
         """Generate an overall recommendation based on all agent outputs."""
-        applicant_name = application.get("ApplicantName", "Unknown")
-        application_id = application.get("ApplicationID")
+        applicant_name = application.get("applicant_name", application.get("ApplicantName", "Unknown"))
+        application_id = application.get("application_id", application.get("ApplicationID"))
         prompt = self._build_prompt(applicant_name, application, agent_outputs)
 
         try:
@@ -33,7 +33,7 @@ class MerlinStudentEvaluator(BaseAgent):
                 messages=[
                     {
                         "role": "system",
-                        "content": "You are Merlin, an expert admissions evaluator. Produce a fair, consistent final recommendation using evidence from all agents. Return valid JSON only."
+                        "content": "You are Merlin, an expert admissions evaluator. Produce a fair, consistent final recommendation using evidence from all agents. Be explicit and verbose in your reasoning. Return valid JSON only."
                     },
                     {"role": "user", "content": prompt}
                 ],
@@ -80,7 +80,6 @@ class MerlinStudentEvaluator(BaseAgent):
             "If data conflicts, call it out and weigh reliability.",
             "",
             f"Applicant: {applicant_name}",
-            f"Position/Program: {application.get('Position', 'N/A')}",
             "",
             "Specialist agent outputs (JSON):",
             outputs_json,
@@ -90,11 +89,11 @@ class MerlinStudentEvaluator(BaseAgent):
             '  "applicant_name": "",',
             '  "overall_score": 0,',
             '  "recommendation": "Strongly Recommend|Recommend|Consider|Do Not Recommend",',
-            '  "rationale": "",',
-            '  "key_strengths": [""],',
-            '  "key_risks": [""],',
-            '  "context_factors": [""],',
-            '  "evidence_used": [""],',
+            '  "rationale": "(2-3 short paragraphs with evidence)",',
+            '  "key_strengths": ["(3-6 detailed strengths with evidence)"],',
+            '  "key_risks": ["(2-4 specific risks or gaps)"],',
+            '  "context_factors": ["(2-4 context notes that shaped the decision)"],',
+            '  "evidence_used": ["(3-6 specific quotes or facts)"],',
             '  "confidence": "High|Medium|Low"',
             "}"
         ]

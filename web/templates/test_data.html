@@ -1,0 +1,138 @@
+{% extends "base.html" %}
+
+{% block title %}Test Data - NextGen Dashboard{% endblock %}
+
+{% block content %}
+<div class="card">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 2rem;">
+        <div>
+            <h1>🧪 Test Data Students</h1>
+            <p style="color: #64748b; margin-top: 0.5rem;">Students created via Quick Test for development and testing</p>
+        </div>
+        <div style="display: flex; gap: 1rem;">
+            <a href="{{ url_for('test') }}" class="btn btn-primary">+ Create Quick Test</a>
+            <a href="{{ url_for('index') }}" class="btn btn-secondary">← Back to Dashboard</a>
+        </div>
+    </div>
+
+    <!-- Statistics -->
+    <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 1.5rem; border-radius: 8px; margin-bottom: 2rem;">
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1.5rem;">
+            <div style="text-align: center; color: white;">
+                <div style="font-size: 2rem; font-weight: bold;">{{ total_count }}</div>
+                <div style="opacity: 0.9;">Total Test Students</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Test Students List -->
+    {% if test_students %}
+    <div class="student-list-table">
+        <table>
+            <thead>
+                <tr>
+                    <th>ID</th>
+                    <th>Name</th>
+                    <th>Email</th>
+                    <th>Status</th>
+                    <th>Created</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for student in test_students %}
+                <tr>
+                    <td>{{ student.application_id }}</td>
+                    <td>
+                        <a href="{{ url_for('student_detail', application_id=student.application_id) }}" 
+                           style="color: #3b82f6; text-decoration: none; font-weight: 500;">
+                            {{ student.applicant_name }}
+                        </a>
+                    </td>
+                    <td>{{ student.email or 'N/A' }}</td>
+                    <td>
+                        <span class="status-badge status-{{ student.status.lower() if student.status else 'pending' }}">
+                            {{ student.status or 'Pending' }}
+                        </span>
+                    </td>
+                    <td>{{ student.uploaded_date.strftime('%Y-%m-%d %H:%M') if student.uploaded_date else 'N/A' }}</td>
+                    <td>
+                        <a href="{{ url_for('student_detail', application_id=student.application_id) }}" 
+                           class="btn btn-sm btn-primary">
+                            View Details
+                        </a>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <div style="text-align: center; padding: 3rem; color: #94a3b8;">
+        <div style="font-size: 3rem; margin-bottom: 1rem;">🧪</div>
+        <h3 style="color: #64748b;">No Test Students Yet</h3>
+        <p>Create quick test students to verify agent functionality</p>
+        <a href="{{ url_for('test') }}" class="btn btn-primary" style="margin-top: 1rem;">
+            Create Quick Test Student
+        </a>
+    </div>
+    {% endif %}
+
+    <!-- Info Box -->
+    <div style="background: #f0fdf4; border-left: 4px solid #22c55e; padding: 1rem; margin-top: 2rem; border-radius: 4px;">
+        <h4 style="margin: 0 0 0.5rem 0; color: #166534;">📝 About Test Data</h4>
+        <ul style="margin: 0; padding-left: 1.5rem; color: #15803d;">
+            <li>Test students are created via the Quick Test feature</li>
+            <li>They are separate from Training Data (historical examples) and Production Data (2026 applicants)</li>
+            <li>Use test students to verify agent functionality and performance</li>
+            <li>Test data does NOT appear on the main dashboard</li>
+        </ul>
+    </div>
+</div>
+
+<style>
+.status-badge {
+    padding: 0.25rem 0.75rem;
+    border-radius: 12px;
+    font-size: 0.875rem;
+    font-weight: 500;
+}
+
+.status-pending {
+    background: #fef3c7;
+    color: #92400e;
+}
+
+.status-evaluated, .status-completed {
+    background: #d1fae5;
+    color: #065f46;
+}
+
+.student-list-table table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+.student-list-table th {
+    background: #f8fafc;
+    padding: 1rem;
+    text-align: left;
+    font-weight: 600;
+    border-bottom: 2px solid #e2e8f0;
+}
+
+.student-list-table td {
+    padding: 1rem;
+    border-bottom: 1px solid #e2e8f0;
+}
+
+.student-list-table tr:hover {
+    background: #f8fafc;
+}
+
+.btn-sm {
+    padding: 0.5rem 1rem;
+    font-size: 0.875rem;
+}
+</style>
+{% endblock %}

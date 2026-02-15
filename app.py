@@ -5,6 +5,8 @@ import asyncio
 import time
 import uuid
 import json
+import threading
+import queue
 from typing import Optional
 from flask import Flask, render_template, request, redirect, url_for, flash, jsonify, Response
 from werkzeug.utils import secure_filename
@@ -16,6 +18,7 @@ from src.database import db
 from src.document_processor import DocumentProcessor
 from src.storage import storage
 from src.test_data_generator import test_data_generator
+from src.logger import app_logger as logger, audit_logger
 from src.agents import (
     GastonEvaluator,
     SmeeOrchestrator,
@@ -27,6 +30,8 @@ from src.agents import (
     AuroraAgent,
     BelleDocumentAnalyzer
 )
+from src.agents.agent_requirements import AgentRequirements
+from src.agents.fairy_godmother_document_generator import FairyGodmotherDocumentGenerator
 
 # Initialize Flask app
 app = Flask(__name__, template_folder='web/templates', static_folder='web/static')
@@ -36,6 +41,7 @@ app.config['UPLOAD_FOLDER'] = 'uploads'
 
 # Ensure upload folder exists
 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
+logger.info("Flask app initialized", extra={'upload_folder': app.config['UPLOAD_FOLDER']})
 
 # Initialize Azure OpenAI client
 def get_ai_client():
@@ -139,6 +145,17 @@ def get_orchestrator():
                 db_connection=db
             )
         )
+        orchestrator_agent.register_agent(
+            "aurora",
+            AuroraAgent()
+        )
+        orchestrator_agent.register_agent(
+            "fairy_godmother",
+            FairyGodmotherDocumentGenerator(
+                db_connection=db,
+                storage_manager=storage
+            )
+        )
 
     return orchestrator_agent
 
@@ -147,21 +164,58 @@ def get_orchestrator():
 def index():
     """Home page - Dashboard."""
     try:
-        applications = db.get_applications_with_evaluations()
-        pending_count = len([a for a in applications if a.get('status') == 'Pending'])
-        evaluated_count = len([a for a in applications if a.get('status') == 'Evaluated'])
+        # Simplified query to avoid timeout - just get basic count with a limit
+        query = """
+            SELECT COUNT(*) as total,
+                   SUM(CASE WHEN status = 'Pending' THEN 1 ELSE 0 END) as pending,
+                   SUM(CASE WHEN status != 'Pending' THEN 1 ELSE 0 END) as evaluated
+            FROM Applications 
+            WHERE is_training_example = FALSE 
+              AND (is_test_data = FALSE OR is_test_data IS NULL)
+        """
+        result = db.execute_query(query)
         
-        # Get recent applications (limit 10)
-        recent_apps = applications[:10] if applications else []
+        if result and len(result) > 0:
+            total_count = result[0].get('total', 0)
+            pending_count = result[0].get('pending', 0)
+            evaluated_count = result[0].get('evaluated', 0)
+        else:
+            total_count = pending_count = evaluated_count = 0
+        
+        # Get recent students with a simple query
+        recent_query = """
+            SELECT application_id, applicant_name, email, status, uploaded_date
+            FROM Applications
+            WHERE is_training_example = FALSE
+              AND (is_test_data = FALSE OR is_test_data IS NULL)
+            ORDER BY uploaded_date DESC
+            LIMIT 10
+        """
+        recent_results = db.execute_query(recent_query)
+        
+        # Format results
+        recent_students = []
+        for row in recent_results:
+            parts = row.get('applicant_name', '').strip().split()
+            recent_students.append({
+                'application_id': row.get('application_id'),
+                'first_name': parts[0] if len(parts) > 0 else '',
+                'last_name': parts[-1] if len(parts) > 1 else '',
+                'full_name': row.get('applicant_name'),
+                'email': row.get('email'),
+                'status': row.get('status'),
+                'uploaded_date': row.get('uploaded_date')
+            })
         
         return render_template('index.html', 
-                             applications=recent_apps,
+                             students=recent_students,
                              pending_count=pending_count,
                              evaluated_count=evaluated_count,
-                             total_count=len(applications))
+                             total_count=total_count)
     except Exception as e:
+        logger.error(f"Index page error: {e}", exc_info=True)
         flash(f'Error loading applications: {str(e)}', 'error')
-        return render_template('index.html', applications=[], pending_count=0, evaluated_count=0, total_count=0)
+        return render_template('index.html', students=[], pending_count=0, evaluated_count=0, total_count=0)
 
 
 @app.route('/health')
@@ -196,9 +250,10 @@ def upload():
                 flash('Invalid file type. Please upload PDF, DOCX, or TXT files.', 'error')
                 return redirect(request.url)
             
-            # Determine application type
-            is_training = request.form.get('is_training') == 'on'
-            app_type = "training" if is_training else "2026"
+            # Determine application type from radio buttons
+            app_type = request.form.get('app_type', '2026')  # Default to 2026
+            is_training = (app_type == 'training')
+            is_test = (app_type == 'test')
             
             # Get selection status for training data
             was_selected = None
@@ -243,16 +298,29 @@ def upload():
                 belle = get_belle()
                 doc_analysis = belle.analyze_document(application_text, filename)
             except Exception as e:
-                print(f"Warning: Belle analysis failed: {e}")
+                logger.warning(f"Belle analysis failed: {e}")
                 doc_analysis = {
                     "document_type": "unknown",
                     "confidence": 0,
+                    "student_info": {},
                     "extracted_data": {}
                 }
+
+            doc_type = doc_analysis.get('document_type', 'unknown')
+            doc_type_map = {
+                'application': 'application_text',
+                'personal_statement': 'application_text',
+                'essay': 'application_text',
+                'transcript': 'transcript_text',
+                'grades': 'transcript_text',
+                'letter_of_recommendation': 'recommendation_text'
+            }
+            target_field = doc_type_map.get(doc_type)
             
-            # Extract student info from text
-            student_name = extract_student_name(application_text)
-            student_email = extract_student_email(application_text)
+            # Extract student info from Belle's analysis and backup sources
+            belle_student_info = doc_analysis.get('student_info', {})
+            student_name = belle_student_info.get('name') or extract_student_name(application_text) or f"Student {student_id}"
+            student_email = belle_student_info.get('email') or extract_student_email(application_text) or ""
             
             # Save to database with extracted info and storage path
             application_id = db.create_application(
@@ -261,9 +329,24 @@ def upload():
                 application_text=application_text,
                 file_name=filename,
                 file_type=file_type,
-                is_training=is_training,
-                was_selected=was_selected
+                is_training=(is_training or is_test),  # Mark both training and test as training=TRUE
+                is_test_data=is_test,  # Flag test data separately
+                was_selected=was_selected,
+                student_id=student_id  # Store unique student ID
             )
+
+            if target_field and target_field != 'application_text':
+                db.update_application_fields(application_id, {target_field: application_text})
+
+            missing_fields = ['transcript', 'letters_of_recommendation']
+            if target_field == 'transcript_text' and 'transcript' in missing_fields:
+                missing_fields.remove('transcript')
+            if target_field == 'recommendation_text' and 'letters_of_recommendation' in missing_fields:
+                missing_fields.remove('letters_of_recommendation')
+            
+            # Determine initial missing fields (only for 2026 applications)
+            if missing_fields:
+                db.set_missing_fields(application_id, missing_fields)
             
             # Flash success message with student ID and Belle's analysis
             if is_training:
@@ -271,8 +354,14 @@ def upload():
                 if doc_analysis.get('document_type') != 'unknown':
                     flash(f"📖 Belle identified: {doc_analysis['document_type'].replace('_', ' ').title()}", 'info')
                 return redirect(url_for('training'))
+            elif is_test:
+                flash(f'✅ Test file uploaded! Student ID: {student_id}. Processing with agents...', 'success')
+                if doc_analysis.get('document_type') != 'unknown':
+                    flash(f"📖 Belle identified: {doc_analysis['document_type'].replace('_', ' ').title()}", 'info')
+                # Redirect to test page to see processing
+                return redirect(url_for('test'))
             else:
-                flash(f'✅ Application uploaded! Student ID: {student_id}. Processing with Smee...', 'success')
+                flash(f'✅ Application uploaded! Student ID: {student_id}. Information needed before processing.', 'success')
                 if doc_analysis.get('document_type') != 'unknown':
                     flash(f"📖 Belle identified: {doc_analysis['document_type'].replace('_', ' ').title()}", 'info')
                 return redirect(url_for('process_student', application_id=application_id))
@@ -291,6 +380,14 @@ def extract_student_name(text: str) -> Optional[str]:
     try:
         # Look for common patterns like "My name is..." or "I am..."
         import re
+
+        # Pattern 0: Explicit First Name / Last Name fields
+        first_match = re.search(r'First\s*Name\s*[:\-]?\s*([A-Za-z\'\-]+)', text, re.IGNORECASE)
+        last_match = re.search(r'Last\s*Name\s*[:\-]?\s*([A-Za-z\'\-]+)', text, re.IGNORECASE)
+        if first_match and last_match:
+            first = first_match.group(1).strip()
+            last = last_match.group(1).strip()
+            return f"{first} {last}".strip()
         
         # Pattern 1: "My name is [Name]"
         match = re.search(r"(?:my name is|i am|i\'m)\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*)", text, re.IGNORECASE)
@@ -353,7 +450,7 @@ def evaluate(application_id):
         
         # Update application status
         db.execute_non_query(
-            "UPDATE Applications SET Status = 'Evaluated' WHERE ApplicationID = %s",
+            "UPDATE Applications SET Status = 'Completed' WHERE ApplicationID = %s",
             (application_id,)
         )
         
@@ -394,7 +491,7 @@ def evaluate_all():
             
             # Update status
             db.execute_non_query(
-                "UPDATE Applications SET Status = 'Evaluated' WHERE ApplicationID = %s",
+                "UPDATE Applications SET Status = 'Completed' WHERE ApplicationID = %s",
                 (application['ApplicationID'],)
             )
             
@@ -413,34 +510,19 @@ def evaluate_all():
 
 @app.route('/students')
 def students():
-    """View all students."""
+    """View all students sorted by last name."""
     try:
         search_query = request.args.get('search', '').strip()
         
-        if search_query:
-            # Search by name or email
-            query = """
-                SELECT * FROM Applications 
-                WHERE IsTrainingExample = FALSE 
-                AND (ApplicantName ILIKE %s OR Email ILIKE %s)
-                ORDER BY UploadedDate DESC
-            """
-            applications = db.execute_query(query, (f'%{search_query}%', f'%{search_query}%'))
-        else:
-            # Get all real students (not training examples)
-            query = """
-                SELECT * FROM Applications 
-                WHERE IsTrainingExample = FALSE 
-                ORDER BY UploadedDate DESC
-            """
-            applications = db.execute_query(query)
+        # Get formatted student list sorted by last name
+        students = db.get_formatted_student_list(is_training=False, search_query=search_query if search_query else None)
         
         return render_template('students.html', 
-                             applications=applications,
+                             students=students,
                              search_query=search_query)
     except Exception as e:
         flash(f'Error loading students: {str(e)}', 'error')
-        return render_template('students.html', applications=[], search_query='')
+        return render_template('students.html', students=[], search_query='')
 
 
 @app.route('/training')
@@ -450,33 +532,18 @@ def training():
         search_query = request.args.get('search', '').strip()
         filter_selected = request.args.get('filter', '')
         
-        if search_query:
-            # Search by name or email in training data
-            query = """
-                SELECT * FROM Applications 
-                WHERE IsTrainingExample = TRUE
-                AND (ApplicantName ILIKE %s OR Email ILIKE %s)
-                ORDER BY UploadedDate DESC
-            """
-            training_data = db.execute_query(query, (f'%{search_query}%', f'%{search_query}%'))
-        else:
-            # Get all training examples
-            query = """
-                SELECT * FROM Applications 
-                WHERE IsTrainingExample = TRUE
-                ORDER BY UploadedDate DESC
-            """
-            training_data = db.execute_query(query)
+        # Get formatted student list for training examples, sorted by last name
+        training_data = db.get_formatted_student_list(is_training=True, search_query=search_query if search_query else None)
         
         # Apply filter if specified
         if filter_selected == 'selected':
-            training_data = [t for t in training_data if t.get('wasselected')]
+            training_data = [t for t in training_data if t.get('was_selected')]
         elif filter_selected == 'not_selected':
-            training_data = [t for t in training_data if not t.get('wasselected')]
+            training_data = [t for t in training_data if not t.get('was_selected')]
         
         # Calculate statistics
         total_count = len(training_data)
-        selected_count = len([t for t in training_data if t.get('wasselected')])
+        selected_count = len([t for t in training_data if t.get('was_selected')])
         not_selected_count = total_count - selected_count
         
         return render_template('training.html',
@@ -499,7 +566,7 @@ def training():
 
 @app.route('/test')
 def test():
-    """Test system with sample students list."""
+    """Test system page with quick test generation."""
     try:
         return render_template('test.html')
     except Exception as e:
@@ -507,63 +574,97 @@ def test():
         return render_template('test.html')
 
 
+@app.route('/test-data')
+def test_data():
+    """View all test students created via quick test."""
+    try:
+        # Get all test data students
+        test_students_query = """
+            SELECT application_id, applicant_name, email, status, uploaded_date
+            FROM Applications
+            WHERE is_test_data = TRUE
+            ORDER BY uploaded_date DESC
+        """
+        test_students = db.execute_query(test_students_query)
+        
+        # Format for display
+        formatted_students = []
+        for student in test_students:
+            formatted_students.append({
+                'application_id': student.get('application_id'),
+                'applicant_name': student.get('applicant_name'),
+                'email': student.get('email'),
+                'status': student.get('status'),
+                'uploaded_date': student.get('uploaded_date')
+            })
+        
+        return render_template('test_data.html',
+                             test_students=formatted_students,
+                             total_count=len(formatted_students))
+    except Exception as e:
+        flash(f'Error loading test data: {str(e)}', 'error')
+        return render_template('test_data.html',
+                             test_students=[],
+                             total_count=0)
+
+
 def cleanup_test_data():
     """
-    Delete all old test data (applications marked with IsTrainingExample = TRUE).
+    Delete all old test data (applications marked with is_test_data = TRUE).
     Called at the start of each new test run to ensure clean slate.
     """
     try:
         # Delete all related evaluation data first (foreign key constraints)
         test_app_ids = db.execute_query(
-            "SELECT ApplicationID FROM Applications WHERE IsTrainingExample = TRUE"
+            "SELECT application_id FROM Applications WHERE is_test_data = TRUE"
         )
         
         for app_record in test_app_ids:
-            app_id = app_record.get('applicationid')
+            app_id = app_record.get('application_id')
             
             # Delete from specialized agent tables
             try:
-                db.execute_non_query("DELETE FROM TianaApplications WHERE ApplicationID = %s", (app_id,))
+                db.execute_non_query("DELETE FROM tiana_applications WHERE application_id = %s", (app_id,))
             except:
                 pass
             
             try:
-                db.execute_non_query("DELETE FROM MulanRecommendations WHERE ApplicationID = %s", (app_id,))
+                db.execute_non_query("DELETE FROM mulan_recommendations WHERE application_id = %s", (app_id,))
             except:
                 pass
             
             try:
-                db.execute_non_query("DELETE FROM MerlinEvaluations WHERE ApplicationID = %s", (app_id,))
+                db.execute_non_query("DELETE FROM merlin_evaluations WHERE application_id = %s", (app_id,))
             except:
                 pass
             
             try:
-                db.execute_non_query("DELETE FROM StudentSchoolContext WHERE ApplicationID = %s", (app_id,))
+                db.execute_non_query("DELETE FROM student_school_context WHERE application_id = %s", (app_id,))
             except:
                 pass
             
             try:
-                db.execute_non_query("DELETE FROM Grades WHERE ApplicationID = %s", (app_id,))
+                db.execute_non_query("DELETE FROM grade_records WHERE application_id = %s", (app_id,))
             except:
                 pass
             
             try:
-                db.execute_non_query("DELETE FROM AIEvaluations WHERE ApplicationID = %s", (app_id,))
+                db.execute_non_query("DELETE FROM ai_evaluations WHERE application_id = %s", (app_id,))
             except:
                 pass
             
             try:
-                db.execute_non_query("DELETE FROM AgentAuditLogs WHERE ApplicationID = %s", (app_id,))
+                db.execute_non_query("DELETE FROM agent_audit_logs WHERE application_id = %s", (app_id,))
             except:
                 pass
         
         # Now delete the applications themselves
-        db.execute_non_query("DELETE FROM Applications WHERE IsTrainingExample = TRUE")
+        db.execute_non_query("DELETE FROM Applications WHERE is_test_data = TRUE")
         
-        print(f"✓ Cleaned up {len(test_app_ids)} old test applications and their related data")
+        logger.info(f"Cleaned up {len(test_app_ids)} old test applications and their related data")
         
     except Exception as e:
-        print(f"⚠ Warning during test data cleanup: {str(e)}")
+        logger.warning(f"Warning during test data cleanup: {str(e)}")
         # Don't fail the test if cleanup has issues - just log and continue
 
 
@@ -605,14 +706,25 @@ def api_process_student(application_id):
             )
         )
         
-        # Update status
+        # If result indicates missing fields, return that status
+        if result.get('status') == 'paused':
+            return jsonify({
+                'success': True,
+                'status': 'paused',
+                'application_id': application_id,
+                'missing_fields': result.get('missing_fields'),
+                'message': result.get('message')
+            }), 202  # 202 Accepted - processing paused waiting for more info
+        
+        # Update status to Evaluated
         db.execute_non_query(
-            "UPDATE Applications SET Status = 'Evaluated' WHERE ApplicationID = %s",
+            "UPDATE Applications SET status = 'Completed' WHERE application_id = %s",
             (application_id,)
         )
         
         return jsonify({
             'success': True,
+            'status': 'complete',
             'application_id': application_id,
             'result': result
         })
@@ -651,46 +763,612 @@ def api_get_status(application_id):
         }), 500
 
 
+@app.route('/api/missing-fields/<int:application_id>', methods=['GET'])
+def api_get_missing_fields(application_id):
+    """Get missing fields/documents for a student."""
+    try:
+        application = db.get_application(application_id)
+        if not application:
+            return jsonify({'error': 'Student not found'}), 404
+        
+        missing_fields = db.get_missing_fields(application_id)
+        
+        return jsonify({
+            'success': True,
+            'application_id': application_id,
+            'applicant_name': application.get('applicant_name'),
+            'missing_fields': missing_fields,
+            'message': f"{len(missing_fields)} items needed" if missing_fields else "All information complete"
+        })
+        
+    except Exception as e:
+        return jsonify({
+            'error': str(e)
+        }), 500
+
+
+@app.route('/api/missing-fields/<int:application_id>', methods=['POST'])
+def api_update_missing_fields(application_id):
+    """Update missing fields for a student."""
+    try:
+        application = db.get_application(application_id)
+        if not application:
+            return jsonify({'error': 'Student not found'}), 404
+        
+        data = request.get_json()
+        fields = data.get('fields', [])
+        
+        db.set_missing_fields(application_id, fields)
+        
+        return jsonify({
+            'success': True,
+            'application_id': application_id,
+            'missing_fields': fields
+        })
+        
+    except Exception as e:
+        return jsonify({
+            'error': str(e)
+        }), 500
+
+
+@app.route('/api/agent-questions/<int:application_id>', methods=['GET'])
+def api_get_agent_questions(application_id):
+    """Get questions from agents about what information they need for a student."""
+    try:
+        application = db.get_application(application_id)
+        if not application:
+            return jsonify({'error': 'Student not found'}), 404
+        
+        # Import agent requirements
+        from src.agents.agent_requirements import AgentRequirements
+        
+        # Get all agent questions for the standard evaluation pipeline
+        evaluation_steps = ['application_reader', 'grade_reader', 'recommendation_reader', 'school_context', 'student_evaluator']
+        agent_questions = AgentRequirements.get_all_questions(evaluation_steps)
+        
+        # Get current missing fields
+        missing_fields = db.get_missing_fields(application_id)
+        
+        # Filter to only show questions for missing fields
+        relevant_questions = []
+        for question_info in agent_questions:
+            field_name = question_info['field_name']
+            if field_name in missing_fields:
+                relevant_questions.append(question_info)
+        
+        return jsonify({
+            'success': True,
+            'application_id': application_id,
+            'applicant_name': application.get('applicant_name'),
+            'missing_fields': missing_fields,
+            'agent_questions': relevant_questions,
+            'message': f"Agents are asking for {len(missing_fields)} items"
+        })
+        
+    except Exception as e:
+        logger.error(f"Error getting agent questions: {e}", exc_info=True)
+        return jsonify({
+            'error': str(e)
+        }), 500
+
+
+@app.route('/api/categorize-upload/<int:application_id>', methods=['POST'])
+def api_categorize_upload(application_id):
+    """
+    Intelligently categorize an uploaded file and assign it to the appropriate field/agent.
+    Uses Belle to understand what type of document was uploaded.
+    """
+    try:
+        application = db.get_application(application_id)
+        if not application:
+            return jsonify({'error': 'Student not found'}), 404
+        
+        # Get uploaded file
+        if 'file' not in request.files:
+            return jsonify({'error': 'No file uploaded'}), 400
+        
+        file = request.files['file']
+        if file.filename == '':
+            return jsonify({'error': 'No file selected'}), 400
+        
+        # Read file content
+        try:
+            file_content = file.read().decode('utf-8', errors='ignore')
+        except:
+            file_content = ""
+        
+        # Use Belle to categorize the document
+        belle = get_belle()
+        doc_analysis = belle.analyze_document(file_content, file.filename)
+        doc_type = doc_analysis.get('document_type', 'unknown')
+        
+        logger.info(f"Belle categorized upload as: {doc_type}")
+        
+        # Map document types to application fields using agent requirements
+        from src.agents.agent_requirements import AgentRequirements
+        
+        field_mapping = {
+            'essay': 'application_text',
+            'personal_statement': 'application_text',
+            'application': 'application_text',
+            'transcript': 'transcript_text',
+            'grades': 'transcript_text',
+            'academic_record': 'transcript_text',
+            'recommendation': 'recommendation_text',
+            'recommendation_letter': 'recommendation_text',
+            'letter_of_recommendation': 'recommendation_text',
+            'reference': 'recommendation_text',
+            'school': 'school_info'
+        }
+        
+        # Find matching field
+        target_field = None
+        confidence = 0
+        
+        for doc_key, field in field_mapping.items():
+            if doc_key in doc_type.lower():
+                target_field = field
+                confidence = doc_analysis.get('confidence', 0)
+                break
+        
+        if not target_field:
+            # Try to determine from context
+            if 'gpa' in file_content.lower() or 'grade' in file_content.lower() or 'course' in file_content.lower():
+                target_field = 'transcript_text'
+                doc_type = 'transcript'
+            elif 'recommend' in file_content.lower() or 'strength' in file_content.lower():
+                target_field = 'recommendation_text'
+                doc_type = 'recommendation_letter'
+            elif len(file_content) > 500 and 'i' in file_content.lower():
+                target_field = 'application_text'
+                doc_type = 'personal_statement'
+        
+        if not target_field:
+            return jsonify({
+                'success': False,
+                'error': 'Could not determine document type',
+                'detected_type': doc_type,
+                'message': 'Please specify what type of document this is'
+            }), 400
+        
+        # Update application with this field
+        update_query = f"UPDATE Applications SET {target_field} = %s WHERE application_id = %s"
+        db.execute_non_query(update_query, (file_content, application_id))
+        
+        # Remove from missing fields
+        field_mapping_reverse = {v: k.replace('_', ' ').title() for k, v in field_mapping.items()}
+        missing_field_name = field_mapping_reverse.get(target_field, target_field)
+        
+        # Map to agent field names
+        agent_field_mapping = {
+            'application_text': 'application_essay',
+            'transcript_text': 'transcript',
+            'recommendation_text': 'letters_of_recommendation',
+            'school_info': 'school_context'
+        }
+        missing_field_name = agent_field_mapping.get(target_field, missing_field_name)
+        
+        db.remove_missing_field(application_id, missing_field_name)
+        
+        logger.info(f"Assigned upload to field '{target_field}' for application {application_id}")
+        
+        # Get updated missing fields
+        updated_missing = db.get_missing_fields(application_id)
+        
+        return jsonify({
+            'success': True,
+            'application_id': application_id,
+            'detected_type': doc_type,
+            'confidence': confidence,
+            'assigned_field': target_field,
+            'field_label': missing_field_name,
+            'remaining_missing_fields': updated_missing,
+            'message': f"Successfully categorized as {doc_type} ({int(confidence*100)}% confidence)"
+        })
+        
+    except Exception as e:
+        logger.error(f"Error categorizing upload: {e}", exc_info=True)
+        return jsonify({
+            'error': str(e)
+        }), 500
+
+
+@app.route('/api/resume-evaluation/<int:application_id>', methods=['POST'])
+def api_resume_evaluation(application_id):
+    """
+    Resume evaluation for a student after missing information has been provided.
+    """
+    try:
+        application = db.get_application(application_id)
+        if not application:
+            return jsonify({'error': 'Student not found'}), 404
+        
+        # Check if there are still missing fields
+        missing_fields = db.get_missing_fields(application_id)
+        if missing_fields:
+            return jsonify({
+                'success': False,
+                'status': 'still_missing',
+                'application_id': application_id,
+                'missing_fields': missing_fields,
+                'message': f'Cannot resume: Still missing {", ".join(missing_fields)}'
+            }), 422  # 422 Unprocessable Entity
+        
+        logger.info(f"Resuming evaluation for {application.get('applicant_name')} (ID: {application_id})")
+        
+        # All information available - run evaluation
+        orchestrator = get_orchestrator()
+        result = asyncio.run(
+            orchestrator.coordinate_evaluation(
+                application=application,
+                evaluation_steps=['application_reader', 'grade_reader', 'recommendation_reader', 'school_context', 'student_evaluator']
+            )
+        )
+        
+        # Check result status
+        if result.get('status') == 'paused':
+            return jsonify({
+                'success': True,
+                'status': 'paused',
+                'application_id': application_id,
+                'missing_fields': result.get('missing_fields'),
+                'message': 'Evaluation paused - still missing information'
+            }), 202
+        
+        # Mark as evaluated
+        db.execute_non_query(
+            "UPDATE Applications SET status = 'Completed' WHERE application_id = %s",
+            (application_id,)
+        )
+        
+        return jsonify({
+            'success': True,
+            'status': 'complete',
+            'application_id': application_id,
+            'message': 'Evaluation completed successfully'
+        })
+        
+    except Exception as e:
+        logger.error(f"Error resuming evaluation for {application_id}: {e}", exc_info=True)
+        return jsonify({
+            'error': str(e)
+        }), 500
+def api_provide_missing_info(application_id):
+    """
+    Handle providing missing information/documents for a student.
+    Updates application and resumes evaluation if all fields are now complete.
+    """
+    try:
+        application = db.get_application(application_id)
+        if not application:
+            return jsonify({'error': 'Student not found'}), 404
+        
+        # Get the provided information from request
+        data = request.get_json() or {}
+        
+        # Map provided info to application fields and remove from missing_fields
+        provided_map = {
+            'transcript': 'transcript_text',
+            'application_essay': 'application_text',
+            'letters_of_recommendation': 'recommendation_text'
+        }
+        
+        updates = {}
+        for field_key, app_field in provided_map.items():
+            if field_key in data and data[field_key]:
+                updates[app_field] = data[field_key]
+                db.remove_missing_field(application_id, field_key)
+                logger.info(f"Added {field_key} for application {application_id}")
+        
+        # Update application with provided information
+        if updates:
+            update_query = "UPDATE Applications SET " + ", ".join([f"{k} = %s" for k in updates.keys()]) + " WHERE application_id = %s"
+            values = list(updates.values()) + [application_id]
+            db.execute_non_query(update_query, tuple(values))
+        
+        # Reload application
+        application = db.get_application(application_id)
+        
+        # Check if all fields are now provided
+        missing_fields = db.get_missing_fields(application_id)
+        
+        if not missing_fields:
+            # All information provided - resume evaluation
+            logger.info(f"All information provided for {application.get('applicant_name')}. Resuming evaluation...")
+            
+            orchestrator = get_orchestrator()
+            result = asyncio.run(
+                orchestrator.coordinate_evaluation(
+                    application=application,
+                    evaluation_steps=['application_reader', 'grade_reader', 'recommendation_reader', 'school_context', 'student_evaluator']
+                )
+            )
+            
+            # Check if evaluation completed or still paused
+            if result.get('status') == 'paused':
+                return jsonify({
+                    'success': True,
+                    'status': 'still_paused',
+                    'application_id': application_id,
+                    'missing_fields': result.get('missing_fields'),
+                    'message': 'More information still needed'
+                }), 202
+            
+            # Mark as evaluated
+            db.execute_non_query(
+                "UPDATE Applications SET status = 'Completed' WHERE application_id = %s",
+                (application_id,)
+            )
+            
+            return jsonify({
+                'success': True,
+                'status': 'complete',
+                'application_id': application_id,
+                'message': 'All information provided and evaluation complete'
+            })
+        else:
+            # Still missing some fields
+            return jsonify({
+                'success': True,
+                'status': 'still_missing',
+                'application_id': application_id,
+                'missing_fields': missing_fields,
+                'message': f'Still missing {len(missing_fields)} items'
+            }), 202
+        
+    except Exception as e:
+        logger.error(f"Error providing missing info for {application_id}: {e}", exc_info=True)
+        return jsonify({
+            'error': str(e)
+        }), 500
+
+
 @app.route('/application/<int:application_id>')
 def student_detail(application_id):
-    """View details of a student application."""
+    """View details of a student application with all agent evaluations."""
+    try:
+        logger.debug(f"student_detail called with application_id={application_id}")
+        application = db.get_application(application_id)
+        logger.debug(f"db.get_application returned: {application is not None}")
+        
+        if not application:
+            logger.warning(f"Application {application_id} not found")
+            flash('Student not found', 'error')
+            return redirect(url_for('students'))
+        
+        logger.debug(f"Application found: {application.get('applicant_name')}")
+        
+        # Fetch all agent evaluations
+        agent_results = {}
+        logger.debug(f"Application found: {application.get('applicant_name')}")
+        
+        # Fetch all agent evaluations
+        agent_results = {}
+        
+        # Tiana - Application Reader
+        try:
+            tiana_results = db.execute_query(
+                "SELECT *FROM tiana_applications WHERE application_id = %s ORDER BY created_at DESC LIMIT 1",
+                (application_id,)
+            )
+            if tiana_results:
+                agent_results['tiana'] = tiana_results[0]
+        except Exception as e:
+            logger.debug(f"No Tiana data: {e}")
+        
+        # Rapunzel - Grade Reader
+        try:
+            rapunzel_results = db.execute_query(
+                "SELECT * FROM rapunzel_grades WHERE application_id = %s ORDER BY created_at DESC LIMIT 1",
+                (application_id,)
+            )
+            if rapunzel_results:
+                agent_results['rapunzel'] = rapunzel_results[0]
+                # Parse JSON fields if present
+                if agent_results['rapunzel'].get('parsed_json'):
+                    try:
+                        import json
+                        parsed = json.loads(agent_results['rapunzel']['parsed_json'])
+                        if isinstance(parsed, dict):
+                            # Merge parsed data
+                            for key, value in parsed.items():
+                                if key not in agent_results['rapunzel'] or not agent_results['rapunzel'].get(key):
+                                    agent_results['rapunzel'][key] = value
+                    except:
+                        pass
+        except Exception as e:
+            logger.debug(f"No Rapunzel data: {e}")
+        
+        # Moana - School Context
+        try:
+            moana_results = db.execute_query(
+                "SELECT * FROM student_school_context WHERE application_id = %s ORDER BY created_at DESC LIMIT 1",
+                (application_id,)
+            )
+            if moana_results:
+                agent_results['moana'] = moana_results[0]
+                # Parse JSON fields if present
+                if agent_results['moana'].get('parsed_json'):
+                    try:
+                        import json
+                        parsed = json.loads(agent_results['moana']['parsed_json'])
+                        if isinstance(parsed, dict):
+                            # Merge parsed data
+                            for key, value in parsed.items():
+                                if key not in agent_results['moana'] or not agent_results['moana'].get(key):
+                                    agent_results['moana'][key] = value
+                    except:
+                        pass
+        except Exception as e:
+            logger.debug(f"No Moana data: {e}")
+        
+        # Mulan - Recommendation Reader
+        try:
+            mulan_results = db.execute_query(
+                "SELECT * FROM mulan_recommendations WHERE application_id = %s ORDER BY created_at DESC LIMIT 1",
+                (application_id,)
+            )
+            if mulan_results:
+                agent_results['mulan'] = mulan_results[0]
+        except Exception as e:
+            logger.debug(f"No Mulan data: {e}")
+        
+        # Merlin - Student Evaluator
+        try:
+            merlin_results = db.execute_query(
+                "SELECT * FROM merlin_evaluations WHERE application_id = %s ORDER BY created_at DESC LIMIT 1",
+                (application_id,)
+            )
+            if merlin_results:
+                agent_results['merlin'] = merlin_results[0]
+                # Parse JSON for additional fields
+                if agent_results['merlin'].get('parsed_json'):
+                    try:
+                        import json
+                        parsed = json.loads(agent_results['merlin']['parsed_json'])
+                        agent_results['merlin']['parsed_data'] = parsed
+                    except:
+                        pass
+        except Exception as e:
+            logger.debug(f"No Merlin data: {e}")
+        
+        # Aurora - Formatter
+        try:
+            aurora_results = db.execute_query(
+                "SELECT * FROM aurora_evaluations WHERE application_id = %s ORDER BY created_at DESC LIMIT 1",
+                (application_id,)
+            )
+            if aurora_results:
+                agent_results['aurora'] = aurora_results[0]
+        except Exception as e:
+            logger.debug(f"No Aurora data: {e}")
+        
+        # Get document download info
+        document_path = application.get('evaluation_document_path')
+        document_url = application.get('evaluation_document_url')
+        document_available = bool(document_path and os.path.exists(document_path))
+        
+        # Fetch Aurora evaluation (formatted) - prefer this if available - BACKWARD COMPATIBILITY
+        aurora_evaluation = db.get_aurora_evaluation(application_id)
+        
+        # Fetch Merlin evaluation (raw data) as backup - BACKWARD COMPATIBILITY
+        merlin_evaluation = None
+        if not aurora_evaluation:
+            try:
+                merlin_results = db.execute_query(
+                    "SELECT * FROM merlin_evaluations WHERE application_id = %s ORDER BY created_at DESC LIMIT 1",
+                    (application_id,)
+                )
+                if merlin_results:
+                    merlin_evaluation = merlin_results[0]
+                    # Parse JSON if available to make fields accessible
+                    if merlin_evaluation.get('parsed_json'):
+                        try:
+                            import json
+                            parsed = json.loads(merlin_evaluation['parsed_json'])
+                            # Merge parsed fields into evaluation dict
+                            for key, value in parsed.items():
+                                if key not in merlin_evaluation or not merlin_evaluation[key]:
+                                    merlin_evaluation[key] = value
+                        except:
+                            pass
+            except:
+                pass
+        
+        logger.debug(f"About to render template with application_id={application.get('application_id')}")
+        return render_template('application.html', 
+                             application=application,
+                             agent_results=agent_results,
+                             document_available=document_available,
+                             document_path=document_path,
+                             aurora_evaluation=aurora_evaluation,  # For backward compatibility
+                             merlin_evaluation=merlin_evaluation,  # For backward compatibility
+                             is_training=application.get('is_training_example', False))
+        
+    except Exception as e:
+        logger.error(f"Error in student_detail: {str(e)}", exc_info=True)
+        flash(f'Error loading student: {str(e)}', 'error')
+        return redirect(url_for('students'))
+
+
+@app.route('/student/<int:application_id>/download-evaluation')
+def download_evaluation(application_id):
+    """Download the evaluation document for a student from Azure Storage or local backup."""
     try:
         application = db.get_application(application_id)
         if not application:
             flash('Student not found', 'error')
             return redirect(url_for('students'))
         
-        # Fetch Merlin evaluation if available
-        evaluation = None
-        try:
-            merlin_results = db.execute_query(
-                "SELECT * FROM MerlinEvaluations WHERE ApplicationID = %s ORDER BY CreatedAt DESC LIMIT 1",
-                (application_id,)
-            )
-            if merlin_results:
-                evaluation = merlin_results[0]
-                # Parse JSON if available to make fields accessible
-                if evaluation.get('ParsedJson'):
-                    try:
-                        import json
-                        parsed = json.loads(evaluation['ParsedJson'])
-                        # Merge parsed fields into evaluation dict
-                        for key, value in parsed.items():
-                            if key not in evaluation or not evaluation[key]:
-                                evaluation[key] = value
-                    except:
-                        pass
-        except:
-            pass
+        document_url = application.get('evaluation_document_url')
+        document_path = application.get('evaluation_document_path')
         
-        return render_template('application.html', 
-                             application=application,
-                             evaluation=evaluation,
-                             is_training=application.get('istrainingexample', False))
+        # Try Azure Storage first
+        if document_url and storage.client:
+            try:
+                # Extract filename from URL or path
+                if document_path:
+                    filename = os.path.basename(document_path)
+                else:
+                    filename = f"evaluation_{application.get('applicant_name', 'student')}.docx"
+                
+                # Determine application type and student ID
+                is_training = application.get('is_training_example', False)
+                is_test = application.get('is_test_data', False)
+                
+                if is_training:
+                    app_type = 'training'
+                elif is_test:
+                    app_type = 'test'
+                else:
+                    app_type = '2026'
+                
+                # Get student ID from document path
+                student_id = f"student_{application_id}"
+                if document_path:
+                    parts = document_path.split('/')
+                    if 'student_' in str(document_path):
+                        for part in parts:
+                            if part.startswith('student_'):
+                                student_id = part
+                                break
+                
+                # Download from Azure Storage
+                file_content = storage.download_file(student_id, filename, app_type)
+                
+                if file_content:
+                    from io import BytesIO
+                    from flask import send_file
+                    
+                    logger.info(f"Serving document from Azure Storage: {filename}")
+                    return send_file(
+                        BytesIO(file_content),
+                        as_attachment=True,
+                        download_name=filename,
+                        mimetype='application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+                    )
+            except Exception as e:
+                logger.warning(f"Could not download from Azure Storage: {e}, falling back to local")
+        
+        # Fallback to local file
+        if document_path and os.path.exists(document_path):
+            from flask import send_file
+            logger.info(f"Serving document from local storage: {document_path}")
+            return send_file(
+                document_path,
+                as_attachment=True,
+                download_name=os.path.basename(document_path),
+                mimetype='application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+            )
+        
+        flash('Evaluation document not available', 'error')
+        return redirect(url_for('student_detail', application_id=application_id))
         
     except Exception as e:
-        flash(f'Error loading student: {str(e)}', 'error')
-        return redirect(url_for('students'))
+        logger.error(f"Error downloading evaluation: {str(e)}", exc_info=True)
+        flash(f'Error downloading document: {str(e)}', 'error')
+        return redirect(url_for('student_detail', application_id=application_id))
 
 
 @app.route('/training/<int:application_id>')
@@ -698,7 +1376,7 @@ def view_training_detail(application_id):
     """View details of a training example."""
     try:
         application = db.get_application(application_id)
-        if not application or not application.get('istrainingexample'):
+        if not application or not application.get('is_training_example'):
             flash('Training example not found', 'error')
             return redirect(url_for('training'))
         
@@ -716,13 +1394,13 @@ def delete_training(application_id):
     """Delete a training example."""
     try:
         application = db.get_application(application_id)
-        if not application or not application.get('istrainingexample'):
+        if not application or not application.get('is_training_example'):
             flash('Training example not found', 'error')
             return redirect(url_for('training'))
         
         # Delete the training example
         db.execute_non_query(
-            "DELETE FROM Applications WHERE ApplicationID = %s AND IsTrainingExample = TRUE",
+            "DELETE FROM Applications WHERE application_id = %s AND is_training_example = TRUE",
             (application_id,)
         )
         
@@ -751,13 +1429,18 @@ aurora = AuroraAgent()
 def generate_session_updates(session_id):
     """
     Generator function for SSE updates during test processing.
-    Creates real test applications in DB and has Smee orchestrate batch processing.
-    All students are processed in parallel for efficiency.
+    Uses threads to enable real-time streaming of agent progress updates.
     """
     submission = test_submissions.get(session_id)
     if not submission:
         yield f"data: {json.dumps({'error': 'Session not found'})}\n\n"
         return
+
+    if submission.get('initialized'):
+        yield f"data: {json.dumps({'type': 'session_already_running', 'message': 'Session already started'})}\n\n"
+        return
+
+    submission['initialized'] = True
     
     # Send initial connected message
     yield f"data: {json.dumps({'type': 'connected', 'message': 'Connected to test stream'})}\n\n"
@@ -772,21 +1455,49 @@ def generate_session_updates(session_id):
         name = student['name']
         email = student['email']
         application_text = student['application_text']
+        transcript_text = student.get('transcript_text', '')
+        recommendation_text = student.get('recommendation_text', '')
+        school_data = student.get('school_data', {})
         
         try:
+            # Generate unique student ID
+            student_id_val = storage.generate_student_id()
+            
             application_id = db.create_application(
                 applicant_name=name,
                 email=email,
                 application_text=application_text,
                 file_name=f"test_{name.replace(' ', '_').lower()}.txt",
                 file_type="txt",
-                is_training=True,
-                was_selected=None
+                is_training=False,  # Test data should NOT be training data
+                is_test_data=True,  # Mark as test data
+                was_selected=None,
+                student_id=student_id_val  # Unique student ID
             )
+
+            # Persist test-only fields so agents and UI see complete data
+            db.update_application_fields(
+                application_id,
+                {
+                    'transcript_text': transcript_text,
+                    'recommendation_text': recommendation_text
+                }
+            )
+            db.set_missing_fields(application_id, [])
             
             submission['application_ids'].append(application_id)
             application_data = db.get_application(application_id)
-            student_id = f"student_{idx}"
+            student_id = f"app_{application_id}"
+            
+            # Add transcript and recommendation data to application object for agents
+            # Use lowercase keys to match AgentRequirements expected field names
+            if application_data:
+                application_data['transcript_text'] = transcript_text
+                application_data['recommendation_text'] = recommendation_text
+                application_data['school_name'] = school_data.get('name', '')
+                application_data['school_city'] = school_data.get('city', '')
+                application_data['school_state'] = school_data.get('state', '')
+                application_data['school_data'] = school_data  # Full school metadata for Moana
             
             application_data_list.append({
                 'student_id': student_id,
@@ -797,7 +1508,7 @@ def generate_session_updates(session_id):
             })
             
             # Notify of student submission
-            yield f"data: {json.dumps({'type': 'student_submitted', 'student': {'name': name, 'email': email}, 'student_id': student_id})}\n\n"
+            yield f"data: {json.dumps({'type': 'student_submitted', 'student': {'name': name, 'email': email}, 'student_id': student_id, 'application_id': application_id})}\n\n"
         except Exception as e:
             yield f"data: {json.dumps({'type': 'error', 'error': f'Failed to create student record: {str(e)}'})}\n\n"
     
@@ -805,93 +1516,155 @@ def generate_session_updates(session_id):
         yield f"data: {json.dumps({'type': 'error', 'error': 'No students could be created'})}\n\n"
         return
     
-    # STEP 2: Use Smee to orchestrate parallel processing of all students
-    yield f"data: {json.dumps({'type': 'orchestrator_start', 'message': 'Smee is coordinating evaluation of all students in parallel'})}\n\n"
+    # STEP 2: Use Smee to orchestrate processing of all students
+    yield f"data: {json.dumps({'type': 'orchestrator_start', 'message': f'Smee is coordinating evaluation of {len(application_data_list)} students'})}\n\n"
     
-    async def process_student_with_updates(app_data):
-        """Process a single student and handle all agent updates."""
+    # Process each student sequentially with real-time updates
+    for student_num, app_data in enumerate(application_data_list, 1):
         student_id = app_data['student_id']
         application_id = app_data['application_id']
         application_data = app_data['application_data']
+        applicant_name = app_data['name']  # Use the actual student name from generator
         
         try:
-            # Run the full agent pipeline through Smee
-            evaluation_steps = [
-                'application_reader',
-                'grade_reader', 
-                'recommendation_reader',
-                'school_context',
-                'student_evaluator',
-                'aurora'
-            ]
+            yield f"data: {json.dumps({'type': 'student_start', 'student_id': student_id, 'application_id': application_id, 'student_num': student_num, 'total_students': len(application_data_list), 'applicant_name': applicant_name})}\n\n"
             
-            result = await orchestrator.coordinate_evaluation(
-                application=application_data,
-                evaluation_steps=evaluation_steps
-            )
+            logger.info(f"Processing student: {applicant_name} (ID: {application_id})", extra={'data_keys': list(application_data.keys()) if application_data else []})
+            
+            # Use a queue to collect updates from the progress callback in real-time
+            update_queue = queue.Queue()
+            
+            def progress_callback(update):
+                """Callback for Smee to report progress."""
+                logger.debug(f"Progress callback: {update.get('type', 'unknown')} - {update.get('agent', 'N/A')}", extra=update)
+                update_queue.put(update)
+            
+            # Run orchestration in a thread to allow non-blocking collection of updates
+            def run_orchestration():
+                try:
+                    logger.debug(f"Starting orchestration thread for {applicant_name}")
+                    evaluation_steps = [
+                        'application_reader',
+                        'grade_reader',
+                        'recommendation_reader',
+                        'school_context',
+                        'student_evaluator'
+                    ]
+                    
+                    logger.debug(f"Evaluation steps: {evaluation_steps}")
+                    
+                    result = asyncio.run(orchestrator.coordinate_evaluation(
+                        application=application_data,
+                        evaluation_steps=evaluation_steps,
+                        progress_callback=progress_callback
+                    ))
+                    
+                    logger.info(f"Orchestration complete for {applicant_name}", extra={'application_id': application_id})
+                    update_queue.put({'_orchestration_complete': True, 'result': result})
+                except Exception as e:
+                    logger.error(f"Orchestration error for {applicant_name}: {str(e)}", exc_info=True)
+                    import traceback
+                    traceback.print_exc()
+                    update_queue.put({'_orchestration_error': True, 'error': str(e)})
+            
+            # Start orchestration in background thread
+            orchestration_thread = threading.Thread(target=run_orchestration, daemon=True)
+            orchestration_thread.start()
+            
+            # Collect and yield updates in real-time as they come in
+            orchestration_complete = False
+            orchestration_result = None
+            orchestration_error = None
+            
+            while not orchestration_complete:
+                try:
+                    # Non-blocking queue check with timeout
+                    update = update_queue.get(timeout=0.5)
+                    
+                    # Check for orchestration completion markers
+                    if update.get('_orchestration_complete'):
+                        orchestration_complete = True
+                        orchestration_result = update.get('result')
+                    elif update.get('_orchestration_error'):
+                        orchestration_complete = True
+                        orchestration_error = update.get('error')
+                    else:
+                        # Regular progress update - yield it immediately
+                        yield f"data: {json.dumps(update)}\n\n"
+                
+                except queue.Empty:
+                    # Timeout - check if thread is still alive
+                    if not orchestration_thread.is_alive():
+                        orchestration_complete = True
+                    continue
+            
+            # Handle any errors from orchestration
+            if orchestration_error:
+                error_data = {
+                    'type': 'student_error',
+                    'student_id': student_id,
+                    'student_num': student_num,
+                    'error': f'Processing failed: {orchestration_error}'
+                }
+                yield f"data: {json.dumps(error_data)}\n\n"
+                continue
             
             # Save Merlin evaluation to database
-            if 'results' in result and 'student_evaluator' in result['results']:
-                merlin_result = result['results']['student_evaluator']
+            if orchestration_result and 'results' in orchestration_result:
+                merlin_result = orchestration_result['results'].get('student_evaluator', {})
                 if merlin_result and merlin_result.get('status') == 'success':
-                    db.save_merlin_evaluation(
-                        application_id=application_id,
-                        agent_name='Merlin',
-                        overall_score=merlin_result.get('overall_score'),
-                        recommendation=merlin_result.get('recommendation'),
-                        rationale=merlin_result.get('rationale'),
-                        confidence=merlin_result.get('confidence'),
-                        parsed_json=json.dumps(merlin_result, ensure_ascii=True, default=str)
-                    )
+                    try:
+                        db.save_merlin_evaluation(
+                            application_id=application_id,
+                            agent_name='Merlin',
+                            overall_score=merlin_result.get('overall_score'),
+                            recommendation=merlin_result.get('recommendation'),
+                            rationale=merlin_result.get('rationale'),
+                            confidence=merlin_result.get('confidence'),
+                            parsed_json=json.dumps(merlin_result, ensure_ascii=True, default=str)
+                        )
+                    except Exception as save_err:
+                        logger.warning(f"Failed to save Merlin evaluation: {str(save_err)}")
             
-            return {
+            # Results ready for this student
+            results_data = {
+                'type': 'student_complete',
                 'student_id': student_id,
+                'student_num': student_num,
+                'applicant_name': applicant_name,
                 'application_id': application_id,
-                'success': True,
-                'result': result
+                'results_url': f'/application/{application_id}',
+                'success': True
             }
+            yield f"data: {json.dumps(results_data)}\n\n"
+            
         except Exception as e:
-            return {
+            logger.error(f"Error processing student {student_id}: {str(e)}", exc_info=True)
+            import traceback
+            traceback.print_exc()
+            error_data = {
+                'type': 'student_error',
                 'student_id': student_id,
-                'application_id': application_id,
-                'success': False,
-                'error': str(e)
+                'student_num': student_num,
+                'error': f'Processing failed: {str(e)}'
             }
-    
-    # Run all students in parallel
-    try:
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        
-        # Process all students concurrently
-        tasks = [process_student_with_updates(app_data) for app_data in application_data_list]
-        results = loop.run_until_complete(asyncio.gather(*tasks, return_exceptions=True))
-        loop.close()
-        
-        # Send results as they complete
-        for result in results:
-            if isinstance(result, Exception):
-                yield f"data: {json.dumps({'type': 'error', 'error': str(result)})}\n\n"
-            elif result.get('success'):
-                yield f"data: {json.dumps({
-                    'type': 'results_ready',
-                    'student_id': result['student_id'],
-                    'application_id': result['application_id'],
-                    'results_url': f'/application/{result["application_id"]}',
-                    'success': True
-                })}\n\n"
-            else:
-                yield f"data: {json.dumps({
-                    'type': 'agent_error',
-                    'student_id': result['student_id'],
-                    'error': result.get('error', 'Unknown error')
-                })}\n\n"
-    except Exception as e:
-        yield f"data: {json.dumps({'type': 'error', 'error': f'Orchestration failed: {str(e)}'})}\n\n"
+            yield f"data: {json.dumps(error_data)}\n\n"
     
     # All complete
     yield f"data: {json.dumps({'type': 'all_complete', 'application_ids': submission['application_ids']})}\n\n"
-    yield f"data: {json.dumps({'type': 'all_complete', 'application_ids': submission['application_ids']})}\n\n"
+    
+    # Save test submission to database for persistence
+    try:
+        db.save_test_submission(
+            session_id=session_id,
+            student_count=len(application_data_list),
+            application_ids=submission['application_ids']
+        )
+        submission['status'] = 'completed'
+        yield f"data: {json.dumps({'type': 'session_saved', 'message': 'Test submission saved to database'})}\n\n"
+    except Exception as e:
+        logger.warning(f"Failed to save test submission to database: {str(e)}")
+        yield f"data: {json.dumps({'type': 'save_warning', 'message': f'Data saved in memory but database save failed: {str(e)}'})}\n\n"
 
 
 @app.route('/api/test/stream/<session_id>')
@@ -916,11 +1689,14 @@ def submit_test_data():
     Returns a session ID to stream updates from.
     """
     try:
-        # CLEANUP: Delete old test data (all applications marked as training examples)
+        # CLEANUP: Delete old test data (all applications marked as is_test_data=TRUE)
+        logger.info("Cleaning up old test data...")
         cleanup_test_data()
+        logger.info("Test data cleanup complete. Generating new students...")
         
-        # Generate 3-8 random test students with realistic data
+        # Generate 3 random test students with realistic data
         students = test_data_generator.generate_batch()
+        logger.info(f"Generated {len(students)} test students")
         
         # Generate session ID
         session_id = str(uuid.uuid4())
@@ -943,6 +1719,267 @@ def submit_test_data():
         return jsonify({'error': str(e)}), 500
 
 
+@app.route('/api/test/submit-preset', methods=['POST'])
+def submit_preset_test_data():
+    """
+    Submit preset test students for quick testing.
+    Uses the same 3 students each time for reproducible testing.
+    """
+    try:
+        # CLEANUP: Delete old test data
+        logger.info("Cleaning up old test data...")
+        cleanup_test_data()
+        logger.info("Test data cleanup complete. Creating preset students...")
+        
+        # Create preset students - consistent across runs for reproducible testing
+        preset_students = [
+            {
+                'name': 'Alice Chen',
+                'email': 'alice.chen@school.edu',
+                'application_text': '''
+I am Alice Chen, a dedicated high school student passionate about STEM and community service. 
+
+Academic Achievements:
+- GPA: 3.95/4.0
+- AP Exams: Calculus (5), Physics (5), Chemistry (5), Biology (4)
+- National Merit Scholar
+- Founded and led the school's robotics team to state competition (2nd place)
+- President of Science Olympiad club
+
+Extracurricular Activities:
+- Volunteer tutor for underprivileged students (100+ hours)
+- Published research on sustainable building materials in school journal
+- Cross country team captain
+- Debate team, won regional tournament
+
+Goals and Vision:
+I aim to study engineering at a top university and eventually work on sustainable infrastructure projects. 
+My robotics experience has taught me the value of innovation and teamwork. I'm particularly interested in 
+using technology to solve real-world problems that benefit communities.
+
+This school has challenged me to grow beyond academics. I've learned that excellence isn't just about grades,
+but about making a positive impact on those around me.
+                '''
+            },
+            {
+                'name': 'Brian Rodriguez',
+                'email': 'brian.rodriguez@school.edu',
+                'application_text': '''
+I am Brian Rodriguez, a well-rounded student looking to make the most of my college experience.
+
+Academic Profile:
+- GPA: 3.45/4.0
+- SAT: 1340/1600
+- AP Exams: US History (4), English (3)
+- Regular course load with good grades in math and sciences
+
+Activities and Interests:
+- Varsity soccer player (3 years)
+- Member of cultural club (Spanish club treasurer)
+- Volunteer at local community center (occasional)
+- Work part-time at local retail store (15 hours/week)
+
+Background and Goals:
+I am a first-generation college student. My family is very important to me, and balancing school, work, 
+and family responsibilities has taught me time management and resilience. I'm interested in studying 
+business and perhaps working in my community to help other first-generation students succeed.
+
+While my grades are solid, I know I'm not at the top of my class, but I'm dedicated and willing to work hard 
+for my education.
+                '''
+            },
+            {
+                'name': 'Carol Thompson',
+                'email': 'carol.thompson@school.edu',
+                'application_text': '''
+I am Carol Thompson, a creative student who has overcome personal challenges to complete high school.
+
+Academic Information:
+- GPA: 2.85/4.0
+- Struggled with math and science early on, but improved senior year
+- Completed several vocational courses in digital design
+
+Experiences and Activities:
+- Art club member
+- Worked on the school newspaper as a designer
+- Part-time job at graphic design firm (part-time, 10 hours/week)
+
+Personal Story:
+High school has been challenging for me. I faced some personal difficulties in my sophomore year that affected 
+my grades. However, I've worked hard to build myself back up. I discovered my passion for design and have been 
+pursuing it. I'm not a traditional high-achieving student, but I'm determined and resilient.
+
+Future Plans:
+I want to study graphic design or digital media at a school that values growth and potential over just test scores.
+I believe my creative skills and persistence will serve me well in my career.
+                '''
+            }
+        ]
+
+        # Enrich preset students with transcript and recommendation data
+        preset_metadata = {
+            'Alice Chen': {
+                'school_data': {'name': 'Riverview High School', 'city': 'Austin', 'state': 'TX'},
+                'gpa': 3.95,
+                'ap_courses': ['AP Calculus', 'AP Physics', 'AP Chemistry', 'AP Biology'],
+                'activities': ['Founded robotics team', 'Science Olympiad president', 'Volunteer tutor'],
+                'quality_tier': 'high'
+            },
+            'Brian Rodriguez': {
+                'school_data': {'name': 'East Valley High School', 'city': 'Phoenix', 'state': 'AZ'},
+                'gpa': 3.45,
+                'ap_courses': ['AP US History', 'AP English'],
+                'activities': ['Varsity soccer', 'Spanish club treasurer', 'Community center volunteer'],
+                'quality_tier': 'medium'
+            },
+            'Carol Thompson': {
+                'school_data': {'name': 'Westview High School', 'city': 'Denver', 'state': 'CO'},
+                'gpa': 2.85,
+                'ap_courses': ['AP Art History'],
+                'activities': ['Art club member', 'School newspaper designer', 'Part-time graphic design job'],
+                'quality_tier': 'low'
+            }
+        }
+
+        for student in preset_students:
+            meta = preset_metadata.get(student['name'])
+            if not meta:
+                continue
+
+            transcript_text = test_data_generator.generate_transcript(
+                name=student['name'],
+                school_data=meta['school_data'],
+                gpa=meta['gpa'],
+                ap_courses=meta['ap_courses'],
+                quality_tier=meta['quality_tier']
+            )
+            recommendation_text, _, _ = test_data_generator.generate_recommendation(
+                name=student['name'],
+                quality_tier=meta['quality_tier'],
+                activities=meta['activities']
+            )
+
+            student['transcript_text'] = transcript_text
+            student['recommendation_text'] = recommendation_text
+            student['school_data'] = meta['school_data']
+            student['gpa'] = meta['gpa']
+            student['ap_courses'] = meta['ap_courses']
+            student['activities'] = meta['activities']
+            student['quality_tier'] = meta['quality_tier']
+        
+        # Generate session ID
+        session_id = str(uuid.uuid4())
+        
+        # Track submission
+        test_submissions[session_id] = {
+            'students': preset_students,
+            'application_ids': [],
+            'created_at': time.time(),
+            'status': 'processing'
+        }
+        
+        return jsonify({
+            'session_id': session_id,
+            'student_count': len(preset_students),
+            'stream_url': url_for('test_stream', session_id=session_id)
+        })
+        
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/test/submit-single', methods=['POST'])
+def submit_single_test_data():
+    """
+    Submit a single preset test student for quick testing.
+    Generates just Alice Chen for fast iteration and testing.
+    """
+    try:
+        # CLEANUP: Delete old test data
+        logger.info("Cleaning up old test data...")
+        cleanup_test_data()
+        logger.info("Test data cleanup complete. Creating single student...")
+        
+        # Create single preset student - Alice Chen
+        single_student = [
+            {
+                'name': 'Alice Chen',
+                'email': 'alice.chen@school.edu',
+                'application_text': '''
+I am Alice Chen, a dedicated high school student passionate about STEM and community service. 
+
+Academic Achievements:
+- GPA: 3.95/4.0
+- AP Exams: Calculus (5), Physics (5), Chemistry (5), Biology (4)
+- National Merit Scholar
+- Founded and led the school's robotics team to state competition (2nd place)
+- President of Science Olympiad club
+
+Extracurricular Activities:
+- Volunteer tutor for underprivileged students (100+ hours)
+- Published research on sustainable building materials in school journal
+- Cross country team captain
+- Debate team, won regional tournament
+
+Goals and Vision:
+I aim to study engineering at a top university and eventually work on sustainable infrastructure projects. 
+My robotics experience has taught me the value of innovation and teamwork. I'm particularly interested in 
+using technology to solve real-world problems that benefit communities.
+
+This school has challenged me to grow beyond academics. I've learned that excellence isn't just about grades,
+but about making a positive impact on those around me.
+                '''
+            }
+        ]
+
+        # Enrich single student with transcript and recommendation data
+        school_data = {'name': 'Riverview High School', 'city': 'Austin', 'state': 'TX'}
+        gpa = 3.95
+        ap_courses = ['AP Calculus', 'AP Physics', 'AP Chemistry', 'AP Biology']
+        activities = ['Founded robotics team', 'Science Olympiad president', 'Volunteer tutor']
+
+        transcript_text = test_data_generator.generate_transcript(
+            name=single_student[0]['name'],
+            school_data=school_data,
+            gpa=gpa,
+            ap_courses=ap_courses,
+            quality_tier='high'
+        )
+        recommendation_text, _, _ = test_data_generator.generate_recommendation(
+            name=single_student[0]['name'],
+            quality_tier='high',
+            activities=activities
+        )
+
+        single_student[0]['transcript_text'] = transcript_text
+        single_student[0]['recommendation_text'] = recommendation_text
+        single_student[0]['school_data'] = school_data
+        single_student[0]['gpa'] = gpa
+        single_student[0]['ap_courses'] = ap_courses
+        single_student[0]['activities'] = activities
+        single_student[0]['quality_tier'] = 'high'
+        
+        # Generate session ID
+        session_id = str(uuid.uuid4())
+        
+        # Track submission
+        test_submissions[session_id] = {
+            'students': single_student,
+            'application_ids': [],
+            'created_at': time.time(),
+            'status': 'processing'
+        }
+        
+        return jsonify({
+            'session_id': session_id,
+            'student_count': len(single_student),
+            'stream_url': url_for('test_stream', session_id=session_id)
+        })
+        
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
 @app.route('/api/test/cleanup', methods=['POST'])
 def cleanup_test_endpoint():
     """
@@ -954,7 +1991,7 @@ def cleanup_test_endpoint():
         
         # Count remaining test data
         remaining = db.execute_query(
-            "SELECT COUNT(*) as count FROM Applications WHERE IsTrainingExample = TRUE"
+            "SELECT COUNT(*) as count FROM Applications WHERE is_training_example = TRUE"
         )
         count = remaining[0].get('count', 0) if remaining else 0
         
@@ -970,6 +2007,119 @@ def cleanup_test_endpoint():
         }), 500
 
 
+@app.route('/api/test/upload-files', methods=['POST'])
+def upload_test_files():
+    """
+    Upload real files from the test page for agent evaluation.
+    Accepts multiple files and processes them as test data.
+    """
+    try:
+        # Get uploaded files
+        if 'files' not in request.files:
+            return jsonify({'status': 'error', 'error': 'No files uploaded'}), 400
+        
+        files = request.files.getlist('files')
+        
+        if len(files) == 0:
+            return jsonify({'status': 'error', 'error': 'No files selected'}), 400
+        
+        uploaded_students = []
+        
+        for file in files:
+            if file.filename == '':
+                continue
+                
+            if not DocumentProcessor.validate_file_type(file.filename):
+                continue
+            
+            # Generate unique student ID
+            student_id = storage.generate_student_id()
+            
+            # Save file temporarily to extract text
+            filename = secure_filename(file.filename)
+            temp_path = os.path.join(app.config['UPLOAD_FOLDER'], f"temp_{student_id}_{filename}")
+            file.save(temp_path)
+            
+            # Extract text from file
+            application_text, file_type = DocumentProcessor.process_document(temp_path)
+            
+            # Read file content for Azure Storage
+            with open(temp_path, 'rb') as f:
+                file_content = f.read()
+            
+            # Upload to Azure Storage
+            storage_result = storage.upload_file(
+                file_content=file_content,
+                filename=filename,
+                student_id=student_id,
+                application_type='test'
+            )
+            
+            # Clean up temporary file
+            try:
+                os.remove(temp_path)
+            except:
+                pass
+
+            # Use Belle to analyze the document and extract structured data
+            try:
+                belle = get_belle()
+                doc_analysis = belle.analyze_document(application_text, filename)
+            except Exception as e:
+                logger.warning(f"Belle analysis failed for test upload: {e}")
+                doc_analysis = {
+                    "document_type": "unknown",
+                    "confidence": 0,
+                    "student_info": {},
+                    "extracted_data": {}
+                }
+
+            belle_student_info = doc_analysis.get('student_info', {})
+            student_name = belle_student_info.get('name') or extract_student_name(application_text)
+            student_email = belle_student_info.get('email') or extract_student_email(application_text)
+
+            doc_type = doc_analysis.get('document_type', 'unknown')
+            agent_fields = doc_analysis.get('agent_fields', {})
+            transcript_text = agent_fields.get('transcript_text') or application_text
+            recommendation_text = agent_fields.get('recommendation_text') or application_text
+            school_name = agent_fields.get('school_name')
+            
+            uploaded_students.append({
+                'name': student_name or f"Student from {filename}",
+                'email': student_email or "",
+                'application_text': application_text,
+                'filename': filename,
+                'transcript_text': transcript_text,
+                'recommendation_text': recommendation_text,
+                'school_data': {'name': school_name} if school_name else {}
+            })
+        
+        if len(uploaded_students) == 0:
+            return jsonify({'status': 'error', 'error': 'No valid files uploaded'}), 400
+        
+        # Generate session ID for tracking
+        session_id = str(uuid.uuid4())
+        
+        # Track submission
+        test_submissions[session_id] = {
+            'students': uploaded_students,
+            'application_ids': [],
+            'created_at': time.time(),
+            'status': 'processing'
+        }
+        
+        return jsonify({
+            'status': 'success',
+            'session_id': session_id,
+            'count': len(uploaded_students),
+            'stream_url': url_for('test_stream', session_id=session_id)
+        })
+        
+    except Exception as e:
+        logger.error(f"Error uploading test files: {str(e)}", exc_info=True)
+        return jsonify({'status': 'error', 'error': str(e)}), 500
+
+
 @app.route('/api/test/stats', methods=['GET'])
 def test_stats():
     """
@@ -977,13 +2127,13 @@ def test_stats():
     """
     try:
         test_count = db.execute_query(
-            "SELECT COUNT(*) as count FROM Applications WHERE IsTrainingExample = TRUE"
+            "SELECT COUNT(*) as count FROM Applications WHERE is_training_example = TRUE"
         )
         count = test_count[0].get('count', 0) if test_count else 0
         
         # Get list of test students
         test_apps = db.execute_query(
-            "SELECT ApplicationID, ApplicantName, Status, UploadedDate FROM Applications WHERE IsTrainingExample = TRUE ORDER BY UploadedDate DESC"
+            "SELECT application_id, applicant_name, status, uploaded_date FROM Applications WHERE is_training_example = TRUE ORDER BY uploaded_date DESC"
         )
         
         return jsonify({
@@ -998,7 +2148,420 @@ def test_stats():
         }), 500
 
 
+@app.route('/api/test/submissions', methods=['GET'])
+def get_test_submissions():
+    """
+    Get list of previous test submissions from database.
+    Allows users to view and resume previous test runs.
+    """
+    try:
+        limit = request.args.get('limit', 10, type=int)
+        
+        # Get recent test submissions from database
+        submissions = db.execute_query(
+            """
+            SELECT SessionID, StudentCount, ApplicationIDs, Status, CreatedAt, UpdatedAt 
+            FROM TestSubmissions 
+            ORDER BY CreatedAt DESC 
+            LIMIT %s
+            """,
+            (limit,)
+        )
+        
+        # Format submission data for frontend
+        formatted = []
+        for sub in submissions:
+            try:
+                import json as json_module
+                app_ids = json_module.loads(sub.get('ApplicationIDs', '[]')) if isinstance(sub.get('ApplicationIDs'), str) else sub.get('ApplicationIDs', [])
+            except:
+                app_ids = []
+            
+            formatted.append({
+                'session_id': sub.get('SessionID'),
+                'student_count': sub.get('StudentCount'),
+                'application_ids': app_ids,
+                'status': sub.get('Status'),
+                'created_at': str(sub.get('CreatedAt')) if sub.get('CreatedAt') else None,
+                'updated_at': str(sub.get('UpdatedAt')) if sub.get('UpdatedAt') else None
+            })
+        
+        return jsonify({
+            'status': 'success',
+            'submissions': formatted,
+            'count': len(formatted)
+        })
+    except Exception as e:
+        logger.error(f"Error retrieving test submissions: {str(e)}")
+        return jsonify({
+            'status': 'error',
+            'error': str(e)
+        }), 500
+
+
+@app.route('/api/test/students', methods=['GET'])
+def get_test_students():
+    """
+    Get current test students with their processing status.
+    Queries the database to show which agents have evaluated each student.
+    """
+    try:
+        # Get all test students (marked with is_test_data = TRUE)
+        query = """
+            SELECT 
+                a.application_id,
+                a.applicant_name,
+                a.email,
+                a.status,
+                a.uploaded_date,
+                a.student_id,
+                COUNT(DISTINCT CASE WHEN m.merlin_evaluation_id IS NOT NULL THEN m.merlin_evaluation_id END) as has_merlin,
+                COUNT(DISTINCT CASE WHEN t.tiana_application_id IS NOT NULL THEN t.tiana_application_id END) as has_tiana,
+                COUNT(DISTINCT CASE WHEN rg.rapunzel_grade_id IS NOT NULL THEN rg.rapunzel_grade_id END) as has_rapunzel,
+                COUNT(DISTINCT CASE WHEN r.mulan_recommendation_id IS NOT NULL THEN r.mulan_recommendation_id END) as has_mulan,
+                COUNT(DISTINCT CASE WHEN s.context_id IS NOT NULL THEN s.context_id END) as has_moana,
+                COUNT(DISTINCT CASE WHEN au.aurora_evaluation_id IS NOT NULL THEN au.aurora_evaluation_id END) as has_aurora
+            FROM Applications a
+            LEFT JOIN merlin_evaluations m ON a.application_id = m.application_id
+            LEFT JOIN tiana_applications t ON a.application_id = t.application_id
+            LEFT JOIN rapunzel_grades rg ON a.application_id = rg.application_id
+            LEFT JOIN mulan_recommendations r ON a.application_id = r.application_id
+            LEFT JOIN student_school_context s ON a.application_id = s.application_id
+            LEFT JOIN aurora_evaluations au ON a.application_id = au.application_id
+            WHERE a.is_test_data = TRUE
+            GROUP BY a.application_id, a.applicant_name, a.email, a.status, a.uploaded_date, a.student_id
+            ORDER BY a.uploaded_date DESC
+        """
+        
+        students = db.execute_query(query)
+        
+        # Format student data with agent status
+        formatted = []
+        for student in students:
+            agent_status = {
+                'smee': 'complete' if all([student.get('has_tiana'), student.get('has_rapunzel'), student.get('has_mulan'), 
+                                           student.get('has_moana'), student.get('has_merlin')]) else 'pending',
+                'application_reader': 'complete' if student.get('has_tiana') else 'pending',
+                'grade_reader': 'complete' if student.get('has_rapunzel') else 'pending',
+                'school_context': 'complete' if student.get('has_moana') else 'pending',
+                'recommendation_reader': 'complete' if student.get('has_mulan') else 'pending',
+                'student_evaluator': 'complete' if student.get('has_merlin') else 'pending',
+                'aurora': 'complete' if student.get('has_aurora') else 'pending',
+                'fairy_godmother': 'pending'  # Fairy Godmother completion not tracked in DB
+            }
+            
+            is_complete = (student.get('has_tiana') and student.get('has_rapunzel') and student.get('has_mulan') and 
+                          student.get('has_moana') and student.get('has_merlin'))
+            
+            formatted.append({
+                'application_id': student.get('application_id'),
+                'name': student.get('applicant_name'),
+                'email': student.get('email'),
+                'status': 'complete' if is_complete else 'processing',
+                'uploaded_date': str(student.get('uploaded_date')) if student.get('uploaded_date') else None,
+                'student_id': student.get('student_id'),
+                'agent_progress': agent_status
+            })
+        
+        return jsonify({
+            'status': 'success',
+            'students': formatted,
+            'count': len(formatted)
+        })
+    except Exception as e:
+        logger.error(f"Error retrieving test students: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({
+            'status': 'error',
+            'error': str(e)
+        }), 500
+
+        return jsonify({
+            'status': 'error',
+            'error': str(e)
+        }), 500
+
+
+@app.route('/api/application/status/<int:application_id>', methods=['GET'])
+def get_application_status(application_id):
+    """Return agent progress status for a single application."""
+    try:
+        query = """
+            SELECT 
+                a.application_id,
+                a.applicant_name,
+                a.status,
+                COUNT(DISTINCT CASE WHEN t.tiana_application_id IS NOT NULL THEN t.tiana_application_id END) as has_tiana,
+                COUNT(DISTINCT CASE WHEN rg.rapunzel_grade_id IS NOT NULL THEN rg.rapunzel_grade_id END) as has_rapunzel,
+                COUNT(DISTINCT CASE WHEN r.mulan_recommendation_id IS NOT NULL THEN r.mulan_recommendation_id END) as has_mulan,
+                COUNT(DISTINCT CASE WHEN s.context_id IS NOT NULL THEN s.context_id END) as has_moana,
+                COUNT(DISTINCT CASE WHEN m.merlin_evaluation_id IS NOT NULL THEN m.merlin_evaluation_id END) as has_merlin,
+                COUNT(DISTINCT CASE WHEN au.aurora_evaluation_id IS NOT NULL THEN au.aurora_evaluation_id END) as has_aurora
+            FROM Applications a
+            LEFT JOIN tiana_applications t ON a.application_id = t.application_id
+            LEFT JOIN rapunzel_grades rg ON a.application_id = rg.application_id
+            LEFT JOIN mulan_recommendations r ON a.application_id = r.application_id
+            LEFT JOIN student_school_context s ON a.application_id = s.application_id
+            LEFT JOIN merlin_evaluations m ON a.application_id = m.application_id
+            LEFT JOIN aurora_evaluations au ON a.application_id = au.application_id
+            WHERE a.application_id = %s
+            GROUP BY a.application_id, a.applicant_name, a.status
+        """
+        rows = db.execute_query(query, (application_id,))
+        if not rows:
+            return jsonify({'error': 'Application not found'}), 404
+
+        row = rows[0]
+        missing_fields = row.get('missing_fields') or []
+        if isinstance(missing_fields, str):
+            try:
+                missing_fields = json.loads(missing_fields)
+            except Exception:
+                missing_fields = [missing_fields]
+
+        agent_status = {
+            'application_reader': 'complete' if row.get('has_tiana') else 'pending',
+            'grade_reader': 'complete' if row.get('has_rapunzel') else 'pending',
+            'school_context': 'complete' if row.get('has_moana') else 'pending',
+            'recommendation_reader': 'complete' if row.get('has_mulan') else 'pending',
+            'student_evaluator': 'complete' if row.get('has_merlin') else 'pending',
+            'aurora': 'complete' if row.get('has_aurora') else 'pending'
+        }
+
+        waiting_for = {}
+        for agent_id in agent_status.keys():
+            field_name = AgentRequirements.get_field_for_agent(agent_id)
+            if field_name in missing_fields and agent_status[agent_id] != 'complete':
+                agent_status[agent_id] = 'waiting'
+                waiting_for[agent_id] = field_name
+
+        is_complete = all([
+            row.get('has_tiana'),
+            row.get('has_rapunzel'),
+            row.get('has_moana'),
+            row.get('has_mulan'),
+            row.get('has_merlin')
+        ])
+
+        return jsonify({
+            'status': 'success',
+            'application_id': application_id,
+            'applicant_name': row.get('applicant_name'),
+            'overall_status': 'complete' if is_complete else 'processing',
+            'agent_progress': agent_status,
+            'waiting_for': waiting_for,
+            'missing_fields': missing_fields
+        })
+    except Exception as e:
+        logger.error(f"Error fetching application status: {e}", exc_info=True)
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/verify/applications', methods=['GET'])
+def verify_applications():
+    """Verify application field completeness across test, training, and 2026 flows."""
+    try:
+        scope = request.args.get('scope', 'all').lower()
+
+        where_clause = ""
+        params = []
+        if scope == 'test':
+            where_clause = "WHERE a.is_test_data = TRUE"
+        elif scope == 'training':
+            where_clause = "WHERE a.is_training_example = TRUE"
+        elif scope == '2026':
+            where_clause = "WHERE a.is_training_example = FALSE AND (a.is_test_data = FALSE OR a.is_test_data IS NULL)"
+
+        query = f"""
+            SELECT
+                a.application_id,
+                a.applicant_name,
+                a.email,
+                a.status,
+                a.is_training_example,
+                a.is_test_data,
+                a.missing_fields,
+                (a.application_text IS NOT NULL AND a.application_text != '') AS has_application_text,
+                (a.transcript_text IS NOT NULL AND a.transcript_text != '') AS has_transcript_text,
+                (a.recommendation_text IS NOT NULL AND a.recommendation_text != '') AS has_recommendation_text,
+                COUNT(DISTINCT CASE WHEN t.tiana_application_id IS NOT NULL THEN t.tiana_application_id END) AS has_tiana,
+                COUNT(DISTINCT CASE WHEN r.mulan_recommendation_id IS NOT NULL THEN r.mulan_recommendation_id END) AS has_mulan,
+                COUNT(DISTINCT CASE WHEN s.context_id IS NOT NULL THEN s.context_id END) AS has_moana,
+                COUNT(DISTINCT CASE WHEN m.merlin_evaluation_id IS NOT NULL THEN m.merlin_evaluation_id END) AS has_merlin,
+                COUNT(DISTINCT CASE WHEN au.aurora_evaluation_id IS NOT NULL THEN au.aurora_evaluation_id END) AS has_aurora
+            FROM Applications a
+            LEFT JOIN tiana_applications t ON a.application_id = t.application_id
+            LEFT JOIN mulan_recommendations r ON a.application_id = r.application_id
+            LEFT JOIN student_school_context s ON a.application_id = s.application_id
+            LEFT JOIN merlin_evaluations m ON a.application_id = m.application_id
+            LEFT JOIN aurora_evaluations au ON a.application_id = au.application_id
+            {where_clause}
+            GROUP BY a.application_id, a.applicant_name, a.email, a.status, a.is_training_example, a.is_test_data, a.missing_fields,
+                     a.application_text, a.transcript_text, a.recommendation_text
+            ORDER BY a.uploaded_date DESC
+            LIMIT 200
+        """
+
+        results = db.execute_query(query, tuple(params) if params else None)
+        formatted = []
+        for row in results:
+            formatted.append({
+                'application_id': row.get('application_id'),
+                'name': row.get('applicant_name'),
+                'email': row.get('email'),
+                'status': row.get('status'),
+                'is_training_example': row.get('is_training_example'),
+                'is_test_data': row.get('is_test_data'),
+                'missing_fields': row.get('missing_fields') or [],
+                'fields': {
+                    'application_text': bool(row.get('has_application_text')),
+                    'transcript_text': bool(row.get('has_transcript_text')),
+                    'recommendation_text': bool(row.get('has_recommendation_text'))
+                },
+                'agents': {
+                    'application_reader': 'complete' if row.get('has_tiana') else 'pending',
+                    'recommendation_reader': 'complete' if row.get('has_mulan') else 'pending',
+                    'school_context': 'complete' if row.get('has_moana') else 'pending',
+                    'student_evaluator': 'complete' if row.get('has_merlin') else 'pending',
+                    'aurora': 'complete' if row.get('has_aurora') else 'pending'
+                }
+            })
+
+        return jsonify({
+            'status': 'success',
+            'scope': scope,
+            'count': len(formatted),
+            'applications': formatted
+        })
+    except Exception as e:
+        logger.error(f"Error verifying applications: {str(e)}", exc_info=True)
+        return jsonify({
+            'status': 'error',
+            'error': str(e)
+        }), 500
+
+
+# ============================================================================
+# TEST DATA MANAGEMENT ENDPOINTS
+# ============================================================================
+
+@app.route('/api/test-data/list', methods=['GET'])
+def get_test_data_list():
+    """Get all test data (applications marked as training/test data)."""
+    try:
+        # Get all applications marked as training (includes both training and test uploads)
+        query = """
+            SELECT 
+                a.application_id,
+                a.applicant_name, 
+                a.email,
+                a.status,
+                a.uploaded_date,
+                m.overall_score as merlin_score
+            FROM Applications a
+            LEFT JOIN merlin_evaluations m ON a.application_id = m.application_id
+            WHERE a.is_training_example = TRUE
+            ORDER BY a.uploaded_date DESC
+            LIMIT 100
+        """
+        
+        results = db.execute_query(query)
+        
+        test_students = []
+        for row in results:
+            test_students.append({
+                'applicationid': row.get('applicationid'),
+                'applicantname': row.get('applicantname'),
+                'email': row.get('email'),
+                'status': row.get('status'),
+                'uploadeddate': str(row.get('uploadeddate')) if row.get('uploadeddate') else None,
+                'merlin_score': row.get('merlinscore')
+            })
+        
+        return jsonify({
+            'status': 'success',
+            'count': len(test_students),
+            'students': test_students
+        })
+    except Exception as e:
+        logger.error(f"Error retrieving test data: {str(e)}", exc_info=True)
+        return jsonify({
+            'status': 'error',
+            'error': str(e),
+            'count': 0,
+            'students': []
+        }), 500
+        return jsonify({
+            'status': 'error',
+            'error': str(e)
+        }), 500
+
+
+@app.route('/api/test-data/clear', methods=['POST'])
+def clear_test_data():
+    """Clear all test data from the database (synthetic test students only)."""
+    try:
+        # Get all test application IDs (where is_test_data=TRUE)
+        test_apps = db.execute_query("""
+            SELECT application_id
+            FROM applications
+            WHERE is_test_data = TRUE
+        """)
+        
+        test_app_ids = [app.get('application_id') for app in test_apps]
+        count_deleted = len(test_app_ids)
+        
+        if count_deleted == 0:
+            logger.info("No test data to clear")
+            return jsonify({
+                'status': 'success',
+                'message': 'No test data found to delete',
+                'count': 0
+            })
+        
+        # Delete from specialized agent tables first (order matters for foreign keys)
+        for app_id in test_app_ids:
+            try:
+                # Delete audit logs first (has FK to applications)
+                db.execute_non_query("DELETE FROM agent_audit_logs WHERE application_id = %s", (app_id,))
+                # Delete from agent-specific tables
+                db.execute_non_query("DELETE FROM tiana_applications WHERE application_id = %s", (app_id,))
+                db.execute_non_query("DELETE FROM mulan_recommendations WHERE application_id = %s", (app_id,))
+                db.execute_non_query("DELETE FROM merlin_evaluations WHERE application_id = %s", (app_id,))
+                db.execute_non_query("DELETE FROM aurora_evaluations WHERE application_id = %s", (app_id,))
+                db.execute_non_query("DELETE FROM student_school_context WHERE application_id = %s", (app_id,))
+                db.execute_non_query("DELETE FROM grade_records WHERE application_id = %s", (app_id,))
+                db.execute_non_query("DELETE FROM ai_evaluations WHERE application_id = %s", (app_id,))
+            except Exception as delete_error:
+                logger.warning(f"Error deleting related data for application_id {app_id}: {delete_error}")
+                pass
+        
+        # Delete all test applications in one query
+        db.execute_non_query("DELETE FROM applications WHERE is_test_data = TRUE")
+        
+        # Delete the test submission records
+        db.execute_non_query("DELETE FROM test_submissions")
+        
+        logger.info(f"✅ Cleared {count_deleted} test applications and associated data")
+        
+        return jsonify({
+            'status': 'success',
+            'message': f'Deleted {count_deleted} test applications',
+            'count': count_deleted
+        })
+    except Exception as e:
+        logger.error(f"Error clearing test data: {str(e)}", exc_info=True)
+        return jsonify({
+            'status': 'error',
+            'error': str(e)
+        }), 500
+
+
 if __name__ == '__main__':
     # Only use debug mode for local development
     debug_mode = os.getenv('FLASK_ENV') != 'production'
-    app.run(debug=debug_mode, host='0.0.0.0', port=int(os.getenv('PORT', 5001)))
+    port = int(os.getenv('PORT', 5002))  # Changed to 5002 to avoid port conflict
+    print(f" * Starting Flask on port {port}")
+    app.run(debug=debug_mode, host='0.0.0.0', port=port)
+

@@ -90,7 +90,7 @@ class MulanRecommendationReader(BaseAgent):
             "  \"endorsement_strength\": 0,",
             "  \"specificity_score\": 0,",
             "  \"credibility_notes\": \"\",",
-            "  \"summary\": \"\",",
+            "  \"summary\": \"(3-5 sentences with concrete examples)\",",
             "  \"confidence\": \"High|Medium|Low\"",
             "}"
         ]

@@ -1,10 +1,15 @@
 """Smee - The orchestrator agent that coordinates all other agents."""
 
 import asyncio
+import logging
 from typing import Dict, List, Any, Optional
 from openai import AzureOpenAI
 from src.agents.base_agent import BaseAgent
 from src.agents.system_prompts import SMEE_ORCHESTRATOR_PROMPT
+from src.agents.agent_requirements import AgentRequirements
+from src.agents.belle_document_analyzer import BelleDocumentAnalyzer
+
+logger = logging.getLogger(__name__)
 
 
 class SmeeOrchestrator(BaseAgent):
@@ -50,7 +55,7 @@ class SmeeOrchestrator(BaseAgent):
             agent: The agent instance to register
         """
         self.agents[agent_id] = agent
-        print(f"✓ Smee registered agent: {agent_id} ({agent.name})")
+        logger.info(f"Smee registered agent: {agent_id} ({agent.name})")
     
     def get_registered_agents(self) -> Dict[str, str]:
         """Get list of registered agents."""
@@ -59,7 +64,8 @@ class SmeeOrchestrator(BaseAgent):
     async def coordinate_evaluation(
         self,
         application: Dict[str, Any],
-        evaluation_steps: List[str]
+        evaluation_steps: List[str],
+        progress_callback: Optional[callable] = None
     ) -> Dict[str, Any]:
         """
         Coordinate the evaluation of an application through multiple agents.
@@ -67,57 +73,182 @@ class SmeeOrchestrator(BaseAgent):
         Args:
             application: The application data to evaluate
             evaluation_steps: List of agent_ids to use in order
+            progress_callback: Optional callback function to report progress (called with dict updates)
             
         Returns:
             Dictionary with results from all agents
         """
-        self.workflow_state = "evaluating"
-        applicant_name = application.get('ApplicantName', 'Unknown')
+        import uuid
         
-        print(f"\n{'='*60}")
-        print(f"Smee: Starting evaluation for {applicant_name}")
-        print(f"{'='*60}")
+        self.workflow_state = "evaluating"
+        applicant_name = application.get('applicant_name') or application.get('ApplicantName', 'Unknown')
+        application_id = application.get('application_id') or application.get('ApplicationID')
+        
+        # Generate unique student ID if not already present
+        if not application.get('student_id'):
+            application['student_id'] = f"student_{uuid.uuid4().hex[:16]}"
+        
+        student_id = application.get('student_id')
+        self._progress_callback = progress_callback
+        self._current_application_id = application_id
+        self._current_student_id = student_id
+        self._current_applicant_name = applicant_name
+        
+        logger.info(f"Starting evaluation for {applicant_name} (ID: {student_id})", extra={'application_id': application_id, 'student_id': student_id})
+        
+        # ===== ASK AGENTS WHAT THEY NEED =====
+        # Before determining missing fields, ask each agent in the pipeline what they need
+        logger.info(f"🎩 Smee asking agents what they need for {applicant_name}...")
+        
+        # Debug: Log all available fields in application
+        available_fields = list(application.keys()) if isinstance(application, dict) else []
+        logger.debug(f"Available fields in application: {available_fields}")
+        
+        missing_fields, agent_questions = self._compute_missing_fields(application, evaluation_steps)
+        
+        # ===== CHECK MISSING INFORMATION =====
+        # Determine what information is required for the evaluation pipeline
+        if missing_fields:
+            # Ask Belle to fill missing details before pausing
+            if self._attempt_belle_fill(application, missing_fields):
+                missing_fields, agent_questions = self._compute_missing_fields(application, evaluation_steps)
+
+        if missing_fields:
+            logger.info(f"Evaluation paused for {applicant_name}: Agents need {len(missing_fields)} items: {missing_fields}")
+            
+            # Save missing fields to database for UI to display
+            if self.db and application_id:
+                try:
+                    self.db.set_missing_fields(application_id, missing_fields)
+                except Exception as e:
+                    logger.warning(f"Could not save missing fields: {e}")
+            
+            # Report pause status with agent questions
+            self._report_progress({
+                'type': 'evaluation_paused',
+                'agent': 'Smee Orchestrator',
+                'agent_id': 'smee',
+                'status': 'asking_for_info',
+                'applicant': applicant_name,
+                'student_id': student_id,
+                'missing_fields': missing_fields,
+                'agent_questions': agent_questions,
+                'message': f'❓ Agents need {len(missing_fields)} items to proceed'
+            })
+
+            for agent_info in agent_questions:
+                field_name = agent_info.get('field_name')
+                if field_name not in missing_fields:
+                    continue
+                questions = agent_info.get('questions') or []
+                waiting_message = questions[0] if questions else f"Waiting for {field_name}"
+                self._report_progress({
+                    'type': 'agent_progress',
+                    'agent': agent_info.get('agent_name'),
+                    'agent_id': agent_info.get('agent_id'),
+                    'status': 'blocked',
+                    'applicant': applicant_name,
+                    'student_id': student_id,
+                    'waiting_for': field_name,
+                    'message': waiting_message
+                })
+            
+            return {
+                'status': 'paused',
+                'applicant_name': applicant_name,
+                'application_id': application_id,
+                'student_id': student_id,
+                'missing_fields': missing_fields,
+                'agent_questions': agent_questions,
+                'message': 'Information needed before evaluation can proceed',
+                'detailed_message': 'The following agents need information:'
+            }
+        
+        # Report Smee starting orchestration
+        self._report_progress({
+            'type': 'agent_progress',
+            'agent': 'Smee Orchestrator',
+            'agent_id': 'smee',
+            'status': 'starting',
+            'applicant': applicant_name,
+            'student_id': student_id,
+            'message': '🎩 Smee is coordinating the evaluation process...'
+        })
         
         evaluation_steps = self._ensure_merlin_last(evaluation_steps)
 
         self.evaluation_results = {
             'applicant_name': applicant_name,
-            'application_id': application.get('ApplicationID'),
+            'application_id': application_id,
+            'student_id': student_id,
             'agents_used': evaluation_steps,
             'results': {}
         }
 
         merlin_run = False
+        failed_agents = []
+        required_agents = ['application_reader', 'grade_reader', 'recommendation_reader', 'school_context']
+
+        def is_success(result: Optional[Dict[str, Any]]) -> bool:
+            if not isinstance(result, dict):
+                return False
+            if 'status' not in result:
+                return True
+            return result.get('status') in {'success', 'completed'}
 
         for step_idx, agent_id in enumerate(evaluation_steps, 1):
             if agent_id not in self.agents:
-                print(f"⚠ Smee: Agent '{agent_id}' not found. Skipping.")
+                logger.warning(f"Agent '{agent_id}' not found. Skipping.")
                 continue
             
             agent = self.agents[agent_id]
-            print(f"\n[Step {step_idx}] Smee: Delegating to {agent.name}...")
+            logger.debug(f"[Step {step_idx}] Delegating to {agent.name}...")
+            
+            # Report agent starting
+            self._report_progress({
+                'type': 'agent_progress',
+                'agent': agent.name,
+                'agent_id': agent_id,
+                'status': 'starting',
+                'step': step_idx,
+                'total_steps': len(evaluation_steps),
+                'applicant': applicant_name
+            })
             
             try:
                 # Call the agent's process or specialized method
+                if agent_id == 'student_evaluator' and failed_agents:
+                    logger.warning(f"Skipping Merlin due to upstream failures: {failed_agents}")
+                    self._report_progress({
+                        'type': 'agent_progress',
+                        'agent': agent.name,
+                        'agent_id': agent_id,
+                        'status': 'blocked',
+                        'applicant': applicant_name,
+                        'message': 'Blocked until required agents complete'
+                    })
+                    continue
+
                 if hasattr(agent, 'evaluate_application'):
                     # For EvaluatorAgent
                     result = await agent.evaluate_application(application)
                 elif hasattr(agent, 'parse_grades'):
                     # For RapunzelGradeReader
+                    transcript_text = application.get('transcript_text') or application.get('TranscriptText') or application.get('application_text') or application.get('ApplicationText', '')
                     result = await agent.parse_grades(
-                        application.get('ApplicationText', ''),
-                        application.get('ApplicantName', '')
+                        transcript_text,
+                        application.get('applicant_name') or application.get('ApplicantName', '')
                     )
                 elif hasattr(agent, 'parse_application'):
                     # For TianaApplicationReader
                     result = await agent.parse_application(application)
                 elif hasattr(agent, 'parse_recommendation'):
                     # For MulanRecommendationReader
-                    recommendation_text = application.get('RecommendationText') or application.get('ApplicationText', '')
+                    recommendation_text = application.get('recommendation_text') or application.get('RecommendationText') or application.get('application_text') or application.get('ApplicationText', '')
                     result = await agent.parse_recommendation(
                         recommendation_text,
-                        application.get('ApplicantName', ''),
-                        application.get('ApplicationID')
+                        application.get('applicant_name') or application.get('ApplicantName', ''),
+                        application_id
                     )
                 elif hasattr(agent, 'evaluate_student'):
                     # For MerlinStudentEvaluator
@@ -130,23 +261,100 @@ class SmeeOrchestrator(BaseAgent):
                     # For MoanaSchoolContext
                     # Get grade data from previous results if available
                     rapunzel_data = self.evaluation_results['results'].get('grade_reader')
+                    transcript_text = application.get('transcript_text') or application.get('TranscriptText') or application.get('application_text') or application.get('ApplicationText', '')
                     result = await agent.analyze_student_school_context(
                         application=application,
-                        transcript_text=application.get('ApplicationText', ''),
+                        transcript_text=transcript_text,
                         rapunzel_grades_data=rapunzel_data
                     )
                 else:
                     # Generic process
                     result = await agent.process(
-                        f"Evaluate this application:\n{application.get('ApplicationText', '')}"
+                        f"Evaluate this application:\n{application.get('application_text') or application.get('ApplicationText', '')}"
                     )
                 
                 self.evaluation_results['results'][agent_id] = result
                 self._write_audit(application, agent.name)
-                print(f"✓ {agent.name} completed successfully")
+
+                if agent_id in required_agents and not is_success(result):
+                    failed_agents.append(agent_id)
+                
+                # Save agent results to database
+                if self.db and application_id:
+                    try:
+                        import json
+                        if agent_id == 'grade_reader':
+                            # Save Rapunzel grades and remove from missing fields
+                            self.db.save_rapunzel_grades(
+                                application_id=application_id,
+                                agent_name=agent.name,
+                                gpa=result.get('gpa'),
+                                academic_strength=result.get('academic_strength'),
+                                course_levels=result.get('course_levels'),
+                                transcript_quality=result.get('transcript_quality'),
+                                notable_patterns=result.get('notable_patterns'),
+                                confidence_level=result.get('confidence_level'),
+                                summary=result.get('summary'),
+                                parsed_json=json.dumps(result) if result else None
+                            )
+                            self.db.remove_missing_field(application_id, 'transcript')
+                            
+                        elif agent_id == 'school_context':
+                            # Save Moana school context and remove from missing fields
+                            moana_results = result.get('opportunity_scores', {})
+                            self.db.save_moana_school_context(
+                                application_id=application_id,
+                                agent_name=agent.name,
+                                school_name=result.get('school', {}).get('name'),
+                                program_access_score=moana_results.get('program_access_score'),
+                                program_participation_score=moana_results.get('program_participation_score'),
+                                relative_advantage_score=moana_results.get('relative_advantage_score'),
+                                ap_courses_available=result.get('school_profile', {}).get('ap_courses_available'),
+                                ap_courses_taken=result.get('program_participation', {}).get('ap_courses_taken'),
+                                contextual_summary=result.get('contextual_summary'),
+                                parsed_json=json.dumps(result) if result else None
+                            )
+                            self.db.remove_missing_field(application_id, 'school_context')
+                            
+                        elif agent_id == 'recommendation_reader':
+                            # Recommendation completed
+                            self.db.remove_missing_field(application_id, 'letters_of_recommendation')
+                            
+                        elif agent_id == 'student_evaluator':
+                            # Evaluation completed - clear all remaining fields
+                            self.db.set_missing_fields(application_id, [])
+                            
+                    except Exception as save_err:
+                        logger.warning(f"Could not save {agent_id} results to database: {str(save_err)}")
+                
+                # Report agent success
+                self._report_progress({
+                    'type': 'agent_progress',
+                    'agent': agent.name,
+                    'agent_id': agent_id,
+                    'status': 'completed',
+                    'step': step_idx,
+                    'total_steps': len(evaluation_steps),
+                    'applicant': applicant_name,
+                    'message': f'✓ {agent.name} completed successfully'
+                })
+                logger.info(f"{agent.name} completed successfully")
                 
             except Exception as e:
-                print(f"✗ {agent.name} encountered an error: {str(e)}")
+                logger.error(f"{agent.name} encountered an error: {str(e)}", exc_info=True)
+                
+                # Report agent error
+                self._report_progress({
+                    'type': 'agent_progress',
+                    'agent': agent.name,
+                    'agent_id': agent_id,
+                    'status': 'failed',
+                    'step': step_idx,
+                    'total_steps': len(evaluation_steps),
+                    'applicant': applicant_name,
+                    'error': str(e)
+                })
+                
                 self.evaluation_results['results'][agent_id] = {
                     'error': str(e),
                     'status': 'failed'
@@ -154,18 +362,173 @@ class SmeeOrchestrator(BaseAgent):
                 self._write_audit(application, agent.name)
 
         if not merlin_run and 'student_evaluator' in self.agents:
+            if failed_agents:
+                self._report_progress({
+                    'type': 'evaluation_blocked',
+                    'agent': 'Smee Orchestrator',
+                    'agent_id': 'smee',
+                    'status': 'blocked',
+                    'applicant': applicant_name,
+                    'message': f"Blocked until required agents complete: {', '.join(failed_agents)}"
+                })
+                return self.evaluation_results
             await self._run_merlin_after_agents(application)
         
+        if failed_agents:
+            return self.evaluation_results
+
         self.workflow_state = "formatting"
         # Let Aurora format and summarize all results
+        logger.info(f"Running Aurora to format results for {applicant_name}")
         await self._run_aurora_after_merlin(application)
         
+        self.workflow_state = "generating_document"
+        # Let Fairy Godmother create the final document (ALWAYS LAST)
+        logger.info(f"Running Fairy Godmother to generate final document for {applicant_name}")
+        await self._run_fairy_godmother_document_generation(application)
+        
         self.workflow_state = "complete"
-        print(f"\n{'='*60}")
-        print(f"Smee: Evaluation complete for {applicant_name}")
-        print(f"{'='*60}\n")
+        logger.info(f"✅ Complete evaluation for {applicant_name} - All agents finished")
+        
+        # Report final completion
+        self._report_progress({
+            'type': 'evaluation_complete',
+            'applicant': applicant_name,
+            'message': f'✅ All agents completed for {applicant_name}',
+            'agents_completed': list(self.evaluation_results['results'].keys()),
+            'document_generated': 'fairy_godmother' in self.evaluation_results['results']
+        })
         
         return self.evaluation_results
+
+    async def _determine_missing_fields(
+        self,
+        application: Dict[str, Any],
+        evaluation_steps: List[str]
+    ) -> List[str]:
+        """
+        Determine what information/documents are missing for evaluation.
+        
+        Returns:
+            List of missing field names needed before agents can proceed
+        """
+        missing = []
+        applicant_name = application.get('applicant_name', '')
+        
+        # Check what information we have available
+        has_application_text = bool(application.get('application_text') or application.get('ApplicationText'))
+        has_transcript = bool(application.get('transcript_text') or application.get('TranscriptText'))
+        has_recommendations = bool(application.get('recommendation_text') or application.get('RecommendationText'))
+        
+        # Determine what's needed based on evaluation pipeline
+        if 'application_reader' in evaluation_steps and not has_application_text:
+            missing.append('application_essay')
+        
+        if 'grade_reader' in evaluation_steps and not has_transcript:
+            missing.append('transcript')
+        
+        if 'school_context' in evaluation_steps and not has_transcript:
+            missing.append('transcript')
+        
+        if 'recommendation_reader' in evaluation_steps and not has_recommendations:
+            missing.append('letters_of_recommendation')
+        
+        if missing:
+            logger.info(f"🎩 Smee determined {applicant_name} is missing: {missing}")
+        
+        return missing
+
+    def _compute_missing_fields(
+        self,
+        application: Dict[str, Any],
+        evaluation_steps: List[str]
+    ) -> (List[str], List[Dict[str, Any]]):
+        agent_questions = AgentRequirements.get_all_questions(evaluation_steps)
+        consolidated_missing = []
+
+        for agent_info in agent_questions:
+            agent_id = agent_info['agent_id']
+            field_name = agent_info['field_name']
+
+            requirements = AgentRequirements.get_agent_requirements(agent_id)
+            required_fields = requirements.get('required_fields', [])
+
+            logger.debug(f"Checking {agent_id}: needs {required_fields}")
+
+            field_status = {}
+            for field in required_fields:
+                lowercase_val = bool(application.get(field))
+                titlecase_val = bool(application.get(field.title()))
+                field_status[field] = {
+                    'lowercase': lowercase_val,
+                    'titlecase': titlecase_val,
+                    'has': lowercase_val or titlecase_val
+                }
+                logger.debug(f"  Field '{field}': lowercase={lowercase_val}, titlecase={titlecase_val}")
+
+            has_required = all(field_status[f]['has'] for f in required_fields)
+
+            if not has_required:
+                consolidated_missing.append(field_name)
+                logger.info(f"  ❓ {agent_info['agent_name']} needs: {', '.join(agent_info['questions'][0:1])}")
+                logger.debug(f"     Field status: {field_status}")
+
+        return consolidated_missing, agent_questions
+
+    def _attempt_belle_fill(self, application: Dict[str, Any], missing_fields: List[str]) -> bool:
+        if application.get('_belle_attempted'):
+            return False
+
+        text = application.get('application_text') or application.get('ApplicationText')
+        if not text:
+            return False
+
+        try:
+            self._report_progress({
+                'type': 'agent_progress',
+                'agent': 'Belle',
+                'agent_id': 'belle',
+                'status': 'starting',
+                'message': '📖 Belle is scanning for missing details'
+            })
+
+            belle = BelleDocumentAnalyzer(client=self.client, model=self.model)
+            analysis = belle.analyze_document(text, application.get('original_file_name') or '')
+            agent_fields = analysis.get('agent_fields', {})
+            student_info = analysis.get('student_info', {})
+
+            for key, value in agent_fields.items():
+                if value and not application.get(key):
+                    application[key] = value
+
+            if student_info.get('school_name') and not application.get('school_name'):
+                application['school_name'] = student_info.get('school_name')
+
+            if student_info.get('name') and not application.get('applicant_name'):
+                application['applicant_name'] = student_info.get('name')
+
+            application['_belle_attempted'] = True
+
+            self._report_progress({
+                'type': 'agent_progress',
+                'agent': 'Belle',
+                'agent_id': 'belle',
+                'status': 'completed',
+                'message': '📖 Belle finished scanning'
+            })
+
+            return True
+        except Exception as e:
+            logger.warning(f"Belle fill attempt failed: {e}")
+            application['_belle_attempted'] = True
+            self._report_progress({
+                'type': 'agent_progress',
+                'agent': 'Belle',
+                'agent_id': 'belle',
+                'status': 'failed',
+                'error': str(e)
+            })
+            return False
 
     def _ensure_merlin_last(self, evaluation_steps: List[str]) -> List[str]:
         """Ensure Merlin runs after all other agents when present."""
@@ -173,6 +536,20 @@ class SmeeOrchestrator(BaseAgent):
         if 'student_evaluator' in evaluation_steps:
             steps.append('student_evaluator')
         return steps
+    
+    def _report_progress(self, update: Dict[str, Any]) -> None:
+        """Report progress via callback if registered."""
+        if update.get('application_id') is None and getattr(self, '_current_application_id', None):
+            update['application_id'] = self._current_application_id
+        if update.get('student_id') is None and getattr(self, '_current_student_id', None):
+            update['student_id'] = self._current_student_id
+        if update.get('applicant') is None and getattr(self, '_current_applicant_name', None):
+            update['applicant'] = self._current_applicant_name
+        if hasattr(self, '_progress_callback') and self._progress_callback:
+            try:
+                self._progress_callback(update)
+            except Exception as e:
+                logger.warning(f"Progress callback error: {e}")
 
     async def _run_merlin_after_agents(self, application: Dict[str, Any]) -> None:
         """Run Merlin after all other agents and record its result with heartbeat check-ins."""
@@ -180,8 +557,7 @@ class SmeeOrchestrator(BaseAgent):
         if not merlin:
             return
 
-        print("\n[Final] Smee: Delegating to Merlin Student Evaluator...")
-        print("         (Merlin is analyzing all specialist evaluations - this may take a few minutes)")
+        logger.info("Delegating to Merlin Student Evaluator for final assessment")
         
         # Create the Merlin evaluation task
         merlin_task = asyncio.create_task(
@@ -200,7 +576,7 @@ class SmeeOrchestrator(BaseAgent):
             
             self.evaluation_results['results']['student_evaluator'] = result
             self._write_audit(application, merlin.name)
-            print(f"✓ {merlin.name} completed successfully")
+            logger.info(f"{merlin.name} completed successfully")
             
         except Exception as e:
             self.evaluation_results['results']['student_evaluator'] = {
@@ -226,7 +602,7 @@ class SmeeOrchestrator(BaseAgent):
                 await asyncio.sleep(check_in_interval)
                 check_in_count += 1
                 elapsed_minutes = check_in_count * (check_in_interval // 60)
-                print(f"         ✓ Smee check-in: Merlin is still working hard ({elapsed_minutes}+ minutes elapsed, evaluating all specialist reports...)")
+                logger.info(f" Merlin is still working hard ({elapsed_minutes}+ minutes elapsed, evaluating all specialist reports...)")
         except asyncio.CancelledError:
             pass
 
@@ -237,10 +613,22 @@ class SmeeOrchestrator(BaseAgent):
         """
         aurora = self.agents.get('aurora')
         if not aurora:
-            print("⚠ Smee: Aurora agent not found. Skipping formatting.")
+            logger.warning("Aurora agent not found. Skipping formatting.")
             return
 
-        print("\n[Final] Smee: Delegating to Aurora for elegant presentation...")
+        applicant_name = application.get('applicant_name') or application.get('ApplicantName', 'Unknown')
+        
+        # Report Aurora starting
+        self._report_progress({
+            'type': 'agent_progress',
+            'agent': 'Aurora',
+            'agent_id': 'aurora',
+            'status': 'starting',
+            'applicant': applicant_name,
+            'message': 'Aurora is creating elegant summary...'
+        })
+        
+        logger.info("Delegating to Aurora for elegant presentation...")
         try:
             # Aurora formats all results based on Merlin's assessment
             merlin_result = self.evaluation_results['results'].get('student_evaluator', {})
@@ -248,9 +636,9 @@ class SmeeOrchestrator(BaseAgent):
             # Get all agent data for Aurora to work with
             aurora_summary = await aurora.format_results(
                 application_data={
-                    'name': application.get('ApplicantName'),
-                    'email': application.get('Email'),
-                    'applicationtext': application.get('ApplicationText')
+                    'name': application.get('applicant_name') or application.get('ApplicantName'),
+                    'email': application.get('email') or application.get('Email'),
+                    'applicationtext': application.get('application_text') or application.get('ApplicationText')
                 },
                 agent_outputs={
                     'tiana': self.evaluation_results['results'].get('application_reader'),
@@ -264,16 +652,123 @@ class SmeeOrchestrator(BaseAgent):
             # Store Aurora's formatted summary
             self.evaluation_results['results']['aurora'] = aurora_summary
             self.evaluation_results['aurora_summary'] = aurora_summary.get('merlin_summary', {})
+            
+            # Save Aurora evaluation to database
+            application_id = application.get('application_id') or application.get('ApplicationID')
+            if self.db and application_id:
+                try:
+                    agents_completed = ','.join(self.evaluation_results['results'].keys())
+                    self.db.save_aurora_evaluation(
+                        application_id=application_id,
+                        formatted_evaluation=aurora_summary,
+                        merlin_score=merlin_result.get('overall_score'),
+                        merlin_recommendation=merlin_result.get('recommendation'),
+                        agents_completed=agents_completed
+                    )
+                except Exception as save_err:
+                    logger.warning(f" {str(save_err)}")
+            
             self._write_audit(application, aurora.name)
-            print(f"✓ {aurora.name} completed successfully - Results formatted for presentation")
+            logger.info(f"{aurora.name} completed successfully - Results formatted for presentation")
+            
+            # Report Aurora success
+            self._report_progress({
+                'type': 'agent_progress',
+                'agent': 'Aurora',
+                'agent_id': 'aurora',
+                'status': 'completed',
+                'applicant': applicant_name,
+                'message': '✓ Aurora completed - Final summary ready'
+            })
             
         except Exception as e:
-            print(f"✗ {aurora.name} encountered an error: {str(e)}")
+            logger.error(f"Aurora error: {str(e)}")
             self.evaluation_results['results']['aurora'] = {
                 'error': str(e),
                 'status': 'failed'
             }
             self._write_audit(application, aurora.name)
+            
+            # Report Aurora error
+            self._report_progress({
+                'type': 'agent_progress',
+                'agent': 'Aurora',
+                'agent_id': 'aurora',
+                'status': 'failed',
+                'applicant': applicant_name,
+                'error': str(e)
+            })
+
+    async def _run_fairy_godmother_document_generation(self, application: Dict[str, Any]) -> None:
+        """
+        Run Fairy Godmother to generate the final evaluation document.
+        This ALWAYS runs last after all other agents complete.
+        """
+        fairy_godmother = self.agents.get('fairy_godmother')
+        if not fairy_godmother:
+            logger.warning("Fairy Godmother agent not found. Skipping document generation.")
+            return
+
+        applicant_name = application.get('applicant_name') or application.get('ApplicantName', 'Unknown')
+        application_id = application.get('application_id') or application.get('ApplicationID')
+        
+        # Generate student ID for storage
+        student_id = f"student_{application_id}"
+        
+        # Report Fairy Godmother starting
+        self._report_progress({
+            'type': 'agent_progress',
+            'agent': 'Fairy Godmother',
+            'agent_id': 'fairy_godmother',
+            'status': 'starting',
+            'applicant': applicant_name,
+            'message': '🪄 Fairy Godmother is creating evaluation document...'
+        })
+        
+        logger.info("🪄 Delegating to Fairy Godmother for document generation...")
+        try:
+            # Generate document with all results
+            result = await fairy_godmother.generate_evaluation_document(
+                application=application,
+                agent_results=self.evaluation_results['results'],
+                student_id=student_id
+            )
+            
+            self.evaluation_results['results']['fairy_godmother'] = result
+            self.evaluation_results['document_path'] = result.get('document_path')
+            self.evaluation_results['document_url'] = result.get('document_url')
+            
+            self._write_audit(application, fairy_godmother.name)
+            logger.info(f"{fairy_godmother.name} completed successfully - Document created")
+            
+            # Report Fairy Godmother success
+            self._report_progress({
+                'type': 'agent_progress',
+                'agent': 'Fairy Godmother',
+                'agent_id': 'fairy_godmother',
+                'status': 'completed',
+                'applicant': applicant_name,
+                'message': '✨ Fairy Godmother completed - Document ready for download',
+                'document_path': result.get('document_path')
+            })
+            
+        except Exception as e:
+            logger.error(f"Fairy Godmother error: {str(e)}", exc_info=True)
+            self.evaluation_results['results']['fairy_godmother'] = {
+                'error': str(e),
+                'status': 'failed'
+            }
+            self._write_audit(application, fairy_godmother.name)
+            
+            # Report Fairy Godmother error
+            self._report_progress({
+                'type': 'agent_progress',
+                'agent': 'Fairy Godmother',
+                'agent_id': 'fairy_godmother',
+                'status': 'failed',
+                'applicant': applicant_name,
+                'error': str(e)
+            })
 
     def determine_agents_for_upload(
         self,
@@ -282,21 +777,16 @@ class SmeeOrchestrator(BaseAgent):
         application: Optional[Dict[str, Any]] = None
     ) -> List[str]:
         """Determine which agents should process an uploaded file."""
-        application = application or {}
-        categories = self._classify_upload(file_name, file_text)
-        steps: List[str] = []
-
-        if 'application' in categories:
-            steps.append('application_reader')
-        if 'transcript' in categories:
-            steps.extend(['grade_reader', 'school_context'])
-        if 'recommendation' in categories:
-            steps.append('recommendation_reader')
-
-        if self._should_add_merlin(categories, application):
-            steps.append('student_evaluator')
-
-        return steps
+        _ = file_name
+        _ = file_text
+        _ = application
+        return [
+            'application_reader',
+            'grade_reader',
+            'school_context',
+            'recommendation_reader',
+            'student_evaluator'
+        ]
 
     async def process_uploaded_file(
         self,
@@ -306,8 +796,20 @@ class SmeeOrchestrator(BaseAgent):
     ) -> Dict[str, Any]:
         """Route and process a single uploaded file."""
         application = dict(application)
-        application['ApplicationText'] = file_text
-        application['OriginalFileName'] = file_name
+        application['application_text'] = file_text
+        application['transcript_text'] = file_text
+        application['recommendation_text'] = file_text
+        application['original_file_name'] = file_name
+
+        try:
+            belle = BelleDocumentAnalyzer(client=self.client, model=self.model)
+            analysis = belle.analyze_document(file_text, file_name)
+            agent_fields = analysis.get('agent_fields', {})
+            for key, value in agent_fields.items():
+                if value is not None:
+                    application[key] = value
+        except Exception as exc:
+            logger.warning(f"Belle upload analysis failed: {exc}")
 
         evaluation_steps = self.determine_agents_for_upload(
             file_name,
@@ -371,11 +873,12 @@ class SmeeOrchestrator(BaseAgent):
         if not self.db or not hasattr(self.db, 'save_agent_audit'):
             return
 
-        application_id = application.get('ApplicationID')
+        application_id = application.get('application_id') or application.get('ApplicationID')
         source_file_name = (
-            application.get('OriginalFileName')
-            or application.get('SourceFileName')
+            application.get('original_file_name')
+            or application.get('OriginalFileName')
             or application.get('source_file_name')
+            or application.get('SourceFileName')
         )
 
         if not application_id:
@@ -435,7 +938,7 @@ class SmeeOrchestrator(BaseAgent):
     def _build_synthesis_prompt(self, application: Dict[str, Any]) -> str:
         """Build the synthesis prompt from all agent results."""
         prompt_parts = [
-            f"I've had multiple specialist agents evaluate an application for {application.get('ApplicantName', 'a candidate')}.",
+            f"I've had multiple specialist agents evaluate an application for {application.get('applicant_name') or application.get('ApplicantName', 'a candidate')}.",
             "",
             "# EVALUATIONS FROM SPECIALIST AGENTS:"
         ]
@@ -536,8 +1039,8 @@ class SmeeOrchestrator(BaseAgent):
         Returns:
             Dictionary with status for each agent and missing information
         """
-        app_text = application.get('ApplicationText', '') or application.get('applicationtext', '')
-        app_id = application.get('ApplicationID') or application.get('applicationid')
+        app_text = application.get('application_text') or application.get('ApplicationText', '') or application.get('applicationtext', '')
+        app_id = application.get('application_id') or application.get('ApplicationID') or application.get('applicationid')
         
         # Check database for additional information if db connection exists
         has_tiana_data = False

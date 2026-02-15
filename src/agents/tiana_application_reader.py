@@ -24,9 +24,9 @@ class TianaApplicationReader(BaseAgent):
 
     async def parse_application(self, application: Dict[str, Any]) -> Dict[str, Any]:
         """Parse a full application record into structured data."""
-        applicant_name = application.get("ApplicantName", "Unknown")
-        application_text = application.get("ApplicationText", "")
-        application_id = application.get("ApplicationID")
+        applicant_name = application.get("applicant_name", application.get("ApplicantName", "Unknown"))
+        application_text = application.get("application_text", application.get("ApplicationText", ""))
+        application_id = application.get("application_id", application.get("ApplicationID"))
 
         prompt = self._build_prompt(applicant_name, application_text, application)
 
@@ -36,7 +36,7 @@ class TianaApplicationReader(BaseAgent):
                 messages=[
                     {
                         "role": "system",
-                        "content": "You are Tiana, an expert admissions reader who extracts structured applicant profiles from messy application text. Return valid JSON only."
+                        "content": "You are Tiana, an expert admissions reader who extracts structured applicant profiles from messy application text. Be specific and verbose in summaries. Return valid JSON only."
                     },
                     {"role": "user", "content": prompt}
                 ],
@@ -82,7 +82,6 @@ class TianaApplicationReader(BaseAgent):
             "",
             f"Applicant: {applicant_name}",
             f"Email: {application.get('Email', 'N/A')}",
-            f"Position/Program: {application.get('Position', 'N/A')}",
             "",
             "Application text:",
             application_text,
@@ -93,7 +92,7 @@ class TianaApplicationReader(BaseAgent):
             "  \"school_name\": \"\",",
             "  \"intended_major\": \"\",",
             "  \"career_interests\": [\"\"],",
-            "  \"essay_summary\": \"\",",
+            "  \"essay_summary\": \"(4-6 sentences with concrete evidence)\",",
             "  \"recommendation_texts\": [\"\"],",
             "  \"leadership_roles\": [\"\"],",
             "  \"activities\": [\"\"],",

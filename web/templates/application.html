@@ -2,10 +2,184 @@
 
 {% block title %}Application Details{% endblock %}
 
+{% block extra_css %}
+<style>
+    .executive-summary {
+        background: linear-gradient(135deg, #f8fafc 0%, #eef2f7 100%);
+        border-left: 4px solid #0b7f8f;
+    }
+
+    .executive-summary h2 {
+        margin-bottom: 0.75rem;
+        color: #0b1f36;
+    }
+
+    .executive-summary .summary-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+        gap: 1rem;
+        margin: 1rem 0;
+    }
+
+    .executive-summary .summary-tile {
+        background: white;
+        border-radius: 8px;
+        padding: 1rem;
+        border: 1px solid #e2e8f0;
+    }
+
+    .executive-summary .summary-label {
+        font-size: 0.85rem;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        color: #64748b;
+        margin-bottom: 0.25rem;
+    }
+
+    .executive-summary .summary-value {
+        font-size: 1.4rem;
+        font-weight: 700;
+        color: #0b1f36;
+    }
+
+    .executive-summary .summary-body {
+        color: #334155;
+        line-height: 1.7;
+        white-space: pre-wrap;
+    }
+
+    .aurora-evaluation {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        padding: 2rem;
+        border-radius: 8px;
+        margin-bottom: 2rem;
+    }
+    
+    .merlin-score {
+        font-size: 4rem;
+        font-weight: bold;
+        text-align: center;
+        margin: 1rem 0;
+    }
+    
+    .recommendation-badge {
+        display: inline-block;
+        padding: 0.75rem 1.5rem;
+        background: rgba(255,255,255,0.2);
+        border-radius: 20px;
+        font-weight: 600;
+        margin: 0.5rem auto;
+    }
+    
+    .agent-summary {
+        background: white;
+        padding: 1rem;
+        border-radius: 8px;
+        margin: 0.5rem 0;
+        color: #2c3e50;
+    }
+    
+    .agent-summary strong {
+        color: #667eea;
+    }
+    
+    .strengths-box {
+        background: #d1fae5;
+        border-left: 4px solid #10b981;
+    }
+    
+    .considerations-box {
+        background: #fef3c7;
+        border-left: 4px solid #f59e0b;
+    }
+
+    .agent-progress-list {
+        list-style: none;
+        margin: 0;
+        padding: 0;
+    }
+
+    .agent-progress-item {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        margin: 0.25rem 0;
+        font-size: 0.95rem;
+    }
+
+    .agent-progress-status {
+        border-radius: 4px;
+        font-size: 0.8rem;
+        font-weight: 600;
+        padding: 0.1rem 0.4rem;
+        text-transform: capitalize;
+    }
+
+    .agent-progress-status.working {
+        background: #d1fae5;
+        color: #065f46;
+    }
+
+    .agent-progress-status.waiting {
+        background: #fef3c7;
+        color: #92400e;
+    }
+
+    .agent-progress-status.error {
+        background: #fee2e2;
+        color: #991b1b;
+    }
+
+    .agent-progress-status.complete {
+        background: #10b981;
+        color: white;
+    }
+</style>
+{% endblock %}
+
 {% block content %}
+<div class="card executive-summary">
+    <h2>Executive Summary</h2>
+    {% if aurora_evaluation and aurora_evaluation.formattedevaluation %}
+        {% set aurora = aurora_evaluation.formattedevaluation %}
+        <div class="summary-grid">
+            <div class="summary-tile">
+                <div class="summary-label">Merlin Score</div>
+                <div class="summary-value">{{ aurora.merlin_summary.score|default('N/A') }}/100</div>
+            </div>
+            <div class="summary-tile">
+                <div class="summary-label">Recommendation</div>
+                <div class="summary-value">{{ aurora.merlin_summary.recommendation|default('Pending') }}</div>
+            </div>
+        </div>
+        {% if aurora.merlin_summary.overall %}
+            <div class="summary-body">{{ aurora.merlin_summary.overall }}</div>
+        {% endif %}
+    {% elif agent_results and agent_results.merlin %}
+        <div class="summary-grid">
+            <div class="summary-tile">
+                <div class="summary-label">Merlin Score</div>
+                <div class="summary-value">{{ agent_results.merlin.overall_score|default('N/A') }}/100</div>
+            </div>
+            <div class="summary-tile">
+                <div class="summary-label">Recommendation</div>
+                <div class="summary-value">{{ agent_results.merlin.recommendation|default('Pending') }}</div>
+            </div>
+        </div>
+        {% if agent_results.merlin.rationale %}
+            <div class="summary-body">{{ agent_results.merlin.rationale }}</div>
+        {% endif %}
+    {% elif merlin_evaluation and merlin_evaluation.DetailedAnalysis %}
+        <div class="summary-body">{{ merlin_evaluation.DetailedAnalysis }}</div>
+    {% else %}
+        <div class="summary-body">Summary will appear once the evaluation completes.</div>
+    {% endif %}
+</div>
+
 <div class="card">
     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem;">
-        <h2>Application #{{ application.ApplicationID }}</h2>
+        <h2>Application #{{ application.application_id or application.ApplicationID }}</h2>
         <a href="{{ url_for('index') }}" class="btn btn-secondary">← Back to Dashboard</a>
     </div>
 
@@ -15,23 +189,391 @@
             <table style="margin-top: 1rem;">
                 <tr>
                     <th style="width: 40%;">Name:</th>
-                    <td>{{ application.ApplicantName }}</td>
+                    <td>{{ application.applicant_name or application.ApplicantName }}</td>
                 </tr>
                 <tr>
                     <th>Email:</th>
-                    <td>{{ application.Email or 'N/A' }}</td>
-                </tr>
-                <tr>
-                    <th>Position:</th>
-                    <td>{{ application.Position or 'N/A' }}</td>
+                    <td>{{ application.email or application.Email or 'N/A' }}</td>
                 </tr>
                 <tr>
                     <th>Uploaded:</th>
-                    <td>{{ application.UploadedDate.strftime('%Y-%m-%d %H:%M') if application.UploadedDate else 'N/A' }}</td>
+                    <td>{{ application.uploaded_date|string if application.uploaded_date else (application.UploadedDate|string if application.UploadedDate else 'N/A') }}</td>
                 </tr>
                 <tr>
                     <th>Status:</th>
-                    <td><span class="badge badge-{{ application.Status.lower() }}">{{ application.Status }}</span></td>
+                    <td><span class="badge badge-{{ (application.status or application.Status or 'pending').lower() }}">{{ application.status or application.Status or 'Pending' }}</span></td>
+                </tr>
+            </table>
+        </div>
+
+        <!-- Document Download & Quick Summary -->
+        <div>
+            {% if document_available %}
+            <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 1.5rem; border-radius: 12px; margin-bottom: 1rem;">
+                <div style="text-align: center; font-size: 2.5rem; margin-bottom: 0.5rem;">🪄</div>
+                <h3 style="color: white; text-align: center; margin: 0.5rem 0;">Evaluation Complete!</h3>
+                <p style="text-align: center; margin: 0.5rem 0; opacity: 0.9;">Fairy Godmother has prepared your document</p>
+                <a href="{{ url_for('download_evaluation', application_id=application.application_id or application.ApplicationID) }}" 
+                   class="btn" 
+                   style="display: block; background: white; color: #667eea; margin-top: 1rem; text-align: center; font-weight: bold;">
+                    📥 Download Full Evaluation Report
+                </a>
+            </div>
+            {% endif %}
+            
+            {% if agent_results %}
+            <div style="background: #f8fafc; padding: 1rem; border-radius: 8px; border-left: 4px solid #3b82f6;">
+                <h4 style="margin: 0 0 0.5rem 0; color: #1e40af;">✨ Agents Completed</h4>
+                <ul style="margin: 0; padding-left: 1.5rem;">
+                    {% if agent_results.tiana %}<li>📋 Tiana - Application Analysis</li>{% endif %}
+                   {% if agent_results.mulan %}<li>✉️ Mulan - Recommendations</li>{% endif %}
+                    {% if agent_results.merlin %}<li>🔮 Merlin - Final Evaluation</li>{% endif %}
+                    {% if agent_results.aurora %}<li>👑 Aurora - Summary</li>{% endif %}
+                </ul>
+            </div>
+            {% endif %}
+
+            <div id="agent-progress" style="background: #fefce8; padding: 1rem; border-radius: 8px; border-left: 4px solid #ca8a04; margin-top: 1rem;">
+                <h4 style="margin: 0 0 0.5rem 0; color: #854d0e;">🔄 Live Processing Status</h4>
+                <ul id="agent-progress-list" class="agent-progress-list" style="margin: 0; padding-left: 1.5rem; color: #78350f;">
+                    <li>Loading status...</li>
+                </ul>
+            </div>
+        </div>
+    </div>
+
+    <!-- Agent Results from Database -->
+    {% if agent_results %}
+    <div class="card" style="margin-top: 2rem; background: #fefce8; border-left: 4px solid #ca8a04;">
+        <h2 style="color: #854d0e;">📊 Detailed Agent Evaluations</h2>
+        <p style="color: #78350f; margin-bottom: 1.5rem;">Comprehensive analysis from all specialist agents (Source of Truth: Database)</p>
+        
+        {% if agent_results.tiana %}
+        <div class="agent-result">
+            <h3>📋 Tiana - Application Reader</h3>
+            <table>
+                {% if agent_results.tiana.essay_summary %}
+                <tr>
+                    <th>Essay Summary:</th>
+                    <td>{{ agent_results.tiana.essay_summary }}</td>
+                </tr>
+                {% endif %}
+                {% if agent_results.tiana.readiness_score %}
+                <tr>
+                    <th>Readiness Score:</th>
+                    <td>{{ "%.1f"|format(agent_results.tiana.readiness_score) }}</td>
+                </tr>
+                {% endif %}
+                {% if agent_results.tiana.confidence %}
+                <tr>
+                    <th>Confidence:</th>
+                    <td>{{ agent_results.tiana.confidence }}</td>
+                </tr>
+                {% endif %}
+            </table>
+        </div>
+        {% endif %}
+        
+        {% if agent_results.mulan %}
+        <div class="agent-result">
+            <h3>✉️ Mulan - Recommendation Reader</h3>
+            <table>
+                {% if agent_results.mulan.recommender_name %}
+                <tr>
+                    <th>Recommender:</th>
+                    <td>{{ agent_results.mulan.recommender_name }} ({{ agent_results.mulan.recommender_role or 'N/A' }})</td>
+                </tr>
+                {% endif %}
+                {% if agent_results.mulan.endorsement_strength %}
+                <tr>
+                    <th>Endorsement Strength:</th>
+                    <td>{{ "%.1f"|format(agent_results.mulan.endorsement_strength) }}/100</td>
+                </tr>
+                {% endif %}
+                {% if agent_results.mulan.summary %}
+                <tr>
+                    <th>Summary:</th>
+                    <td>{{ agent_results.mulan.summary }}</td>
+                </tr>
+                {% endif %}
+            </table>
+        </div>
+        {% endif %}
+        
+        {% if agent_results.merlin %}
+        <div class="agent-result" style="background: linear-gradient(135deg, #eef2ff 0%, #e0e7ff 100%); border-left: 4px solid #6366f1;">
+            <h3>🔮 Merlin - Final Evaluation</h3>
+            <table>
+                {% if agent_results.merlin.overall_score %}
+                <tr>
+                    <th>Overall Score:</th>
+                    <td><strong style="font-size: 1.2rem; color: #4338ca;">{{ "%.1f"|format(agent_results.merlin.overall_score) }}/100</strong></td>
+                </tr>
+                {% endif %}
+                {% if agent_results.merlin.recommendation %}
+                <tr>
+                    <th>Recommendation:</th>
+                    <td><span class="recommendation-badge">{{ agent_results.merlin.recommendation }}</span></td>
+                </tr>
+                {% endif %}
+                {% if agent_results.merlin.rationale %}
+                <tr>
+                    <th>Rationale:</th>
+                    <td>{{ agent_results.merlin.rationale }}</td>
+                </tr>
+                {% endif %}
+                {% if agent_results.merlin.confidence %}
+                <tr>
+                    <th>Confidence:</th>
+                    <td>{{ agent_results.merlin.confidence }}</td>
+                </tr>
+                {% endif %}
+            </table>
+        </div>
+        {% endif %}
+    </div>
+    {% endif %}
+
+    {% if aurora_evaluation and aurora_evaluation.formattedevaluation %}
+        <!-- Aurora Formatted Evaluation Display -->
+        <div class="aurora-evaluation">
+            <div style="text-align: center; font-size: 3rem;">👑</div>
+            <h3 style="text-align: center; margin: 1rem 0;">Aurora's Evaluation</h3>
+            {% set aurora = aurora_evaluation.formattedevaluation %}
+            {% if aurora.merlin_summary %}
+                <div class="merlin-score">{{ aurora.merlin_summary.score|default('N/A') }}/100</div>
+                <div style="text-align: center;">
+                    <span class="recommendation-badge">{{ aurora.merlin_summary.recommendation|default('Pending') }}</span>
+                </div>
+            {% endif %}
+        </div>
+        {% elif merlin_evaluation %}
+        <div style="background: #f0f9ff; padding: 1.5rem; border-radius: 8px; border-left: 4px solid #3b82f6;">
+            <h3>🤖 Merlin's Evaluation</h3>
+            <div style="margin-top: 1rem; text-align: center;">
+                {% if merlin_evaluation.OverallScore %}
+                <div style="font-size: 3rem; font-weight: bold; color: #667eea;">
+                    {{ "%.1f"|format(merlin_evaluation.OverallScore) }}
+                </div>
+                <div style="color: #6b7280; margin-top: 0.5rem;">
+                    Overall Score / 100
+                </div>
+                {% endif %}
+                {% if merlin_evaluation.Recommendation %}
+                <div style="text-align: center; margin-top: 1rem;">
+                    <span class="badge" style="background: #667eea; color: white; padding: 0.5rem 1rem; font-size: 1rem;">
+                        {{ merlin_evaluation.Recommendation }}
+                    </span>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+        {% endif %}
+    </div>
+
+    <!-- Aurora-Formatted Summary Sections -->
+    {% if aurora_evaluation and aurora_evaluation.formattedevaluation %}
+    {% set aurora = aurora_evaluation.formattedevaluation %}
+    
+    <!-- Key Strengths -->
+    {% if aurora.merlin_summary and aurora.merlin_summary.key_strengths %}
+    <div class="card strengths-box" style="margin-bottom: 1.5rem;">
+        <h3 style="color: #065f46; margin-bottom: 1rem;">✅ Key Strengths</h3>
+        <ul style="margin-left: 1.5rem; color: #065f46;">
+            {% for strength in aurora.merlin_summary.key_strengths %}
+            <li style="margin-bottom: 0.5rem;">{{ strength }}</li>
+            {% endfor %}
+        </ul>
+    </div>
+    {% endif %}
+    
+    <!-- Considerations -->
+    {% if aurora.merlin_summary and aurora.merlin_summary.considerations %}
+    <div class="card considerations-box" style="margin-bottom: 1.5rem;">
+        <h3 style="color: #92400e; margin-bottom: 1rem;">⚠️ Considerations</h3>
+        <ul style="margin-left: 1.5rem; color: #92400e;">
+            {% for consideration in aurora.merlin_summary.considerations %}
+            <li style="margin-bottom: 0.5rem;">{{ consideration }}</li>
+            {% endfor %}
+        </ul>
+    </div>
+    {% endif %}
+    
+    <!-- Agent Summaries -->
+    {% if aurora.agents %}
+    <div style="margin-bottom: 2rem;">
+        <h3>🤖 Specialist Agent Analyses</h3>
+        
+        {% if aurora.agents.tiana %}
+        <div class="agent-summary">
+            <strong>👸 Tiana - Application Reader</strong>
+            <div style="margin-top: 0.5rem; font-size: 0.95rem;">
+                {{ aurora.agents.tiana.analysis or aurora.agents.tiana.strengths_found or 'Analysis not available' }}
+            </div>
+            {% if aurora.agents.tiana.score %}
+            <div style="margin-top: 0.5rem; color: #667eea;">Score: <strong>{{ aurora.agents.tiana.score }}/100</strong></div>
+            {% endif %}
+        </div>
+        {% endif %}
+        
+        {% if aurora.agents.rapunzel %}
+        <div class="agent-summary">
+            <strong>💇 Rapunzel - Grade Reader</strong>
+            <div style="margin-top: 0.5rem; font-size: 0.95rem;">
+                GPA: {% if aurora.agents.rapunzel.gpa %}<strong>{{ aurora.agents.rapunzel.gpa }}</strong>{% else %}Not extracted{% endif %}
+            </div>
+        </div>
+        {% endif %}
+        
+        {% if aurora.agents.mulan %}
+        <div class="agent-summary">
+            <strong>🗣️ Mulan - Recommendation Reader</strong>
+            <div style="margin-top: 0.5rem; font-size: 0.95rem;">
+                {{ aurora.agents.mulan.summary or 'Recommendation analysis not available' }}
+            </div>
+        </div>
+        {% endif %}
+        
+        {% if aurora.agents.moana %}
+        <div class="agent-summary">
+            <strong>🌊 Moana - School Context</strong>
+            <div style="margin-top: 0.5rem; font-size: 0.95rem;">
+                {{ aurora.agents.moana.context or 'School context analysis not available' }}
+            </div>
+        </div>
+        {% endif %}
+    </div>
+    {% endif %}
+    
+    <!-- Overall Narrative -->
+    {% if aurora.merlin_summary and aurora.merlin_summary.overall %}
+    <div style="background: #f5f3ff; padding: 1.5rem; border-radius: 8px; margin-bottom: 2rem;">
+        <h3>📝 Overall Assessment</h3>
+        <p style="color: #2c3e50; line-height: 1.8; margin-top: 1rem; white-space: pre-wrap;">
+            {{ aurora.merlin_summary.overall }}
+        </p>
+    </div>
+    {% endif %}
+    
+    {% endif %}
+
+    <!-- Fallback Merlin Evaluation Display (if no Aurora) -->
+    {% if merlin_evaluation and not aurora_evaluation %}
+    {% if merlin_evaluation.Strengths or merlin_evaluation.key_strengths %}
+    <div style="margin-bottom: 2rem;">
+        <h3>✅ Strengths</h3>
+        <div style="background: #d1fae5; padding: 1rem; border-radius: 5px; margin-top: 0.5rem; white-space: pre-line;">
+            {% if merlin_evaluation.Strengths %}
+            {{ merlin_evaluation.Strengths }}
+            {% elif merlin_evaluation.key_strengths %}
+            {% for strength in merlin_evaluation.key_strengths %}
+            • {{ strength }}
+            {% endfor %}
+            {% endif %}
+        </div>
+    </div>
+    {% endif %}
+
+    {% if merlin_evaluation.Weaknesses or merlin_evaluation.key_risks %}
+    <div style="margin-bottom: 2rem;">
+        <h3>⚠️ Areas for Improvement</h3>
+        <div style="background: #fef3c7; padding: 1rem; border-radius: 5px; margin-top: 0.5rem; white-space: pre-line;">
+            {% if merlin_evaluation.Weaknesses %}
+            {{ merlin_evaluation.Weaknesses }}
+            {% elif merlin_evaluation.key_risks %}
+            {% for risk in merlin_evaluation.key_risks %}
+            • {{ risk }}
+            {% endfor %}
+            {% endif %}
+        </div>
+    </div>
+    {% endif %}
+
+    {% if merlin_evaluation.DetailedAnalysis %}
+    <div style="margin-bottom: 2rem;">
+        <h3>📝 Detailed Analysis</h3>
+        <div style="background: #f9fafb; padding: 1rem; border-radius: 5px; margin-top: 0.5rem; white-space: pre-line;">
+            {{ merlin_evaluation.DetailedAnalysis }}
+        </div>
+    </div>
+    {% endif %}
+
+    {% if merlin_evaluation.Rationale %}
+    <div style="margin-bottom: 2rem;">
+        <h3>📋 Evaluation Rationale</h3>
+        <div style="background: #dbeafe; padding: 1rem; border-radius: 5px; margin-top: 0.5rem; white-space: pre-line;">
+            {{ merlin_evaluation.Rationale }}
+        </div>
+    </div>
+    {% endif %}
+    {% endif %}
+
+    {% if not aurora_evaluation and not merlin_evaluation %}
+    <div style="text-align: center; padding: 3rem; background: #f9fafb; border-radius: 5px;">
+        <p style="color: #6b7280; margin-bottom: 1rem;">This application has not been evaluated yet.</p>
+        <button class="btn btn-success" onclick="evaluateApplication()">🤖 Evaluate Now</button>
+    </div>
+    {% endif %}
+
+    <h3 style="margin-top: 2rem;">📄 Application Content</h3>
+    <div style="background: #f9fafb; padding: 1.5rem; border-radius: 5px; margin-top: 0.5rem; white-space: pre-line; max-height: 500px; overflow-y: auto;">
+        {{ application.ApplicationText }}
+    </div>
+</div>
+
+<script>
+async function evaluateApplication() {
+    if (!confirm('Evaluate this application with AI?')) return;
+    
+    const btn = event.target;
+    btn.disabled = true;
+    btn.textContent = 'Evaluating...';
+    
+    try {
+        const response = await fetch(`/evaluate/{{ application.application_id or application.ApplicationID }}`, { method: 'POST' });
+        const data = await response.json();
+        
+        if (response.ok) {
+            alert(`Evaluation complete!\nScore: ${data.overall_score}/100\nRecommendation: ${data.recommendation}`);
+            location.reload();
+        } else {
+            alert(`Error: ${data.error}`);
+            btn.disabled = false;
+            btn.textContent = '🤖 Evaluate Now';
+        }
+    } catch (error) {
+        alert(`Error: ${error.message}`);
+        btn.disabled = false;
+        btn.textContent = '🤖 Evaluate Now';
+    }
+}
+</script>
+
+<div class="card">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem;">
+        <h2>Application #{{ application.application_id or application.ApplicationID }}</h2>
+        <a href="{{ url_for('index') }}" class="btn btn-secondary">← Back to Dashboard</a>
+    </div>
+
+    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 2rem; margin-bottom: 2rem;">
+        <div>
+            <h3>📋 Applicant Information</h3>
+            <table style="margin-top: 1rem;">
+                <tr>
+                    <th style="width: 40%;">Name:</th>
+                    <td>{{ application.applicant_name or application.ApplicantName }}</td>
+                </tr>
+                <tr>
+                    <th>Email:</th>
+                    <td>{{ application.email or application.Email or 'N/A' }}</td>
+                </tr>
+                <tr>
+                    <th>Uploaded:</th>
+                    <td>{{ application.uploaded_date|string if application.uploaded_date else (application.UploadedDate|string if application.UploadedDate else 'N/A') }}</td>
+                </tr>
+                <tr>
+                    <th>Status:</th>
+                    <td><span class="badge badge-{{ (application.status or application.Status or 'pending').lower() }}">{{ application.status or application.Status or 'Pending' }}</span></td>
                 </tr>
             </table>
         </div>
@@ -172,10 +714,10 @@
     <div style="font-size: 0.875rem; color: #6b7280; padding-top: 1rem; border-top: 1px solid #e5e7eb;">
         <strong>Evaluated by:</strong> {{ evaluation.AgentName or 'AI Agent' }}<br>
         {% if evaluation.EvaluationDate %}
-        <strong>Evaluation date:</strong> {{ evaluation.EvaluationDate.strftime('%Y-%m-%d %H:%M') if evaluation.EvaluationDate else 'N/A' }}<br>
+        <strong>Evaluation date:</strong> {{ evaluation.EvaluationDate|string|truncate(16, True, '', 0) if evaluation.EvaluationDate else 'N/A' }}<br>
         {% endif %}
         {% if evaluation.CreatedAt %}
-        <strong>Created:</strong> {{ evaluation.CreatedAt.strftime('%Y-%m-%d %H:%M') if evaluation.CreatedAt else 'N/A' }}<br>
+        <strong>Created:</strong> {{ evaluation.CreatedAt|string|truncate(16, True, '', 0) if evaluation.CreatedAt else 'N/A' }}<br>
         {% endif %}
         {% if evaluation.ProcessingTimeMs %}
         <strong>Processing time:</strong> {{ evaluation.ProcessingTimeMs }}ms
@@ -203,7 +745,7 @@ async function evaluateApplication() {
     btn.textContent = 'Evaluating...';
     
     try {
-        const response = await fetch(`/evaluate/{{ application.ApplicationID }}`, { method: 'POST' });
+        const response = await fetch(`/evaluate/{{ application.application_id or application.ApplicationID }}`, { method: 'POST' });
         const data = await response.json();
         
         if (response.ok) {
@@ -220,5 +762,75 @@ async function evaluateApplication() {
         btn.textContent = '🤖 Evaluate Now';
     }
 }
+</script>
+
+<script>
+const APPLICATION_STATUS_ID = '{{ application.application_id or application.ApplicationID }}';
+const AGENT_PROGRESS_LABELS = {
+    application_reader: '👸 Tiana - Application Reader',
+    grade_reader: '💇 Rapunzel - Grade Reader',
+    recommendation_reader: '🗡️ Mulan - Recommendation Reader',
+    school_context: '🌊 Moana - School Context',
+    student_evaluator: '🧙 Merlin - Final Evaluator',
+    aurora: '✨ Aurora - Summary'
+};
+
+async function refreshAgentProgress() {
+    const list = document.getElementById('agent-progress-list');
+    if (!list || !APPLICATION_STATUS_ID) {
+        return;
+    }
+
+    try {
+        const response = await fetch(`/api/application/status/${APPLICATION_STATUS_ID}`);
+        if (!response.ok) {
+            return;
+        }
+        const data = await response.json();
+        if (data.status !== 'success') {
+            return;
+        }
+
+        const items = [];
+        Object.keys(AGENT_PROGRESS_LABELS).forEach((agentId) => {
+            const rawStatus = data.agent_progress?.[agentId] || 'pending';
+            const status = normalizeAgentStatus(rawStatus);
+            const label = AGENT_PROGRESS_LABELS[agentId];
+            const waitingFor = data.waiting_for?.[agentId];
+            const icon = status === 'complete'
+                ? '✅'
+                : status === 'error'
+                    ? '❌'
+                    : status === 'working'
+                        ? '🟢'
+                        : '🟡';
+            const detail = waitingFor ? ` (waiting for ${waitingFor})` : '';
+            items.push(
+                `<li class="agent-progress-item">${icon} ${label} - <span class="agent-progress-status ${status}">${status}</span>${detail}</li>`
+            );
+        });
+
+        list.innerHTML = items.join('');
+
+        if (data.overall_status === 'complete') {
+            clearInterval(window.__agentProgressTimer);
+        }
+    } catch (err) {
+        // Silent failure; keep page stable
+    }
+}
+
+function normalizeAgentStatus(status) {
+    if (!status) return 'waiting';
+    const normalized = String(status).toLowerCase();
+    if (normalized === 'starting' || normalized === 'working') return 'working';
+    if (normalized === 'completed' || normalized === 'complete' || normalized === 'success') return 'complete';
+    if (normalized === 'failed' || normalized === 'error') return 'error';
+    if (normalized === 'blocked' || normalized === 'waiting' || normalized === 'pending' || normalized === 'asking_for_info') return 'waiting';
+    return normalized;
+}
+
+window.__agentProgressTimer = setInterval(refreshAgentProgress, 2000);
+refreshAgentProgress();
 </script>
 {% endblock %}

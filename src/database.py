@@ -1,54 +1,66 @@
-"""Database connection and models for the application evaluation system."""
+"""Database connection and models for the application evaluation system - PostgreSQL."""
 
 from typing import Optional, List, Dict, Any
 from datetime import datetime
 import psycopg
-from psycopg.rows import tuple_row
 from .config import config
+import json
 
 
 class Database:
-    """Database connection and operations manager."""
+    """Database connection and operations manager for PostgreSQL."""
     
     def __init__(self):
-        self.connection_string = self._build_connection_string()
+        self.connection_params = self._build_connection_params()
         self.connection = None
     
-    def _build_connection_string(self) -> str:
-        """Build PostgreSQL connection string using configuration from Key Vault."""
-        if config.postgres_url:
-            return config.postgres_url
-
-        host = config.postgres_host
-        port = config.postgres_port
-        database = config.postgres_database
-        username = config.postgres_username
-        password = config.postgres_password
-
-        if not host or not database:
+    def _build_connection_params(self) -> Dict[str, Any]:
+        """Build PostgreSQL connection parameters from config."""
+        # Try to get connection parameters from config (Key Vault secrets)
+        postgres_url = config.postgres_url or config.get('DATABASE_URL')
+        
+        if postgres_url:
+            # If a full connection URL is provided, use it
+            return {'conninfo': postgres_url}
+        
+        # Otherwise, build from individual parameters
+        host = config.postgres_host or config.get('POSTGRES_HOST')
+        port = config.postgres_port or config.get('POSTGRES_PORT', '5432')
+        database = config.postgres_database or config.get('POSTGRES_DB')
+        username = config.postgres_username or config.get('POSTGRES_USER')
+        password = config.postgres_password or config.get('POSTGRES_PASSWORD')
+        
+        if not all([host, database, username, password]):
             raise ValueError(
-                "Postgres host and database must be configured in Key Vault or environment variables"
+                "PostgreSQL configuration incomplete. Required: POSTGRES_HOST, POSTGRES_DB, "
+                "POSTGRES_USER, POSTGRES_PASSWORD (or DATABASE_URL) in Key Vault or environment"
             )
-        if not username or not password:
-            raise ValueError(
-                "Postgres username and password must be configured in Key Vault or environment variables"
-            )
-
-        # For Azure Container Instances, SSL is not supported, use prefer instead of require
-        return (
-            f"host={host} port={port} dbname={database} user={username} "
-            f"password={password} sslmode=prefer"
-        )
+        
+        return {
+            'host': host,
+            'port': int(port),
+            'dbname': database,  # psycopg uses 'dbname' not 'database'
+            'user': username,
+            'password': password,
+            'connect_timeout': 10,
+            'sslmode': 'require'  # PostgreSQL Azure requires SSL
+        }
     
     def connect(self):
         """Establish database connection."""
-        if not self.connection:
-            self.connection = psycopg.connect(self.connection_string, row_factory=tuple_row)
+        if not self.connection or self.connection.closed:
+            try:
+                if 'conninfo' in self.connection_params:
+                    self.connection = psycopg.connect(self.connection_params['conninfo'])
+                else:
+                    self.connection = psycopg.connect(**self.connection_params)
+            except Exception as e:
+                raise ConnectionError(f"Failed to connect to PostgreSQL: {e}")
         return self.connection
     
     def close(self):
         """Close database connection."""
-        if self.connection:
+        if self.connection and not self.connection.closed:
             self.connection.close()
             self.connection = None
     
@@ -63,7 +75,8 @@ class Database:
             else:
                 cursor.execute(query)
             
-            columns = [column[0] for column in cursor.description]
+            # Get column names from cursor description
+            columns = [column[0].lower() for column in cursor.description] if cursor.description else []
             results = []
             for row in cursor.fetchall():
                 results.append(dict(zip(columns, row)))
@@ -71,36 +84,36 @@ class Database:
             cursor.close()
             return results
         except Exception as e:
-            try:
-                self.connection.rollback()
-                self.connection = None
-            except:
+            if self.connection:
+                try:
+                    self.connection.rollback()
+                except:
+                    pass
                 self.connection = None
             raise e
     
     def execute_non_query(self, query: str, params: tuple = None) -> int:
         """Execute INSERT, UPDATE, or DELETE and return affected rows."""
-        conn = self.connect()
-        cursor = conn.cursor()
-        
         try:
+            conn = self.connect()
+            cursor = conn.cursor()
+            
             if params:
                 cursor.execute(query, params)
             else:
                 cursor.execute(query)
             
             conn.commit()
-            return cursor.rowcount
+            rowcount = cursor.rowcount
+            cursor.close()
+            return rowcount
         except Exception as e:
             try:
                 conn.rollback()
             except:
                 pass
-            # Close the connection to force a fresh one on next call
             self.connection = None
             raise e
-        finally:
-            cursor.close()
     
     def execute_scalar(self, query: str, params: tuple = None) -> Any:
         """Execute a query and return a single value."""
@@ -114,49 +127,54 @@ class Database:
                 cursor.execute(query)
             
             result = cursor.fetchone()
-            cursor.close()
             
             # For INSERT/UPDATE/DELETE, commit the transaction
             if any(keyword in query.upper() for keyword in ['INSERT', 'UPDATE', 'DELETE']):
                 conn.commit()
             
+            cursor.close()
             return result[0] if result else None
         except Exception as e:
             try:
                 self.connection.rollback()
-                self.connection = None
             except:
-                self.connection = None
+                pass
+            self.connection = None
             raise e
     
     def create_application(self, applicant_name: str, email: str, application_text: str,
                           file_name: str, file_type: str, is_training: bool = False,
-                          was_selected: Optional[bool] = None) -> int:
+                          is_test_data: bool = False,
+                          was_selected: Optional[bool] = None,
+                          student_id: Optional[str] = None) -> int:
         """Create a new application record."""
         query = """
             INSERT INTO Applications
-            (ApplicantName, Email, ApplicationText, OriginalFileName, FileType,
-             IsTrainingExample, WasSelected, Status)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, 'Pending')
-            RETURNING ApplicationID
+            (applicant_name, email, application_text, original_file_name, file_type,
+             is_training_example, is_test_data, was_selected, status, student_id)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, 'Pending', %s)
+            RETURNING application_id
         """
         return self.execute_scalar(
             query,
-            (applicant_name, email, application_text, file_name, file_type, is_training, was_selected)
+            (applicant_name, email, application_text, file_name, file_type, 
+             is_training, is_test_data, was_selected, student_id)
         )
     
     def get_application(self, application_id: int) -> Optional[Dict[str, Any]]:
         """Get application by ID."""
-        query = "SELECT * FROM Applications WHERE ApplicationID = %s"
+        query = "SELECT * FROM Applications WHERE application_id = %s"
         results = self.execute_query(query, (application_id,))
-        return results[0] if results else None
+        if not results:
+            return None
+        return results[0]
     
     def get_training_examples(self) -> List[Dict[str, Any]]:
         """Get all training examples."""
         query = """
             SELECT * FROM Applications 
-            WHERE IsTrainingExample = 1 
-            ORDER BY UploadedDate DESC
+            WHERE is_training_example = TRUE 
+            ORDER BY uploaded_date DESC
         """
         return self.execute_query(query)
     
@@ -168,13 +186,13 @@ class Database:
                        processing_time_ms: int) -> int:
         """Save an AI evaluation."""
         query = """
-            INSERT INTO AIEvaluations
-            (ApplicationID, AgentName, OverallScore, TechnicalSkillsScore,
-             CommunicationScore, ExperienceScore, CulturalFitScore,
-             Strengths, Weaknesses, Recommendation, DetailedAnalysis,
-             ComparisonToExcellence, ModelUsed, ProcessingTimeMs)
+            INSERT INTO ai_evaluations
+            (application_id, agent_name, overall_score, technical_skills_score,
+             communication_score, experience_score, cultural_fit_score,
+             strengths, weaknesses, recommendation, detailed_analysis,
+             comparison_to_excellence, model_used, processing_time_ms)
             VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-            RETURNING EvaluationID
+            RETURNING evaluation_id
         """
         return self.execute_scalar(
             query,
@@ -192,8 +210,8 @@ class Database:
         """Get all pending applications."""
         query = """
             SELECT * FROM Applications 
-            WHERE Status = 'Pending' AND IsTrainingExample = FALSE
-            ORDER BY UploadedDate DESC
+            WHERE status = 'Pending' AND is_training_example = FALSE
+            ORDER BY uploaded_date DESC
         """
         return self.execute_query(query)
     
@@ -220,15 +238,15 @@ class Database:
     ) -> int:
         """Save student school context analysis."""
         query = """
-            INSERT INTO StudentSchoolContext
-            (ApplicationID, SchoolID, SchoolName, ProgramAccessScore,
-             ProgramParticipationScore, RelativeAdvantageScore,
-             APCoursesAvailable, APCoursesTaken, IBCoursesAvailable, IBCoursesTaken,
-             HonorsCoursesTaken, STEMProgramsAvailable, STEMProgramsAccessed,
-             SchoolSESLevel, MedianHouseholdIncome, FreeLunchPct,
-             PercentageOfPeersUsingPrograms, ComparisonNotes)
+            INSERT INTO student_school_context
+            (application_id, school_id, school_name, program_access_score,
+             program_participation_score, relative_advantage_score,
+             ap_courses_available, ap_courses_taken, ib_courses_available, ib_courses_taken,
+             honors_courses_taken, stem_programs_available, stem_programs_accessed,
+             school_ses_level, median_household_income, free_lunch_pct,
+             percentage_of_peers_using_programs, comparison_notes)
             VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-            RETURNING ContextID
+            RETURNING context_id
         """
         return self.execute_scalar(query, (
             application_id, school_id, school_name,
@@ -247,10 +265,10 @@ class Database:
     ) -> int:
         """Save an audit log entry for an agent write."""
         query = """
-            INSERT INTO AgentAuditLogs
-            (ApplicationID, AgentName, SourceFileName)
+            INSERT INTO agent_audit_logs
+            (application_id, agent_name, source_file_name)
             VALUES (%s, %s, %s)
-            RETURNING AuditID
+            RETURNING audit_id
         """
         return self.execute_scalar(query, (application_id, agent_name, source_file_name))
 
@@ -266,10 +284,10 @@ class Database:
     ) -> int:
         """Save Tiana application parsing output."""
         query = """
-            INSERT INTO TianaApplications
-            (ApplicationID, AgentName, EssaySummary, RecommendationTexts, ReadinessScore, Confidence, ParsedJson)
+            INSERT INTO tiana_applications
+            (application_id, agent_name, essay_summary, recommendation_texts, readiness_score, confidence, parsed_json)
             VALUES (%s, %s, %s, %s, %s, %s, %s)
-            RETURNING TianaApplicationID
+            RETURNING tiana_application_id
         """
         return self.execute_scalar(query, (
             application_id,
@@ -295,11 +313,11 @@ class Database:
     ) -> int:
         """Save Mulan recommendation parsing output."""
         query = """
-            INSERT INTO MulanRecommendations
-            (ApplicationID, AgentName, RecommenderName, RecommenderRole,
-             EndorsementStrength, SpecificityScore, Summary, RawText, ParsedJson)
+            INSERT INTO mulan_recommendations
+            (application_id, agent_name, recommender_name, recommender_role,
+             endorsement_strength, specificity_score, summary, raw_text, parsed_json)
             VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
-            RETURNING MulanRecommendationID
+            RETURNING mulan_recommendation_id
         """
         return self.execute_scalar(query, (
             application_id,
@@ -313,6 +331,190 @@ class Database:
             parsed_json
         ))
 
+    def save_rapunzel_grades(
+        self,
+        application_id: int,
+        agent_name: str = 'Rapunzel',
+        gpa: Optional[float] = None,
+        academic_strength: Optional[str] = None,
+        course_levels: Optional[Dict[str, Any]] = None,
+        transcript_quality: Optional[str] = None,
+        notable_patterns: Optional[List[str]] = None,
+        confidence_level: Optional[str] = None,
+        summary: Optional[str] = None,
+        parsed_json: Optional[str] = None
+    ) -> int:
+        """Save Rapunzel grade analysis output."""
+        def _truncate(value: Optional[str], max_len: int) -> Optional[str]:
+            if value is None:
+                return None
+            return value if len(value) <= max_len else value[:max_len]
+
+        query = """
+            INSERT INTO rapunzel_grades
+            (application_id, agent_name, gpa, academic_strength, course_levels,
+             transcript_quality, notable_patterns, confidence_level, summary, parsed_json)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            RETURNING rapunzel_grade_id
+        """
+        return self.execute_scalar(query, (
+            application_id,
+            agent_name,
+            gpa,
+            _truncate(academic_strength, 255),
+            json.dumps(course_levels) if course_levels else None,
+            _truncate(transcript_quality, 255),
+            json.dumps(notable_patterns) if notable_patterns else None,
+            _truncate(confidence_level, 50),
+            summary,
+            parsed_json or '{}'
+        ))
+
+    def save_moana_school_context(
+        self,
+        application_id: int,
+        agent_name: str = 'Moana',
+        school_name: Optional[str] = None,
+        program_access_score: Optional[float] = None,
+        program_participation_score: Optional[float] = None,
+        relative_advantage_score: Optional[float] = None,
+        ap_courses_available: Optional[int] = None,
+        ap_courses_taken: Optional[int] = None,
+        contextual_summary: Optional[str] = None,
+        parsed_json: Optional[str] = None
+    ) -> int:
+        """Save Moana school context analysis output."""
+        def _coerce_int(value: Any) -> Optional[int]:
+            if value is None:
+                return None
+            if isinstance(value, bool):
+                return int(value)
+            if isinstance(value, (int,)):
+                return value
+            if isinstance(value, float):
+                return int(value)
+            if isinstance(value, str):
+                try:
+                    return int(value.strip())
+                except ValueError:
+                    return None
+            return None
+
+        ap_courses_available = _coerce_int(ap_courses_available)
+        ap_courses_taken = _coerce_int(ap_courses_taken)
+        columns = self.execute_query(
+            "SELECT column_name FROM information_schema.columns WHERE table_name = 'student_school_context'"
+        )
+        column_names = {col.get('column_name') for col in columns} if columns else set()
+        has_agent_name = 'agent_name' in column_names
+        has_updated_at = 'updated_at' in column_names
+
+        if has_agent_name:
+            update_fields = """
+                agent_name = %s,
+                program_access_score = COALESCE(%s, program_access_score),
+                program_participation_score = COALESCE(%s, program_participation_score),
+                relative_advantage_score = COALESCE(%s, relative_advantage_score),
+                ap_courses_available = COALESCE(%s, ap_courses_available),
+                ap_courses_taken = COALESCE(%s, ap_courses_taken),
+                comparison_notes = COALESCE(%s, comparison_notes),
+                parsed_json = %s
+            """
+            if has_updated_at:
+                update_fields += ",\n                    updated_at = CURRENT_TIMESTAMP"
+
+            query = f"""
+                UPDATE student_school_context
+                SET {update_fields}
+                WHERE application_id = %s
+                RETURNING context_id
+            """
+            result = self.execute_scalar(query, (
+                agent_name,
+                program_access_score,
+                program_participation_score,
+                relative_advantage_score,
+                ap_courses_available,
+                ap_courses_taken,
+                contextual_summary,
+                parsed_json or '{}',
+                application_id
+            ))
+        else:
+            update_fields = """
+                program_access_score = COALESCE(%s, program_access_score),
+                program_participation_score = COALESCE(%s, program_participation_score),
+                relative_advantage_score = COALESCE(%s, relative_advantage_score),
+                ap_courses_available = COALESCE(%s, ap_courses_available),
+                ap_courses_taken = COALESCE(%s, ap_courses_taken),
+                comparison_notes = COALESCE(%s, comparison_notes),
+                parsed_json = %s
+            """
+            if has_updated_at:
+                update_fields += ",\n                    updated_at = CURRENT_TIMESTAMP"
+
+            query = f"""
+                UPDATE student_school_context
+                SET {update_fields}
+                WHERE application_id = %s
+                RETURNING context_id
+            """
+            result = self.execute_scalar(query, (
+                program_access_score,
+                program_participation_score,
+                relative_advantage_score,
+                ap_courses_available,
+                ap_courses_taken,
+                contextual_summary,
+                parsed_json or '{}',
+                application_id
+            ))
+        
+        # If no existing record, insert a new one
+        if not result:
+            if has_agent_name:
+                insert_query = """
+                INSERT INTO student_school_context
+                (application_id, agent_name, school_name, program_access_score,
+                 program_participation_score, relative_advantage_score,
+                 ap_courses_available, ap_courses_taken, comparison_notes, parsed_json)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                RETURNING context_id
+                """
+                return self.execute_scalar(insert_query, (
+                    application_id,
+                    agent_name,
+                    school_name,
+                    program_access_score,
+                    program_participation_score,
+                    relative_advantage_score,
+                    ap_courses_available,
+                    ap_courses_taken,
+                    contextual_summary,
+                    parsed_json or '{}'
+                ))
+
+            insert_query = """
+            INSERT INTO student_school_context
+            (application_id, school_name, program_access_score,
+             program_participation_score, relative_advantage_score,
+             ap_courses_available, ap_courses_taken, comparison_notes, parsed_json)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+            RETURNING context_id
+            """
+            return self.execute_scalar(insert_query, (
+                application_id,
+                school_name,
+                program_access_score,
+                program_participation_score,
+                relative_advantage_score,
+                ap_courses_available,
+                ap_courses_taken,
+                contextual_summary,
+                parsed_json or '{}'
+            ))
+        return result
+
     def save_merlin_evaluation(
         self,
         application_id: int,
@@ -325,10 +527,10 @@ class Database:
     ) -> int:
         """Save Merlin final evaluation output."""
         query = """
-            INSERT INTO MerlinEvaluations
-            (ApplicationID, AgentName, OverallScore, Recommendation, Rationale, Confidence, ParsedJson)
+            INSERT INTO merlin_evaluations
+            (application_id, agent_name, overall_score, recommendation, rationale, confidence, parsed_json)
             VALUES (%s, %s, %s, %s, %s, %s, %s)
-            RETURNING MerlinEvaluationID
+            RETURNING merlin_evaluation_id
         """
         return self.execute_scalar(query, (
             application_id,
@@ -345,7 +547,7 @@ class Database:
         application_id: int
     ) -> Optional[Dict[str, Any]]:
         """Get school context for a student."""
-        query = "SELECT * FROM StudentSchoolContext WHERE ApplicationID = %s"
+        query = "SELECT * FROM student_school_context WHERE application_id = %s"
         results = self.execute_query(query, (application_id,))
         return results[0] if results else None
     
@@ -353,10 +555,345 @@ class Database:
         """Get all applications (non-training examples)."""
         query = """
             SELECT * FROM Applications 
-            WHERE IsTrainingExample = FALSE
-            ORDER BY UploadedDate DESC
+            WHERE is_training_example = FALSE
+            ORDER BY uploaded_date DESC
         """
         return self.execute_query(query)
+
+    def save_aurora_evaluation(
+        self,
+        application_id: int,
+        formatted_evaluation: Dict[str, Any],
+        merlin_score: Optional[float] = None,
+        merlin_recommendation: Optional[str] = None,
+        agents_completed: Optional[str] = None
+    ) -> int:
+        """Save Aurora's formatted evaluation for a student."""
+        query = """
+            INSERT INTO aurora_evaluations
+            (application_id, agent_name, formatted_evaluation, merlin_score, merlin_recommendation, agents_completed, created_at, updated_at)
+            VALUES (%s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            RETURNING aurora_evaluation_id
+        """
+        return self.execute_scalar(query, (
+            application_id,
+            'Aurora',
+            json.dumps(formatted_evaluation),
+            merlin_score,
+            merlin_recommendation,
+            agents_completed or ''
+        ))
+    
+    def get_aurora_evaluation(self, application_id: int) -> Optional[Dict[str, Any]]:
+        """Get the most recent Aurora evaluation for a student."""
+        query = """
+            SELECT * FROM aurora_evaluations 
+            WHERE application_id = %s 
+            ORDER BY created_at DESC
+            LIMIT 1
+        """
+        results = self.execute_query(query, (application_id,))
+        if results:
+            result = results[0]
+            # Parse the formatted_evaluation JSON if it's a string
+            formatted_eval_key = next((k for k in result.keys() if 'formatted' in k.lower()), None)
+            if formatted_eval_key:
+                val = result.get(formatted_eval_key)
+                if isinstance(val, str):
+                    try:
+                        result[formatted_eval_key] = json.loads(val)
+                    except:
+                        pass
+            return result
+        return None
+    
+    def save_test_submission(self, session_id: str, student_count: int, application_ids: List[int]) -> str:
+        """Save a test submission to database for persistence."""
+        query = """
+            INSERT INTO test_submissions
+            (session_id, student_count, application_ids, status, created_at)
+            VALUES (%s, %s, %s, %s, CURRENT_TIMESTAMP)
+            RETURNING session_id
+        """
+        return self.execute_scalar(query, (
+            session_id,
+            student_count,
+            json.dumps(application_ids),
+            'completed'
+        ))
+    
+    def get_test_submission(self, session_id: str) -> Optional[Dict[str, Any]]:
+        """Retrieve a test submission by session ID."""
+        query = """
+            SELECT * FROM test_submissions 
+            WHERE session_id = %s
+        """
+        results = self.execute_query(query, (session_id,))
+        if results:
+            result = results[0]
+            # Parse application IDs JSON - handle different key names
+            app_ids_key = next((k for k in result.keys() if 'applicationids' in k.lower() or 'application_ids' in k.lower()), None)
+            if app_ids_key:
+                val = result.get(app_ids_key)
+                if isinstance(val, str):
+                    try:
+                        result[app_ids_key] = json.loads(val)
+                    except:
+                        result[app_ids_key] = []
+            return result
+        return None
+    
+    def get_recent_test_submissions(self, limit: int = 10) -> List[Dict[str, Any]]:
+        """Get recent test submissions."""
+        query = """
+            SELECT * FROM test_submissions 
+            ORDER BY created_at DESC
+            LIMIT %s
+        """
+        results = self.execute_query(query, (limit,))
+        for result in results:
+            # Parse application IDs JSON
+            app_ids_key = next((k for k in result.keys() if 'applicationids' in k.lower() or 'application_ids' in k.lower()), None)
+            if app_ids_key:
+                val = result.get(app_ids_key)
+                if isinstance(val, str):
+                    try:
+                        result[app_ids_key] = json.loads(val)
+                    except:
+                        result[app_ids_key] = []
+        return results
+
+    def clear_test_data(self) -> int:
+        """Clear all test/training data from the database."""
+        try:
+            conn = self.connect()
+            cursor = conn.cursor()
+            
+            # Get all test application IDs
+            cursor.execute(
+                "SELECT application_id FROM Applications WHERE is_training_example = TRUE"
+            )
+            test_app_ids = [row[0] for row in cursor.fetchall()]
+            
+            if not test_app_ids:
+                cursor.close()
+                return 0
+            
+            # Build placeholder string for IN clause
+            placeholders = ','.join(['%s'] * len(test_app_ids))
+            
+            # Delete in reverse dependency order
+            tables_and_columns = [
+                ('agent_audit_logs', 'application_id'),
+                ('tiana_applications', 'application_id'),
+                ('mulan_recommendations', 'application_id'),
+                ('merlin_evaluations', 'application_id'),
+                ('aurora_evaluations', 'application_id'),
+                ('ai_evaluations', 'application_id'),
+                ('student_school_context', 'application_id'),
+                ('test_submissions', None),  # handled separately
+                ('Applications', 'application_id'),
+            ]
+            
+            total_deleted = 0
+            
+            for table, column in tables_and_columns:
+                if column:
+                    delete_query = f"DELETE FROM {table} WHERE {column} IN ({placeholders})"
+                    cursor.execute(delete_query, test_app_ids)
+                else:
+                    # For test_submissions, delete by session_id patterns
+                    cursor.execute("DELETE FROM test_submissions WHERE status = 'completed'")
+                
+                total_deleted += cursor.rowcount
+            
+            conn.commit()
+            cursor.close()
+            return total_deleted
+            
+        except Exception as e:
+            try:
+                conn.rollback()
+            except:
+                pass
+            raise e
+
+    def set_missing_fields(self, application_id: int, missing_fields: List[str]) -> None:
+        """Set which fields/documents are missing for a student."""
+        query = """
+        UPDATE applications
+        SET missing_fields = %s
+        WHERE application_id = %s
+        """
+        self.execute_non_query(query, (json.dumps(missing_fields), application_id))
+
+    def update_application_fields(self, application_id: int, fields: Dict[str, Any]) -> None:
+        """Update allowed application fields with provided values."""
+        if not fields:
+            return
+
+        allowed_fields = {
+            'application_text',
+            'transcript_text',
+            'recommendation_text',
+            'original_file_name',
+            'file_type'
+        }
+
+        updates = []
+        values = []
+        for key, value in fields.items():
+            if key in allowed_fields:
+                updates.append(f"{key} = %s")
+                values.append(value)
+
+        if not updates:
+            return
+
+        query = f"UPDATE applications SET {', '.join(updates)} WHERE application_id = %s"
+        values.append(application_id)
+        self.execute_non_query(query, tuple(values))
+    
+    def add_missing_field(self, application_id: int, field_name: str) -> None:
+        """Add a missing field to a student's missing_fields list."""
+        # Get current missing fields
+        query = "SELECT missing_fields FROM applications WHERE application_id = %s"
+        result = self.execute_query(query, (application_id,))
+        
+        if result:
+            current = result[0].get('missing_fields') or '[]'
+            if isinstance(current, str):
+                missing = json.loads(current)
+            else:
+                missing = current if isinstance(current, list) else []
+            
+            # Add field if not already present
+            if field_name not in missing:
+                missing.append(field_name)
+                self.set_missing_fields(application_id, missing)
+    
+    def remove_missing_field(self, application_id: int, field_name: str) -> None:
+        """Remove a field from a student's missing_fields list."""
+        # Get current missing fields
+        query = "SELECT missing_fields FROM applications WHERE application_id = %s"
+        result = self.execute_query(query, (application_id,))
+        
+        if result:
+            current = result[0].get('missing_fields') or '[]'
+            if isinstance(current, str):
+                missing = json.loads(current)
+            else:
+                missing = current if isinstance(current, list) else []
+            
+            # Remove field if present
+            if field_name in missing:
+                missing.remove(field_name)
+                self.set_missing_fields(application_id, missing)
+    
+    def get_missing_fields(self, application_id: int) -> List[str]:
+        """Get list of missing fields for a student."""
+        query = "SELECT missing_fields FROM applications WHERE application_id = %s"
+        result = self.execute_query(query, (application_id,))
+        
+        if result:
+            current = result[0].get('missing_fields') or '[]'
+            if isinstance(current, str):
+                return json.loads(current)
+            else:
+                return current if isinstance(current, list) else []
+        return []
+
+    def get_formatted_student_list(self, is_training: bool = False, search_query: str = None):
+        """
+        Get a list of students with formatted data sorted by last name.
+        
+        Returns:
+            List of dicts with: first_name, last_name, high_school, merlin_score, 
+            application_id, email, status, uploaded_date, missing_fields
+        """
+        if is_training:
+            base_query = """
+                SELECT 
+                    a.application_id as application_id,
+                    a.applicant_name as applicant_name,
+                    a.email as email,
+                    a.status as status,
+                    a.uploaded_date as uploaded_date,
+                    a.was_selected as was_selected,
+                    m.overall_score as merlin_score,
+                    s.school_name as school_name,
+                    a.missing_fields as missing_fields
+                FROM Applications a
+                LEFT JOIN merlin_evaluations m ON a.application_id = m.application_id
+                LEFT JOIN student_school_context ssc ON a.application_id = ssc.application_id
+                LEFT JOIN schools s ON ssc.school_id = s.school_id
+                WHERE a.is_training_example = TRUE
+            """
+        else:
+            base_query = """
+                SELECT 
+                    a.application_id as application_id,
+                    a.applicant_name as applicant_name,
+                    a.email as email,
+                    a.status as status,
+                    a.uploaded_date as uploaded_date,
+                    a.was_selected as was_selected,
+                    m.overall_score as merlin_score,
+                    s.school_name as school_name,
+                    a.missing_fields as missing_fields
+                FROM Applications a
+                LEFT JOIN merlin_evaluations m ON a.application_id = m.application_id
+                LEFT JOIN student_school_context ssc ON a.application_id = ssc.application_id
+                LEFT JOIN schools s ON ssc.school_id = s.school_id
+                WHERE a.is_training_example = FALSE
+                  AND (a.is_test_data = FALSE OR a.is_test_data IS NULL)
+            """
+        
+        # Add search filter if provided
+        if search_query:
+            base_query += " AND (a.applicant_name ILIKE %s OR a.email ILIKE %s)"
+            search_param = f"%{search_query}%"
+            params = (search_param, search_param)
+        else:
+            params = None
+        
+        # Always sort by last name
+        base_query += " ORDER BY a.applicant_name"
+        
+        results = self.execute_query(base_query, params)
+        
+        # Format the results
+        formatted = []
+        for row in results:
+            # Split applicant name into first and last
+            parts = row.get('applicant_name', '').strip().split()
+            first_name = parts[0] if len(parts) > 0 else ''
+            last_name = parts[-1] if len(parts) > 1 else ''
+            
+            # Parse missing fields if present
+            missing_fields = []
+            if row.get('missing_fields'):
+                try:
+                    import json
+                    missing_fields = json.loads(row.get('missing_fields')) if isinstance(row.get('missing_fields'), str) else row.get('missing_fields', [])
+                except:
+                    missing_fields = []
+            
+            formatted.append({
+                'application_id': row.get('application_id'),
+                'first_name': first_name,
+                'last_name': last_name,
+                'full_name': row.get('applicant_name'),
+                'email': row.get('email'),
+                'high_school': row.get('school_name') or 'Not specified',
+                'merlin_score': row.get('merlin_score'),
+                'status': row.get('status'),
+                'uploaded_date': row.get('uploaded_date'),
+                'was_selected': bool(row.get('was_selected')) if row.get('was_selected') is not None else None,
+                'missing_fields': missing_fields
+            })
+        
+        return formatted
 
 
 # Global database instance

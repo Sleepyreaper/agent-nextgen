@@ -1,6 +1,7 @@
 """Test script for Smee Orchestrator and Grade Report Reader agents."""
 
 import asyncio
+import os
 from openai import AzureOpenAI
 from azure.identity import DefaultAzureCredential, get_bearer_token_provider
 from src.config import Config
@@ -99,7 +100,7 @@ async def main():
     print("="*70 + "\n")
     
     # Initialize configuration and client
-    config = Config(key_vault_name="nextgen-agents-kv")
+    config = Config(key_vault_name=os.getenv("AZURE_KEY_VAULT_NAME"))
     
     # Validate configuration
     if not config.validate():

@@ -38,16 +38,36 @@
             </div>
         </div>
 
-        <!-- Training Data Toggle -->
-        <div style="margin-bottom: 2rem; padding: 1.5rem; background: #f9fafb; border-radius: 8px; border: 2px solid #e5e7eb;">
-            <label style="display: flex; align-items: center; cursor: pointer; font-weight: 600;">
-                <input type="checkbox" name="is_training" id="isTraining" onchange="updateApplicationType()"
-                       style="margin-right: 0.75rem; width: 20px; height: 20px;">
-                <span style="color: #1f2937;">📚 This is historical training data</span>
+        <!-- Application Type Selection -->
+        <div style="margin-bottom: 2rem;">
+            <label style="display: block; font-weight: 600; margin-bottom: 1rem; color: #1f2937;">
+                📋 Application Type
             </label>
-            <p style="color: #6b7280; margin-top: 0.5rem; font-size: 0.9rem;">
-                Check this box if this is from a previous year and should be used as training data. Otherwise, it will be processed as a 2026 applicant.
-            </p>
+            <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 1rem;">
+                <!-- 2026 Applicant (Default) -->
+                <label style="display: flex; flex-direction: column; padding: 1.5rem; background: #f0fdf4; border: 2px solid #10b981; border-radius: 8px; cursor: pointer; transition: all 0.2s;">
+                    <input type="radio" name="app_type" value="2026" id="type2026" checked onchange="updateApplicationType()"
+                           style="margin-bottom: 0.5rem;">
+                    <span style="font-weight: 600; color: #065f46; margin-bottom: 0.5rem;">🆕 2026 Applicant</span>
+                    <span style="color: #047857; font-size: 0.85rem;">Real application for current admission cycle</span>
+                </label>
+                
+                <!-- Test Upload -->
+                <label style="display: flex; flex-direction: column; padding: 1.5rem; background: #f0f9ff; border: 2px solid #3b82f6; border-radius: 8px; cursor: pointer; transition: all 0.2s;">
+                    <input type="radio" name="app_type" value="test" id="typeTest" onchange="updateApplicationType()"
+                           style="margin-bottom: 0.5rem;">
+                    <span style="font-weight: 600; color: #1e40af; margin-bottom: 0.5rem;">🧪 Test Upload</span>
+                    <span style="color: #1e40af; font-size: 0.85rem;">Test the agents with sample files</span>
+                </label>
+                
+                <!-- Training Data -->
+                <label style="display: flex; flex-direction: column; padding: 1.5rem; background: #fef3c7; border: 2px solid #f59e0b; border-radius: 8px; cursor: pointer; transition: all 0.2s;">
+                    <input type="radio" name="app_type" value="training" id="typeTraining" onchange="updateApplicationType()"
+                           style="margin-bottom: 0.5rem;">
+                    <span style="font-weight: 600; color: #92400e; margin-bottom: 0.5rem;">📚 Training Data</span>
+                    <span style="color: #92400e; font-size: 0.85rem;">Historical data from previous years</span>
+                </label>
+            </div>
         </div>
 
         <!-- Selection Status (shown only for training data) -->
@@ -62,8 +82,8 @@
             </p>
         </div>
 
-        <!-- Application Type Display -->
-        <div id="typeDisplay" style="padding: 1.5rem; background: #f0fdf4; border-left: 4px solid #10b981; border-radius: 8px; margin-bottom: 2rem;">
+        <!-- Type Information Display -->
+        <div id="typeInfoDisplay" style="padding: 1.5rem; background: #f0fdf4; border-left: 4px solid #10b981; border-radius: 8px; margin-bottom: 2rem;">
             <h3 style="color: #065f46; margin-bottom: 0.5rem;">🆕 2026 Applicant</h3>
             <p style="color: #047857; margin: 0;">This will be processed immediately by Smee and all agents for evaluation.</p>
         </div>
@@ -109,27 +129,36 @@ function updateFileName(input) {
 }
 
 function updateApplicationType() {
-    const isTraining = document.getElementById('isTraining').checked;
-    const typeDisplay = document.getElementById('typeDisplay');
+    const type2026 = document.getElementById('type2026').checked;
+    const typeTest = document.getElementById('typeTest').checked;
+    const typeTraining = document.getElementById('typeTraining').checked;
+    const typeInfoDisplay = document.getElementById('typeInfoDisplay');
     const selectionStatus = document.getElementById('selectionStatus');
     
-    if (isTraining) {
-        typeDisplay.innerHTML = `
-            <h3 style="color: #b45309; margin-bottom: 0.5rem;">📚 Training Data</h3>
-            <p style="color: #92400e; margin: 0;">This will be saved as historical training data for agents to learn from.</p>
-        `;
-        typeDisplay.style.background = '#fef3c7';
-        typeDisplay.style.borderLeft = '4px solid #f59e0b';
-        selectionStatus.style.display = 'block';
-    } else {
-        typeDisplay.innerHTML = `
+    if (type2026) {
+        typeInfoDisplay.innerHTML = `
             <h3 style="color: #065f46; margin-bottom: 0.5rem;">🆕 2026 Applicant</h3>
             <p style="color: #047857; margin: 0;">This will be processed immediately by Smee and all agents for evaluation.</p>
         `;
-        typeDisplay.style.background = '#f0fdf4';
-        typeDisplay.style.borderLeft = '4px solid #10b981';
+        typeInfoDisplay.style.background = '#f0fdf4';
+        typeInfoDisplay.style.borderLeft = '4px solid #10b981';
         selectionStatus.style.display = 'none';
-        document.getElementById('wasSelected').checked = false;
+    } else if (typeTest) {
+        typeInfoDisplay.innerHTML = `
+            <h3 style="color: #1e40af; margin-bottom: 0.5rem;">🧪 Test Upload</h3>
+            <p style="color: #1e40af; margin: 0;">This will be processed as test data to evaluate agent performance. You can navigate away and return to see results.</p>
+        `;
+        typeInfoDisplay.style.background = '#f0f9ff';
+        typeInfoDisplay.style.borderLeft = '4px solid #3b82f6';
+        selectionStatus.style.display = 'none';
+    } else if (typeTraining) {
+        typeInfoDisplay.innerHTML = `
+            <h3 style="color: #b45309; margin-bottom: 0.5rem;">📚 Training Data</h3>
+            <p style="color: #92400e; margin: 0;">This will be saved as historical training data for agents to learn from.</p>
+        `;
+        typeInfoDisplay.style.background = '#fef3c7';
+        typeInfoDisplay.style.borderLeft = '4px solid #f59e0b';
+        selectionStatus.style.display = 'block';
     }
 }
 

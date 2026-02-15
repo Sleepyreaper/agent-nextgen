@@ -13,6 +13,7 @@ An AI-powered application evaluation system that uses Azure OpenAI to assess int
 - **Secure by Default**: All secrets in Azure Key Vault, no plaintext credentials
 - **Azure Integration**: Uses Azure OpenAI, PostgreSQL, and Azure AD authentication
 - **Multi-Format Support**: Processes PDF, Word (.docx), and text files
+- **Optional Content Processing Accelerator**: Can use Azure-hosted document intelligence pipeline for richer extraction
 - **School Context Analysis**: Moana agent analyzes school resources and opportunity access
   - **Georgia School Data**: Automatic integration with Georgia public school data for verified context
 
@@ -30,16 +31,16 @@ This system uses a multi-agent approach with specialized agents:
 - **🗡️ Mulan (Recommendation Reader)**: Parses and analyzes recommendation letters
 - **🧙 Merlin (Student Evaluator)**: Synthesizes all agent outputs into final recommendation
 
-See [MOANA_GEORGIA_DATA.md](documents/MOANA_GEORGIA_DATA.md) for details on Georgia school data integration.
+See [MOANA_GEORGIA_DATA.md](documents/verification/MOANA_GEORGIA_DATA.md) for details on Georgia school data integration.
 
 ## 🏗️ Azure Resources Deployed
 
-**Resource Group:** `NextGen_Agents`
+**Resource Group:** `your-resource-group`
 
-- **Azure OpenAI**: `reapaihub6853304142` (GPT-5.2 NextGenGPT deployment)
-- **PostgreSQL Database**: `nextgen-postgres.eastus.azurecontainer.io` (Azure Container Instance)
+- **Azure OpenAI**: `your-openai-resource` (GPT-5.2 deployment)
+- **PostgreSQL Database**: `your-postgres-host` (Azure Container Instance)
 - **Database**: `ApplicationsDB`
-- **Azure Key Vault**: `nextgen-agents-kv` (secure credential management)
+- **Azure Key Vault**: `your-keyvault-name` (secure credential management)
 - **Authentication**: Azure AD for OpenAI, username/password for PostgreSQL
 
 ## 🚀 Quick Start
@@ -69,7 +70,7 @@ az login
 ./setup_keyvault.sh
 
 # Initialize database
-python init_database.py
+python scripts/init/init_database.py
 ```
 
 ### 3. Run the Web Application
@@ -117,20 +118,24 @@ The evaluator agent:
 ```
 .
 ├── app.py                      # Flask web application
-├── init_database.py            # Database initialization
+├── scripts/
+│   ├── init/                   # Initialization scripts
+│   ├── migrate/                # Migration scripts
+│   ├── check/                  # Health/check scripts
+│   ├── fix/                    # Fix-up scripts
+│   ├── audit/                  # Audit scripts
+│   └── verify/                 # Verification scripts
 ├── main.py                     # CLI agent interface  
 ├── requirements.txt            # Python dependencies
 ├── .env                        # Configuration (PostgreSQL credentials)
 ├── database/
 │   └── schema.sql              # PostgreSQL database schema
 ├── documents/                  # Documentation files
-│   ├── AZURE_WEBAPP_DEPLOY.md
-│   ├── DEPLOYMENT_CHECKLIST.md
-│   ├── DEPLOYMENT_SUCCESS.md
-│   ├── KEY_VAULT_SETUP.md
-│   ├── POSTGRES_MIGRATION.md
-│   ├── SECURITY.md
-│   └── WEB_APP_DEPLOYMENT.md
+│   ├── setup/
+│   ├── deployment/
+│   ├── security/
+│   ├── migration/
+│   └── verification/
 ├── src/
 │   ├── config.py               # Configuration management
 │   ├── database.py             # PostgreSQL operations  
@@ -163,7 +168,7 @@ The evaluator agent:
 
 ### Primary: Azure Key Vault (Recommended)
 
-All configuration is stored in **Azure Key Vault** (`nextgen-agents-kv`) by default.
+All configuration is stored in **Azure Key Vault** (`your-keyvault-name`) by default.
 
 **Setup once:**
 ```bash
@@ -177,6 +182,7 @@ The application automatically retrieves all secrets using `DefaultAzureCredentia
 - Azure OpenAI: `azure-openai-endpoint`, `azure-deployment-name`, `azure-api-version`
 - Azure config: `azure-subscription-id`, `azure-resource-group`
 - Flask: `flask-secret-key` (auto-generated)
+- Content Processing: `content-processing-endpoint`, `content-processing-api-key`, `content-processing-api-key-header`, `content-processing-enabled`
 
 ### Fallback: Local Development Only
 
@@ -209,22 +215,24 @@ Deploy your Flask application to Azure for production hosting with automatic sca
 ```bash
 # 1. Create App Service Plan (adjust SKU as needed)
 az appservice plan create \
-  --name NextGen-AppServicePlan \
-  --resource-group NextGen_Agents \
+  --name your-appservice-plan \
+  --resource-group your-resource-group \
   --sku B2 \
   --is-linux
 
 # 2. Create Web App
 az webapp create \
-  --resource-group NextGen_Agents \
-  --plan NextGen-AppServicePlan \
-  --name nextgen-agents-app \
+  --resource-group your-resource-group \
+  --plan your-appservice-plan \
+  --name your-webapp-name \
   --runtime "PYTHON|3.9"
 
-# 3. See documents/AZURE_WEBAPP_DEPLOY.md for complete setup instructions
+# 3. See documents/deployment/AZURE_WEBAPP_DEPLOY.md for complete setup instructions
 ```
 
-**Complete Deployment Guide:** See [documents/AZURE_WEBAPP_DEPLOY.md](documents/AZURE_WEBAPP_DEPLOY.md)
+**Complete Deployment Guide:** See [documents/deployment/AZURE_WEBAPP_DEPLOY.md](documents/deployment/AZURE_WEBAPP_DEPLOY.md)
+
+**CI/CD Notes:** The active workflow is [/.github/workflows/deploy-to-azure.yml](.github/workflows/deploy-to-azure.yml). Set GitHub Secrets `AZURE_WEBAPP_NAME` and `AZURE_WEBAPP_PUBLISH_PROFILE`. The legacy [/.github/workflows/deploy.yml](.github/workflows/deploy.yml) is manual-only and left as a reference.
 
 ### Features When Deployed
 - ✅ Automatic HTTPS/SSL
@@ -305,7 +313,7 @@ Application runs securely
 ./setup_keyvault.sh
 
 # Or set secrets manually
-az keyvault secret set --vault-name nextgen-agents-kv \
+az keyvault secret set --vault-name your-keyvault-name \
   --name postgres-password --value 'your-secure-password'
 ```
 
@@ -326,7 +334,7 @@ To run this application, you need:
    ```
 
 2. **Key Vault Permissions**
-   - Role: "Key Vault Secrets User" on `nextgen-agents-kv`
+  - Role: "Key Vault Secrets User" on `your-keyvault-name`
    - Automatically granted to your Azure AD account
 
 3. **Azure OpenAI Permissions**
@@ -336,12 +344,12 @@ To run this application, you need:
 ### 📚 Security Documentation
 
 For comprehensive security guidelines, see:
-- **[Security Guide](documents/SECURITY_GUIDE.md)** - Complete security documentation
+- **[Security Guide](documents/security/SECURITY_GUIDE.md)** - Complete security documentation
 - **[Setup Script](setup_keyvault.sh)** - Interactive Key Vault configuration
 
 # Get a secret value
 az keyvault secret show \
-  --vault-name nextgen-agents-kv \
+  --vault-name your-keyvault-name \
   --name secret-name \
   --query value -o tsv
 ```
@@ -356,7 +364,7 @@ az keyvault secret show \
 
 **Database Connection Issues:**
 - Verify PostgreSQL credentials in `.env`
-- Check PostgreSQL container is running: `az container show --resource-group NextGen_Agents --name nextgen-postgres`
+- Check PostgreSQL container is running: `az container show --resource-group your-resource-group --name your-postgres-container`
 - Test connection: `psql "postgresql://user:password@host:5432/ApplicationsDB"`
 
 **AI Evaluation Errors:**
@@ -370,10 +378,10 @@ az keyvault secret show \
 
 ## 📚 Documentation
 
-- [PostgreSQL Migration Guide](documents/POSTGRES_MIGRATION.md) - Database migration details
-- [Deployment Success](documents/DEPLOYMENT_SUCCESS.md) - Current deployment status
-- [Azure Web App Deployment](documents/AZURE_WEBAPP_DEPLOY.md) - Production deployment guide
-- [Security Guide](documents/SECURITY.md) - Security best practices
+- [PostgreSQL Migration Guide](documents/migration/POSTGRES_MIGRATION.md) - Database migration details
+- [Deployment Success](documents/deployment/DEPLOYMENT_SUCCESS.md) - Current deployment status
+- [Azure Web App Deployment](documents/deployment/AZURE_WEBAPP_DEPLOY.md) - Production deployment guide
+- [Security Guide](documents/security/SECURITY.md) - Security best practices
 
 ## 🎓 Next Steps
 
