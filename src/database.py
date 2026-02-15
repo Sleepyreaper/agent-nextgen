@@ -11,17 +11,23 @@ class Database:
     """Database connection and operations manager for PostgreSQL."""
     
     def __init__(self):
-        self.connection_params = self._build_connection_params()
+        self.connection_params = None
         self.connection = None
+        self._params_validated = False
     
     def _build_connection_params(self) -> Dict[str, Any]:
         """Build PostgreSQL connection parameters from config."""
+        if self._params_validated and self.connection_params:
+            return self.connection_params
+            
         # Try to get connection parameters from config (Key Vault secrets)
         postgres_url = config.postgres_url or config.get('DATABASE_URL')
         
         if postgres_url:
             # If a full connection URL is provided, use it
-            return {'conninfo': postgres_url}
+            self.connection_params = {'conninfo': postgres_url}
+            self._params_validated = True
+            return self.connection_params
         
         # Otherwise, build from individual parameters
         host = config.postgres_host or config.get('POSTGRES_HOST')
@@ -31,12 +37,10 @@ class Database:
         password = config.postgres_password or config.get('POSTGRES_PASSWORD')
         
         if not all([host, database, username, password]):
-            raise ValueError(
-                "PostgreSQL configuration incomplete. Required: POSTGRES_HOST, POSTGRES_DB, "
-                "POSTGRES_USER, POSTGRES_PASSWORD (or DATABASE_URL) in Key Vault or environment"
-            )
+            # Don't fail at init time - will fail on first actual database call
+            return None
         
-        return {
+        self.connection_params = {
             'host': host,
             'port': int(port),
             'dbname': database,  # psycopg uses 'dbname' not 'database'
@@ -45,15 +49,26 @@ class Database:
             'connect_timeout': 10,
             'sslmode': 'require'  # PostgreSQL Azure requires SSL
         }
+        self._params_validated = True
+        return self.connection_params
     
     def connect(self):
         """Establish database connection."""
         if not self.connection or self.connection.closed:
+            # Validate and build params if not done yet
+            params = self._build_connection_params()
+            
+            if not params:
+                raise ValueError(
+                    "PostgreSQL configuration incomplete. Required: POSTGRES_HOST, POSTGRES_DB, "
+                    "POSTGRES_USER, POSTGRES_PASSWORD (or DATABASE_URL) in Key Vault or environment"
+                )
+            
             try:
-                if 'conninfo' in self.connection_params:
-                    self.connection = psycopg.connect(self.connection_params['conninfo'])
+                if 'conninfo' in params:
+                    self.connection = psycopg.connect(params['conninfo'])
                 else:
-                    self.connection = psycopg.connect(**self.connection_params)
+                    self.connection = psycopg.connect(**params)
             except Exception as e:
                 raise ConnectionError(f"Failed to connect to PostgreSQL: {e}")
         return self.connection
