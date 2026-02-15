@@ -1,0 +1,38 @@
+STUDENT APPLICATION
+
+Name: Sarah Johnson
+Email: sarah.johnson@email.com
+Phone: (555) 123-4567
+
+PERSONAL STATEMENT
+
+I am writing to express my strong interest in the NextGen Internship Program. As a junior at Washington High School, I have maintained a 3.9 GPA while challenging myself with advanced coursework including AP Calculus, AP Chemistry, and AP Computer Science.
+
+ACADEMIC ACHIEVEMENTS
+
+Throughout my high school career, I have consistently demonstrated a passion for STEM subjects. I scored 5 on my AP Calculus BC exam and 4 on AP Chemistry. I am currently enrolled in dual enrollment courses at our local community college, taking Introduction to Data Science.
+
+EXTRACURRICULAR ACTIVITIES
+
+Beyond academics, I am deeply involved in our school community:
+- President of the Robotics Club (led team to regional championships)
+- Volunteer tutor for middle school math students (2 years, 100+ hours)
+- Member of National Honor Society
+- Science Olympiad team captain
+
+LEADERSHIP AND IMPACT
+
+As Robotics Club President, I organized our team's first community outreach event, teaching elementary students basic programming concepts using Scratch. We reached over 50 students and sparked their interest in technology.
+
+FUTURE GOALS
+
+I aspire to pursue a degree in Computer Engineering and ultimately work on developing accessible technology solutions for underserved communities. The NextGen program aligns perfectly with my goals of gaining hands-on experience in real-world applications of technology.
+
+WHY NEXTGEN
+
+I am particularly drawn to NextGen because of its focus on mentorship and practical problem-solving. I believe my strong academic foundation, leadership experience, and passion for technology make me an excellent fit for this program.
+
+Thank you for considering my application.
+
+Sincerely,
+Sarah Johnson

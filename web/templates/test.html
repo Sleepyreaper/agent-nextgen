@@ -4,6 +4,256 @@
 
 {% block extra_css %}
 <style>
+    .test-container {
+        max-width: 1400px;
+        margin: 0 auto;
+        padding: 2rem;
+    }
+
+    .test-header {
+        margin-bottom: 2rem;
+    }
+
+    .start-test-section {
+        background: white;
+        padding: 1.5rem;
+        border-radius: 8px;
+        border-left: 4px solid #667eea;
+        margin-bottom: 2rem;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+    }
+
+    .btn-start-test {
+        background: #667eea;
+        color: white;
+        padding: 0.75rem 2rem;
+        border: none;
+        border-radius: 5px;
+        cursor: pointer;
+        font-weight: 600;
+        font-size: 1rem;
+        transition: background 0.2s;
+    }
+
+    .btn-start-test:hover {
+        background: #5568d3;
+    }
+
+    .btn-start-test:disabled {
+        background: #ccc;
+        cursor: not-allowed;
+    }
+
+    .table-section {
+        background: white;
+        border-radius: 8px;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        overflow: hidden;
+    }
+
+    .table-header {
+        padding: 1.5rem;
+        border-bottom: 2px solid #e5e7eb;
+        background: #f9fafb;
+    }
+
+    .table-header h3 {
+        margin: 0;
+        color: #1f2937;
+    }
+
+    .students-table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 0.95rem;
+    }
+
+    .students-table thead {
+        background: #f3f4f6;
+        border-bottom: 2px solid #d1d5db;
+    }
+
+    .students-table th {
+        padding: 1rem;
+        text-align: left;
+        font-weight: 600;
+        color: #374151;
+    }
+
+    .students-table tbody tr {
+        border-bottom: 1px solid #e5e7eb;
+        transition: background 0.2s;
+    }
+
+    .students-table tbody tr:hover {
+        background: #f9fafb;
+    }
+
+    .students-table td {
+        padding: 1rem;
+    }
+
+    .student-name {
+        font-weight: 600;
+        color: #1f2937;
+    }
+
+    .badge {
+        display: inline-block;
+        padding: 0.3rem 0.6rem;
+        border-radius: 4px;
+        font-size: 0.85rem;
+        font-weight: 600;
+    }
+
+    .badge-pending {
+        background: #fef3c7;
+        color: #92400e;
+    }
+
+    .badge-processing {
+        background: #d1fae5;
+        color: #065f46;
+    }
+
+    .badge-complete {
+        background: #10b981;
+        color: white;
+    }
+
+    .badge-error {
+        background: #fee2e2;
+        color: #991b1b;
+    }
+
+    .badge-waiting {
+        background: #fef3c7;
+        color: #92400e;
+    }
+
+    .agent-steps {
+        display: flex;
+        gap: 0.25rem;
+        flex-wrap: wrap;
+    }
+
+    .agent-step {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 32px;
+        height: 32px;
+        border-radius: 50%;
+        background: #e5e7eb;
+        color: #6b7280;
+        font-size: 0.75rem;
+        font-weight: 600;
+        position: relative;
+        cursor: help;
+    }
+
+    .agent-step.working {
+        background: #10b981;
+        color: white;
+        animation: pulse 1s infinite;
+    }
+
+    .agent-step.waiting {
+        background: #fef3c7;
+        color: #92400e;
+    }
+
+    .agent-step.complete {
+        background: #059669;
+        color: white;
+    }
+
+    .agent-step.error {
+        background: #ef4444;
+        color: white;
+    }
+
+    @keyframes pulse {
+        0%, 100% { opacity: 1; }
+        50% { opacity: 0.6; }
+    }
+
+    .loading-spinner {
+        display: inline-block;
+        width: 14px;
+        height: 14px;
+        border: 2px solid #f3f4f6;
+        border-top-color: #667eea;
+        border-radius: 50%;
+        animation: spin 0.8s linear infinite;
+        margin-right: 0.5rem;
+    }
+
+    @keyframes spin {
+        to { transform: rotate(360deg); }
+    }
+
+    .status-message {
+        padding: 1rem;
+        text-align: center;
+        color: #6b7280;
+    }
+
+    .waiting-detail {
+        margin-top: 0.35rem;
+        font-size: 0.8rem;
+        color: #92400e;
+        background: #fef3c7;
+        border-radius: 4px;
+        padding: 0.2rem 0.4rem;
+        display: inline-block;
+    }
+
+    .empty-state {
+        padding: 3rem;
+        text-align: center;
+        color: #9ca3af;
+    }
+
+    .completion-rate {
+        font-size: 0.85rem;
+        color: #6b7280;
+    }
+
+    .result-link {
+        color: #0ea5e9;
+        text-decoration: none;
+        font-weight: 600;
+    }
+
+    .result-link:hover {
+        text-decoration: underline;
+    }
+
+    .info-box {
+        background: #eff6ff;
+        border-left: 4px solid #0284c7;
+        padding: 1rem;
+        border-radius: 4px;
+        margin-bottom: 1.5rem;
+        font-size: 0.95rem;
+        color: #0c4a6e;
+    }
+
+    @media (max-width: 768px) {
+        .test-container {
+            padding: 1rem;
+        }
+        
+        .agents-table {
+            font-size: 0.8rem;
+        }
+        
+        .agent-step {
+            width: 28px;
+            height: 28px;
+        }
+    }
     .test-view {
         display: flex;
         flex-direction: column;
@@ -83,6 +333,13 @@
     }
     
     .agent-badge.working {
+        background: #d1fae5;
+        border-color: #6ee7b7;
+        color: #065f46;
+        font-weight: 600;
+    }
+
+    .agent-badge.waiting {
         background: #fef3c7;
         border-color: #fcd34d;
         color: #92400e;
@@ -101,6 +358,18 @@
         border-color: #fca5a5;
         color: #991b1b;
         font-weight: 600;
+    }
+    
+    @keyframes dots {
+        0%, 20%, 50%, 80%, 100% {
+            opacity: 1;
+        }
+        40% {
+            opacity: 0.5;
+        }
+        60% {
+            opacity: 0.3;
+        }
     }
     
     .results-link {
@@ -200,213 +469,687 @@
 {% endblock %}
 
 {% block content %}
-<div class="test-view">
+<div class="test-container">
     <!-- Header -->
-    <div class="card">
-        <h2>🧪 Real-Time Test System</h2>
+    <div class="test-header">
+        <h1>🧪 Real-Time Test System</h1>
         <p style="color: #6b7280; margin-top: 0.5rem;">
-            Submit test students and watch agents process them in real-time. Results appear only when all agents + Smee + Aurora complete.
+            Test the full evaluation pipeline: Create fake applications → Store in database → Orchestrate agents to analyze
         </p>
     </div>
 
-    <!-- Submission Form -->
-    <div class="submission-form">
-        <h3 style="margin-bottom: 1.5rem;">🧪 Start Test Run</h3>
-        
-        <div class="form-group">
-            <p class="form-description">
-                Generates 3-8 random synthetic students with varying quality levels (high/medium/low). 
-                Each student is stored in the database as test data and processed through the full agent pipeline.
-            </p>
-            
-            <div class="test-buttons">
-                <button class="btn btn-primary" onclick="submitTestRun()" style="font-size: 1.1rem; padding: 1rem 2rem;">
-                    🚀 Generate & Process Test Students
+    <!-- Info Box -->
+    <div class="info-box">
+        📋 <strong>What we're testing:</strong>
+        <br/>1️⃣ Generate synthetic student application data (simulates file uploads)
+        <br/>2️⃣ Store applications in database with unique student IDs
+        <br/>3️⃣ 🎩 Smee Orchestrator retrieves data and coordinates the evaluation pipeline
+        <br/>4️⃣ Agent pipeline processes in sequence:
+        <br/>&nbsp;&nbsp;&nbsp;&nbsp;👸 Tiana reads application text
+        <br/>&nbsp;&nbsp;&nbsp;&nbsp;👑 Rapunzel analyzes grades and transcripts
+        <br/>&nbsp;&nbsp;&nbsp;&nbsp;🌊 Moana evaluates school context and demographics
+        <br/>&nbsp;&nbsp;&nbsp;&nbsp;🥋 Mulan reads recommendation letters
+        <br/>&nbsp;&nbsp;&nbsp;&nbsp;🧙 Merlin creates comprehensive student evaluation
+        <br/>&nbsp;&nbsp;&nbsp;&nbsp;✨ Aurora generates executive summary
+        <br/>&nbsp;&nbsp;&nbsp;&nbsp;🪄 Fairy Godmother creates beautiful evaluation documents
+        <br/>5️⃣ All documents and evaluations stored in Azure Storage with student ID
+        <br/><strong>Result:</strong> Complete multi-agent evaluation with documents ready for admissions review
+    </div>
+
+    <!-- Start Test Section -->
+    <div class="start-test-section">
+        <div style="display: flex; gap: 1rem; flex-wrap: wrap;">
+            <div>
+                <h4 style="margin: 0 0 0.5rem 0; font-size: 0.9rem; color: #6b7280;">🎲 Random Fake Applications</h4>
+                <button class="btn-start-test" id="btnStartTest" onclick="startTest('dynamic')" style="background: #667eea;">
+                    🚀 Random Students
                 </button>
+                <p style="font-size: 0.8rem; color: #9ca3af; margin: 0.5rem 0 0 0;">Generate new synthetic data each run</p>
+            </div>
+            <div>
+                <h4 style="margin: 0 0 0.5rem 0; font-size: 0.9rem; color: #6b7280;">📋 Fixed Fake Applications</h4>
+                <button class="btn-start-test" id="btnPreset" onclick="startTest('preset')" style="background: #10b981;">
+                    ⚡ Preset Students
+                </button>
+                <p style="font-size: 0.8rem; color: #9ca3af; margin: 0.5rem 0 0 0;">Same 3 students (Alice, Brian, Carol)</p>
+            </div>
+            <div>
+                <h4 style="margin: 0 0 0.5rem 0; font-size: 0.9rem; color: #6b7280;">⚡ Quick Test</h4>
+                <button class="btn-start-test" id="btnSingle" onclick="startTest('single')" style="background: #f59e0b;">
+                    ⚡ Single Student
+                </button>
+                <p style="font-size: 0.8rem; color: #9ca3af; margin: 0.5rem 0 0 0;">Just Alice – fastest testing</p>
+            </div>
+            <div>
+                <h4 style="margin: 0 0 0.5rem 0; font-size: 0.9rem; color: #6b7280;">🗑️ Manage Test Data</h4>
+                <button class="btn-start-test" id="btnClearData" onclick="clearTestData()" style="background: #ef4444;">
+                    🗑️ Clear Test Data
+                </button>
+                <p style="font-size: 0.8rem; color: #9ca3af; margin: 0.5rem 0 0 0;">Delete all test students to start fresh</p>
+            </div>
+        </div>
+        <span id="testStatus" style="margin-left: 1rem; color: #6b7280;"></span>
+    </div>
+
+    <!-- Upload Real Files Section -->
+    <div class="start-test-section" style="border-left: 4px solid #3b82f6;">
+        <h3 style="margin: 0 0 1rem 0; color: #1e40af;">📁 Upload Real Test Files</h3>
+        <p style="color: #6b7280; margin-bottom: 1rem; font-size: 0.9rem;">
+            Upload actual application files (PDF, DOCX, TXT) to test how well the agents perform with real data.
+        </p>
+        
+        <form id="uploadTestForm" enctype="multipart/form-data" style="display: flex; gap: 1rem; align-items: center; flex-wrap: wrap;">
+            <div style="flex: 1; min-width: 300px;">
+                <label style="display: block; font-weight: 600; margin-bottom: 0.5rem; color: #1f2937;">
+                    Select File(s):
+                </label>
+                <input type="file" 
+                       id="testFileInput" 
+                       name="files" 
+                       multiple
+                       accept=".pdf,.docx,.doc,.txt"
+                       style="width: 100%; padding: 0.5rem; border: 2px solid #3b82f6; border-radius: 5px; cursor: pointer;">
+                <p id="fileCount" style="font-size: 0.85rem; color: #6b7280; margin: 0.5rem 0 0 0;"></p>
             </div>
             
-            <p style="margin-top: 1rem; color: #6b7280; font-size: 0.9rem;">
-                <strong>What happens:</strong> Creates realistic test applications → Stores in database as training examples → 
-                Runs full agent pipeline (Tiana, Rapunzel, Mulan, Moana, Merlin) → Aurora presents results
-            </p>
+            <div style="display: flex; gap: 0.5rem; align-items: flex-end;">
+                <button type="button" 
+                        class="btn-start-test" 
+                        id="btnUploadTest" 
+                        onclick="uploadTestFiles()"
+                        style="background: #3b82f6;">
+                    📤 Upload & Test
+                </button>
+                <button type="button" 
+                        class="btn-start-test" 
+                        onclick="document.getElementById('testFileInput').value = ''; updateFileCount();"
+                        style="background: #6b7280; padding: 0.75rem 1rem;">
+                    Clear
+                </button>
+            </div>
+        </form>
+        
+        <div id="uploadProgress" style="display: none; margin-top: 1rem; padding: 1rem; background: #f0f9ff; border-radius: 5px; border-left: 4px solid #3b82f6;">
+            <span id="uploadProgressText"></span>
         </div>
     </div>
 
-    <!-- Live Stream View -->
-    <div id="stream-container" style="display: none;">
-        <div class="card">
-            <div style="display: flex; justify-content: space-between; align-items: center;">
-                <h3>📡 Live Processing Stream</h3>
-                <button class="btn btn-secondary" onclick="resetStream()" style="padding: 0.5rem 1rem;">↺ Reset</button>
-            </div>
+    <!-- Students Table -->
+    <div class="table-section">
+        <div class="table-header">
+            <h3>� Test Applications & Agent Analysis <span id="completionRate" class="completion-rate"></span></h3>
+            <p style="font-size: 0.9rem; color: #6b7280; margin: 0.5rem 0 0 0;">
+                Synthetic applications stored in database → Smee orchestrates agents to analyze → Results saved
+            </p>
         </div>
         
-        <div class="live-stream" id="live-stream">
-            <div class="status-empty">
-                <div class="loading-spinner"></div>
-                <p>Waiting for students...</p>
-            </div>
-        </div>
+        <table class="students-table">
+            <thead>
+                <tr>
+                    <th style="width: 25%;">Candidate Name</th>
+                    <th style="width: 15%;">Analysis Status</th>
+                    <th style="width: 45%;">Agents Completed</th>
+                    <th style="width: 15%;">View Summary</th>
+                </tr>
+            </thead>
+            <tbody id="studentTableBody">
+                <tr>
+                    <td colspan="4" class="empty-state">
+                        Click "Start Test Run" to begin processing students
+                    </td>
+                </tr>
+            </tbody>
+        </table>
     </div>
 </div>
 
 <script>
-const agents = ['tiana', 'rapunzel', 'moana', 'mulan', 'merlin', 'aurora'];
-const agentEmojis = {
-    'tiana': '👸',
-    'rapunzel': '💇',
-    'moana': '🌊',
-    'mulan': '🗡️',
-    'merlin': '🧙',
-    'aurora': '👑'
+const agentNames = {
+    'smee': 'Smee',
+    'belle': 'Belle',
+    'application_reader': 'Tiana',
+    'grade_reader': 'Rapunzel',
+    'school_context': 'Moana',
+    'recommendation_reader': 'Mulan',
+    'student_evaluator': 'Merlin',
+    'aurora': 'Aurora',
+    'fairy_godmother': 'Fairy Godmother'
 };
 
-function submitTestRun() {
-    // Show stream container
-    document.getElementById('stream-container').style.display = 'block';
-    const streamEl = document.getElementById('live-stream');
-    streamEl.innerHTML = '<div class="loading-spinner"></div><p>Generating test students...</p>';
+const agentEmojis = {
+    'smee': '🎩',
+    'belle': '📖',
+    'application_reader': '👸',
+    'grade_reader': '👑',
+    'school_context': '🌊',
+    'recommendation_reader': '🥋',
+    'student_evaluator': '🧙',
+    'aurora': '✨',
+    'fairy_godmother': '🪄'
+};
+
+let students = {};
+let totalStudents = 0;
+let completedStudents = 0;
+let eventSource = null;
+let pollInterval = null;
+
+function startTest(type = 'dynamic') {
+    const btn = document.getElementById('btnStartTest');
+    const btnPreset = document.getElementById('btnPreset');
+    const btnSingle = document.getElementById('btnSingle');
+    const status = document.getElementById('testStatus');
     
-    // Submit request to generate and process test students
-    fetch('/api/test/submit', {
+    btn.disabled = true;
+    btnPreset.disabled = true;
+    btnSingle.disabled = true;
+    status.innerHTML = '<span class="loading-spinner"></span>Generating test students...';
+    
+    // Clear previous data
+    students = {};
+    totalStudents = 0;
+    completedStudents = 0;
+    
+    // Clear any existing poll interval
+    if (pollInterval) clearInterval(pollInterval);
+    
+    document.getElementById('studentTableBody').innerHTML = '';
+    
+    // Choose endpoint based on type
+    const endpoint = type === 'preset' ? '/api/test/submit-preset' 
+                   : type === 'single' ? '/api/test/submit-single'
+                   : '/api/test/submit';
+    
+    fetch(endpoint, {
         method: 'POST',
-        headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({})  // Server generates students
+        headers: {'Content-Type': 'application/json'}
     })
     .then(r => r.json())
     .then(data => {
         if (data.error) {
-            streamEl.innerHTML = `<div class="card" style="background: #fee2e2; border-left: 4px solid #ef4444;"><p style="color: #991b1b;">${data.error}</p></div>`;
+            status.innerHTML = `❌ Error: ${data.error}`;
+            btn.disabled = false;
+            btnPreset.disabled = false;
+            btnSingle.disabled = false;
             return;
         }
         
-        streamEl.innerHTML = `<p style="color: #6b7280;">Generated ${data.student_count} test students. Starting evaluation...</p>`;
+        totalStudents = data.student_count;
+        let testType = 'Random';
+        if (type === 'preset') testType = 'Preset (3 students)';
+        else if (type === 'single') testType = 'Single (Alice)';
         
-        // Connect to SSE stream
+        status.innerHTML = '<span class="loading-spinner"></span>Processing ' + totalStudents + ' ' + testType + ' student(s)...';
+        
+        // Start polling the database for student status (every 1 second for faster updates)
+        pollStudentStatus();
+        if (!pollInterval) {
+            pollInterval = setInterval(pollStudentStatus, 1000);
+        }
+        
+        // Also connect SSE for real-time updates (as backup)
         connectStream(data.stream_url);
     })
     .catch(e => {
-        streamEl.innerHTML = `<div class="card" style="background: #fee2e2; border-left: 4px solid #ef4444;"><p style="color: #991b1b;">Error: ${e.message}</p></div>`;
+        status.innerHTML = `❌ Error: ${e.message}`;
+        btn.disabled = false;
+        btnPreset.disabled = false;
+        btnSingle.disabled = false;
     });
 }
 
-function connectStream(streamUrl) {
-    const streamEl = document.getElementById('live-stream');
-    const studentCards = {};  // Track student cards by ID
+function pollStudentStatus() {
+    // Fetch current test students from database
+    fetch('/api/test/students')
+        .then(r => r.json())
+        .then(data => {
+            if (data.status === 'success' && data.students) {
+                // Update students dict with fresh data from database
+                data.students.forEach(student => {
+                    students[`app_${student.application_id}`] = {
+                        id: `app_${student.application_id}`,
+                        name: student.name,
+                        status: student.status,
+                        applicationId: student.application_id,
+                        agentProgress: student.agent_progress
+                    };
+                });
+                
+                completedStudents = data.students.filter(s => s.status === 'complete').length;
+                renderTable();
+                
+                // Stop polling if all done
+                if (completedStudents >= totalStudents && totalStudents > 0) {
+                    if (pollInterval) clearInterval(pollInterval);
+                    document.getElementById('testStatus').innerHTML = '✅ Test complete! All students processed.';
+                    document.getElementById('btnStartTest').disabled = false;
+                    document.getElementById('btnPreset').disabled = false;
+                    document.getElementById('btnSingle').disabled = false;
+                }
+            }
+        })
+        .catch(e => console.error('Poll error:', e));
     
-    const eventSource = new EventSource(streamUrl);
+    // Poll every 2 seconds
+    if (!pollInterval) {
+        pollInterval = setInterval(pollStudentStatus, 2000);
+    }
+}
+
+function connectStream(streamUrl) {
+    const status = document.getElementById('testStatus');
+    
+    if (eventSource) {
+        eventSource.close();
+    }
+    
+    eventSource = new EventSource(streamUrl);
     
     eventSource.onmessage = (event) => {
         try {
             const msg = JSON.parse(event.data);
-            
-            if (msg.type === 'connected') {
-                streamEl.innerHTML = '';
-            }
-            
-            else if (msg.type === 'student_submitted') {
-                // Create student card
-                const studentId = msg.student_id;
-                const student = msg.student;
-                
-                const card = document.createElement('div');
-                card.className = 'student-card processing';
-                card.id = `card-${studentId}`;
-                card.innerHTML = `
-                    <div class="student-header">
-                        <div>
-                            <div class="student-name">${student.name}</div>
-                            <div class="student-email">${student.email}</div>
-                        </div>
-                        <div style="text-align: right;">
-                            <div style="font-size: 1rem;">📥</div>
-                            <div style="font-size: 0.8rem; color: #6b7280;">Submitted</div>
-                        </div>
-                    </div>
-                    <div class="agent-list" id="agents-${studentId}">
-                        ${agents.map(a => `<div class="agent-badge" id="agent-${studentId}-${a}">${agentEmojis[a]} ${a}</div>`).join('')}
-                    </div>
-                `;
-                
-                streamEl.appendChild(card);
-                studentCards[studentId] = card;
-            }
-            
-            else if (msg.type === 'agent_start') {
-                const agentEl = document.getElementById(`agent-${msg.student_id}-${msg.agent}`);
-                if (agentEl) {
-                    agentEl.className = 'agent-badge working';
-                    agentEl.innerHTML = `<span class="loading-spinner"></span>${agentEmojis[msg.agent]} ${msg.agent}`;
-                }
-            }
-            
-            else if (msg.type === 'agent_complete') {
-                const agentEl = document.getElementById(`agent-${msg.student_id}-${msg.agent}`);
-                if (agentEl) {
-                    agentEl.className = 'agent-badge complete';
-                    agentEl.innerHTML = `✅ ${agentEmojis[msg.agent]} ${msg.agent}`;
-                }
-            }
-            
-            else if (msg.type === 'agent_error') {
-                const agentEl = document.getElementById(`agent-${msg.student_id}-${msg.agent}`);
-                if (agentEl) {
-                    agentEl.className = 'agent-badge error';
-                    agentEl.innerHTML = `❌ ${agentEmojis[msg.agent]} ${msg.agent}`;
-                    agentEl.title = msg.error || 'Agent failed';
-                }
-                // Log error to console for debugging
-                console.error(`Agent ${msg.agent} error:`, msg.error);
-            }
-            
-            else if (msg.type === 'results_ready') {
-                // Update card to show complete + link to results
-                const card = document.getElementById(`card-${msg.student_id}`);
-                if (card) {
-                    card.className = 'student-card complete';
-                    
-                    // Add results link
-                    const link = document.createElement('a');
-                    link.href = msg.results_url;
-                    link.className = 'results-link';
-                    link.innerHTML = '📊 View Complete Results →';
-                    card.appendChild(link);
-                }
-            }
+            handleStreamMessage(msg);
         } catch (e) {
-            console.error('Error parsing SSE message:', e);
+            console.error('Parse error:', e);
         }
     };
     
     eventSource.onerror = (e) => {
-        console.error('Stream error:', e);
         eventSource.close();
-        
-        const statusMsg = document.createElement('div');
-        statusMsg.className = 'card';
-        statusMsg.style.background = '#d1fae5';
-        statusMsg.style.borderLeft = '4px solid #10b981';
-        statusMsg.innerHTML = '<p style="color: #065f46;"><strong>✅ Test run complete!</strong> All students have been processed.</p>';
-        streamEl.appendChild(statusMsg);
+        status.innerHTML = '✅ Test run complete!';
+        document.getElementById('btnStartTest').disabled = false;
+        document.getElementById('btnSingle').disabled = false;
     };
 }
 
-function resetStream() {
-    document.getElementById('stream-container').style.display = 'none';
-    document.getElementById('live-stream').innerHTML = '';
+function handleStreamMessage(msg) {
+    const status = document.getElementById('testStatus');
+    const tableBody = document.getElementById('studentTableBody');
+    
+    if (msg.type === 'connected') {
+        status.innerHTML = '<span class="loading-spinner"></span>Processing students...';
+    }
+    
+    else if (msg.type === 'student_submitted') {
+        const studentId = msg.student_id || `app_${msg.application_id}`;
+        students[studentId] = {
+            id: studentId,
+            name: msg.student?.name || 'Student',
+            status: 'processing',
+            applicationId: msg.application_id || null,
+            waitingFields: [],
+            waitingByAgent: {},
+            agentProgress: {
+                'smee': 'starting',
+                'belle': 'starting',
+                'application_reader': 'pending',
+                'grade_reader': 'pending',
+                'recommendation_reader': 'pending',
+                'school_context': 'pending',
+                'student_evaluator': 'pending',
+                'aurora': 'pending',
+                'fairy_godmother': 'pending'
+            }
+        };
+        renderTable();
+    }
+
+    else if (msg.type === 'student_start') {
+        const studentId = msg.student_id || `app_${msg.application_id}`;
+        if (!students[studentId]) {
+            students[studentId] = {
+                id: studentId,
+                name: msg.applicant_name,
+                status: 'processing',
+                applicationId: msg.application_id || null,
+                waitingFields: [],
+                waitingByAgent: {},
+                agentProgress: {
+                    'smee': 'starting',
+                    'belle': 'starting',
+                    'application_reader': 'pending',
+                    'grade_reader': 'pending',
+                    'recommendation_reader': 'pending',
+                    'school_context': 'pending',
+                    'student_evaluator': 'pending',
+                    'aurora': 'pending',
+                    'fairy_godmother': 'pending'
+                }
+            };
+        } else if (msg.application_id) {
+            students[studentId].applicationId = msg.application_id;
+        }
+        renderTable();
+    }
+    
+    else if (msg.type === 'agent_progress') {
+        const studentId = msg.student_id
+            || (msg.application_id ? `app_${msg.application_id}` : null)
+            || Object.keys(students).find(id => students[id].name === msg.applicant);
+        
+        if (studentId) {
+            const agent = msg.agent_id;
+            const progressStatus = msg.status;
+            
+            if (!students[studentId].agentProgress[agent]) {
+                students[studentId].agentProgress[agent] = 'pending';
+            }
+            students[studentId].agentProgress[agent] = progressStatus;
+            if (progressStatus === 'blocked' || progressStatus === 'asking_for_info') {
+                students[studentId].status = 'waiting';
+            }
+            if (msg.waiting_for) {
+                students[studentId].waitingByAgent[agent] = msg.waiting_for;
+            }
+            renderTable();
+        }
+    }
+
+    else if (msg.type === 'evaluation_paused') {
+        const studentId = msg.student_id || Object.keys(students).find(id =>
+            students[id].name === msg.applicant
+        );
+
+        if (studentId && students[studentId]) {
+            students[studentId].status = 'waiting';
+            students[studentId].waitingFields = msg.missing_fields || [];
+            if (Array.isArray(msg.agent_questions)) {
+                msg.agent_questions.forEach((agentInfo) => {
+                    const fieldName = agentInfo.field_name;
+                    if (fieldName) {
+                        students[studentId].waitingByAgent[agentInfo.agent_id] = fieldName;
+                    }
+                });
+            }
+            if (students[studentId].agentProgress.smee) {
+                students[studentId].agentProgress.smee = 'waiting';
+            }
+            renderTable();
+        }
+    }
+    
+    else if (msg.type === 'student_complete') {
+        completedStudents++;
+        
+        const studentId = msg.student_id || `app_${msg.application_id}`;
+        if (students[studentId]) {
+            students[studentId].status = 'complete';
+            students[studentId].applicationId = msg.application_id;
+        }
+        
+        updateCompletionRate();
+        renderTable();
+    }
+    
+    else if (msg.type === 'student_error') {
+        const studentId = msg.student_id;
+        if (students[studentId]) {
+            students[studentId].status = 'error';
+        }
+        renderTable();
+    }
+    
+    else if (msg.type === 'all_complete') {
+        status.innerHTML = '✅ Test complete! All students processed.';
+        document.getElementById('btnStartTest').disabled = false;
+        document.getElementById('btnSingle').disabled = false;
+        eventSource.close();
+    }
 }
 
-// Scroll stream to bottom when new content added
-const observer = new MutationObserver(() => {
-    const stream = document.getElementById('live-stream');
-    if (stream) {
-        stream.scrollTop = stream.scrollHeight;
+function updateCompletionRate() {
+    const rate = document.getElementById('completionRate');
+    if (totalStudents > 0) {
+        const pct = Math.round((completedStudents / totalStudents) * 100);
+        rate.textContent = `(${completedStudents}/${totalStudents} completed - ${pct}%)`;
     }
-});
+}
 
-observer.observe(document.getElementById('live-stream') || document.body, {
-    childList: true,
-    subtree: true
+function renderTable() {
+    const tableBody = document.getElementById('studentTableBody');
+    
+    if (Object.keys(students).length === 0) {
+        tableBody.innerHTML = '<tr><td colspan="4" class="empty-state">No students yet</td></tr>';
+        return;
+    }
+    
+    let html = '';
+    for (const studentId in students) {
+        const student = students[studentId];
+        const statusBadge = `badge-${student.status}`;
+        const statusLabel = student.status.charAt(0).toUpperCase() + student.status.slice(1);
+        
+        let agentSteps = '';
+        for (const agent of Object.keys(agentNames)) {
+            const rawProgress = student.agentProgress[agent];
+            const progress = normalizeAgentStatus(rawProgress);
+            let stepClass = 'agent-step';
+            if (progress === 'working') stepClass += ' working';
+            else if (progress === 'complete') stepClass += ' complete';
+            else if (progress === 'error') stepClass += ' error';
+            else if (progress === 'waiting') stepClass += ' waiting';
+
+            const waitingFor = student.waitingByAgent?.[agent];
+            const tooltip = waitingFor
+                ? `${agentNames[agent]} - ${progress} (waiting for ${waitingFor})`
+                : `${agentNames[agent]} - ${progress}`;
+            agentSteps += `<div class="${stepClass}" title="${tooltip}">${agentEmojis[agent]}</div>`;
+        }
+
+        let waitingDetail = '';
+        if (student.status === 'waiting') {
+            const waitingItems = student.waitingFields?.length
+                ? student.waitingFields
+                : Object.values(student.waitingByAgent || {});
+            const uniqueWaiting = [...new Set(waitingItems)].filter(Boolean);
+            if (uniqueWaiting.length) {
+                waitingDetail = `<div class="waiting-detail">Waiting for: ${uniqueWaiting.join(', ')}</div>`;
+            }
+        }
+        
+        let actionBtn = '';
+        if (student.status === 'complete' && student.applicationId) {
+            actionBtn = `<a href="/application/${student.applicationId}" class="result-link">View Results →</a>`;
+        } else if (student.status === 'error') {
+            actionBtn = '<span style="color: #ef4444;">❌ Failed</span>';
+        } else {
+            actionBtn = '<span style="color: #9ca3af;"><span class="loading-spinner"></span>Processing...</span>';
+        }
+        
+        html += `
+            <tr>
+                <td class="student-name">${student.name}</td>
+                <td><span class="badge ${statusBadge}">${statusLabel}</span></td>
+                <td>
+                    <div class="agent-steps">${agentSteps}</div>
+                    ${waitingDetail}
+                </td>
+                <td>${actionBtn}</td>
+            </tr>
+        `;
+    }
+    
+    tableBody.innerHTML = html;
+    updateCompletionRate();
+}
+
+function normalizeAgentStatus(status) {
+    if (!status) return 'waiting';
+    const normalized = String(status).toLowerCase();
+    if (normalized === 'starting' || normalized === 'working') return 'working';
+    if (normalized === 'completed' || normalized === 'complete' || normalized === 'success') return 'complete';
+    if (normalized === 'failed' || normalized === 'error') return 'error';
+    if (normalized === 'blocked' || normalized === 'waiting' || normalized === 'pending' || normalized === 'asking_for_info') return 'waiting';
+    return normalized;
+}
+
+function clearTestData() {
+    if (!confirm('Are you sure you want to delete all test data? This cannot be undone.')) {
+        return;
+    }
+    
+    const btnClear = document.getElementById('btnClearData');
+    btnClear.disabled = true;
+    btnClear.textContent = '🗑️ Clearing...';
+    
+    fetch('/api/test-data/clear', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'}
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (data.status === 'success') {
+            alert(`✅ Deleted ${data.count} test applications`);
+            students = {};
+            totalStudents = 0;
+            completedStudents = 0;
+            renderTable();
+        } else {
+            alert(`❌ Error: ${data.error}`);
+        }
+        btnClear.disabled = false;
+        btnClear.textContent = '🗑️ Clear Test Data';
+    })
+    .catch(e => {
+        alert(`❌ Error: ${e.message}`);
+        btnClear.disabled = false;
+        btnClear.textContent = '🗑️ Clear Test Data';
+    });
+}
+
+function updateFileCount() {
+    const fileInput = document.getElementById('testFileInput');
+    const fileCount = document.getElementById('fileCount');
+    const count = fileInput.files.length;
+    
+    if (count === 0) {
+        fileCount.textContent = '';
+    } else if (count === 1) {
+        fileCount.textContent = `✓ ${fileInput.files[0].name}`;
+    } else {
+        fileCount.textContent = `✓ ${count} files selected`;
+    }
+}
+
+async function uploadTestFiles() {
+    const fileInput = document.getElementById('testFileInput');
+    const btnUpload = document.getElementById('btnUploadTest');
+    const uploadProgress = document.getElementById('uploadProgress');
+    const uploadProgressText = document.getElementById('uploadProgressText');
+    
+    if (fileInput.files.length === 0) {
+        alert('Please select at least one file to upload');
+        return;
+    }
+    
+    btnUpload.disabled = true;
+    btnUpload.innerHTML = '⏳ Uploading...';
+    uploadProgress.style.display = 'block';
+    uploadProgressText.textContent = 'Uploading files...';
+    
+    const formData = new FormData();
+    for (let i = 0; i < fileInput.files.length; i++) {
+        formData.append('files', fileInput.files[i]);
+    }
+    
+    try {
+        const response = await fetch('/api/test/upload-files', {
+            method: 'POST',
+            body: formData
+        });
+        
+        const result = await response.json();
+        
+        if (result.status === 'success') {
+            uploadProgressText.innerHTML = `✅ Uploaded ${result.count} file(s)<br/>📊 Processing with agents...`;
+            
+            // Clear file input
+            fileInput.value = '';
+            updateFileCount();
+            
+            // Reset table and connect to realtime stream
+            students = {};
+            totalStudents = result.count || 0;
+            completedStudents = 0;
+            renderTable();
+
+            if (result.session_id) {
+                const streamUrl = result.stream_url;
+                connectStream(streamUrl);
+                pollStudentStatus();
+                if (!pollInterval) {
+                    pollInterval = setInterval(pollStudentStatus, 1000);
+                }
+            } else {
+                // No stream available, just show success
+                setTimeout(() => {
+                    uploadProgress.style.display = 'none';
+                    btnUpload.disabled = false;
+                    btnUpload.innerHTML = '📤 Upload & Test';
+                    loadPersistentTestData(); // Reload to show new students
+                }, 2000);
+            }
+        } else {
+            uploadProgressText.textContent = `❌ Error: ${result.error}`;
+            btnUpload.disabled = false;
+            btnUpload.innerHTML = '📤 Upload & Test';
+        }
+    } catch (error) {
+        uploadProgressText.textContent = `❌ Upload failed: ${error.message}`;
+        btnUpload.disabled = false;
+        btnUpload.innerHTML = '📤 Upload & Test';
+    }
+}
+
+function handleStreamUpdate(msg) {
+    handleStreamMessage(msg);
+}
+
+function loadPersistentTestData() {
+    fetch('/api/test-data/list')
+    .then(r => r.json())
+    .then(data => {
+        if (data.status === 'success' && data.students && data.students.length > 0) {
+            // Load existing test data
+            students = {};
+            data.students.forEach((student, idx) => {
+                const studentId = `student_${idx}`;
+                students[studentId] = {
+                    id: studentId,
+                    name: student.applicantname || student.ApplicantName || `Student ${student.applicationid}`,
+                    status: student.status?.toLowerCase() === 'pending' ? 'processing' : (student.status?.toLowerCase() === 'evaluated' ? 'complete' : 'processing'),
+                    applicationId: student.applicationid || student.ApplicationID,
+                    agentProgress: {
+                        'application_reader': 'complete',
+                        'grade_reader': 'complete',
+                        'recommendation_reader': 'complete',
+                        'school_context': 'complete',
+                        'student_evaluator': student.merlin_score ? 'complete' : 'pending'
+                    }
+                };
+            });
+            
+            totalStudents = data.count;
+            completedStudents = Object.values(students).filter(s => s.status === 'complete').length;
+            renderTable();
+            
+            if (data.count > 0) {
+                document.getElementById('testStatus').innerHTML = `📊 Loaded ${data.count} test students from database`;
+            }
+        }
+    })
+    .catch(e => {
+        console.log('No persistent test data found:', e);
+    });
+}
+
+// Load persistent test data when page loads
+document.addEventListener('DOMContentLoaded', function() {
+    const fileInput = document.getElementById('testFileInput');
+    if (fileInput) {
+        fileInput.addEventListener('change', updateFileCount);
+    }
+    loadPersistentTestData();
 });
 </script>
 

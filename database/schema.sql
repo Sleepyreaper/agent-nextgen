@@ -200,6 +200,30 @@ CREATE TABLE IF NOT EXISTS MerlinEvaluations (
     CreatedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
+-- Table: AuroraEvaluations - Formatted final presentation of evaluations
+CREATE TABLE IF NOT EXISTS AuroraEvaluations (
+    AuroraEvaluationID SERIAL PRIMARY KEY,
+    ApplicationID INTEGER REFERENCES Applications(ApplicationID),
+    AgentName VARCHAR(255) NOT NULL DEFAULT 'Aurora',
+    FormattedEvaluation JSONB NOT NULL,
+    MerlinScore NUMERIC(5,2),
+    MerlinRecommendation VARCHAR(100),
+    AgentsCompleted TEXT,
+    CreatedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UpdatedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Table: TestSubmissions - Track test runs for persistence
+CREATE TABLE IF NOT EXISTS TestSubmissions (
+    TestSubmissionID SERIAL PRIMARY KEY,
+    SessionID VARCHAR(255) UNIQUE NOT NULL,
+    StudentCount INTEGER,
+    ApplicationIDs JSON,
+    Status VARCHAR(50) DEFAULT 'in_progress',
+    CreatedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UpdatedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
 -- Indexes for better performance
 CREATE INDEX IF NOT EXISTS IX_Applications_Status ON Applications(Status);
 CREATE INDEX IF NOT EXISTS IX_Applications_IsTrainingExample ON Applications(IsTrainingExample);
@@ -214,3 +238,5 @@ CREATE INDEX IF NOT EXISTS IX_AgentAuditLogs_ApplicationID ON AgentAuditLogs(App
 CREATE INDEX IF NOT EXISTS IX_TianaApplications_ApplicationID ON TianaApplications(ApplicationID);
 CREATE INDEX IF NOT EXISTS IX_MulanRecommendations_ApplicationID ON MulanRecommendations(ApplicationID);
 CREATE INDEX IF NOT EXISTS IX_MerlinEvaluations_ApplicationID ON MerlinEvaluations(ApplicationID);
+CREATE INDEX IF NOT EXISTS IX_AuroraEvaluations_ApplicationID ON AuroraEvaluations(ApplicationID);
+

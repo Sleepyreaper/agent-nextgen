@@ -133,7 +133,8 @@ Key focus areas:
 - Special circumstances or patterns
 
 Be thorough but precise. If information is unclear or missing, note it explicitly.
-Return structured data that can be easily parsed, with clear categories."""
+Return structured data that can be easily parsed, with clear categories.
+Provide a verbose summary (4-6 sentences) grounded in transcript evidence."""
     
     def _build_parsing_prompt(
         self,
@@ -198,6 +199,7 @@ For each of these categories, extract and normalize the data:
    If low, explain what was unclear or missing
 
 7. **Summary Assessment**
+    - 4-6 sentences with specific evidence from the transcript
    One paragraph synthesizing this student's academic profile as it would appear to a college admissions officer.
 
 Return your analysis in clear, structured format (not JSON, but clearly organized sections)."""

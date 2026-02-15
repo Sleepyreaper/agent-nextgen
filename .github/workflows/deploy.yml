@@ -9,8 +9,8 @@ on:
 
 env:
   REGISTRY: ghcr.io
-  AZURE_WEBAPP_NAME: nextgen-agents-app
-  AZURE_RESOURCE_GROUP: NextGen_Agents
+  AZURE_WEBAPP_NAME: your-webapp-name
+  AZURE_RESOURCE_GROUP: your-resource-group
 
 jobs:
   deploy:

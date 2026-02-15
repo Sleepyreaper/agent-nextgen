@@ -21,7 +21,7 @@
     "pip": "requirements.txt"
   },
   "env": {
-    "AZURE_KEY_VAULT_NAME": "nextgen-agents-kv",
+    "AZURE_KEY_VAULT_NAME": "your-keyvault-name",
     "FLASK_ENV": "production",
     "GUNICORN_WORKERS": "4"
   },

@@ -7,7 +7,13 @@ from azure.identity import DefaultAzureCredential
 from azure.keyvault.secrets import SecretClient
 
 # Load environment variables from .env file (fallback for local development)
-load_dotenv()
+# Try .env.local first for local dev, then .env
+from pathlib import Path
+env_local = Path(".env.local")
+if env_local.exists():
+    load_dotenv(env_local)
+else:
+    load_dotenv()
 
 
 class Config:
@@ -25,22 +31,29 @@ class Config:
         self._secrets_cache: Dict[str, str] = {}
         self._secret_client: Optional[SecretClient] = None
         
-        # Determine Key Vault name
-        self.key_vault_name = key_vault_name or os.getenv("AZURE_KEY_VAULT_NAME")
-        
-        # Initialize Key Vault client if name is provided
-        if self.key_vault_name:
-            try:
-                credential = DefaultAzureCredential()
-                vault_url = f"https://{self.key_vault_name}.vault.azure.net/"
-                self._secret_client = SecretClient(vault_url=vault_url, credential=credential)
-                print(f"✓ Connected to Azure Key Vault: {self.key_vault_name}")
-            except Exception as e:
-                print(f"⚠ Warning: Could not connect to Key Vault: {e}")
-                print("  Falling back to environment variables from .env file")
-                self._secret_client = None
+        # Determine Key Vault name - skip if using local dev env file
+        env_local_path = Path(".env.local")
+        if env_local_path.exists():
+            # Local development mode - use environment variables only
+            self.key_vault_name = None
+            self._secret_client = None
         else:
-            print("ℹ No Key Vault configured. Using environment variables from .env file")
+            # Production/Staging mode - try Key Vault
+            self.key_vault_name = key_vault_name or os.getenv("AZURE_KEY_VAULT_NAME")
+            
+            # Initialize Key Vault client if name is provided
+            if self.key_vault_name:
+                try:
+                    credential = DefaultAzureCredential()
+                    vault_url = f"https://{self.key_vault_name}.vault.azure.net/"
+                    self._secret_client = SecretClient(vault_url=vault_url, credential=credential)
+                    print(f"✓ Connected to Azure Key Vault: {self.key_vault_name}")
+                except Exception as e:
+                    print(f"⚠ Warning: Could not connect to Key Vault: {e}")
+                    print("  Falling back to environment variables from .env file")
+                    self._secret_client = None
+            else:
+                print("ℹ No Key Vault configured. Using environment variables from .env file")
         
         # Load configuration
         self.azure_openai_endpoint: str = self._get_secret("azure-openai-endpoint", "AZURE_OPENAI_ENDPOINT")
@@ -49,18 +62,46 @@ class Config:
         self.subscription_id: str = self._get_secret("azure-subscription-id", "AZURE_SUBSCRIPTION_ID")
         self.resource_group: str = self._get_secret("azure-resource-group", "AZURE_RESOURCE_GROUP")
         
-        # PostgreSQL Database configuration
-        self.postgres_url: str = self._get_secret("postgres-url", "DATABASE_URL")
+        # PostgreSQL Database configuration (primary - now using Azure PostgreSQL)
+        self.postgres_url: str = self._get_secret("postgres-connection-string", "DATABASE_URL")
         self.postgres_host: str = self._get_secret("postgres-host", "POSTGRES_HOST")
         self.postgres_port: str = self._get_secret("postgres-port", "POSTGRES_PORT") or "5432"
         self.postgres_database: str = self._get_secret("postgres-database", "POSTGRES_DB")
         self.postgres_username: str = self._get_secret("postgres-username", "POSTGRES_USER")
         self.postgres_password: str = self._get_secret("postgres-password", "POSTGRES_PASSWORD")
         
+        # Legacy: Azure SQL Database configuration (deprecated - no longer used)
+        self.sql_server: str = self._get_secret("sql-server", "SQL_SERVER")
+        self.sql_database: str = self._get_secret("sql-database", "SQL_DATABASE")
+        self.sql_username: str = self._get_secret("sql-username", "SQL_USERNAME")
+        self.sql_password: str = self._get_secret("sql-password", "SQL_PASSWORD")
+        
         # Azure Storage configuration
         self.storage_account_name: str = self._get_secret("storage-account-name", "AZURE_STORAGE_ACCOUNT_NAME") or "nextgendata2452"
         self.storage_account_key: str = self._get_secret("storage-account-key", "AZURE_STORAGE_ACCOUNT_KEY")
         self.storage_container_name: str = self._get_secret("storage-container-name", "AZURE_STORAGE_CONTAINER_NAME") or "student-uploads"
+
+        # Content Processing Accelerator configuration
+        self.content_processing_endpoint: str = self._get_secret(
+            "content-processing-endpoint",
+            "CONTENT_PROCESSING_ENDPOINT"
+        )
+        self.content_processing_api_key: str = self._get_secret(
+            "content-processing-api-key",
+            "CONTENT_PROCESSING_API_KEY"
+        )
+        self.content_processing_api_key_header: str = self._get_secret(
+            "content-processing-api-key-header",
+            "CONTENT_PROCESSING_API_KEY_HEADER"
+        ) or "x-api-key"
+        enabled_value = self._get_secret(
+            "content-processing-enabled",
+            "CONTENT_PROCESSING_ENABLED"
+        )
+        self.content_processing_enabled: bool = bool(
+            self.content_processing_endpoint
+            and (enabled_value or "true").lower() in {"1", "true", "yes"}
+        )
         
         # Flask configuration
         self.flask_secret_key: str = self._get_secret("flask-secret-key", "FLASK_SECRET_KEY")
@@ -114,34 +155,36 @@ class Config:
             missing.append("azure-openai-endpoint (Key Vault) or AZURE_OPENAI_ENDPOINT (env)")
         if not self.deployment_name:
             missing.append("azure-deployment-name (Key Vault) or AZURE_DEPLOYMENT_NAME (env)")
-        if not self.postgres_url:
-            if not self.postgres_host:
-                missing.append("postgres-host (Key Vault) or POSTGRES_HOST (env)")
-            if not self.postgres_database:
-                missing.append("postgres-database (Key Vault) or POSTGRES_DB (env)")
-            if not self.postgres_username:
-                missing.append("postgres-username (Key Vault) or POSTGRES_USER (env)")
-            if not self.postgres_password:
-                missing.append("postgres-password (Key Vault) or POSTGRES_PASSWORD (env)")
+        
+        # Check PostgreSQL Database configuration (primary)
+        if not self.postgres_url and not self.postgres_host:
+            missing.append("postgres-connection-string (Key Vault) or DATABASE_URL (env) OR postgres-host + credentials")
+        if self.postgres_host and not self.postgres_database:
+            missing.append("postgres-database (Key Vault) or POSTGRES_DB (env)")
+        if self.postgres_host and not self.postgres_username:
+            missing.append("postgres-username (Key Vault) or POSTGRES_USER (env)")
+        if self.postgres_host and not self.postgres_password:
+            missing.append("postgres-password (Key Vault) or POSTGRES_PASSWORD (env)")
         
         return missing
     
+    def get(self, key: str, default: str = None) -> Optional[str]:
+        """Get a configuration value by environment variable name (for backwards compatibility)."""
+        return os.getenv(key, default)
+    
     def get_config_summary(self) -> str:
         """Get a summary of configuration (without exposing sensitive values)."""
-        return f"""
-Configuration Summary:
+        return f"""Configuration Summary:
   Source: {'Azure Key Vault (' + self.key_vault_name + ')' if self._secret_client else 'Environment Variables (.env)'}
   Azure OpenAI Endpoint: {self.azure_openai_endpoint[:30] + '...' if self.azure_openai_endpoint else 'Not set'}
   Deployment Name: {self.deployment_name or 'Not set'}
   API Version: {self.api_version}
-    Postgres URL: {'Set' if self.postgres_url else 'Not set'}
-    Postgres Host: {self.postgres_host[:30] + '...' if self.postgres_host else 'Not set'}
-    Postgres DB: {self.postgres_database or 'Not set'}
-        Postgres User: {'Set' if self.postgres_username else 'Not set'}
-        Postgres Password: {'Set' if self.postgres_password else 'Not set'}
+  Postgres Host: {self.postgres_host or 'Not set'}
+  Postgres DB: {self.postgres_database or 'Not set'}
+  Postgres URL: {'Set' if self.postgres_url else 'Not set'}
 """
 
 
-# Global config instance - uses Key Vault by default
-config = Config(key_vault_name="nextgen-agents-kv")
+# Global config instance - resolves Key Vault name from environment
+config = Config()
 

@@ -32,48 +32,15 @@
         </div>
     </div>
 
-    {% if applications %}
-    <table>
-        <thead>
-            <tr style="background: #f8f9fa; border-bottom: 2px solid var(--accent-teal);">
-                <th>ID</th>
-                <th>Applicant</th>
-                <th>Status</th>
-                <th>Uploaded</th>
-                <th>Actions</th>
-            </tr>
-        </thead>
-        <tbody>
-            {% for app in applications %}
-            <tr style="border-bottom: 1px solid #eee;">
-                <td>#{{ app.applicationid }}</td>
-                <td><strong>{{ app.applicantname }}</strong></td>
-                <td>
-                    <span class="badge badge-{{ app.status.lower() if app.status else 'pending' }}">
-                        {{ app.status or 'Pending' }}
-                    </span>
-                </td>
-                <td>{{ app.uploadeddate.strftime('%Y-%m-%d') if app.uploadeddate else 'N/A' }}</td>
-                <td>
-                    <a href="{{ url_for('student_detail', application_id=app.applicationid) }}" 
-                       class="btn btn-secondary" style="padding: 0.5rem 1rem; font-size: 0.9rem;">View</a>
-                    {% if app.status == 'Pending' %}
-                    <a href="{{ url_for('process_student', application_id=app.applicationid) }}" 
-                       class="btn btn-success" style="padding: 0.5rem 1rem; font-size: 0.9rem;">Process</a>
-                    {% endif %}
-                </td>
-            </tr>
-            {% endfor %}
-        </tbody>
-    </table>
-    <div style="margin-top: 1rem; text-align: center;">
-        <a href="{{ url_for('students') }}" class="btn">View All {{ total_count }} Students →</a>
+    <!-- Recent Student List Component -->
+    {% set students = students %}
+    {% include '_student_list.html' %}
+    
+    <div style="margin-top: 2rem; text-align: center;">
+        <a href="{{ url_for('students') }}" class="btn" style="display: inline-block;">
+            View All {{ total_count }} Students →
+        </a>
     </div>
-    {% else %}
-    <p style="text-align: center; padding: 3rem; color: #999;">
-        No applications yet. <a href="{{ url_for('upload') }}" style="color: var(--emory-blue); font-weight: 600;">Upload your first student application</a>
-    </p>
-    {% endif %}
 </div>
 {% endblock %}
 

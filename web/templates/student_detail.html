@@ -5,19 +5,19 @@
 {% block extra_css %}
 <style>
     .stat-box { padding: 1.5rem; background: #f9fafb; border-radius: 8px; text-align: center; }
-    .stat-value { font-size: 2rem; font-weight: bold; color: var(--emory-blue); }
+    .stat-value { font-size: 2rem; font-weight: bold; color: var(--ink-navy); }
     .stat-label { color: #6b7280; font-size: 0.9rem; margin-top: 0.5rem; }
     .badge { display: inline-block; padding: 0.4rem 0.8rem; border-radius: 4px; font-size: 0.85rem; font-weight: 500; }
     .badge-training { background: #dbeafe; color: #1e40af; }
     .badge-selected { background: #d1fae5; color: #065f46; }
-    .section-title { color: var(--emory-blue); border-bottom: 2px solid var(--accent-teal); padding-bottom: 0.5rem; margin-bottom: 1rem; }
+    .section-title { color: var(--ink-navy); border-bottom: 2px solid var(--accent-teal); padding-bottom: 0.5rem; margin-bottom: 1rem; }
     .aurora-block { background: #f7f4ff; border-left: 4px solid #6d5dfc; }
 </style>
 {% endblock %}
 
 {% block content %}
 <!-- Student Header -->
-<div class="card" style="background: linear-gradient(135deg, var(--emory-blue) 0%, #004080 100%); color: white; margin-bottom: 2rem;">
+<div class="card" style="background: linear-gradient(135deg, var(--ink-navy) 0%, #153a5c 100%); color: white; margin-bottom: 2rem;">
     <div style="display: flex; justify-content: space-between; align-items: start;">
         <div>
             <h1 style="margin-bottom: 0.5rem; font-size: 2.5rem;">{{ summary.name }}</h1>
@@ -58,22 +58,57 @@
 <div class="card aurora-block">
     <h2 class="section-title">👑 Aurora Summary</h2>
     {% if agent_results.get('merlin') %}
-    <p style="line-height: 1.8; color: #2c3e50;">
-        {{ agent_results.merlin.rationale or agent_results.merlin.parsedjson or 'Evaluation completed. See agent details below.' }}
-    </p>
-    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 1rem; margin-top: 1rem;">
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; margin-bottom: 1.25rem;">
         <div class="stat-box">
-            <div class="stat-value" style="color: var(--emory-gold);">{{ agent_results.merlin.overallscore|round|int if agent_results.merlin.overallscore else 'N/A' }}/100</div>
-            <div class="stat-label">Overall Score</div>
+            <div class="stat-value" style="color: var(--champagne);">{{ agent_results.merlin.overallscore|round|int if agent_results.merlin.overallscore else 'N/A' }}/100</div>
+            <div class="stat-label">Merlin Overall Score</div>
         </div>
         <div class="stat-box">
             <div class="stat-value">{{ agent_results.merlin.recommendation or 'Pending' }}</div>
-            <div class="stat-label">Recommendation</div>
+            <div class="stat-label">Merlin Recommendation</div>
         </div>
         <div class="stat-box">
             <div class="stat-value">{{ agent_results.merlin.confidence or 'N/A' }}</div>
             <div class="stat-label">Confidence</div>
         </div>
+    </div>
+    <p style="line-height: 1.8; color: #2c3e50;">
+        {{ agent_results.merlin.rationale or agent_results.merlin.parsedjson or 'Evaluation completed. See agent details below.' }}
+    </p>
+    <div style="margin-top: 1.25rem;">
+        {% if agent_results.get('rapunzel') and agent_results.rapunzel.summary %}
+            <p style="margin-bottom: 0.75rem;"><strong>Academic Summary (Rapunzel):</strong> {{ agent_results.rapunzel.summary }}</p>
+        {% endif %}
+        {% if agent_results.get('moana') and (agent_results.moana.comparison_notes or agent_results.moana.comparisonnotes) %}
+            <p style="margin-bottom: 0.75rem;"><strong>School Context (Moana):</strong> {{ agent_results.moana.comparison_notes or agent_results.moana.comparisonnotes }}</p>
+        {% endif %}
+        {% if agent_results.merlin.parsed_data and agent_results.merlin.parsed_data.key_strengths %}
+            <p style="margin-bottom: 0.5rem;"><strong>Key Strengths:</strong></p>
+            <ul style="margin: 0 0 0.75rem 1.25rem; color: #2c3e50;">
+                {% for strength in agent_results.merlin.parsed_data.key_strengths %}
+                <li>{{ strength }}</li>
+                {% endfor %}
+            </ul>
+        {% endif %}
+        {% if agent_results.merlin.parsed_data and agent_results.merlin.parsed_data.considerations %}
+            <p style="margin-bottom: 0.5rem;"><strong>Considerations:</strong></p>
+            <ul style="margin: 0 0 0.75rem 1.25rem; color: #2c3e50;">
+                {% for item in agent_results.merlin.parsed_data.considerations %}
+                <li>{{ item }}</li>
+                {% endfor %}
+            </ul>
+        {% endif %}
+        {% if agent_results.get('tiana') and agent_results.tiana.essaysummary %}
+            <p style="margin-bottom: 0.75rem;"><strong>Application Highlights:</strong> {{ agent_results.tiana.essaysummary }}</p>
+        {% endif %}
+        {% if agent_results.get('mulan') %}
+            {% for rec in agent_results.mulan %}
+                {% if rec.summary %}
+                    <p style="margin-bottom: 0.75rem;"><strong>Recommendation:</strong> {{ rec.summary }}</p>
+                    {% break %}
+                {% endif %}
+            {% endfor %}
+        {% endif %}
     </div>
     {% elif evaluation %}
     <p style="line-height: 1.8; color: #2c3e50;">
@@ -120,31 +155,21 @@
     <!-- Rapunzel (Grade Reader) -->
     {% if agent_results.get('rapunzel') %}
     <div style="margin-bottom: 2rem; padding: 1rem; background: #fce7f3; border-left: 4px solid #ec4899; border-radius: 6px;">
-        <h3 style="color: #831843; margin-bottom: 0.75rem;">💇 Rapunzel - Grade Reader</h3>
-        {% if agent_results.rapunzel.grades %}
-            <p style="margin-bottom: 0.5rem;"><strong>Grades Found:</strong> {{ agent_results.rapunzel.grades|length }}</p>
-            <div style="max-height: 200px; overflow-y: auto;">
-                <table style="width: 100%; font-size: 0.9rem;">
-                    <thead>
-                        <tr style="background: #fce7f3;">
-                            <th style="padding: 0.5rem; text-align: left;">Subject</th>
-                            <th style="padding: 0.5rem; text-align: left;">Grade</th>
-                            <th style="padding: 0.5rem; text-align: left;">Type</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {% for grade in agent_results.rapunzel.grades %}
-                        <tr>
-                            <td style="padding: 0.5rem;">{{ grade.subject or 'N/A' }}</td>
-                            <td style="padding: 0.5rem;">{{ grade.gradevalue or 'N/A' }}{% if grade.maxvalue %}/{{ grade.maxvalue }}{% endif %}</td>
-                            <td style="padding: 0.5rem;">{{ grade.gradetype or 'N/A' }}</td>
-                        </tr>
-                        {% endfor %}
-                    </tbody>
-                </table>
-            </div>
-        {% else %}
-            <p style="color: #831843;">No grades parsed yet.</p>
+        <h3 style="color: #831843; margin-bottom: 0.75rem;">� Rapunzel - Grade Reader</h3>
+        {% if agent_results.rapunzel.gpa %}
+            <p style="margin-bottom: 0.5rem;"><strong>GPA:</strong> {{ agent_results.rapunzel.gpa }}</p>
+        {% endif %}
+        {% if agent_results.rapunzel.academic_strength %}
+            <p style="margin-bottom: 0.5rem;"><strong>Academic Strength:</strong> {{ agent_results.rapunzel.academic_strength }}</p>
+        {% endif %}
+        {% if agent_results.rapunzel.transcript_quality %}
+            <p style="margin-bottom: 0.5rem;"><strong>Transcript Quality:</strong> {{ agent_results.rapunzel.transcript_quality }}</p>
+        {% endif %}
+        {% if agent_results.rapunzel.confidence_level %}
+            <p style="margin-bottom: 0.5rem;"><strong>Confidence:</strong> {{ agent_results.rapunzel.confidence_level }}</p>
+        {% endif %}
+        {% if agent_results.rapunzel.summary %}
+            <p style="margin-top: 0.75rem; color: #831843; line-height: 1.6; font-size: 0.95rem;">{{ agent_results.rapunzel.summary }}</p>
         {% endif %}
     </div>
     {% endif %}
@@ -173,20 +198,20 @@
     {% if agent_results.get('moana') %}
     <div style="margin-bottom: 2rem; padding: 1rem; background: #dcfce7; border-left: 4px solid #10b981; border-radius: 6px;">
         <h3 style="color: #065f46; margin-bottom: 0.75rem;">🌊 Moana - School Context</h3>
-        {% if agent_results.moana.schoolname %}
-            <p style="margin-bottom: 0.5rem;"><strong>School:</strong> {{ agent_results.moana.schoolname }}</p>
+        {% if agent_results.moana.school_name or agent_results.moana.schoolname %}
+            <p style="margin-bottom: 0.5rem;"><strong>School:</strong> {{ agent_results.moana.school_name or agent_results.moana.schoolname }}</p>
         {% endif %}
-        {% if agent_results.moana.schoolseslevel %}
-            <p style="margin-bottom: 0.5rem;"><strong>SES Level:</strong> {{ agent_results.moana.schoolseslevel }}</p>
+        {% if agent_results.moana.school_ses_level or agent_results.moana.schoolseslevel %}
+            <p style="margin-bottom: 0.5rem;"><strong>SES Level:</strong> {{ agent_results.moana.school_ses_level or agent_results.moana.schoolseslevel }}</p>
         {% endif %}
-        {% if agent_results.moana.apcoursesavailable or agent_results.moana.apcoursestaken %}
-            <p style="margin-bottom: 0.5rem;"><strong>AP Courses:</strong> {{ agent_results.moana.apcoursestaken or 0 }} taken / {{ agent_results.moana.apcoursesavailable or 0 }} available</p>
+        {% if agent_results.moana.ap_courses_taken or agent_results.moana.ap_courses_available or agent_results.moana.apcoursestaken %}
+            <p style="margin-bottom: 0.5rem;"><strong>AP Courses:</strong> {{ agent_results.moana.ap_courses_taken or agent_results.moana.apcoursestaken or 0 }} taken / {{ agent_results.moana.ap_courses_available or agent_results.moana.apcoursesavailable or 0 }} available</p>
         {% endif %}
-        {% if agent_results.moana.programaccessscore %}
-            <p style="margin-bottom: 0.5rem;"><strong>Program Access Score:</strong> {{ agent_results.moana.programaccessscore }}/100</p>
+        {% if agent_results.moana.program_access_score or agent_results.moana.programaccessscore %}
+            <p style="margin-bottom: 0.5rem;"><strong>Program Access Score:</strong> {{ agent_results.moana.program_access_score or agent_results.moana.programaccessscore }}/100</p>
         {% endif %}
-        {% if agent_results.moana.comparisonnotes %}
-            <p style="margin-top: 0.5rem; color: #065f46;">{{ agent_results.moana.comparisonnotes }}</p>
+        {% if agent_results.moana.comparison_notes or agent_results.moana.comparisonnotes %}
+            <p style="margin-top: 0.5rem; color: #065f46;">{{ agent_results.moana.comparison_notes or agent_results.moana.comparisonnotes }}</p>
         {% endif %}
     </div>
     {% endif %}
@@ -207,6 +232,37 @@
         {% if agent_results.merlin.rationale %}
             <p style="margin-top: 0.75rem; color: #581c87; line-height: 1.6;">{{ agent_results.merlin.rationale }}</p>
         {% endif %}
+    </div>
+    {% endif %}
+    
+    <!-- Aurora (Executive Summary) -->
+    {% if agent_results.get('aurora') %}
+    <div style="margin-bottom: 2rem; padding: 1rem; background: #fef08a; border-left: 4px solid #f59e0b; border-radius: 6px;">
+        <h3 style="color: #78350f; margin-bottom: 0.75rem;">✨ Aurora - Executive Summary</h3>
+        {% if agent_results.aurora.formatted_evaluation %}
+            <p style="margin-bottom: 0.75rem; color: #78350f; line-height: 1.6;">{{ agent_results.aurora.formatted_evaluation }}</p>
+        {% endif %}
+        {% if agent_results.aurora.merlin_score %}
+            <p style="margin-bottom: 0.5rem;"><strong>Merlin Score:</strong> {{ agent_results.aurora.merlin_score }}/100</p>
+        {% endif %}
+        {% if agent_results.aurora.merlin_recommendation %}
+            <p style="margin-bottom: 0.5rem;"><strong>Recommendation:</strong> {{ agent_results.aurora.merlin_recommendation }}</p>
+        {% endif %}
+        {% if agent_results.aurora.agents_completed %}
+            <p style="margin-bottom: 0.5rem; font-size: 0.9rem; color: #92400e;"><strong>Agents Completed:</strong> {{ agent_results.aurora.agents_completed }}</p>
+        {% endif %}
+    </div>
+    {% endif %}
+    
+    <!-- Fairy Godmother (Document Generator) -->
+    {% if document_available %}
+    <div style="margin-bottom: 2rem; padding: 1rem; background: #f0e7ff; border-left: 4px solid #d946ef; border-radius: 6px;">
+        <h3 style="color: #701a75; margin-bottom: 0.75rem;">🪄 Fairy Godmother - Evaluation Document</h3>
+        <p style="margin-bottom: 0.75rem; color: #701a75;">A comprehensive evaluation document has been generated for this student.</p>
+        <div style="display: flex; gap: 1rem; flex-wrap: wrap;">
+            <a href="/download-evaluation/{{ summary.application_id }}" class="result-link" style="padding: 0.5rem 1rem; background: #d946ef; color: white; border-radius: 4px; text-decoration: none;">📥 Download Document</a>
+            {% if document_path %}<p style="font-size: 0.85rem; color: #854d0e;">📄 {{ document_path.split('/')[-1] }}</p>{% endif %}
+        </div>
     </div>
     {% endif %}
 </div>

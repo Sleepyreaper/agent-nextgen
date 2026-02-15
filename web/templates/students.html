@@ -5,11 +5,12 @@
 {% block content %}
 <div class="card">
     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem;">
-        <h2>👥 2026 Applicants</h2>
-        <a href="{{ url_for('upload') }}" class="btn">+ Add New Application</a>
+        <div>
+            <h2>👥 2026 Applicants</h2>
+            <p style="color: #6b7280; margin-top: 0.5rem;">All applications sorted by last name</p>
+        </div>
+        <a href="{{ url_for('upload') }}" class="btn btn-primary">+ Add New Application</a>
     </div>
-
-    <p style="color: #6b7280; margin-bottom: 1.5rem;">Current year applications for evaluation (new uploads only)</p>
 
     <!-- Search Bar -->
     <form method="get" action="{{ url_for('students') }}" style="margin-bottom: 2rem;">
@@ -26,60 +27,8 @@
         </div>
     </form>
 
-    {% if search_query and applications %}
-    <p style="color: #6b7280; margin-bottom: 1rem;">
-        Found <strong>{{ applications|length }}</strong> student(s) matching "{{ search_query }}"
-    </p>
-    {% endif %}
-
-    {% if applications %}
-    <table>
-        <thead>
-            <tr>
-                <th>ID</th>
-                <th>Student Name</th>
-                <th>Email</th>
-                <th>Status</th>
-                <th>Uploaded</th>
-                <th>Actions</th>
-            </tr>
-        </thead>
-        <tbody>
-            {% for app in applications %}
-            <tr>
-                <td><strong>#{{ app.applicationid }}</strong></td>
-                <td>{{ app.applicantname }}</td>
-                <td>{{ app.email or 'N/A' }}</td>
-                <td>
-                    <span class="badge badge-{{ app.status.lower() if app.status else 'pending' }}">
-                        {{ app.status or 'Pending' }}
-                    </span>
-                </td>
-                <td>{{ app.uploadeddate.strftime('%Y-%m-%d %H:%M') if app.uploadeddate else 'N/A' }}</td>
-                <td>
-                    <a href="{{ url_for('student_detail', application_id=app.applicationid) }}" 
-                       class="btn btn-secondary" style="padding: 0.5rem 1rem;">📄 View Summary</a>
-                    {% if app.status == 'Pending' %}
-                    <a href="{{ url_for('process_student', application_id=app.applicationid) }}" 
-                       class="btn btn-success" style="padding: 0.5rem 1rem;">▶️ Process</a>
-                    {% endif %}
-                </td>
-            </tr>
-            {% endfor %}
-        </tbody>
-    </table>
-
-    <div style="margin-top: 1.5rem; color: #6b7280;">
-        Total Students: <strong>{{ applications|length }}</strong>
-    </div>
-    {% else %}
-    <p style="text-align: center; padding: 3rem; color: #6b7280;">
-        {% if search_query %}
-            No students found matching "{{ search_query }}". <a href="{{ url_for('students') }}">View all students</a>
-        {% else %}
-            No students yet. <a href="{{ url_for('upload') }}">Upload your first student application</a>
-        {% endif %}
-    </p>
-    {% endif %}
+    <!-- Student List Component -->
+    {% set students = students %}
+    {% include '_student_list.html' %}
 </div>
 {% endblock %}

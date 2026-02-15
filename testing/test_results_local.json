@@ -1,0 +1,41 @@
+{
+  "timestamp": "2026-02-15T01:09:32.025944",
+  "tests": {
+    "configuration": {
+      "status": "pass"
+    },
+    "database": {
+      "status": "fail",
+      "error": "Postgres host and database must be configured in Key Vault or environment variables"
+    },
+    "student_generation": {
+      "status": "pass",
+      "student_name": "Noah Perez"
+    },
+    "agent_imports": {
+      "status": "pass",
+      "agents": [
+        "SmeeOrchestrator",
+        "TianaApplicationReader",
+        "RapunzelGradeReader",
+        "MulanRecommendationReader",
+        "MoanaSchoolContext",
+        "MerlinStudentEvaluator",
+        "AuroraAgent"
+      ]
+    },
+    "logging": {
+      "status": "pass"
+    },
+    "security": {
+      "status": "pass",
+      "checks": 3,
+      "total": 3
+    },
+    "flask_app": {
+      "status": "fail",
+      "error": "Postgres host and database must be configured in Key Vault or environment variables"
+    }
+  },
+  "summary": {}
+}

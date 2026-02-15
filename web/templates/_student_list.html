@@ -1,0 +1,186 @@
+{# Reusable student list component - displays students consistently across all pages #}
+{# Usage: {% include '_student_list.html' with context %} #}
+
+<style>
+    .student-list-table {
+        width: 100%;
+        border-collapse: collapse;
+        background: white;
+    }
+    
+    .student-list-table thead {
+        background: linear-gradient(135deg, #003366 0%, #004080 100%);
+        color: white;
+    }
+    
+    .student-list-table thead th {
+        padding: 1rem;
+        text-align: left;
+        font-weight: 600;
+        border-bottom: 2px solid #e5e7eb;
+    }
+    
+    .student-list-table tbody tr {
+        border-bottom: 1px solid #e5e7eb;
+        transition: background-color 0.15s ease;
+    }
+    
+    .student-list-table tbody tr:hover {
+        background-color: #f9fafb;
+    }
+    
+    .student-list-table tbody td {
+        padding: 1rem;
+        color: #2c3e50;
+    }
+    
+    .student-name {
+        font-weight: 600;
+        color: #003366;
+    }
+    
+    .student-details {
+        font-size: 0.9rem;
+        color: #6b7280;
+        margin-top: 0.25rem;
+    }
+    
+    .merlin-score {
+        font-size: 1.2rem;
+        font-weight: bold;
+        color: #b8860b;
+    }
+    
+    .merlin-score.pending {
+        color: #9ca3af;
+        font-size: 1rem;
+    }
+    
+    .high-school {
+        font-size: 0.9rem;
+        color: #6b7280;
+    }
+    
+    .status-badge {
+        display: inline-block;
+        padding: 0.4rem 0.8rem;
+        border-radius: 20px;
+        font-size: 0.85rem;
+        font-weight: 600;
+    }
+    
+    .status-pending {
+        background: #fef3c7;
+        color: #92400e;
+    }
+    
+    .status-completed {
+        background: #d1fae5;
+        color: #065f46;
+    }
+    
+    .status-processing {
+        background: #dbeafe;
+        color: #1e3a8a;
+    }
+    
+    .student-actions {
+        display: flex;
+        gap: 0.5rem;
+        flex-wrap: wrap;
+    }
+    
+    .student-actions .btn {
+        padding: 0.5rem 0.75rem;
+        font-size: 0.85rem;
+    }
+    
+    .empty-state {
+        text-align: center;
+        padding: 3rem;
+        color: #6b7280;
+    }
+    
+    .empty-state-icon {
+        font-size: 3rem;
+        margin-bottom: 1rem;
+        opacity: 0.5;
+    }
+</style>
+
+{% if students %}
+<table class="student-list-table">
+    <thead>
+        <tr>
+            <th style="width: 25%;">Student Name</th>
+            <th style="width: 20%;">High School</th>
+            <th style="width: 15%;">Merlin Score</th>
+            <th style="width: 15%;">Status</th>
+            <th style="width: 25%;">Actions</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for student in students %}
+        <tr>
+            <td>
+                <div class="student-name">{{ student.first_name }} {{ student.last_name }}</div>
+                <div class="student-details">
+                    📧 {{ student.email or 'N/A' }}<br>
+                    📅 {{ student.uploaded_date.strftime('%b %d, %Y') if student.uploaded_date else 'N/A' }}
+                </div>
+            </td>
+            <td>
+                <div class="high-school">{{ student.high_school }}</div>
+            </td>
+            <td>
+                {% if student.merlin_score %}
+                    <div class="merlin-score">{{ student.merlin_score|round|int }}/100</div>
+                {% else %}
+                    <div class="merlin-score pending">⏳ Pending</div>
+                {% endif %}
+            </td>
+            <td>
+                {% if student.status %}
+                    {% set normalized_status = 'Completed' if student.status == 'Evaluated' else student.status %}
+                    <span class="status-badge status-{{ normalized_status.lower() }}">
+                        {{ normalized_status }}
+                    </span>
+                {% else %}
+                    <span class="status-badge status-pending">Pending</span>
+                {% endif %}
+            </td>
+            <td>
+                <div class="student-actions">
+                    <a href="{{ url_for('student_detail', application_id=student.application_id) }}" 
+                       class="btn btn-secondary">
+                        📄 Details
+                    </a>
+                    {% if student.status != 'Completed' and student.status != 'Processing' %}
+                    <a href="{{ url_for('process_student', application_id=student.application_id) }}" 
+                       class="btn btn-success">
+                        ▶️ Evaluate
+                    </a>
+                    {% endif %}
+                </div>
+            </td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+
+<div style="margin-top: 1.5rem; padding: 1rem; background: #f9fafb; border-radius: 8px; text-align: center; color: #6b7280;">
+    👥 <strong>Total:</strong> {{ students|length }} student(s) • 
+    {% set evaluated = students|selectattr('merlin_score')|list %}
+    ✅ <strong>Evaluated:</strong> {{ evaluated|length }}
+</div>
+
+{% else %}
+<div class="empty-state">
+    <div class="empty-state-icon">👥</div>
+    <h3 style="color: #2c3e50; margin-bottom: 0.5rem;">No Students Found</h3>
+    <p>{% if search_query %}No students match "{{ search_query }}".{% else %}No students uploaded yet.{% endif %}</p>
+    <a href="{{ url_for('upload') }}" class="btn btn-primary" style="margin-top: 1rem;">
+        ➕ Upload First Student
+    </a>
+</div>
+{% endif %}
