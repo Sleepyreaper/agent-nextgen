@@ -170,7 +170,7 @@ class Database:
         """Get all pending applications."""
         query = """
             SELECT * FROM Applications 
-            WHERE Status = 'Pending' AND IsTrainingExample = 0
+            WHERE Status = 'Pending' AND IsTrainingExample = FALSE
             ORDER BY UploadedDate DESC
         """
         return self.execute_query(query)
@@ -331,7 +331,7 @@ class Database:
         """Get all applications (non-training examples)."""
         query = """
             SELECT * FROM Applications 
-            WHERE IsTrainingExample = 0
+            WHERE IsTrainingExample = FALSE
             ORDER BY UploadedDate DESC
         """
         return self.execute_query(query)
