@@ -1,19 +1,30 @@
 """Configuration management for Azure AI Foundry agents using Azure Key Vault."""
 
 import os
+import sys
+import logging
 from typing import Optional, Dict
 from dotenv import load_dotenv
-from azure.identity import DefaultAzureCredential
-from azure.keyvault.secrets import SecretClient
+from pathlib import Path
+
+# Suppress Azure SDK warnings for local development
+logging.getLogger('azure').setLevel(logging.ERROR)
 
 # Load environment variables from .env file (fallback for local development)
 # Try .env.local first for local dev, then .env
-from pathlib import Path
 env_local = Path(".env.local")
 if env_local.exists():
     load_dotenv(env_local)
 else:
     load_dotenv()
+
+# Import Azure SDK components after loading env (may fail gracefully)
+try:
+    from azure.identity import DefaultAzureCredential
+    from azure.keyvault.secrets import SecretClient
+    AZURE_SDK_AVAILABLE = True
+except ImportError:
+    AZURE_SDK_AVAILABLE = False
 
 
 class Config:
@@ -42,18 +53,28 @@ class Config:
             self.key_vault_name = key_vault_name or os.getenv("AZURE_KEY_VAULT_NAME")
             
             # Initialize Key Vault client if name is provided
-            if self.key_vault_name:
+            if self.key_vault_name and AZURE_SDK_AVAILABLE:
                 try:
-                    credential = DefaultAzureCredential()
-                    vault_url = f"https://{self.key_vault_name}.vault.azure.net/"
-                    self._secret_client = SecretClient(vault_url=vault_url, credential=credential)
-                    print(f"✓ Connected to Azure Key Vault: {self.key_vault_name}")
+                    from azure.identity import DefaultAzureCredential
+                    from azure.keyvault.secrets import SecretClient
+                    
+                    # Redirect stderr to suppress credential error output
+                    old_stderr = sys.stderr
+                    sys.stderr = open(os.devnull, 'w')
+                    
+                    try:
+                        credential = DefaultAzureCredential()
+                        vault_url = f"https://{self.key_vault_name}.vault.azure.net/"
+                        self._secret_client = SecretClient(vault_url=vault_url, credential=credential)
+                        sys.stderr = old_stderr
+                        # print(f"✓ Connected to Azure Key Vault: {self.key_vault_name}")
+                    finally:
+                        sys.stderr = old_stderr
                 except Exception as e:
-                    print(f"⚠ Warning: Could not connect to Key Vault: {e}")
-                    print("  Falling back to environment variables from .env file")
+                    # Silently fall back to env variables in local dev
                     self._secret_client = None
             else:
-                print("ℹ No Key Vault configured. Using environment variables from .env file")
+                self._secret_client = None
         
         # Load configuration
         self.azure_openai_endpoint: str = self._get_secret("azure-openai-endpoint", "AZURE_OPENAI_ENDPOINT")
