@@ -47,6 +47,9 @@ Thumbs.db
 *.log
 logs/
 
+# Local helper scripts
+push_to_github.sh
+
 # Test coverage
 .coverage
 htmlcov/
