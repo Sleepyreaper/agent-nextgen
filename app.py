@@ -861,10 +861,10 @@ def generate_session_updates(session_id):
         yield f"data: {json.dumps({'type': 'agent_complete', 'agent': 'smee', 'student_id': student_id, 'status': 'complete', 'verified': True})}\n\n"
         time.sleep(0.5)
         
-        # Presenter formats results
-        yield f"data: {json.dumps({'type': 'agent_start', 'agent': 'presenter', 'student_id': student_id, 'emoji': '🎨'})}\n\n"
+        # Aurora formats results
+        yield f"data: {json.dumps({'type': 'agent_start', 'agent': 'aurora', 'student_id': student_id, 'emoji': '👑'})}\n\n"
         time.sleep(1)
-        yield f"data: {json.dumps({'type': 'agent_complete', 'agent': 'presenter', 'student_id': student_id, 'status': 'complete'})}\n\n"
+        yield f"data: {json.dumps({'type': 'agent_complete', 'agent': 'aurora', 'student_id': student_id, 'status': 'complete'})}\n\n"
         time.sleep(0.5)
         
         # Results ready
