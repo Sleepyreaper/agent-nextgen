@@ -6,7 +6,7 @@ import psycopg
 from .config import config
 import json
 import time
-from urllib.parse import urlparse, parse_qsl, urlencode, urlunparse
+from urllib.parse import urlparse, parse_qsl, urlencode, urlunparse, quote
 
 
 class Database:
@@ -222,7 +222,7 @@ class Database:
         if options_value:
             params['options'] = options_value
 
-        updated_query = urlencode(params, doseq=True)
+        updated_query = urlencode(params, doseq=True, quote_via=quote)
         return urlunparse(parsed._replace(query=updated_query))
     
     def connect(self):
