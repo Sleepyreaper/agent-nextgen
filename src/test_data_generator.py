@@ -2,6 +2,7 @@
 
 import random
 from typing import List, Dict, Any, Tuple
+import uuid
 
 
 class TestDataGenerator:
@@ -158,7 +159,8 @@ OFFICIAL HIGH SCHOOL TRANSCRIPT
 ====================================
 
 Student Name: {name}
-School: {school_name}
+School Name: {school_name}
+High School: {school_name}
 Location: {city}, {state}
 Graduation Date: May 2026
 
@@ -294,7 +296,7 @@ Sincerely,
         return letter, recommender_name, recommender_role
 
     
-    def generate_student(self, quality_tier: str = 'mixed') -> Dict[str, Any]:
+    def generate_student(self, quality_tier: str = 'mixed', used_names: set = None) -> Dict[str, Any]:
         """
         Generate a realistic student application with all required data.
         
@@ -307,10 +309,26 @@ Sincerely,
         if quality_tier == 'mixed':
             quality_tier = random.choice(['high', 'high', 'medium', 'medium', 'low'])
         
-        first_name = random.choice(self.FIRST_NAMES)
-        last_name = random.choice(self.LAST_NAMES)
-        name = f"{first_name} {last_name}"
-        email = f"{first_name.lower()}.{last_name.lower()}{random.randint(1, 999)}@example.com"
+        used_names = used_names or set()
+        name = None
+        for _ in range(10):
+            first_name = random.choice(self.FIRST_NAMES)
+            last_name = random.choice(self.LAST_NAMES)
+            candidate = f"{first_name} {last_name}"
+            if candidate not in used_names:
+                name = candidate
+                break
+
+        if not name:
+            first_name = random.choice(self.FIRST_NAMES)
+            last_name = random.choice(self.LAST_NAMES)
+            middle_initial = random.choice("ABCDEFGHIJKLMNOPQRSTUVWXYZ")
+            name = f"{first_name} {middle_initial}. {last_name}"
+
+        used_names.add(name)
+
+        unique_token = uuid.uuid4().hex[:6]
+        email = f"{name.lower().replace(' ', '.').replace('.', '')}.{unique_token}@example.com"
         
         # Select school with metadata
         school_data = random.choice(self.SCHOOLS)
@@ -417,8 +435,9 @@ I think I would do well at your university. I am hardworking and want to continu
         random.shuffle(tiers)
         
         students = []
+        used_names = set()
         for tier in tiers:
-            students.append(self.generate_student(tier))
+            students.append(self.generate_student(tier, used_names=used_names))
         
         return students
 
