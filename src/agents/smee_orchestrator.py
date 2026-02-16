@@ -2,6 +2,7 @@
 
 import asyncio
 import logging
+import os
 from typing import Dict, List, Any, Optional
 from openai import AzureOpenAI
 from src.agents.base_agent import BaseAgent
@@ -45,6 +46,21 @@ class SmeeOrchestrator(BaseAgent):
         self.agents: Dict[str, BaseAgent] = {}
         self.evaluation_results: Dict[str, Any] = {}
         self.workflow_state = "idle"  # idle, screening, evaluating, complete
+        self._agent_semaphores: Dict[str, asyncio.Semaphore] = {}
+        self._max_concurrent_per_agent = self._resolve_max_concurrency()
+
+    def _resolve_max_concurrency(self) -> int:
+        value = os.getenv("NEXTGEN_AGENT_MAX_CONCURRENCY", "2")
+        try:
+            resolved = int(value)
+        except ValueError:
+            resolved = 2
+        return max(1, resolved)
+
+    def _get_agent_semaphore(self, agent_id: str) -> asyncio.Semaphore:
+        if agent_id not in self._agent_semaphores:
+            self._agent_semaphores[agent_id] = asyncio.Semaphore(self._max_concurrent_per_agent)
+        return self._agent_semaphores[agent_id]
     
     def register_agent(self, agent_id: str, agent: BaseAgent):
         """
@@ -216,65 +232,66 @@ class SmeeOrchestrator(BaseAgent):
             })
             
             try:
-                # Call the agent's process or specialized method
-                if agent_id == 'student_evaluator' and failed_agents:
-                    logger.warning(f"Skipping Merlin due to upstream failures: {failed_agents}")
-                    self._report_progress({
-                        'type': 'agent_progress',
-                        'agent': agent.name,
-                        'agent_id': agent_id,
-                        'status': 'blocked',
-                        'applicant': applicant_name,
-                        'message': 'Blocked until required agents complete'
-                    })
-                    continue
+                async with self._get_agent_semaphore(agent_id):
+                    # Call the agent's process or specialized method
+                    if agent_id == 'student_evaluator' and failed_agents:
+                        logger.warning(f"Skipping Merlin due to upstream failures: {failed_agents}")
+                        self._report_progress({
+                            'type': 'agent_progress',
+                            'agent': agent.name,
+                            'agent_id': agent_id,
+                            'status': 'blocked',
+                            'applicant': applicant_name,
+                            'message': 'Blocked until required agents complete'
+                        })
+                        continue
 
-                if hasattr(agent, 'evaluate_application'):
-                    # For EvaluatorAgent
-                    result = await agent.evaluate_application(application)
-                elif hasattr(agent, 'parse_grades'):
-                    # For RapunzelGradeReader
-                    transcript_text = application.get('transcript_text') or application.get('TranscriptText') or application.get('application_text') or application.get('ApplicationText', '')
-                    result = await agent.parse_grades(
-                        transcript_text,
-                        application.get('applicant_name') or application.get('ApplicantName', '')
-                    )
-                elif hasattr(agent, 'parse_application'):
-                    # For TianaApplicationReader
-                    result = await agent.parse_application(application)
-                elif hasattr(agent, 'parse_recommendation'):
-                    # For MulanRecommendationReader
-                    recommendation_text = application.get('recommendation_text') or application.get('RecommendationText') or application.get('application_text') or application.get('ApplicationText', '')
-                    result = await agent.parse_recommendation(
-                        recommendation_text,
-                        application.get('applicant_name') or application.get('ApplicantName', ''),
-                        application_id
-                    )
-                elif hasattr(agent, 'evaluate_student'):
-                    # For MerlinStudentEvaluator
-                    result = await agent.evaluate_student(
-                        application,
-                        self.evaluation_results['results']
-                    )
-                    merlin_run = True
-                elif hasattr(agent, 'analyze_student_school_context'):
-                    # For MoanaSchoolContext
-                    # Get grade data from previous results if available
-                    rapunzel_data = self.evaluation_results['results'].get('grade_reader')
-                    transcript_text = application.get('transcript_text') or application.get('TranscriptText') or application.get('application_text') or application.get('ApplicationText', '')
-                    result = await agent.analyze_student_school_context(
-                        application=application,
-                        transcript_text=transcript_text,
-                        rapunzel_grades_data=rapunzel_data
-                    )
-                elif hasattr(agent, 'analyze_training_insights'):
-                    # For MiloDataScientist
-                    result = await agent.analyze_training_insights()
-                else:
-                    # Generic process
-                    result = await agent.process(
-                        f"Evaluate this application:\n{application.get('application_text') or application.get('ApplicationText', '')}"
-                    )
+                    if hasattr(agent, 'evaluate_application'):
+                        # For EvaluatorAgent
+                        result = await agent.evaluate_application(application)
+                    elif hasattr(agent, 'parse_grades'):
+                        # For RapunzelGradeReader
+                        transcript_text = application.get('transcript_text') or application.get('TranscriptText') or application.get('application_text') or application.get('ApplicationText', '')
+                        result = await agent.parse_grades(
+                            transcript_text,
+                            application.get('applicant_name') or application.get('ApplicantName', '')
+                        )
+                    elif hasattr(agent, 'parse_application'):
+                        # For TianaApplicationReader
+                        result = await agent.parse_application(application)
+                    elif hasattr(agent, 'parse_recommendation'):
+                        # For MulanRecommendationReader
+                        recommendation_text = application.get('recommendation_text') or application.get('RecommendationText') or application.get('application_text') or application.get('ApplicationText', '')
+                        result = await agent.parse_recommendation(
+                            recommendation_text,
+                            application.get('applicant_name') or application.get('ApplicantName', ''),
+                            application_id
+                        )
+                    elif hasattr(agent, 'evaluate_student'):
+                        # For MerlinStudentEvaluator
+                        result = await agent.evaluate_student(
+                            application,
+                            self.evaluation_results['results']
+                        )
+                        merlin_run = True
+                    elif hasattr(agent, 'analyze_student_school_context'):
+                        # For MoanaSchoolContext
+                        # Get grade data from previous results if available
+                        rapunzel_data = self.evaluation_results['results'].get('grade_reader')
+                        transcript_text = application.get('transcript_text') or application.get('TranscriptText') or application.get('application_text') or application.get('ApplicationText', '')
+                        result = await agent.analyze_student_school_context(
+                            application=application,
+                            transcript_text=transcript_text,
+                            rapunzel_grades_data=rapunzel_data
+                        )
+                    elif hasattr(agent, 'analyze_training_insights'):
+                        # For MiloDataScientist
+                        result = await agent.analyze_training_insights()
+                    else:
+                        # Generic process
+                        result = await agent.process(
+                            f"Evaluate this application:\n{application.get('application_text') or application.get('ApplicationText', '')}"
+                        )
                 
                 self.evaluation_results['results'][agent_id] = result
                 self._write_audit(application, agent.name)

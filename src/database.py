@@ -407,6 +407,14 @@ class Database:
         if not results:
             return None
         return results[0]
+
+    def update_application_status(self, application_id: int, status: str) -> None:
+        """Update a student's application status safely across schema variants."""
+        applications_table = self.get_table_name("applications")
+        status_col = self.get_applications_column("status") or "status"
+        app_id_col = self.get_applications_column("application_id") or "application_id"
+        query = f"UPDATE {applications_table} SET {status_col} = %s WHERE {app_id_col} = %s"
+        self.execute_non_query(query, (status, application_id))
     
     def get_training_examples(self) -> List[Dict[str, Any]]:
         """Get all training examples."""

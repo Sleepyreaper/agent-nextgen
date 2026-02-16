@@ -230,12 +230,13 @@ def index():
             test_filter = f" AND ({test_col} = FALSE OR {test_col} IS NULL)"
 
         # Simplified query to avoid timeout - just get basic count with a limit
+        status_expr = f"LOWER(a.{status_col})"
         query = f"""
             SELECT COUNT(*) as total,
-                   SUM(CASE WHEN status = 'Pending' THEN 1 ELSE 0 END) as pending,
-                   SUM(CASE WHEN status != 'Pending' THEN 1 ELSE 0 END) as evaluated
-            FROM Applications 
-            WHERE {training_col} = FALSE{test_filter}
+                   SUM(CASE WHEN {status_expr} = 'pending' THEN 1 ELSE 0 END) as pending,
+                   SUM(CASE WHEN {status_expr} <> 'pending' THEN 1 ELSE 0 END) as evaluated
+            FROM {applications_table} a
+            WHERE a.{training_col} = FALSE{test_filter}
         """
         result = db.execute_query(query)
         
@@ -518,10 +519,7 @@ def evaluate(application_id):
         )
         
         # Update application status
-        db.execute_non_query(
-            "UPDATE Applications SET Status = 'Completed' WHERE ApplicationID = %s",
-            (application_id,)
-        )
+        db.update_application_status(application_id, 'Completed')
         
         return jsonify(evaluation)
         
@@ -559,10 +557,7 @@ def evaluate_all():
             )
             
             # Update status
-            db.execute_non_query(
-                "UPDATE Applications SET Status = 'Completed' WHERE ApplicationID = %s",
-                (application['ApplicationID'],)
-            )
+            db.update_application_status(application['ApplicationID'], 'Completed')
             
             results.append({
                 'application_id': application['ApplicationID'],
@@ -806,10 +801,7 @@ def api_process_student(application_id):
             }), 202  # 202 Accepted - processing paused waiting for more info
         
         # Update status to Evaluated
-        db.execute_non_query(
-            "UPDATE Applications SET status = 'Completed' WHERE application_id = %s",
-            (application_id,)
-        )
+        db.update_application_status(application_id, 'Completed')
         
         return jsonify({
             'success': True,
@@ -1106,10 +1098,7 @@ def api_resume_evaluation(application_id):
             }), 202
         
         # Mark as evaluated
-        db.execute_non_query(
-            "UPDATE Applications SET status = 'Completed' WHERE application_id = %s",
-            (application_id,)
-        )
+        db.update_application_status(application_id, 'Completed')
         
         return jsonify({
             'success': True,
@@ -1185,10 +1174,7 @@ def api_provide_missing_info(application_id):
                 }), 202
             
             # Mark as evaluated
-            db.execute_non_query(
-                "UPDATE Applications SET status = 'Completed' WHERE application_id = %s",
-                (application_id,)
-            )
+            db.update_application_status(application_id, 'Completed')
             
             return jsonify({
                 'success': True,
@@ -1772,6 +1758,8 @@ def _process_session(session_id):
                         )
                     except Exception as save_err:
                         logger.warning(f"Failed to save Merlin evaluation: {str(save_err)}")
+
+                db.update_application_status(application_id, 'Completed')
 
             yield {
                 'type': 'student_complete',
