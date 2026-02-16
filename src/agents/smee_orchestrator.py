@@ -921,7 +921,8 @@ class SmeeOrchestrator(BaseAgent):
         synthesis_prompt = self._build_synthesis_prompt(application)
         
         try:
-            response = self.client.chat.completions.create(
+            response = self._create_chat_completion(
+                operation="smee.synthesize_results",
                 model=self.model,
                 messages=[
                     {
@@ -1019,7 +1020,8 @@ class SmeeOrchestrator(BaseAgent):
         ] + self.conversation_history
         
         try:
-            response = self.client.chat.completions.create(
+            response = self._create_chat_completion(
+                operation="smee.process",
                 model=self.model,
                 messages=messages,
                 max_completion_tokens=1000,

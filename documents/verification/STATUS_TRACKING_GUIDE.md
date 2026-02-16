@@ -26,30 +26,50 @@ When you upload a student application or view a student's detail page, Smee auto
 
 **Agents & Their Requirements:**
 
-1. 👸 **Tiana - Application Reader**
+1. 📖 **Belle - Document Analyzer**
+  - Needs: Uploaded content
+  - Analyzes: Document type + field extraction
+  - Status: Runs on upload to enrich fields for other agents
+
+2. 👸 **Tiana - Application Reader**
    - Needs: Application essay or personal statement
    - Analyzes: Applicant's motivation, goals, writing quality
    - Status: Ready if essay/statement detected in application text
 
-2. 💇 **Rapunzel - Grade Reader**
+3. 💇 **Rapunzel - Grade Reader**
    - Needs: Transcript with grades and GPA
    - Analyzes: Academic performance, grade trends, course difficulty
    - Status: Ready if grades/GPA/transcript detected
 
-3. 🌊 **Moana - School Context**
+4. 🌊 **Moana - School Context**
    - Needs: School name and location
    - Analyzes: School reputation, challenges, student demographics
    - Status: Ready if school info or grades detected (usually on transcript)
 
-4. 🗡️ **Mulan - Recommendation Reader**
+5. 🗡️ **Mulan - Recommendation Reader**
    - Needs: Teacher/counselor recommendation letters
    - Analyzes: Endorsement strength, personal qualities
    - Status: Ready if recommendation text detected
 
-5. 🧙 **Merlin - Final Evaluator**
+6. 🧙 **Merlin - Final Evaluator**
    - Needs: Results from other agents
    - Analyzes: Overall fit, synthesis of all factors
    - Status: Waits for at least 2 other agents to complete
+
+7. ✨ **Aurora - Results Formatter**
+  - Needs: Merlin output and other agent results
+  - Analyzes: Executive summary and presentation formatting
+  - Status: Runs after Merlin
+
+8. 🪄 **Fairy Godmother - Document Generator**
+  - Needs: Completed agent results
+  - Analyzes: Final evaluation document generation
+  - Status: Runs last after Aurora
+
+9. 🧪 **Milo - Data Scientist**
+  - Needs: Training examples
+  - Analyzes: Patterns in accepted vs not selected training data
+  - Status: Optional insights used by Merlin
 
 ### 3. Overview Dashboard
 

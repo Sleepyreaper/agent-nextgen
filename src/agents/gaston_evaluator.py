@@ -104,7 +104,8 @@ class GastonEvaluator(BaseAgent):
         prompt = self._build_evaluation_prompt(application)
         
         try:
-            response = self.client.chat.completions.create(
+            response = self._create_chat_completion(
+                operation="gaston.evaluate_application",
                 model=self.model,
                 messages=[
                     {

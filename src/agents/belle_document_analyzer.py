@@ -273,7 +273,8 @@ Document excerpt:
                 {"role": "user", "content": prompt}
             ]
             
-            response = self.client.chat.completions.create(
+            response = self._create_chat_completion(
+                operation="belle.extract_name",
                 model=self.model,
                 messages=messages,
                 max_completion_tokens=50,

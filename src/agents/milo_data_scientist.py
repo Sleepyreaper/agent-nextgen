@@ -67,7 +67,8 @@ class MiloDataScientist(BaseAgent):
 
         prompt = self._build_prompt(samples)
         try:
-            response = self.client.chat.completions.create(
+            response = self._create_chat_completion(
+                operation="milo.analyze_training",
                 model=self.model,
                 messages=[
                     {
@@ -109,7 +110,8 @@ class MiloDataScientist(BaseAgent):
     async def process(self, message: str) -> str:
         """Generic message handler."""
         self.add_to_history("user", message)
-        response = self.client.chat.completions.create(
+        response = self._create_chat_completion(
+            operation="milo.process",
             model=self.model,
             messages=[
                 {

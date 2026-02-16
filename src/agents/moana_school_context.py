@@ -315,7 +315,8 @@ provide a realistic assessment of:
 Provide realistic, conservative estimates. Format as clear categories."""
 
         try:
-            response = self.client.chat.completions.create(
+            response = self._create_chat_completion(
+                operation="moana.profile_school",
                 model=self.model,
                 messages=[
                     {
@@ -703,7 +704,8 @@ This data will provide accurate context for evaluating student opportunity and a
         ] + self.conversation_history
         
         try:
-            response = self.client.chat.completions.create(
+            response = self._create_chat_completion(
+                operation="moana.process",
                 model=self.model,
                 messages=messages,
                 max_completion_tokens=1500,

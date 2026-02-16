@@ -133,7 +133,7 @@ NextGen/
 │   ├── logger.py                      # Professional logging (masks secrets)
 │   ├── database.py                    # PostgreSQL with parameterized queries
 │   ├── storage.py                     # Azure Storage (graceful fallback)
-│   └── agents/                        # All AI agents (Tiana, Rapunzel, etc.)
+│   └── agents/                        # All AI agents (Smee, Belle, Tiana, etc.)
 │
 ├── app.py                             # Flask routes (no hardcoded secrets)
 ├── test_local.py                      # Local dev test suite

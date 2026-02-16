@@ -28,7 +28,8 @@ class MerlinStudentEvaluator(BaseAgent):
         prompt = self._build_prompt(applicant_name, application, agent_outputs)
 
         try:
-            response = self.client.chat.completions.create(
+            response = self._create_chat_completion(
+                operation="merlin.evaluate_student",
                 model=self.model,
                 messages=[
                     {
@@ -110,7 +111,8 @@ class MerlinStudentEvaluator(BaseAgent):
             }
         ] + self.conversation_history
 
-        response = self.client.chat.completions.create(
+        response = self._create_chat_completion(
+            operation="merlin.process",
             model=self.model,
             messages=messages,
             max_completion_tokens=1000,
