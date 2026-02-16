@@ -58,10 +58,6 @@ jobs:
       run: |
         mkdir -p deployment
         cp -r app.py wsgi.py startup.py src web database uploads requirements.txt deployment/ 2>/dev/null || true
-        python -m pip install --upgrade pip
-        mkdir -p deployment/.python_packages/lib/site-packages
-        pip install -r requirements.txt --target deployment/.python_packages/lib/site-packages
-        ls -la deployment/.python_packages
         cd deployment
         zip -r ../app.zip . -x "*.git*" "__pycache__/*" "*.pyc" ".venv/*"
         cd ..
