@@ -28,7 +28,8 @@ from src.agents import (
     MulanRecommendationReader,
     MerlinStudentEvaluator,
     AuroraAgent,
-    BelleDocumentAnalyzer
+    BelleDocumentAnalyzer,
+    MiloDataScientist
 )
 from src.agents.agent_requirements import AgentRequirements
 from src.agents.fairy_godmother_document_generator import FairyGodmotherDocumentGenerator
@@ -140,6 +141,15 @@ def get_orchestrator():
             "student_evaluator",
             MerlinStudentEvaluator(
                 name="Merlin Student Evaluator",
+                client=client,
+                model=config.deployment_name,
+                db_connection=db
+            )
+        )
+        orchestrator_agent.register_agent(
+            "data_scientist",
+            MiloDataScientist(
+                name="Milo Data Scientist",
                 client=client,
                 model=config.deployment_name,
                 db_connection=db
@@ -1523,18 +1533,31 @@ def generate_session_updates(session_id):
             db.set_missing_fields(application_id, [])
             
             submission['application_ids'].append(application_id)
-            application_data = db.get_application(application_id)
+            application_data = db.get_application(application_id) or {}
             student_id = f"app_{application_id}"
-            
-            # Add transcript and recommendation data to application object for agents
-            # Use lowercase keys to match AgentRequirements expected field names
-            if application_data:
+
+            if not application_data:
+                application_data = {
+                    'application_id': application_id,
+                    'applicant_name': name,
+                    'email': email,
+                }
+
+            # Ensure all required fields exist for agent pipeline
+            if not application_data.get('application_text'):
+                application_data['application_text'] = application_text
+            if not application_data.get('transcript_text'):
                 application_data['transcript_text'] = transcript_text
+            if not application_data.get('recommendation_text'):
                 application_data['recommendation_text'] = recommendation_text
-                application_data['school_name'] = school_data.get('name', '')
-                application_data['school_city'] = school_data.get('city', '')
-                application_data['school_state'] = school_data.get('state', '')
-                application_data['school_data'] = school_data  # Full school metadata for Moana
+            if not application_data.get('student_id'):
+                application_data['student_id'] = student_id_val
+
+            # Add school metadata for Moana
+            application_data['school_name'] = school_data.get('name', '')
+            application_data['school_city'] = school_data.get('city', '')
+            application_data['school_state'] = school_data.get('state', '')
+            application_data['school_data'] = school_data  # Full school metadata for Moana
             
             application_data_list.append({
                 'student_id': student_id,

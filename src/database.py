@@ -264,6 +264,9 @@ class Database:
                     ("applicantname", "applicant_name"),
                     ("uploadeddate", "uploaded_date"),
                     ("wasselected", "was_selected"),
+                    ("applicationtext", "application_text"),
+                    ("transcripttext", "transcript_text"),
+                    ("recommendationtext", "recommendation_text"),
                     ("originalfilename", "original_file_name"),
                     ("filetype", "file_type"),
                     ("blobstoragepath", "blob_storage_path"),
@@ -975,7 +978,10 @@ class Database:
         values = []
         for key, value in fields.items():
             if key in allowed_fields:
-                updates.append(f"{key} = %s")
+                column_name = self.get_applications_column(key)
+                if not column_name:
+                    continue
+                updates.append(f"{column_name} = %s")
                 values.append(value)
 
         if not updates:

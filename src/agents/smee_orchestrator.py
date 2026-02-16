@@ -267,6 +267,9 @@ class SmeeOrchestrator(BaseAgent):
                         transcript_text=transcript_text,
                         rapunzel_grades_data=rapunzel_data
                     )
+                elif hasattr(agent, 'analyze_training_insights'):
+                    # For MiloDataScientist
+                    result = await agent.analyze_training_insights()
                 else:
                     # Generic process
                     result = await agent.process(
@@ -443,6 +446,16 @@ class SmeeOrchestrator(BaseAgent):
         application: Dict[str, Any],
         evaluation_steps: List[str]
     ) -> (List[str], List[Dict[str, Any]]):
+        lower_keys = {str(key).lower(): key for key in (application or {}).keys()}
+
+        def field_has_value(field_name: str) -> bool:
+            variants = [field_name, field_name.replace('_', '')]
+            for variant in variants:
+                key = lower_keys.get(variant.lower())
+                if key is not None and application.get(key):
+                    return True
+            return False
+
         agent_questions = AgentRequirements.get_all_questions(evaluation_steps)
         consolidated_missing = []
 
@@ -459,10 +472,11 @@ class SmeeOrchestrator(BaseAgent):
             for field in required_fields:
                 lowercase_val = bool(application.get(field))
                 titlecase_val = bool(application.get(field.title()))
+                variant_val = field_has_value(field)
                 field_status[field] = {
                     'lowercase': lowercase_val,
                     'titlecase': titlecase_val,
-                    'has': lowercase_val or titlecase_val
+                    'has': lowercase_val or titlecase_val or variant_val
                 }
                 logger.debug(f"  Field '{field}': lowercase={lowercase_val}, titlecase={titlecase_val}")
 
@@ -785,6 +799,7 @@ class SmeeOrchestrator(BaseAgent):
             'grade_reader',
             'school_context',
             'recommendation_reader',
+            'data_scientist',
             'student_evaluator'
         ]
 
