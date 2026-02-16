@@ -38,7 +38,7 @@ jobs:
       env:
         DATABASE_URL: postgresql://user:pass@localhost:5432/appdb
       run: |
-        python -c "import app; import src.config; print('✓ App modules load successfully')"
+        python -c "import app; import src.config; print('OK App modules load successfully')"
 
   deploy:
     needs: test
@@ -86,7 +86,7 @@ jobs:
     - name: Check deployment status
       run: |
         if [ "${{ needs.deploy.result }}" == "success" ]; then
-          echo "✅ Deployment to Azure Web App succeeded!"
+          echo "Deployment to Azure Web App succeeded."
         else
-          echo "⚠️ Deployment completed with status: ${{ needs.deploy.result }}"
+          echo "Deployment completed with status: ${{ needs.deploy.result }}"
         fi
