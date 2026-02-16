@@ -568,7 +568,6 @@ Provide realistic, conservative estimates. Format as clear categories."""
                         "content": profile_prompt
                     }
                 ],
-                        "content": "You are Moana, part of an NIH Department of Genetics review panel evaluating Emory NextGen applicants. You analyze education systems, socioeconomic context, and access to advanced STEM opportunities."
                 temperature=0.7
             )
             
