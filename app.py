@@ -1469,34 +1469,66 @@ def delete_training(application_id):
 # ============================================================================
 
 # In-memory tracking of test submissions and processing status
-test_submissions = {}  # {session_id: {student_list, status_updates}}
+test_submissions = {}  # {session_id: {students, queue, processor_started}}
 aurora = AuroraAgent()
+
+
+def start_session_processing(session_id: str) -> None:
+    submission = test_submissions.get(session_id)
+    if not submission or submission.get('processor_started'):
+        return
+
+    submission['processor_started'] = True
+    if 'queue' not in submission:
+        submission['queue'] = queue.Queue()
+
+    def run():
+        try:
+            for update in _process_session(session_id):
+                submission['queue'].put(update)
+        finally:
+            submission['queue'].put({'_session_complete': True})
+
+    threading.Thread(target=run, daemon=True).start()
 
 
 def generate_session_updates(session_id):
     """
     Generator function for SSE updates during test processing.
-    Uses threads to enable real-time streaming of agent progress updates.
+    Uses a background thread to execute the workflow even if the client disconnects.
     """
     submission = test_submissions.get(session_id)
     if not submission:
         yield f"data: {json.dumps({'error': 'Session not found'})}\n\n"
         return
 
-    if submission.get('initialized'):
-        yield f"data: {json.dumps({'type': 'session_already_running', 'message': 'Session already started'})}\n\n"
+    if 'queue' not in submission:
+        submission['queue'] = queue.Queue()
+
+    start_session_processing(session_id)
+
+    yield f"data: {json.dumps({'type': 'connected', 'message': 'Connected to test stream'})}\n\n"
+
+    while True:
+        try:
+            update = submission['queue'].get(timeout=0.5)
+        except queue.Empty:
+            continue
+
+        if update.get('_session_complete'):
+            break
+
+        yield f"data: {json.dumps(update)}\n\n"
+
+
+def _process_session(session_id):
+    submission = test_submissions.get(session_id)
+    if not submission:
         return
 
-    submission['initialized'] = True
-    
-    # Send initial connected message
-    yield f"data: {json.dumps({'type': 'connected', 'message': 'Connected to test stream'})}\n\n"
-    
-    # Get generated test students
     students = submission['students']
     orchestrator = get_orchestrator()
-    
-    # STEP 1: Create all student records in database first
+
     application_data_list = []
     for idx, student in enumerate(students):
         name = student['name']
@@ -1505,24 +1537,22 @@ def generate_session_updates(session_id):
         transcript_text = student.get('transcript_text', '')
         recommendation_text = student.get('recommendation_text', '')
         school_data = student.get('school_data', {})
-        
+
         try:
-            # Generate unique student ID
             student_id_val = storage.generate_student_id()
-            
+
             application_id = db.create_application(
                 applicant_name=name,
                 email=email,
                 application_text=application_text,
                 file_name=f"test_{name.replace(' ', '_').lower()}.txt",
                 file_type="txt",
-                is_training=False,  # Test data should NOT be training data
-                is_test_data=True,  # Mark as test data
+                is_training=False,
+                is_test_data=True,
                 was_selected=None,
-                student_id=student_id_val  # Unique student ID
+                student_id=student_id_val
             )
 
-            # Persist test-only fields so agents and UI see complete data
             db.update_application_fields(
                 application_id,
                 {
@@ -1531,7 +1561,7 @@ def generate_session_updates(session_id):
                 }
             )
             db.set_missing_fields(application_id, [])
-            
+
             submission['application_ids'].append(application_id)
             application_data = db.get_application(application_id) or {}
             student_id = f"app_{application_id}"
@@ -1543,7 +1573,6 @@ def generate_session_updates(session_id):
                     'email': email,
                 }
 
-            # Ensure all required fields exist for agent pipeline
             if not application_data.get('application_text'):
                 application_data['application_text'] = application_text
             if not application_data.get('transcript_text'):
@@ -1553,12 +1582,11 @@ def generate_session_updates(session_id):
             if not application_data.get('student_id'):
                 application_data['student_id'] = student_id_val
 
-            # Add school metadata for Moana
             application_data['school_name'] = school_data.get('name', '')
             application_data['school_city'] = school_data.get('city', '')
             application_data['school_state'] = school_data.get('state', '')
-            application_data['school_data'] = school_data  # Full school metadata for Moana
-            
+            application_data['school_data'] = school_data
+
             application_data_list.append({
                 'student_id': student_id,
                 'application_id': application_id,
@@ -1566,40 +1594,55 @@ def generate_session_updates(session_id):
                 'name': name,
                 'email': email
             })
-            
-            # Notify of student submission
-            yield f"data: {json.dumps({'type': 'student_submitted', 'student': {'name': name, 'email': email}, 'student_id': student_id, 'application_id': application_id})}\n\n"
+
+            yield {
+                'type': 'student_submitted',
+                'student': {'name': name, 'email': email},
+                'student_id': student_id,
+                'application_id': application_id
+            }
         except Exception as e:
-            yield f"data: {json.dumps({'type': 'error', 'error': f'Failed to create student record: {str(e)}'})}\n\n"
-    
+            yield {'type': 'error', 'error': f'Failed to create student record: {str(e)}'}
+
     if not application_data_list:
-        yield f"data: {json.dumps({'type': 'error', 'error': 'No students could be created'})}\n\n"
+        yield {'type': 'error', 'error': 'No students could be created'}
         return
-    
-    # STEP 2: Use Smee to orchestrate processing of all students
-    yield f"data: {json.dumps({'type': 'orchestrator_start', 'message': f'Smee is coordinating evaluation of {len(application_data_list)} students'})}\n\n"
-    
-    # Process each student sequentially with real-time updates
+
+    yield {
+        'type': 'orchestrator_start',
+        'message': f'Smee is coordinating evaluation of {len(application_data_list)} students'
+    }
+
     for student_num, app_data in enumerate(application_data_list, 1):
         student_id = app_data['student_id']
         application_id = app_data['application_id']
         application_data = app_data['application_data']
-        applicant_name = app_data['name']  # Use the actual student name from generator
-        
+        applicant_name = app_data['name']
+
         try:
-            yield f"data: {json.dumps({'type': 'student_start', 'student_id': student_id, 'application_id': application_id, 'student_num': student_num, 'total_students': len(application_data_list), 'applicant_name': applicant_name})}\n\n"
-            
-            logger.info(f"Processing student: {applicant_name} (ID: {application_id})", extra={'data_keys': list(application_data.keys()) if application_data else []})
-            
-            # Use a queue to collect updates from the progress callback in real-time
+            yield {
+                'type': 'student_start',
+                'student_id': student_id,
+                'application_id': application_id,
+                'student_num': student_num,
+                'total_students': len(application_data_list),
+                'applicant_name': applicant_name
+            }
+
+            logger.info(
+                f"Processing student: {applicant_name} (ID: {application_id})",
+                extra={'data_keys': list(application_data.keys()) if application_data else []}
+            )
+
             update_queue = queue.Queue()
-            
+
             def progress_callback(update):
-                """Callback for Smee to report progress."""
-                logger.debug(f"Progress callback: {update.get('type', 'unknown')} - {update.get('agent', 'N/A')}", extra=update)
+                logger.debug(
+                    f"Progress callback: {update.get('type', 'unknown')} - {update.get('agent', 'N/A')}",
+                    extra=update
+                )
                 update_queue.put(update)
-            
-            # Run orchestration in a thread to allow non-blocking collection of updates
+
             def run_orchestration():
                 try:
                     logger.debug(f"Starting orchestration thread for {applicant_name}")
@@ -1610,38 +1653,40 @@ def generate_session_updates(session_id):
                         'school_context',
                         'student_evaluator'
                     ]
-                    
+
                     logger.debug(f"Evaluation steps: {evaluation_steps}")
-                    
+
                     result = asyncio.run(orchestrator.coordinate_evaluation(
                         application=application_data,
                         evaluation_steps=evaluation_steps,
                         progress_callback=progress_callback
                     ))
-                    
-                    logger.info(f"Orchestration complete for {applicant_name}", extra={'application_id': application_id})
+
+                    logger.info(
+                        f"Orchestration complete for {applicant_name}",
+                        extra={'application_id': application_id}
+                    )
                     update_queue.put({'_orchestration_complete': True, 'result': result})
                 except Exception as e:
-                    logger.error(f"Orchestration error for {applicant_name}: {str(e)}", exc_info=True)
+                    logger.error(
+                        f"Orchestration error for {applicant_name}: {str(e)}",
+                        exc_info=True
+                    )
                     import traceback
                     traceback.print_exc()
                     update_queue.put({'_orchestration_error': True, 'error': str(e)})
-            
-            # Start orchestration in background thread
+
             orchestration_thread = threading.Thread(target=run_orchestration, daemon=True)
             orchestration_thread.start()
-            
-            # Collect and yield updates in real-time as they come in
+
             orchestration_complete = False
             orchestration_result = None
             orchestration_error = None
-            
+
             while not orchestration_complete:
                 try:
-                    # Non-blocking queue check with timeout
                     update = update_queue.get(timeout=0.5)
-                    
-                    # Check for orchestration completion markers
+
                     if update.get('_orchestration_complete'):
                         orchestration_complete = True
                         orchestration_result = update.get('result')
@@ -1649,27 +1694,22 @@ def generate_session_updates(session_id):
                         orchestration_complete = True
                         orchestration_error = update.get('error')
                     else:
-                        # Regular progress update - yield it immediately
-                        yield f"data: {json.dumps(update)}\n\n"
-                
+                        yield update
+
                 except queue.Empty:
-                    # Timeout - check if thread is still alive
                     if not orchestration_thread.is_alive():
                         orchestration_complete = True
                     continue
-            
-            # Handle any errors from orchestration
+
             if orchestration_error:
-                error_data = {
+                yield {
                     'type': 'student_error',
                     'student_id': student_id,
                     'student_num': student_num,
                     'error': f'Processing failed: {orchestration_error}'
                 }
-                yield f"data: {json.dumps(error_data)}\n\n"
                 continue
-            
-            # Save Merlin evaluation to database
+
             if orchestration_result and 'results' in orchestration_result:
                 merlin_result = orchestration_result['results'].get('student_evaluator', {})
                 if merlin_result and merlin_result.get('status') == 'success':
@@ -1685,9 +1725,8 @@ def generate_session_updates(session_id):
                         )
                     except Exception as save_err:
                         logger.warning(f"Failed to save Merlin evaluation: {str(save_err)}")
-            
-            # Results ready for this student
-            results_data = {
+
+            yield {
                 'type': 'student_complete',
                 'student_id': student_id,
                 'student_num': student_num,
@@ -1696,24 +1735,20 @@ def generate_session_updates(session_id):
                 'results_url': f'/application/{application_id}',
                 'success': True
             }
-            yield f"data: {json.dumps(results_data)}\n\n"
-            
+
         except Exception as e:
             logger.error(f"Error processing student {student_id}: {str(e)}", exc_info=True)
             import traceback
             traceback.print_exc()
-            error_data = {
+            yield {
                 'type': 'student_error',
                 'student_id': student_id,
                 'student_num': student_num,
                 'error': f'Processing failed: {str(e)}'
             }
-            yield f"data: {json.dumps(error_data)}\n\n"
-    
-    # All complete
-    yield f"data: {json.dumps({'type': 'all_complete', 'application_ids': submission['application_ids']})}\n\n"
-    
-    # Save test submission to database for persistence
+
+    yield {'type': 'all_complete', 'application_ids': submission['application_ids']}
+
     try:
         db.save_test_submission(
             session_id=session_id,
@@ -1721,10 +1756,13 @@ def generate_session_updates(session_id):
             application_ids=submission['application_ids']
         )
         submission['status'] = 'completed'
-        yield f"data: {json.dumps({'type': 'session_saved', 'message': 'Test submission saved to database'})}\n\n"
+        yield {'type': 'session_saved', 'message': 'Test submission saved to database'}
     except Exception as e:
         logger.warning(f"Failed to save test submission to database: {str(e)}")
-        yield f"data: {json.dumps({'type': 'save_warning', 'message': f'Data saved in memory but database save failed: {str(e)}'})}\n\n"
+        yield {
+            'type': 'save_warning',
+            'message': f'Data saved in memory but database save failed: {str(e)}'
+        }
 
 
 @app.route('/api/test/stream/<session_id>')
@@ -1766,8 +1804,11 @@ def submit_test_data():
             'students': students,
             'application_ids': [],
             'created_at': time.time(),
-            'status': 'processing'
+            'status': 'processing',
+            'queue': queue.Queue()
         }
+
+        start_session_processing(session_id)
         
         return jsonify({
             'session_id': session_id,
@@ -1935,8 +1976,11 @@ I believe my creative skills and persistence will serve me well in my career.
             'students': preset_students,
             'application_ids': [],
             'created_at': time.time(),
-            'status': 'processing'
+            'status': 'processing',
+            'queue': queue.Queue()
         }
+
+        start_session_processing(session_id)
         
         return jsonify({
             'session_id': session_id,
@@ -2027,8 +2071,11 @@ but about making a positive impact on those around me.
             'students': single_student,
             'application_ids': [],
             'created_at': time.time(),
-            'status': 'processing'
+            'status': 'processing',
+            'queue': queue.Queue()
         }
+
+        start_session_processing(session_id)
         
         return jsonify({
             'session_id': session_id,
@@ -2167,8 +2214,11 @@ def upload_test_files():
             'students': uploaded_students,
             'application_ids': [],
             'created_at': time.time(),
-            'status': 'processing'
+            'status': 'processing',
+            'queue': queue.Queue()
         }
+
+        start_session_processing(session_id)
         
         return jsonify({
             'status': 'success',
