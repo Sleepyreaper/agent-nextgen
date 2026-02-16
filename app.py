@@ -2215,31 +2215,162 @@ def get_test_students():
     Queries the database to show which agents have evaluated each student.
     """
     try:
+        applications_table = db.get_table_name("applications")
+        merlin_table = db.get_table_name("merlin_evaluations")
+        tiana_table = db.get_table_name("tiana_applications")
+        rapunzel_table = db.get_table_name("rapunzel_grades")
+        mulan_table = db.get_table_name("mulan_recommendations")
+        context_table = db.get_table_name("student_school_context")
+        aurora_table = db.get_table_name("aurora_evaluations")
+
+        app_id_col = db.get_applications_column("application_id")
+        applicant_col = db.get_applications_column("applicant_name")
+        email_col = db.get_applications_column("email")
+        status_col = db.get_applications_column("status")
+        uploaded_col = db.get_applications_column("uploaded_date")
+        student_id_col = db.get_applications_column("student_id")
+        test_col = db.get_test_data_column()
+
+        merlin_id_col = None
+        merlin_join = ""
+        if db.has_table(merlin_table):
+            merlin_id_col = db.resolve_table_column(
+                "merlin_evaluations",
+                ["merlin_evaluation_id", "merlinevaluationid", "evaluation_id", "evaluationid"],
+            )
+            merlin_app_id_col = db.resolve_table_column(
+                "merlin_evaluations",
+                ["application_id", "applicationid"],
+            )
+            if merlin_id_col and merlin_app_id_col:
+                merlin_join = f"LEFT JOIN {merlin_table} m ON a.{app_id_col} = m.{merlin_app_id_col}"
+
+        tiana_id_col = None
+        tiana_join = ""
+        if db.has_table(tiana_table):
+            tiana_id_col = db.resolve_table_column(
+                "tiana_applications",
+                ["tiana_application_id", "tianaapplicationid", "application_id", "applicationid"],
+            )
+            tiana_app_id_col = db.resolve_table_column(
+                "tiana_applications",
+                ["application_id", "applicationid"],
+            )
+            if tiana_id_col and tiana_app_id_col:
+                tiana_join = f"LEFT JOIN {tiana_table} t ON a.{app_id_col} = t.{tiana_app_id_col}"
+
+        rapunzel_id_col = None
+        rapunzel_join = ""
+        if db.has_table(rapunzel_table):
+            rapunzel_id_col = db.resolve_table_column(
+                "rapunzel_grades",
+                ["rapunzel_grade_id", "rapunzelgradeid", "grade_id", "gradeid"],
+            )
+            rapunzel_app_id_col = db.resolve_table_column(
+                "rapunzel_grades",
+                ["application_id", "applicationid"],
+            )
+            if rapunzel_id_col and rapunzel_app_id_col:
+                rapunzel_join = f"LEFT JOIN {rapunzel_table} rg ON a.{app_id_col} = rg.{rapunzel_app_id_col}"
+
+        mulan_id_col = None
+        mulan_join = ""
+        if db.has_table(mulan_table):
+            mulan_id_col = db.resolve_table_column(
+                "mulan_recommendations",
+                ["mulan_recommendation_id", "mulanrecommendationid", "recommendation_id", "recommendationid"],
+            )
+            mulan_app_id_col = db.resolve_table_column(
+                "mulan_recommendations",
+                ["application_id", "applicationid"],
+            )
+            if mulan_id_col and mulan_app_id_col:
+                mulan_join = f"LEFT JOIN {mulan_table} r ON a.{app_id_col} = r.{mulan_app_id_col}"
+
+        context_id_col = None
+        context_join = ""
+        if db.has_table(context_table):
+            context_id_col = db.resolve_table_column(
+                "student_school_context",
+                ["context_id", "contextid"],
+            )
+            context_app_id_col = db.resolve_table_column(
+                "student_school_context",
+                ["application_id", "applicationid"],
+            )
+            if context_id_col and context_app_id_col:
+                context_join = f"LEFT JOIN {context_table} s ON a.{app_id_col} = s.{context_app_id_col}"
+
+        aurora_id_col = None
+        aurora_join = ""
+        if db.has_table(aurora_table):
+            aurora_id_col = db.resolve_table_column(
+                "aurora_evaluations",
+                ["aurora_evaluation_id", "auroraevaluationid", "evaluation_id", "evaluationid"],
+            )
+            aurora_app_id_col = db.resolve_table_column(
+                "aurora_evaluations",
+                ["application_id", "applicationid"],
+            )
+            if aurora_id_col and aurora_app_id_col:
+                aurora_join = f"LEFT JOIN {aurora_table} au ON a.{app_id_col} = au.{aurora_app_id_col}"
+
+        test_filter = f"WHERE a.{test_col} = TRUE" if db.has_applications_column(test_col) else "WHERE 1 = 0"
+        student_id_select = "NULL as student_id"
+        student_id_group = "NULL"
+        if db.has_applications_column(student_id_col):
+            student_id_select = f"a.{student_id_col} as student_id"
+            student_id_group = f"a.{student_id_col}"
+
+        merlin_select = "0 as has_merlin"
+        if merlin_id_col and merlin_join:
+            merlin_select = f"COUNT(DISTINCT CASE WHEN m.{merlin_id_col} IS NOT NULL THEN m.{merlin_id_col} END) as has_merlin"
+
+        tiana_select = "0 as has_tiana"
+        if tiana_id_col and tiana_join:
+            tiana_select = f"COUNT(DISTINCT CASE WHEN t.{tiana_id_col} IS NOT NULL THEN t.{tiana_id_col} END) as has_tiana"
+
+        rapunzel_select = "0 as has_rapunzel"
+        if rapunzel_id_col and rapunzel_join:
+            rapunzel_select = f"COUNT(DISTINCT CASE WHEN rg.{rapunzel_id_col} IS NOT NULL THEN rg.{rapunzel_id_col} END) as has_rapunzel"
+
+        mulan_select = "0 as has_mulan"
+        if mulan_id_col and mulan_join:
+            mulan_select = f"COUNT(DISTINCT CASE WHEN r.{mulan_id_col} IS NOT NULL THEN r.{mulan_id_col} END) as has_mulan"
+
+        context_select = "0 as has_moana"
+        if context_id_col and context_join:
+            context_select = f"COUNT(DISTINCT CASE WHEN s.{context_id_col} IS NOT NULL THEN s.{context_id_col} END) as has_moana"
+
+        aurora_select = "0 as has_aurora"
+        if aurora_id_col and aurora_join:
+            aurora_select = f"COUNT(DISTINCT CASE WHEN au.{aurora_id_col} IS NOT NULL THEN au.{aurora_id_col} END) as has_aurora"
+
         # Get all test students (marked with is_test_data = TRUE)
-        query = """
+        query = f"""
             SELECT 
-                a.application_id,
-                a.applicant_name,
-                a.email,
-                a.status,
-                a.uploaded_date,
-                a.student_id,
-                COUNT(DISTINCT CASE WHEN m.merlin_evaluation_id IS NOT NULL THEN m.merlin_evaluation_id END) as has_merlin,
-                COUNT(DISTINCT CASE WHEN t.tiana_application_id IS NOT NULL THEN t.tiana_application_id END) as has_tiana,
-                COUNT(DISTINCT CASE WHEN rg.rapunzel_grade_id IS NOT NULL THEN rg.rapunzel_grade_id END) as has_rapunzel,
-                COUNT(DISTINCT CASE WHEN r.mulan_recommendation_id IS NOT NULL THEN r.mulan_recommendation_id END) as has_mulan,
-                COUNT(DISTINCT CASE WHEN s.context_id IS NOT NULL THEN s.context_id END) as has_moana,
-                COUNT(DISTINCT CASE WHEN au.aurora_evaluation_id IS NOT NULL THEN au.aurora_evaluation_id END) as has_aurora
-            FROM Applications a
-            LEFT JOIN merlin_evaluations m ON a.application_id = m.application_id
-            LEFT JOIN tiana_applications t ON a.application_id = t.application_id
-            LEFT JOIN rapunzel_grades rg ON a.application_id = rg.application_id
-            LEFT JOIN mulan_recommendations r ON a.application_id = r.application_id
-            LEFT JOIN student_school_context s ON a.application_id = s.application_id
-            LEFT JOIN aurora_evaluations au ON a.application_id = au.application_id
-            WHERE a.is_test_data = TRUE
-            GROUP BY a.application_id, a.applicant_name, a.email, a.status, a.uploaded_date, a.student_id
-            ORDER BY a.uploaded_date DESC
+                a.{app_id_col} as application_id,
+                a.{applicant_col} as applicant_name,
+                a.{email_col} as email,
+                a.{status_col} as status,
+                a.{uploaded_col} as uploaded_date,
+                {student_id_select},
+                {merlin_select},
+                {tiana_select},
+                {rapunzel_select},
+                {mulan_select},
+                {context_select},
+                {aurora_select}
+            FROM {applications_table} a
+            {merlin_join}
+            {tiana_join}
+            {rapunzel_join}
+            {mulan_join}
+            {context_join}
+            {aurora_join}
+            {test_filter}
+            GROUP BY a.{app_id_col}, a.{applicant_col}, a.{email_col}, a.{status_col}, a.{uploaded_col}, {student_id_group}
+            ORDER BY a.{uploaded_col} DESC
         """
         
         students = db.execute_query(query)
@@ -2475,20 +2606,43 @@ def verify_applications():
 def get_test_data_list():
     """Get all test data (applications marked as training/test data)."""
     try:
+        applications_table = db.get_table_name("applications")
         training_col = db.get_training_example_column()
+        app_id_col = db.get_applications_column("application_id")
+        applicant_col = db.get_applications_column("applicant_name")
+        email_col = db.get_applications_column("email")
+        status_col = db.get_applications_column("status")
+        uploaded_col = db.get_applications_column("uploaded_date")
+        merlin_table = db.get_table_name("merlin_evaluations")
+
+        merlin_join = ""
+        merlin_score_select = "NULL as merlin_score"
+        if db.has_table(merlin_table):
+            merlin_score_col = db.resolve_table_column(
+                "merlin_evaluations",
+                ["overall_score", "overallscore"],
+            )
+            merlin_app_id_col = db.resolve_table_column(
+                "merlin_evaluations",
+                ["application_id", "applicationid"],
+            )
+            if merlin_score_col and merlin_app_id_col:
+                merlin_join = f"LEFT JOIN {merlin_table} m ON a.{app_id_col} = m.{merlin_app_id_col}"
+                merlin_score_select = f"m.{merlin_score_col} as merlin_score"
+
         # Get all applications marked as training (includes both training and test uploads)
         query = f"""
             SELECT 
-                a.application_id,
-                a.applicant_name, 
-                a.email,
-                a.status,
-                a.uploaded_date,
-                m.overall_score as merlin_score
-            FROM Applications a
-            LEFT JOIN merlin_evaluations m ON a.application_id = m.application_id
+                a.{app_id_col} as application_id,
+                a.{applicant_col} as applicant_name,
+                a.{email_col} as email,
+                a.{status_col} as status,
+                a.{uploaded_col} as uploaded_date,
+                {merlin_score_select}
+            FROM {applications_table} a
+            {merlin_join}
             WHERE a.{training_col} = TRUE
-            ORDER BY a.uploaded_date DESC
+            ORDER BY a.{uploaded_col} DESC
             LIMIT 100
         """
         
