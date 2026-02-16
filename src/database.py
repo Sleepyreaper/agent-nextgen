@@ -5,6 +5,7 @@ from datetime import datetime
 import psycopg
 from .config import config
 import json
+from urllib.parse import urlparse, parse_qsl, urlencode, urlunparse
 
 
 class Database:
@@ -156,8 +157,8 @@ class Database:
         postgres_url = config.postgres_url or config.get('DATABASE_URL')
         
         if postgres_url:
-            # If a full connection URL is provided, use it
-            self.connection_params = {'conninfo': postgres_url}
+            # If a full connection URL is provided, ensure required params are set
+            self.connection_params = {'conninfo': self._normalize_conninfo(postgres_url)}
             self._params_validated = True
             return self.connection_params
         
@@ -179,10 +180,25 @@ class Database:
             'user': username,
             'password': password,
             'connect_timeout': 10,
-            'sslmode': 'require'  # PostgreSQL Azure requires SSL
+            'sslmode': 'require',  # PostgreSQL Azure requires SSL
+            'options': '-c statement_timeout=10000'
         }
         self._params_validated = True
         return self.connection_params
+
+    def _normalize_conninfo(self, conninfo: str) -> str:
+        """Ensure SSL and timeouts are set on URL-style connection strings."""
+        parsed = urlparse(conninfo)
+        if not parsed.scheme or not parsed.netloc:
+            return conninfo
+
+        params = dict(parse_qsl(parsed.query, keep_blank_values=True))
+        params.setdefault('sslmode', 'require')
+        params.setdefault('connect_timeout', '10')
+        params.setdefault('statement_timeout', '10000')
+
+        updated_query = urlencode(params, doseq=True)
+        return urlunparse(parsed._replace(query=updated_query))
     
     def connect(self):
         """Establish database connection."""
