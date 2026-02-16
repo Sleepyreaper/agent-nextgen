@@ -2353,7 +2353,7 @@ def get_test_students():
 
         test_filter = f"WHERE a.{test_col} = TRUE" if db.has_applications_column(test_col) else "WHERE 1 = 0"
         student_id_select = "NULL as student_id"
-        student_id_group = "NULL"
+        student_id_group = None
         if db.has_applications_column(student_id_col):
             student_id_select = f"a.{student_id_col} as student_id"
             student_id_group = f"a.{student_id_col}"
@@ -2383,6 +2383,18 @@ def get_test_students():
             aurora_select = f"COUNT(DISTINCT CASE WHEN au.{aurora_id_col} IS NOT NULL THEN au.{aurora_id_col} END) as has_aurora"
 
         # Get all test students (marked with is_test_data = TRUE)
+        group_by_parts = [
+            f"a.{app_id_col}",
+            f"a.{applicant_col}",
+            f"a.{email_col}",
+            f"a.{status_col}",
+            f"a.{uploaded_col}",
+        ]
+        if student_id_group:
+            group_by_parts.append(student_id_group)
+
+        group_by_clause = ", ".join(group_by_parts)
+
         query = f"""
             SELECT 
                 a.{app_id_col} as application_id,
@@ -2405,7 +2417,7 @@ def get_test_students():
             {context_join}
             {aurora_join}
             {test_filter}
-            GROUP BY a.{app_id_col}, a.{applicant_col}, a.{email_col}, a.{status_col}, a.{uploaded_col}, {student_id_group}
+            GROUP BY {group_by_clause}
             ORDER BY a.{uploaded_col} DESC
         """
         
