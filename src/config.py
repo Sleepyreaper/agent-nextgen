@@ -103,6 +103,22 @@ class Config:
         self.azure_openai_api_key: Optional[str] = self._get_secret("azure-openai-api-key", "AZURE_OPENAI_API_KEY")
         self.subscription_id: str = self._get_secret("azure-subscription-id", "AZURE_SUBSCRIPTION_ID")
         self.resource_group: str = self._get_secret("azure-resource-group", "AZURE_RESOURCE_GROUP")
+
+        # Azure AI Foundry project dataset configuration
+        self.foundry_project_endpoint: Optional[str] = self._get_secret(
+            "foundry-project-endpoint",
+            "FOUNDRY_PROJECT_ENDPOINT"
+        )
+        if not self.foundry_project_endpoint:
+            self.foundry_project_endpoint = os.getenv("PROJECT_ENDPOINT")
+        self.foundry_dataset_name: Optional[str] = self._get_secret(
+            "foundry-dataset-name",
+            "FOUNDRY_DATASET_NAME"
+        )
+        self.foundry_dataset_connection_name: Optional[str] = self._get_secret(
+            "foundry-dataset-connection-name",
+            "FOUNDRY_DATASET_CONNECTION_NAME"
+        )
         
         # PostgreSQL Database configuration (primary - now using Azure PostgreSQL)
         self.postgres_url: str = self._get_secret("postgres-connection-string", "DATABASE_URL")

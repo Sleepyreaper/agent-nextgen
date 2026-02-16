@@ -1,10 +1,17 @@
 """Milo Data Scientist - Learns patterns from training outcomes."""
 
 import json
+import os
+import tempfile
 import time
+from datetime import datetime
 from typing import Any, Dict, List, Optional
+
+from azure.ai.projects import AIProjectClient
+from azure.identity import DefaultAzureCredential
 from openai import AzureOpenAI
 from src.agents.base_agent import BaseAgent
+from src.config import config
 
 
 class MiloDataScientist(BaseAgent):
@@ -107,6 +114,67 @@ class MiloDataScientist(BaseAgent):
         self._cached_at = time.time()
         return data
 
+    async def build_and_upload_foundry_dataset(self) -> Dict[str, Any]:
+        """Build a Foundry dataset from training data and upload it."""
+        if not self.db:
+            return {
+                "status": "error",
+                "agent": self.name,
+                "error": "Database connection not available"
+            }
+
+        project_endpoint = config.foundry_project_endpoint
+        if not project_endpoint:
+            return {
+                "status": "error",
+                "agent": self.name,
+                "error": "Foundry project endpoint not configured"
+            }
+
+        rows = self._build_dataset_rows()
+        if not rows:
+            return {
+                "status": "error",
+                "agent": self.name,
+                "error": "No training examples available"
+            }
+
+        dataset_name = config.foundry_dataset_name or "nextgen-training-dataset"
+        version = datetime.utcnow().strftime("v%Y%m%d%H%M%S")
+        file_path = self._write_jsonl(rows)
+
+        try:
+            project_client = AIProjectClient(
+                credential=DefaultAzureCredential(),
+                endpoint=project_endpoint
+            )
+            connection_name = self._resolve_dataset_connection(project_client)
+            dataset = project_client.datasets.upload_file(
+                name=dataset_name,
+                version=version,
+                file_path=file_path,
+                connection_name=connection_name
+            )
+            return {
+                "status": "success",
+                "agent": self.name,
+                "dataset_name": dataset_name,
+                "dataset_version": version,
+                "dataset_id": getattr(dataset, "id", None),
+                "row_count": len(rows)
+            }
+        except Exception as e:
+            return {
+                "status": "error",
+                "agent": self.name,
+                "error": str(e)
+            }
+        finally:
+            try:
+                os.remove(file_path)
+            except OSError:
+                pass
+
     async def process(self, message: str) -> str:
         """Generic message handler."""
         self.add_to_history("user", message)
@@ -170,6 +238,99 @@ class MiloDataScientist(BaseAgent):
                 "unknown": unknown_sample
             }
         }
+
+    def _build_dataset_rows(self) -> List[Dict[str, Any]]:
+        training_examples = self.db.get_training_examples()
+        rows: List[Dict[str, Any]] = []
+
+        for row in training_examples:
+            application_id = row.get("application_id") or row.get("ApplicationID")
+            agent_outputs = self._load_agent_outputs(application_id)
+            rows.append({
+                "application_id": application_id,
+                "applicant_name": row.get("applicant_name") or row.get("applicantname"),
+                "was_selected": row.get("was_selected"),
+                "status": row.get("status"),
+                "application_text": row.get("application_text") or row.get("applicationtext"),
+                "transcript_text": row.get("transcript_text") or row.get("transcripttext"),
+                "recommendation_text": row.get("recommendation_text") or row.get("recommendationtext"),
+                "school_name": row.get("school_name") or row.get("schoolname"),
+                "agent_outputs": agent_outputs
+            })
+
+        return rows
+
+    def _load_agent_outputs(self, application_id: Optional[int]) -> Dict[str, Any]:
+        if not application_id:
+            return {}
+
+        outputs: Dict[str, Any] = {}
+        table_map = {
+            "tiana": "tiana_applications",
+            "rapunzel": "rapunzel_grades",
+            "moana": "student_school_context",
+            "mulan": "mulan_recommendations",
+            "merlin": "merlin_evaluations"
+        }
+
+        for key, table in table_map.items():
+            try:
+                table_name = self.db.get_table_name(table)
+                rows = self.db.execute_query(
+                    f"SELECT * FROM {table_name} WHERE application_id = %s ORDER BY created_at DESC LIMIT 1",
+                    (application_id,)
+                )
+                if rows:
+                    outputs[key] = self._merge_parsed_json(rows[0])
+            except Exception:
+                continue
+
+        return outputs
+
+    def _merge_parsed_json(self, row: Dict[str, Any]) -> Dict[str, Any]:
+        parsed = dict(row)
+        parsed_json = row.get("parsed_json") or row.get("parsedjson")
+        if not parsed_json:
+            return parsed
+
+        try:
+            parsed_payload = json.loads(parsed_json)
+            if isinstance(parsed_payload, dict):
+                for key, value in parsed_payload.items():
+                    parsed.setdefault(key, value)
+        except Exception:
+            return parsed
+
+        return parsed
+
+    def _write_jsonl(self, rows: List[Dict[str, Any]]) -> str:
+        handle = tempfile.NamedTemporaryFile(delete=False, suffix=".jsonl")
+        handle.close()
+        with open(handle.name, "w", encoding="utf-8") as file_handle:
+            for row in rows:
+                file_handle.write(json.dumps(row, ensure_ascii=True))
+                file_handle.write("\n")
+        return handle.name
+
+    def _resolve_dataset_connection(self, project_client: AIProjectClient) -> str:
+        configured = config.foundry_dataset_connection_name
+        if configured:
+            return configured
+
+        try:
+            connections = list(project_client.connections.list())
+        except Exception as exc:
+            raise RuntimeError("Unable to list Foundry connections") from exc
+
+        if len(connections) == 1:
+            return connections[0].name
+
+        for connection in connections:
+            name = (connection.name or "").lower()
+            if "storage" in name or "blob" in name:
+                return connection.name
+
+        raise RuntimeError("Foundry dataset connection not found. Set FOUNDRY_DATASET_CONNECTION_NAME.")
 
     def _build_prompt(self, samples: Dict[str, Any]) -> str:
         samples_json = json.dumps(samples, ensure_ascii=True)

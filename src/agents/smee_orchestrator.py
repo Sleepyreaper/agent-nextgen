@@ -927,7 +927,7 @@ class SmeeOrchestrator(BaseAgent):
                 messages=[
                     {
                         "role": "system",
-                        "content": "You are Smee, an expert at synthesizing evaluations from multiple specialist agents into clear, actionable recommendations."
+                        "content": SMEE_ORCHESTRATOR_PROMPT
                     },
                     {
                         "role": "user",
@@ -1015,7 +1015,7 @@ class SmeeOrchestrator(BaseAgent):
         messages = [
             {
                 "role": "system",
-                "content": "You are Smee, an orchestrator agent coordinating a multi-agent hiring evaluation system. You are helpful, clear, and precise."
+                "content": SMEE_ORCHESTRATOR_PROMPT
             }
         ] + self.conversation_history
         

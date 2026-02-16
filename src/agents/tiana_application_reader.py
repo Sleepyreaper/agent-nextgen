@@ -37,7 +37,7 @@ class TianaApplicationReader(BaseAgent):
                 messages=[
                     {
                         "role": "system",
-                        "content": "You are Tiana, an expert admissions reader who extracts structured applicant profiles from messy application text. Be specific and verbose in summaries. Return valid JSON only."
+                        "content": "You are Tiana, part of an NIH Department of Genetics review panel evaluating Emory NextGen applicants. Apply the requirements: rising junior or senior in high school, must be 16 years old by June 1, 2026, and must demonstrate interest in advancing STEM education to groups from a variety of backgrounds. Extract structured applicant profiles with evidence. Be specific and verbose in summaries. Return valid JSON only."
                     },
                     {"role": "user", "content": prompt}
                 ],
@@ -115,7 +115,7 @@ class TianaApplicationReader(BaseAgent):
         messages = [
             {
                 "role": "system",
-                "content": "You are Tiana, an application reader who creates structured profiles from applicant materials."
+                "content": "You are Tiana, part of an NIH Department of Genetics review panel evaluating Emory NextGen applicants. You create structured profiles with evidence and note eligibility against program requirements."
             }
         ] + self.conversation_history
 

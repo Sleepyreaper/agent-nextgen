@@ -177,6 +177,76 @@
     {% endif %}
 </div>
 
+{% if aurora_evaluation and aurora_evaluation.formattedevaluation %}
+    {% set aurora = aurora_evaluation.formattedevaluation %}
+{% endif %}
+
+{% if aurora and aurora.agents %}
+<div class="card" style="margin-top: 1.5rem;">
+    <h2>Agent Summaries</h2>
+    <div class="agent-summary">
+        <strong>👸 Tiana:</strong>
+        {% if aurora.agents.tiana %}
+            {{ aurora.agents.tiana.analysis|default('Summary pending.') }}
+        {% else %}
+            Summary pending.
+        {% endif %}
+    </div>
+    <div class="agent-summary">
+        <strong>💇 Rapunzel:</strong>
+        {% if aurora.agents.rapunzel %}
+            {{ aurora.agents.rapunzel.grade_trends|default(aurora.agents.rapunzel.key_findings|default('Summary pending.')) }}
+        {% else %}
+            Summary pending.
+        {% endif %}
+    </div>
+    <div class="agent-summary">
+        <strong>🌊 Moana:</strong>
+        {% if aurora.agents.moana %}
+            {{ aurora.agents.moana.school_info|default(aurora.agents.moana.key_context|default('Summary pending.')) }}
+        {% else %}
+            Summary pending.
+        {% endif %}
+    </div>
+    <div class="agent-summary">
+        <strong>🗡️ Mulan:</strong>
+        {% if aurora.agents.mulan %}
+            {{ aurora.agents.mulan.rec_text|default('Summary pending.') }}
+        {% else %}
+            Summary pending.
+        {% endif %}
+    </div>
+</div>
+{% elif agent_results %}
+<div class="card" style="margin-top: 1.5rem;">
+    <h2>Agent Summaries</h2>
+    {% if agent_results.tiana %}
+    <div class="agent-summary">
+        <strong>👸 Tiana:</strong>
+        {{ agent_results.tiana.essay_summary or agent_results.tiana.essaysummary or 'Summary pending.' }}
+    </div>
+    {% endif %}
+    {% if agent_results.rapunzel %}
+    <div class="agent-summary">
+        <strong>💇 Rapunzel:</strong>
+        {{ agent_results.rapunzel.summary or 'Summary pending.' }}
+    </div>
+    {% endif %}
+    {% if agent_results.moana %}
+    <div class="agent-summary">
+        <strong>🌊 Moana:</strong>
+        {{ agent_results.moana.comparison_notes or agent_results.moana.comparisonnotes or 'Summary pending.' }}
+    </div>
+    {% endif %}
+    {% if agent_results.mulan %}
+    <div class="agent-summary">
+        <strong>🗡️ Mulan:</strong>
+        {{ agent_results.mulan.summary or 'Summary pending.' }}
+    </div>
+    {% endif %}
+</div>
+{% endif %}
+
 <div class="card">
     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem;">
         <h2>Application #{{ application.application_id or application.ApplicationID }}</h2>

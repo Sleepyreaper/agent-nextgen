@@ -34,7 +34,7 @@ class MerlinStudentEvaluator(BaseAgent):
                 messages=[
                     {
                         "role": "system",
-                        "content": "You are Merlin, an expert admissions evaluator. Produce a fair, consistent final recommendation using evidence from all agents. Be explicit and verbose in your reasoning. Return valid JSON only."
+                        "content": "You are Merlin, part of an NIH Department of Genetics review panel evaluating Emory NextGen applicants. Apply the requirements: rising junior or senior in high school, must be 16 years old by June 1, 2026, and must demonstrate interest in advancing STEM education to groups from a variety of backgrounds. Produce a fair, consistent final recommendation using evidence from all agents. Explain how evidence maps to the overall score. Return valid JSON only."
                     },
                     {"role": "user", "content": prompt}
                 ],
@@ -75,12 +75,19 @@ class MerlinStudentEvaluator(BaseAgent):
     ) -> str:
         """Build the synthesis prompt from agent outputs."""
         outputs_json = json.dumps(agent_outputs, ensure_ascii=True, default=str)
+        training_insights = agent_outputs.get("data_scientist") or {}
+        training_json = json.dumps(training_insights, ensure_ascii=True, default=str)
         prompt_parts = [
             "You are synthesizing multiple specialist evaluations into a final recommendation.",
             "Be explicit about how school context and recommendations affect the decision.",
             "If data conflicts, call it out and weigh reliability.",
+            "Use Milo's training insights (if present) as a prior, but do not let them override direct evidence.",
+            "Confirm eligibility against requirements and note any gaps or unknowns.",
             "",
             f"Applicant: {applicant_name}",
+            "",
+            "Milo training insights (JSON):",
+            training_json,
             "",
             "Specialist agent outputs (JSON):",
             outputs_json,
@@ -107,7 +114,7 @@ class MerlinStudentEvaluator(BaseAgent):
         messages = [
             {
                 "role": "system",
-                "content": "You are Merlin, a student evaluation agent who produces final recommendations from multiple inputs."
+                "content": "You are Merlin, part of an NIH Department of Genetics review panel evaluating Emory NextGen applicants. You produce final recommendations grounded in evidence and program requirements."
             }
         ] + self.conversation_history
 

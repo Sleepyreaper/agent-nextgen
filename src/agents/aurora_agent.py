@@ -81,12 +81,22 @@ class AuroraAgent(BaseAgent):
         }
         
         # Populate Merlin's summary
+        overall_text = (
+            merlin_assessment.get('rationale')
+            or merlin_assessment.get('overall_narrative')
+            or ''
+        )
+        considerations = (
+            merlin_assessment.get('key_risks')
+            or merlin_assessment.get('context_factors')
+            or []
+        )
         result['merlin_summary'] = {
             'score': merlin_assessment.get('overall_score', 0),
             'recommendation': merlin_assessment.get('recommendation', 'PENDING'),
-            'overall': merlin_assessment.get('overall_narrative', ''),
+            'overall': overall_text,
             'key_strengths': merlin_assessment.get('key_strengths', []),
-            'considerations': merlin_assessment.get('considerations', [])
+            'considerations': considerations
         }
         
         # Format each agent's output consistently
