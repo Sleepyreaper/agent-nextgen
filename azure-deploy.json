@@ -8,7 +8,31 @@
     },
     "location": {
       "type": "string",
-      "defaultValue": "eastus"
+      "defaultValue": "westus2"
+    },
+    "deployOpenAi": {
+      "type": "bool",
+      "defaultValue": true
+    },
+    "logAnalyticsName": {
+      "type": "string",
+      "defaultValue": "nextgen-logs"
+    },
+    "appInsightsName": {
+      "type": "string",
+      "defaultValue": "nextgen-appinsights"
+    },
+    "webAppName": {
+      "type": "string",
+      "defaultValue": ""
+    },
+    "configureWebApp": {
+      "type": "bool",
+      "defaultValue": false
+    },
+    "appInsightsRoleName": {
+      "type": "string",
+      "defaultValue": "nextgen-agents-web"
     }
   },
   "resources": [
@@ -18,6 +42,7 @@
       "name": "[parameters('accountName')]",
       "location": "[parameters('location')]",
       "kind": "OpenAI",
+      "condition": "[parameters('deployOpenAi')]",
       "sku": {
         "name": "S0"
       },
@@ -26,12 +51,61 @@
         "disableLocalAuth": false,
         "publicNetworkAccess": "Enabled"
       }
+    },
+    {
+      "type": "Microsoft.OperationalInsights/workspaces",
+      "apiVersion": "2022-10-01",
+      "name": "[parameters('logAnalyticsName')]",
+      "location": "[parameters('location')]",
+      "properties": {
+        "sku": {
+          "name": "PerGB2018"
+        },
+        "retentionInDays": 30
+      }
+    },
+    {
+      "type": "Microsoft.Insights/components",
+      "apiVersion": "2020-02-02",
+      "name": "[parameters('appInsightsName')]",
+      "location": "[parameters('location')]",
+      "kind": "web",
+      "properties": {
+        "Application_Type": "web",
+        "WorkspaceResourceId": "[resourceId('Microsoft.OperationalInsights/workspaces', parameters('logAnalyticsName'))]"
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.OperationalInsights/workspaces', parameters('logAnalyticsName'))]"
+      ]
+    },
+    {
+      "type": "Microsoft.Web/sites/config",
+      "apiVersion": "2022-09-01",
+      "name": "[concat(parameters('webAppName'), '/appsettings')]",
+      "condition": "[and(parameters('configureWebApp'), not(equals(parameters('webAppName'), '')))]",
+      "properties": {
+        "APPLICATIONINSIGHTS_CONNECTION_STRING": "[reference(resourceId('Microsoft.Insights/components', parameters('appInsightsName')), '2020-02-02').ConnectionString]",
+        "APPINSIGHTS_INSTRUMENTATIONKEY": "[reference(resourceId('Microsoft.Insights/components', parameters('appInsightsName')), '2020-02-02').InstrumentationKey]",
+        "APPLICATIONINSIGHTS_ROLE_NAME": "[parameters('appInsightsRoleName')]",
+        "ApplicationInsightsAgent_EXTENSION_VERSION": "~3"
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Insights/components', parameters('appInsightsName'))]"
+      ]
     }
   ],
   "outputs": {
     "endpoint": {
       "type": "string",
-      "value": "[reference(parameters('accountName')).endpoint]"
+      "value": "[if(parameters('deployOpenAi'), reference(resourceId('Microsoft.CognitiveServices/accounts', parameters('accountName')), '2023-05-01').endpoint, '')]"
+    },
+    "appInsightsConnectionString": {
+      "type": "string",
+      "value": "[reference(resourceId('Microsoft.Insights/components', parameters('appInsightsName')), '2020-02-02').ConnectionString]"
+    },
+    "appInsightsInstrumentationKey": {
+      "type": "string",
+      "value": "[reference(resourceId('Microsoft.Insights/components', parameters('appInsightsName')), '2020-02-02').InstrumentationKey]"
     }
   }
 }

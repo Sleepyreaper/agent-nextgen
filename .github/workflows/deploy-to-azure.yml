@@ -63,14 +63,55 @@ jobs:
         cd ..
         ls -lh app.zip
 
-    - name: Deploy to Azure App Service
+    - name: Extract publish profile metadata
+      id: publish_profile
+      env:
+        PUBLISH_PROFILE: ${{ secrets.AZURE_WEBAPP_PUBLISH_PROFILE }}
+      run: |
+        python - <<'PY'
+        import os
+        import xml.etree.ElementTree as ET
+
+        profile_xml = os.environ.get("PUBLISH_PROFILE", "").strip()
+        if not profile_xml:
+            raise SystemExit("Missing AZURE_WEBAPP_PUBLISH_PROFILE secret")
+
+        root = ET.fromstring(profile_xml)
+        publish_profile = root.find(".//publishProfile")
+        if publish_profile is None:
+            raise SystemExit("publishProfile element not found in profile XML")
+
+        site_name = publish_profile.attrib.get("siteName") or ""
+        slot_name = publish_profile.attrib.get("slotName") or ""
+        if slot_name.lower() in {"", "production"}:
+            slot_name = ""
+
+        output_path = os.environ.get("GITHUB_OUTPUT")
+        with open(output_path, "a", encoding="utf-8") as output_file:
+            output_file.write(f"app_name={site_name}\n")
+            output_file.write(f"slot_name={slot_name}\n")
+        PY
+
+    - name: Deploy to Azure App Service (production)
+      if: steps.publish_profile.outputs.slot_name == ''
       uses: azure/webapps-deploy@v2
       with:
-        app-name: ${{ secrets.AZURE_WEBAPP_NAME }}
+        app-name: ${{ steps.publish_profile.outputs.app_name }}
         publish-profile: ${{ secrets.AZURE_WEBAPP_PUBLISH_PROFILE }}
         package: app.zip
-      env:
-        ACTIONS_STEP_DEBUG: true
+
+    - name: Deploy to Azure App Service (slot)
+      if: steps.publish_profile.outputs.slot_name != ''
+      uses: azure/webapps-deploy@v2
+      with:
+        app-name: ${{ steps.publish_profile.outputs.app_name }}
+        slot-name: ${{ steps.publish_profile.outputs.slot_name }}
+        publish-profile: ${{ secrets.AZURE_WEBAPP_PUBLISH_PROFILE }}
+        package: app.zip
+
+    - name: Enable debug logs
+      if: failure()
+      run: echo "Deployment failed; check publish profile/site name alignment."
     
     - name: Wait for deployment to settle
       run: |
