@@ -164,8 +164,14 @@ def get_orchestrator():
 def index():
     """Home page - Dashboard."""
     try:
+        applications_table = db.get_table_name("applications")
         training_col = db.get_training_example_column()
         test_col = db.get_test_data_column()
+        app_id_col = db.get_applications_column("application_id")
+        applicant_col = db.get_applications_column("applicant_name")
+        email_col = db.get_applications_column("email")
+        status_col = db.get_applications_column("status")
+        uploaded_col = db.get_applications_column("uploaded_date")
         test_filter = ""
         if db.has_applications_column(test_col):
             test_filter = f" AND ({test_col} = FALSE OR {test_col} IS NULL)"
@@ -189,10 +195,15 @@ def index():
         
         # Get recent students with a simple query
         recent_query = f"""
-            SELECT application_id, applicant_name, email, status, uploaded_date
-            FROM Applications
-            WHERE {training_col} = FALSE{test_filter}
-            ORDER BY uploaded_date DESC
+            SELECT
+                a.{app_id_col} as application_id,
+                a.{applicant_col} as applicant_name,
+                a.{email_col} as email,
+                a.{status_col} as status,
+                a.{uploaded_col} as uploaded_date
+            FROM {applications_table} a
+            WHERE a.{training_col} = FALSE{test_filter}
+            ORDER BY a.{uploaded_col} DESC
             LIMIT 10
         """
         recent_results = db.execute_query(recent_query)
@@ -582,14 +593,28 @@ def test():
 def test_data():
     """View all test students created via quick test."""
     try:
-        # Get all test data students
-        test_students_query = """
-            SELECT application_id, applicant_name, email, status, uploaded_date
-            FROM Applications
-            WHERE is_test_data = TRUE
-            ORDER BY uploaded_date DESC
-        """
-        test_students = db.execute_query(test_students_query)
+        applications_table = db.get_table_name("applications")
+        test_col = db.get_test_data_column()
+        app_id_col = db.get_applications_column("application_id")
+        applicant_col = db.get_applications_column("applicant_name")
+        email_col = db.get_applications_column("email")
+        status_col = db.get_applications_column("status")
+        uploaded_col = db.get_applications_column("uploaded_date")
+
+        test_students = []
+        if db.has_applications_column(test_col):
+            test_students_query = f"""
+                SELECT
+                    a.{app_id_col} as application_id,
+                    a.{applicant_col} as applicant_name,
+                    a.{email_col} as email,
+                    a.{status_col} as status,
+                    a.{uploaded_col} as uploaded_date
+                FROM {applications_table} a
+                WHERE a.{test_col} = TRUE
+                ORDER BY a.{uploaded_col} DESC
+            """
+            test_students = db.execute_query(test_students_query)
         
         # Format for display
         formatted_students = []
@@ -619,9 +644,15 @@ def cleanup_test_data():
     """
     try:
         # Delete all related evaluation data first (foreign key constraints)
-        test_app_ids = db.execute_query(
-            "SELECT application_id FROM Applications WHERE is_test_data = TRUE"
-        )
+        applications_table = db.get_table_name("applications")
+        test_col = db.get_test_data_column()
+        app_id_col = db.get_applications_column("application_id")
+
+        test_app_ids = []
+        if db.has_applications_column(test_col):
+            test_app_ids = db.execute_query(
+                f"SELECT {app_id_col} as application_id FROM {applications_table} WHERE {test_col} = TRUE"
+            )
         
         for app_record in test_app_ids:
             app_id = app_record.get('application_id')
@@ -2135,14 +2166,19 @@ def test_stats():
     """
     try:
         training_col = db.get_training_example_column()
+        applications_table = db.get_table_name("applications")
+        app_id_col = db.get_applications_column("application_id")
+        applicant_col = db.get_applications_column("applicant_name")
+        status_col = db.get_applications_column("status")
+        uploaded_col = db.get_applications_column("uploaded_date")
         test_count = db.execute_query(
-            f"SELECT COUNT(*) as count FROM Applications WHERE {training_col} = TRUE"
+            f"SELECT COUNT(*) as count FROM {applications_table} WHERE {training_col} = TRUE"
         )
         count = test_count[0].get('count', 0) if test_count else 0
         
         # Get list of test students
         test_apps = db.execute_query(
-            f"SELECT application_id, applicant_name, status, uploaded_date FROM Applications WHERE {training_col} = TRUE ORDER BY uploaded_date DESC"
+            f"SELECT {app_id_col} as application_id, {applicant_col} as applicant_name, {status_col} as status, {uploaded_col} as uploaded_date FROM {applications_table} WHERE {training_col} = TRUE ORDER BY {uploaded_col} DESC"
         )
         
         return jsonify({
