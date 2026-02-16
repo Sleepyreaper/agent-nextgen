@@ -214,6 +214,8 @@ class Database:
         # psycopg does not accept statement_timeout as a URL param; use options instead.
         statement_timeout = params.pop('statement_timeout', '5000')
         options_value = params.get('options', '')
+        # Some providers use + in URL encoding for spaces; normalize to spaces.
+        options_value = options_value.replace('+', ' ')
         timeout_option = f"-c statement_timeout={statement_timeout}"
         if timeout_option not in options_value:
             options_value = f"{options_value} {timeout_option}".strip()
