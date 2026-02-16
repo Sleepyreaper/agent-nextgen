@@ -56,9 +56,12 @@ class BaseAgent(ABC):
         start_time = time.time()
         with tracer.start_as_current_span(operation) as span:
             span.set_attribute("agent.name", self.name)
+            span.set_attribute("ai.agent.name", self.name)
+            span.set_attribute("gen_ai.agent.name", self.name)
             span.set_attribute("gen_ai.model", model or "")
+            span.set_attribute("gen_ai.request.model", model or "")
             span.set_attribute("gen_ai.system", "azure_openai")
-            span.set_attribute("gen_ai.operation", operation)
+            span.set_attribute("gen_ai.operation.name", operation)
             max_tokens = kwargs.get("max_completion_tokens") or kwargs.get("max_tokens")
             if max_tokens is not None:
                 span.set_attribute("gen_ai.request.max_tokens", int(max_tokens))
