@@ -14,6 +14,65 @@ class Database:
         self.connection_params = None
         self.connection = None
         self._params_validated = False
+        self._table_columns_cache = {}
+        self._training_example_column = None
+        self._test_data_column = None
+
+    def _get_table_columns(self, table_name: str) -> set:
+        """Return a cached set of column names for a table (lowercase)."""
+        table_key = table_name.lower()
+        if table_key in self._table_columns_cache:
+            return self._table_columns_cache[table_key]
+
+        try:
+            conn = self.connect()
+            cursor = conn.cursor()
+            cursor.execute(
+                """
+                SELECT column_name
+                FROM information_schema.columns
+                WHERE table_name = %s
+                """,
+                (table_key,)
+            )
+            columns = {row[0].lower() for row in cursor.fetchall()}
+            cursor.close()
+        except Exception:
+            columns = set()
+
+        self._table_columns_cache[table_key] = columns
+        return columns
+
+    def _column_exists(self, table_name: str, column_name: str) -> bool:
+        if not column_name:
+            return False
+        return column_name.lower() in self._get_table_columns(table_name)
+
+    def _resolve_column(self, table_name: str, candidates: List[str]) -> Optional[str]:
+        columns = self._get_table_columns(table_name)
+        for candidate in candidates:
+            if candidate.lower() in columns:
+                return candidate.lower()
+        return candidates[0].lower() if candidates else None
+
+    def get_training_example_column(self) -> Optional[str]:
+        if not self._training_example_column:
+            self._training_example_column = self._resolve_column(
+                "applications",
+                ["is_training_example", "istrainingexample"],
+            )
+        return self._training_example_column
+
+    def get_test_data_column(self) -> Optional[str]:
+        if not self._test_data_column:
+            self._test_data_column = self._resolve_column(
+                "applications",
+                ["is_test_data", "istestdata"],
+            )
+        return self._test_data_column
+
+    def has_applications_column(self, column_name: str) -> bool:
+        return self._column_exists("applications", column_name)
     
     def _build_connection_params(self) -> Dict[str, Any]:
         """Build PostgreSQL connection parameters from config."""
@@ -94,7 +153,24 @@ class Database:
             columns = [column[0].lower() for column in cursor.description] if cursor.description else []
             results = []
             for row in cursor.fetchall():
-                results.append(dict(zip(columns, row)))
+                mapped = dict(zip(columns, row))
+                alias_pairs = [
+                    ("applicationid", "application_id"),
+                    ("applicantname", "applicant_name"),
+                    ("uploadeddate", "uploaded_date"),
+                    ("wasselected", "was_selected"),
+                    ("originalfilename", "original_file_name"),
+                    ("filetype", "file_type"),
+                    ("blobstoragepath", "blob_storage_path"),
+                    ("istrainingexample", "is_training_example"),
+                    ("istestdata", "is_test_data"),
+                ]
+                for legacy, modern in alias_pairs:
+                    if legacy in mapped and modern not in mapped:
+                        mapped[modern] = mapped[legacy]
+                    if modern in mapped and legacy not in mapped:
+                        mapped[legacy] = mapped[modern]
+                results.append(mapped)
             
             cursor.close()
             return results
@@ -163,18 +239,47 @@ class Database:
                           was_selected: Optional[bool] = None,
                           student_id: Optional[str] = None) -> int:
         """Create a new application record."""
-        query = """
+        training_col = self.get_training_example_column()
+        test_col = self.get_test_data_column()
+
+        columns = [
+            "applicant_name",
+            "email",
+            "application_text",
+            "original_file_name",
+            "file_type",
+            training_col,
+            "was_selected",
+            "status",
+        ]
+        values = [
+            applicant_name,
+            email,
+            application_text,
+            file_name,
+            file_type,
+            is_training,
+            was_selected,
+            "Pending",
+        ]
+
+        if self.has_applications_column(test_col):
+            columns.insert(6, test_col)
+            values.insert(6, is_test_data)
+
+        if self.has_applications_column("student_id"):
+            columns.append("student_id")
+            values.append(student_id)
+
+        placeholders = ", ".join(["%s"] * len(columns))
+        column_list = ", ".join(columns)
+        query = f"""
             INSERT INTO Applications
-            (applicant_name, email, application_text, original_file_name, file_type,
-             is_training_example, is_test_data, was_selected, status, student_id)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, 'Pending', %s)
+            ({column_list})
+            VALUES ({placeholders})
             RETURNING application_id
         """
-        return self.execute_scalar(
-            query,
-            (applicant_name, email, application_text, file_name, file_type, 
-             is_training, is_test_data, was_selected, student_id)
-        )
+        return self.execute_scalar(query, tuple(values))
     
     def get_application(self, application_id: int) -> Optional[Dict[str, Any]]:
         """Get application by ID."""
@@ -186,12 +291,13 @@ class Database:
     
     def get_training_examples(self) -> List[Dict[str, Any]]:
         """Get all training examples."""
+        training_col = self.get_training_example_column()
         query = """
             SELECT * FROM Applications 
-            WHERE is_training_example = TRUE 
+            WHERE {training_col} = TRUE 
             ORDER BY uploaded_date DESC
         """
-        return self.execute_query(query)
+        return self.execute_query(query.format(training_col=training_col))
     
     def save_evaluation(self, application_id: int, agent_name: str, overall_score: float,
                        technical_score: float, communication_score: float,
@@ -223,12 +329,13 @@ class Database:
     
     def get_pending_applications(self) -> List[Dict[str, Any]]:
         """Get all pending applications."""
+        training_col = self.get_training_example_column()
         query = """
             SELECT * FROM Applications 
-            WHERE status = 'Pending' AND is_training_example = FALSE
+            WHERE status = 'Pending' AND {training_col} = FALSE
             ORDER BY uploaded_date DESC
         """
-        return self.execute_query(query)
+        return self.execute_query(query.format(training_col=training_col))
     
     def save_school_context(
         self,
@@ -568,12 +675,13 @@ class Database:
     
     def get_applications_with_evaluations(self) -> List[Dict[str, Any]]:
         """Get all applications (non-training examples)."""
+        training_col = self.get_training_example_column()
         query = """
             SELECT * FROM Applications 
-            WHERE is_training_example = FALSE
+            WHERE {training_col} = FALSE
             ORDER BY uploaded_date DESC
         """
-        return self.execute_query(query)
+        return self.execute_query(query.format(training_col=training_col))
 
     def save_aurora_evaluation(
         self,
@@ -683,10 +791,11 @@ class Database:
         try:
             conn = self.connect()
             cursor = conn.cursor()
+            training_col = self.get_training_example_column()
             
             # Get all test application IDs
             cursor.execute(
-                "SELECT application_id FROM Applications WHERE is_training_example = TRUE"
+                f"SELECT application_id FROM Applications WHERE {training_col} = TRUE"
             )
             test_app_ids = [row[0] for row in cursor.fetchall()]
             
@@ -826,6 +935,12 @@ class Database:
             List of dicts with: first_name, last_name, high_school, merlin_score, 
             application_id, email, status, uploaded_date, missing_fields
         """
+        training_col = self.get_training_example_column()
+        test_col = self.get_test_data_column()
+        test_filter = ""
+        if self.has_applications_column(test_col):
+            test_filter = f" AND (a.{test_col} = FALSE OR a.{test_col} IS NULL)"
+
         if is_training:
             base_query = """
                 SELECT 
@@ -842,7 +957,7 @@ class Database:
                 LEFT JOIN merlin_evaluations m ON a.application_id = m.application_id
                 LEFT JOIN student_school_context ssc ON a.application_id = ssc.application_id
                 LEFT JOIN schools s ON ssc.school_id = s.school_id
-                WHERE a.is_training_example = TRUE
+                WHERE a.{training_col} = TRUE
             """
         else:
             base_query = """
@@ -860,8 +975,7 @@ class Database:
                 LEFT JOIN merlin_evaluations m ON a.application_id = m.application_id
                 LEFT JOIN student_school_context ssc ON a.application_id = ssc.application_id
                 LEFT JOIN schools s ON ssc.school_id = s.school_id
-                WHERE a.is_training_example = FALSE
-                  AND (a.is_test_data = FALSE OR a.is_test_data IS NULL)
+                                WHERE a.{training_col} = FALSE{test_filter}
             """
         
         # Add search filter if provided
@@ -873,6 +987,7 @@ class Database:
             params = None
         
         # Always sort by last name
+        base_query = base_query.format(training_col=training_col, test_filter=test_filter)
         base_query += " ORDER BY a.applicant_name"
         
         results = self.execute_query(base_query, params)

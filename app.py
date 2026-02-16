@@ -164,14 +164,19 @@ def get_orchestrator():
 def index():
     """Home page - Dashboard."""
     try:
+        training_col = db.get_training_example_column()
+        test_col = db.get_test_data_column()
+        test_filter = ""
+        if db.has_applications_column(test_col):
+            test_filter = f" AND ({test_col} = FALSE OR {test_col} IS NULL)"
+
         # Simplified query to avoid timeout - just get basic count with a limit
-        query = """
+        query = f"""
             SELECT COUNT(*) as total,
                    SUM(CASE WHEN status = 'Pending' THEN 1 ELSE 0 END) as pending,
                    SUM(CASE WHEN status != 'Pending' THEN 1 ELSE 0 END) as evaluated
             FROM Applications 
-            WHERE is_training_example = FALSE 
-              AND (is_test_data = FALSE OR is_test_data IS NULL)
+            WHERE {training_col} = FALSE{test_filter}
         """
         result = db.execute_query(query)
         
@@ -183,11 +188,10 @@ def index():
             total_count = pending_count = evaluated_count = 0
         
         # Get recent students with a simple query
-        recent_query = """
+                recent_query = f"""
             SELECT application_id, applicant_name, email, status, uploaded_date
             FROM Applications
-            WHERE is_training_example = FALSE
-              AND (is_test_data = FALSE OR is_test_data IS NULL)
+                        WHERE {training_col} = FALSE{test_filter}
             ORDER BY uploaded_date DESC
             LIMIT 10
         """
@@ -1397,10 +1401,12 @@ def delete_training(application_id):
         if not application or not application.get('is_training_example'):
             flash('Training example not found', 'error')
             return redirect(url_for('training'))
+
+        training_col = db.get_training_example_column()
         
         # Delete the training example
         db.execute_non_query(
-            "DELETE FROM Applications WHERE application_id = %s AND is_training_example = TRUE",
+            f"DELETE FROM Applications WHERE application_id = %s AND {training_col} = TRUE",
             (application_id,)
         )
         
@@ -1988,10 +1994,12 @@ def cleanup_test_endpoint():
     """
     try:
         cleanup_test_data()
+
+        training_col = db.get_training_example_column()
         
         # Count remaining test data
         remaining = db.execute_query(
-            "SELECT COUNT(*) as count FROM Applications WHERE is_training_example = TRUE"
+            f"SELECT COUNT(*) as count FROM Applications WHERE {training_col} = TRUE"
         )
         count = remaining[0].get('count', 0) if remaining else 0
         
@@ -2126,14 +2134,15 @@ def test_stats():
     Get statistics about test data currently in the database.
     """
     try:
+        training_col = db.get_training_example_column()
         test_count = db.execute_query(
-            "SELECT COUNT(*) as count FROM Applications WHERE is_training_example = TRUE"
+            f"SELECT COUNT(*) as count FROM Applications WHERE {training_col} = TRUE"
         )
         count = test_count[0].get('count', 0) if test_count else 0
         
         # Get list of test students
         test_apps = db.execute_query(
-            "SELECT application_id, applicant_name, status, uploaded_date FROM Applications WHERE is_training_example = TRUE ORDER BY uploaded_date DESC"
+            f"SELECT application_id, applicant_name, status, uploaded_date FROM Applications WHERE {training_col} = TRUE ORDER BY uploaded_date DESC"
         )
         
         return jsonify({
@@ -2364,14 +2373,30 @@ def verify_applications():
     try:
         scope = request.args.get('scope', 'all').lower()
 
+        training_col = db.get_training_example_column()
+        test_col = db.get_test_data_column()
+        has_test_col = db.has_applications_column(test_col)
+
         where_clause = ""
         params = []
         if scope == 'test':
-            where_clause = "WHERE a.is_test_data = TRUE"
+            if has_test_col:
+                where_clause = f"WHERE a.{test_col} = TRUE"
+            else:
+                where_clause = "WHERE 1 = 0"
         elif scope == 'training':
-            where_clause = "WHERE a.is_training_example = TRUE"
+            where_clause = f"WHERE a.{training_col} = TRUE"
         elif scope == '2026':
-            where_clause = "WHERE a.is_training_example = FALSE AND (a.is_test_data = FALSE OR a.is_test_data IS NULL)"
+            if has_test_col:
+                where_clause = f"WHERE a.{training_col} = FALSE AND (a.{test_col} = FALSE OR a.{test_col} IS NULL)"
+            else:
+                where_clause = f"WHERE a.{training_col} = FALSE"
+
+        test_col_select = "FALSE AS is_test_data"
+        test_col_group = "FALSE"
+        if has_test_col:
+            test_col_select = f"a.{test_col} AS is_test_data"
+            test_col_group = f"a.{test_col}"
 
         query = f"""
             SELECT
@@ -2379,8 +2404,8 @@ def verify_applications():
                 a.applicant_name,
                 a.email,
                 a.status,
-                a.is_training_example,
-                a.is_test_data,
+                a.{training_col} AS is_training_example,
+                {test_col_select},
                 a.missing_fields,
                 (a.application_text IS NOT NULL AND a.application_text != '') AS has_application_text,
                 (a.transcript_text IS NOT NULL AND a.transcript_text != '') AS has_transcript_text,
@@ -2397,7 +2422,7 @@ def verify_applications():
             LEFT JOIN merlin_evaluations m ON a.application_id = m.application_id
             LEFT JOIN aurora_evaluations au ON a.application_id = au.application_id
             {where_clause}
-            GROUP BY a.application_id, a.applicant_name, a.email, a.status, a.is_training_example, a.is_test_data, a.missing_fields,
+            GROUP BY a.application_id, a.applicant_name, a.email, a.status, a.{training_col}, {test_col_group}, a.missing_fields,
                      a.application_text, a.transcript_text, a.recommendation_text
             ORDER BY a.uploaded_date DESC
             LIMIT 200
@@ -2450,8 +2475,9 @@ def verify_applications():
 def get_test_data_list():
     """Get all test data (applications marked as training/test data)."""
     try:
+        training_col = db.get_training_example_column()
         # Get all applications marked as training (includes both training and test uploads)
-        query = """
+        query = f"""
             SELECT 
                 a.application_id,
                 a.applicant_name, 
@@ -2461,7 +2487,7 @@ def get_test_data_list():
                 m.overall_score as merlin_score
             FROM Applications a
             LEFT JOIN merlin_evaluations m ON a.application_id = m.application_id
-            WHERE a.is_training_example = TRUE
+            WHERE a.{training_col} = TRUE
             ORDER BY a.uploaded_date DESC
             LIMIT 100
         """
@@ -2502,11 +2528,19 @@ def get_test_data_list():
 def clear_test_data():
     """Clear all test data from the database (synthetic test students only)."""
     try:
+        test_col = db.get_test_data_column()
         # Get all test application IDs (where is_test_data=TRUE)
-        test_apps = db.execute_query("""
+        if not db.has_applications_column(test_col):
+            return jsonify({
+                'status': 'success',
+                'message': 'No test data column found; nothing to delete',
+                'count': 0
+            })
+
+        test_apps = db.execute_query(f"""
             SELECT application_id
             FROM applications
-            WHERE is_test_data = TRUE
+            WHERE {test_col} = TRUE
         """)
         
         test_app_ids = [app.get('application_id') for app in test_apps]
@@ -2538,7 +2572,7 @@ def clear_test_data():
                 pass
         
         # Delete all test applications in one query
-        db.execute_non_query("DELETE FROM applications WHERE is_test_data = TRUE")
+        db.execute_non_query(f"DELETE FROM applications WHERE {test_col} = TRUE")
         
         # Delete the test submission records
         db.execute_non_query("DELETE FROM test_submissions")
