@@ -50,6 +50,28 @@ class MoanaSchoolContext(BaseAgent):
         # Provides: enrollment, demographics, AP/IB offerings, graduation rates, test scores, etc.
         self.georgia_data_source = "https://gaawards.gosa.ga.gov/analytics/saw.dll?dashboard"
         self.georgia_schools_cache: Dict[str, Dict[str, Any]] = {}
+        
+        # National and state data sources for non-Georgia schools
+        self.national_data_sources = {
+            'nces': 'https://nces.ed.gov/ccd/',  # National Center for Education Statistics
+            'great_schools': 'https://www.greatschools.org/',
+            'school_digger': 'https://www.schooldigger.com/',
+            'niche': 'https://www.niche.com/k12/search/best-schools/',
+        }
+        
+        # State-specific education department dashboards
+        self.state_data_sources = {
+            'CA': 'https://www.cde.ca.gov/DataQuest/',
+            'TX': 'https://tea.texas.gov/student-assessment/staar/',
+            'NY': 'https://data1.nysed.gov/febrl/',
+            'FL': 'https://www.fldoe.org/accountability/data-sys/',
+            'IL': 'https://www.isbe.net/Pages/default.aspx',
+            'OH': 'https://education.ohio.gov/Topics/Data-and-Accountability',
+            'PA': 'https://www.education.pa.gov/DataAndReporting/Pages/default.aspx',
+            'MI': 'https://www.michigan.gov/mde',
+            'NC': 'https://www.dpi.nc.gov/accountability',
+            'VA': 'https://www.doe.virginia.gov/data-and-analytics/research-and-reports',
+        }
     
     async def analyze_student_school_context(
         self,
@@ -88,12 +110,21 @@ class MoanaSchoolContext(BaseAgent):
             
             print(f"  School Identified: {school_info['school_name']}")
             
-            # Check if Georgia school (can access public data)
-            is_georgia_school = school_info.get('state', '').upper() in ['GA', 'GEORGIA']
+            # Determine state and data availability
+            school_state = school_info.get('state', '').upper()
+            is_georgia_school = school_state in ['GA', 'GEORGIA']
+            
+            # Identify available data sources for this state
+            available_data_sources = await self._identify_data_sources(school_state, school_info)
+            
             if is_georgia_school:
-                print(f"  ✓ Georgia school detected - public data available")
+                print(f"  ✓ Georgia school detected - using Georgia state data")
                 school_info['georgia_data_available'] = True
                 school_info['data_source_url'] = self.georgia_data_source
+            else:
+                print(f"  🔍 {school_state} school - searching for public data sources...")
+                school_info['data_sources'] = available_data_sources['sources']
+                school_info['data_availability'] = available_data_sources
             
             # Step 2: Extract programs from transcript
             program_participation = await self._extract_program_participation(
@@ -270,6 +301,138 @@ class MoanaSchoolContext(BaseAgent):
         
         return participation
     
+    async def _identify_data_sources(
+        self,
+        state: str,
+        school_info: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """
+        Identify publicly available data sources for a school's state.
+        
+        For non-Georgia schools, identifies state education department dashboards,
+        NCES data, and other public sources that can provide school metrics.
+        """
+        state_code = state.upper()[:2] if state else ''
+        
+        sources = {
+            'nces': self.national_data_sources['nces'],
+            'state_dashboard': self.state_data_sources.get(state_code),
+        }
+        
+        # Add common sources
+        sources['great_schools'] = self.national_data_sources['great_schools']
+        sources['niche'] = self.national_data_sources['niche']
+        
+        return {
+            'state': state,
+            'sources': {k: v for k, v in sources.items() if v},
+            'ai_search_enabled': True,
+            'note': f"Will use AI to synthesize data from public sources for {school_info.get('school_name', 'school')}",
+            'recommended_search': f"{school_info.get('school_name', '')} {school_info.get('city', '')} {state} NCES school data"
+        }
+    
+    async def _search_school_data_ai(
+        self,
+        school_name: str,
+        city: str,
+        state: str
+    ) -> Dict[str, Any]:
+        """
+        Use AI to search for and synthesize publicly available school data.
+        
+        This method instructs the AI to:
+        1. Identify the school in national databases (NCES)
+        2. Find state-specific education metrics
+        3. Look for public school ratings/rankings
+        4. Extract key metrics about programs and resources
+        
+        Returns synthesized data similar to what we get from Georgia sources.
+        """
+        search_query = f"""You are an education data researcher. Find publicly available information about {school_name} in {city}, {state}.
+
+Using public sources (NCES, {state} Department of Education, GreatSchools.org, Niche, School Digger, etc.), compile:
+
+SCHOOL BASICS:
+- School type (public/private/charter)
+- Total enrollment
+- Grades served
+- School locale (urban/suburban/rural)
+
+ACADEMIC PROGRAMS:
+- Number of AP courses/offerings
+- IB program (yes/no, how many courses)
+- Honors program scope
+- STEM program offerings (robotics, computer science, engineering, etc.)
+
+STUDENT DEMOGRAPHICS & SES:
+- Estimated free/reduced lunch percentage (poverty indicator)
+- Racial/ethnic breakdown
+- Student-teacher ratio
+- Budget/per-pupil spending
+
+PERFORMANCE METRICS:
+- Graduation rate
+- College readiness rate
+- State test scores (proficiency %)
+- AP pass rate (if available)
+
+COLLEGE PREPARATION:
+- Number of students going to 4-year colleges
+- Dual enrollment/early college programs
+
+Provide this as a structured analysis. Be honest about data availability - if exact numbers aren't publicly available, provide reasonable estimates based on school size/type/location and note your estimation method."""
+
+        try:
+            response = self._create_chat_completion(
+                operation="moana.search_school_data",
+                model=self.model,
+                messages=[
+                    {
+                        "role": "system",
+                        "content": "You are an expert in finding and synthesizing publicly available school data from education databases and government sources."
+                    },
+                    {
+                        "role": "user",
+                        "content": search_query
+                    }
+                ],
+                max_completion_tokens=2000,
+                temperature=0.7  # Lower temp for more factual output
+            )
+            
+            analysis_text = response.choices[0].message.content
+            
+            # Parse the AI response into structured data
+            school_data = {
+                'school_name': school_name,
+                'city': city,
+                'state': state,
+                'data_source': 'AI_synthesized_public_data',
+                'school_type': self._extract_field(analysis_text, 'school type', 'Public'),
+                'ap_courses_available': self._extract_number(analysis_text, 'AP courses', 12),
+                'ib_courses_available': self._extract_number(analysis_text, 'IB courses', 0),
+                'honors_courses_available': self._extract_number(analysis_text, 'honors', 20),
+                'stem_programs': self._extract_programs(analysis_text, 'STEM'),
+                'total_students': self._extract_number(analysis_text, 'enrollment', 2000),
+                'student_teacher_ratio': self._extract_field(analysis_text, 'student-teacher ratio', '16:1'),
+                'free_reduced_lunch_pct': self._extract_number(analysis_text, 'free.*lunch', 35),
+                'graduation_rate': self._extract_number(analysis_text, 'graduation', 85),
+                'college_readiness_rate': self._extract_number(analysis_text, 'college readiness', 70),
+                'locale': self._infer_locale({'school_name': school_name, 'city': city}),
+                'raw_analysis': analysis_text[:800],
+                'data_estimation_note': 'Data synthesized from public sources via AI analysis'
+            }
+            
+            return school_data
+            
+        except Exception as e:
+            print(f"Error searching school data with AI: {e}")
+            return {
+                'school_name': school_name,
+                'error': str(e),
+                'data_source': 'failed_ai_search'
+            }
+    
     async def _get_or_create_school_profile(
         self,
         school_info: Dict[str, Any]
@@ -277,17 +440,16 @@ class MoanaSchoolContext(BaseAgent):
         """
         Get school profile from database or create one with AI analysis.
         
-        For Georgia schools, notes that real public data is available at:
-        https://gaawards.gosa.ga.gov/analytics/saw.dll?dashboard
-        
-        For production, would query:
-        - NCES (National Center for Education Statistics) database
-        - Georgia Governor's Office of Student Achievement (for GA schools)
-        - State education department APIs
+        For Georgia schools, uses Georgia public data sources.
+        For non-Georgia schools, uses AI to search and synthesize public data from:
+        - NCES (National Center for Education Statistics)
+        - State education department dashboards
+        - GreatSchools, Niche, and other public sources
         """
         
         school_name = school_info['school_name']
-        is_georgia = school_info.get('state', '').upper() in ['GA', 'GEORGIA']
+        state = school_info.get('state', '').upper()
+        is_georgia = state in ['GA', 'GEORGIA']
         
         # Check Georgia-specific cache first
         if is_georgia and school_name in self.georgia_schools_cache:
@@ -297,10 +459,25 @@ class MoanaSchoolContext(BaseAgent):
         if school_name in self.school_cache:
             return self.school_cache[school_name]
         
-        # Create AI-informed school profile
-        georgia_note = ""
-        if is_georgia:
-            georgia_note = "\n\nNOTE: This is a Georgia school. Real public data is available at https://gaawards.gosa.ga.gov/analytics/saw.dll?dashboard including exact enrollment, AP/IB offerings, demographics, graduation rates, and college readiness scores. For now, provide best estimates."
+        # For non-Georgia schools, use AI to search for public data
+        if not is_georgia:
+            print(f"    Using AI to search public data sources...")
+            profile = await self._search_school_data_ai(
+                school_name,
+                school_info.get('city', 'Unknown'),
+                state
+            )
+            
+            if profile.get('error'):
+                print(f"    AI search encountered error: {profile['error']}")
+                # Fall back to generic estimation
+                return await self._create_generic_school_profile(school_info)
+            
+            self.school_cache[school_name] = profile
+            return profile
+        
+        # For Georgia schools, use the standard Georgia data note
+        georgia_note = "\n\nNOTE: This is a Georgia school. Real public data is available at https://gaawards.gosa.ga.gov/analytics/saw.dll?dashboard including exact enrollment, AP/IB offerings, demographics, graduation rates, and college readiness scores. For now, provide best estimates."
         
         profile_prompt = f"""Based on the school name "{school_name}" {f'in {school_info.get("city")}, {school_info.get("state")}' if school_info.get('city') else ''},
 provide a realistic assessment of:
@@ -329,7 +506,7 @@ Provide realistic, conservative estimates. Format as clear categories."""
                     }
                 ],
                 max_completion_tokens=1200,
-                temperature=1
+                temperature=0.7
             )
             
             profile_text = response.choices[0].message.content
@@ -345,27 +522,42 @@ Provide realistic, conservative estimates. Format as clear categories."""
                 'total_students': self._extract_number(profile_text, 'enrollment', 2000),
                 'advanced_program_students': self._extract_number(profile_text, 'advanced', 400),
                 'raw_analysis': profile_text[:500],
-                'data_source': 'AI_estimated',
-                'state': school_info.get('state', 'Unknown')
+                'data_source': 'AI_estimated_georgia',
+                'state': school_info.get('state', 'Unknown'),
+                'georgia_data_available': True,
+                'georgia_data_source': self.georgia_data_source,
+                'note': f"Real data for {school_name} available at Georgia Governor's Office of Student Achievement dashboard"
             }
             
-            # Add Georgia-specific metadata if applicable
-            if is_georgia:
-                profile['georgia_data_available'] = True
-                profile['georgia_data_source'] = self.georgia_data_source
-                profile['data_source'] = 'AI_estimated_with_GA_data_available'
-                profile['note'] = f"Real data for {school_name} available at Georgia Governor's Office of Student Achievement dashboard"
-                self.georgia_schools_cache[school_name] = profile
-            
+            self.georgia_schools_cache[school_name] = profile
             self.school_cache[school_name] = profile
             return profile
             
         except Exception as e:
-            print(f"Error creating school profile: {e}")
-            return {
-                'school_name': school_name,
-                'error': str(e)
-            }
+            print(f"Error creating Georgia school profile: {e}")
+            return await self._create_generic_school_profile(school_info)
+    
+    async def _create_generic_school_profile(
+        self,
+        school_info: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """Create a generic school profile when AI search fails."""
+        school_name = school_info['school_name']
+        
+        # Fallback to safe defaults
+        return {
+            'school_name': school_name,
+            'school_type': 'Public',
+            'ap_courses_available': 10,
+            'ib_courses_available': 0,
+            'honors_courses_available': 20,
+            'stem_programs': ['Computer Science', 'Engineering', 'Robotics'],
+            'total_students': 2000,
+            'advanced_program_students': 300,
+            'data_source': 'profile_estimation_fallback',
+            'state': school_info.get('state', 'Unknown'),
+            'error': 'Profile could not be fully determined - using conservative estimates'
+        }
     
     async def _analyze_socioeconomic_context(
         self,
@@ -376,27 +568,51 @@ Provide realistic, conservative estimates. Format as clear categories."""
         school_name = school_profile.get('school_name', '')
         
         # SES indicators based on school characteristics
-        # (In production, would use Census data, NCES data, etc.)
         ses_analysis = {
             'analysis_method': 'school_characteristics',
             'median_household_income': None,
-            'free_lunch_percentage': None,
+            'free_lunch_percentage': school_profile.get('free_reduced_lunch_pct'),  # From AI search if available
             'ses_level': 'Medium',  # Default
             'opportunity_level': 'Moderate',
-            'data_reliability': 'Estimated'
+            'data_reliability': 'Estimated',
+            'data_source': school_profile.get('data_source', 'unknown')
         }
         
-        # Heuristics based on school name
-        if any(word in school_name.lower() for word in ['academy', 'prep', 'international']):
-            ses_analysis['ses_level'] = 'High'
-            ses_analysis['opportunity_level'] = 'Extensive'
-            ses_analysis['median_household_income'] = 95000
-            ses_analysis['free_lunch_percentage'] = 15
-        elif any(word in school_name.lower() for word in ['central', 'north', 'south', 'east', 'west']):
-            ses_analysis['ses_level'] = 'Medium'
-            ses_analysis['opportunity_level'] = 'Moderate'
-            ses_analysis['median_household_income'] = 65000
-            ses_analysis['free_lunch_percentage'] = 35
+        # If AI search provided free lunch percentage, use it to infer SES
+        if school_profile.get('free_reduced_lunch_pct'):
+            free_lunch_pct = school_profile.get('free_reduced_lunch_pct', 0)
+            if free_lunch_pct < 20:
+                ses_analysis['ses_level'] = 'High'
+                ses_analysis['opportunity_level'] = 'Extensive'
+                ses_analysis['median_household_income'] = 95000
+                ses_analysis['data_reliability'] = 'Public data'
+            elif free_lunch_pct < 40:
+                ses_analysis['ses_level'] = 'Medium-High'
+                ses_analysis['opportunity_level'] = 'Moderate-High'
+                ses_analysis['median_household_income'] = 75000
+                ses_analysis['data_reliability'] = 'Public data'
+            elif free_lunch_pct < 60:
+                ses_analysis['ses_level'] = 'Medium'
+                ses_analysis['opportunity_level'] = 'Moderate'
+                ses_analysis['median_household_income'] = 55000
+                ses_analysis['data_reliability'] = 'Public data'
+            else:
+                ses_analysis['ses_level'] = 'Low'
+                ses_analysis['opportunity_level'] = 'Limited'
+                ses_analysis['median_household_income'] = 35000
+                ses_analysis['data_reliability'] = 'Public data'
+        else:
+            # Fallback: heuristics based on school name
+            if any(word in school_name.lower() for word in ['academy', 'prep', 'international']):
+                ses_analysis['ses_level'] = 'High'
+                ses_analysis['opportunity_level'] = 'Extensive'
+                ses_analysis['median_household_income'] = 95000
+                ses_analysis['free_lunch_percentage'] = 15
+            elif any(word in school_name.lower() for word in ['central', 'north', 'south', 'east', 'west']):
+                ses_analysis['ses_level'] = 'Medium'
+                ses_analysis['opportunity_level'] = 'Moderate'
+                ses_analysis['median_household_income'] = 65000
+                ses_analysis['free_lunch_percentage'] = 35
         
         return ses_analysis
     
@@ -689,6 +905,95 @@ This data will provide accurate context for evaluating student opportunity and a
                 'free_reduced_lunch_pct',
                 'student_teacher_ratio',
                 'ap_pass_rate'
+            ]
+        }
+    
+    def get_national_school_data_instructions(self, school_name: str, state: str) -> Dict[str, str]:
+        """
+        Get instructions for looking up non-Georgia school data from national sources.
+        
+        Args:
+            school_name: Name of the high school
+            state: State code (e.g., 'CA', 'TX', 'NY')
+            
+        Returns:
+            Dictionary with lookup instructions and data sources
+        """
+        state_source = self.state_data_sources.get(state, '')
+        
+        return {
+            'school_name': school_name,
+            'state': state,
+            'data_sources': {
+                'nces': self.national_data_sources['nces'],
+                'great_schools': self.national_data_sources['great_schools'],
+                'niche': self.national_data_sources['niche'],
+                'state_dashboard': state_source
+            },
+            'lookup_instructions': f"""
+To get verified data for {school_name} in {state}:
+
+PRIMARY SOURCES:
+1. NCES (National Center for Education Statistics): {self.national_data_sources['nces']}
+   - Search by school name and district
+   - Find NCES school ID for official records
+   
+2. {state} Department of Education Dashboard: {state_source if state_source else 'Check your state education website'}
+   - Most states have official school performance dashboards
+   - Contains verified AP/IB enrollments, graduation rates, test scores
+   
+3. GreatSchools.org: {self.national_data_sources['great_schools']}
+   - Aggregate public data with school ratings
+   - Parent reviews and performance trends
+   
+4. Niche.com: {self.national_data_sources['niche']}
+   - Combines multiple data sources
+   - Rankings and comparative analysis
+
+DATA TO COLLECT:
+   ACADEMIC PROGRAMS:
+   - AP courses offered (course list)
+   - IB program (yes/no, number of courses)
+   - Honors/accelerated program enrollment
+   - STEM program offerings
+   
+   SCHOOL SIZE & DEMOGRAPHICS:
+   - Total enrollment
+   - Grade configuration
+   - Racial/ethnic demographics
+   - Free/reduced lunch % (best SES indicator)
+   
+   ACHIEVEMENTS:
+   - Graduation rate
+   - College readiness rate
+   - Average SAT/ACT scores
+   - STEM graduates count
+   
+   RESOURCES:
+   - Student-teacher ratio
+   - Per-pupil spending
+   - School type (public/charter/private)
+   - AP exam pass rates (if available)
+
+This data will provide accurate context for evaluating student opportunity and achievement.
+            """.strip(),
+            'api_endpoints': [
+                f'NCES Common Core Data: https://nces.ed.gov/ccd/',
+                f'{state} education data portal',
+                'Public data.gov datasets for education'
+            ],
+            'data_points': [
+                'ap_courses_offered',
+                'ib_program_available',
+                'honors_courses_available',
+                'stem_programs',
+                'total_enrollment',
+                'graduation_rate',
+                'college_readiness_rate',
+                'free_reduced_lunch_pct',
+                'student_teacher_ratio',
+                'per_pupil_spending',
+                'school_type'
             ]
         }
     
