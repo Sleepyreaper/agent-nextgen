@@ -188,10 +188,10 @@ def index():
             total_count = pending_count = evaluated_count = 0
         
         # Get recent students with a simple query
-                recent_query = f"""
+        recent_query = f"""
             SELECT application_id, applicant_name, email, status, uploaded_date
             FROM Applications
-                        WHERE {training_col} = FALSE{test_filter}
+            WHERE {training_col} = FALSE{test_filter}
             ORDER BY uploaded_date DESC
             LIMIT 10
         """
