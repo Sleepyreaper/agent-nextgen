@@ -67,6 +67,23 @@ az keyvault set-policy \
   --name your-keyvault-name \
   --object-id $principal_id \
   --secret-permissions get list
+echo "✓ Managed Identity configured"
+echo "  Principal ID: $principal_id"
+```
+
+### Step 2b: Create Monitoring (Application Insights + Log Analytics)
+
+Use the ARM template in `azure-deploy.json` to provision monitoring resources:
+
+```bash
+az deployment group create \
+  --resource-group your-resource-group \
+  --template-file azure-deploy.json \
+  --parameters location=westus2 \
+               logAnalyticsName=nextgen-logs \
+               appInsightsName=nextgen-appinsights \
+               configureWebApp=true \
+               webAppName=your-webapp-name
 ```
 
 ### Step 3: Deploy Code
@@ -111,6 +128,12 @@ az webapp log download --resource-group your-resource-group --name your-webapp-n
 # Get web app status
 az webapp show --resource-group your-resource-group --name your-webapp-name \
   --query "{ name: name, state: state, url: defaultHostName }"
+
+# Application Insights connection string
+az monitor app-insights component show \
+  --app nextgen-appinsights \
+  --resource-group your-resource-group \
+  --query connectionString -o tsv
 ```
 
 ## Local Testing Before Deploying

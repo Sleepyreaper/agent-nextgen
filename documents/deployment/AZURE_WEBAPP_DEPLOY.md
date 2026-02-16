@@ -138,6 +138,21 @@ az webapp config set \
   --ftps-state Disabled
 ```
 
+### Step 4b: Enable Application Insights Monitoring
+
+Use the ARM template in `azure-deploy.json` to provision Log Analytics + Application Insights and set Web App app settings:
+
+```bash
+az deployment group create \
+  --resource-group your-resource-group \
+  --template-file azure-deploy.json \
+  --parameters location=westus2 \
+               logAnalyticsName=nextgen-logs \
+               appInsightsName=nextgen-appinsights \
+               configureWebApp=true \
+               webAppName=your-webapp-name
+```
+
 ## Step 5: Deploy the Code
 
 ### Option A: Deploy from Git (Recommended)
@@ -257,14 +272,19 @@ az webapp config appsettings set \
 ### Enable Application Insights
 
 ```bash
-# Create Application Insights resource
-az monitor metrics-alert create \
-  --name "your-appinsights-alert" \
+# Get Application Insights connection string
+az monitor app-insights component show \
+  --app nextgen-appinsights \
   --resource-group your-resource-group \
-  --scopes "$(az webapp show \
-    --resource-group your-resource-group \
-    --name your-webapp-name \
-    --query id -o tsv)"
+  --query connectionString -o tsv
+
+# If you need to set app settings manually
+az webapp config appsettings set \
+  --resource-group your-resource-group \
+  --name your-webapp-name \
+  --settings APPLICATIONINSIGHTS_CONNECTION_STRING="<connection-string>" \
+             APPLICATIONINSIGHTS_ROLE_NAME=nextgen-agents-web \
+             ApplicationInsightsAgent_EXTENSION_VERSION=~3
 ```
 
 ## Scaling
