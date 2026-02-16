@@ -2285,13 +2285,52 @@ def get_test_submissions():
     """
     try:
         limit = request.args.get('limit', 10, type=int)
+
+        submissions_table = db.get_table_name("test_submissions")
+        if not db.has_table(submissions_table):
+            return jsonify({
+                'status': 'success',
+                'submissions': [],
+                'count': 0
+            })
+
+        session_id_col = db.resolve_table_column(
+            "test_submissions",
+            ["session_id", "sessionid", "SessionID"],
+        )
+        student_count_col = db.resolve_table_column(
+            "test_submissions",
+            ["student_count", "studentcount", "StudentCount"],
+        )
+        application_ids_col = db.resolve_table_column(
+            "test_submissions",
+            ["application_ids", "applicationids", "ApplicationIDs"],
+        )
+        status_col = db.resolve_table_column(
+            "test_submissions",
+            ["status", "Status"],
+        )
+        created_at_col = db.resolve_table_column(
+            "test_submissions",
+            ["created_at", "createdat", "CreatedAt"],
+        )
+        updated_at_col = db.resolve_table_column(
+            "test_submissions",
+            ["updated_at", "updatedat", "UpdatedAt"],
+        )
         
         # Get recent test submissions from database
         submissions = db.execute_query(
-            """
-            SELECT SessionID, StudentCount, ApplicationIDs, Status, CreatedAt, UpdatedAt 
-            FROM TestSubmissions 
-            ORDER BY CreatedAt DESC 
+            f"""
+            SELECT
+                {session_id_col} as session_id,
+                {student_count_col} as student_count,
+                {application_ids_col} as application_ids,
+                {status_col} as status,
+                {created_at_col} as created_at,
+                {updated_at_col} as updated_at
+            FROM {submissions_table}
+            ORDER BY {created_at_col} DESC
             LIMIT %s
             """,
             (limit,)
@@ -2302,17 +2341,17 @@ def get_test_submissions():
         for sub in submissions:
             try:
                 import json as json_module
-                app_ids = json_module.loads(sub.get('ApplicationIDs', '[]')) if isinstance(sub.get('ApplicationIDs'), str) else sub.get('ApplicationIDs', [])
+                app_ids = json_module.loads(sub.get('application_ids', '[]')) if isinstance(sub.get('application_ids'), str) else sub.get('application_ids', [])
             except:
                 app_ids = []
             
             formatted.append({
-                'session_id': sub.get('SessionID'),
-                'student_count': sub.get('StudentCount'),
+                'session_id': sub.get('session_id'),
+                'student_count': sub.get('student_count'),
                 'application_ids': app_ids,
-                'status': sub.get('Status'),
-                'created_at': str(sub.get('CreatedAt')) if sub.get('CreatedAt') else None,
-                'updated_at': str(sub.get('UpdatedAt')) if sub.get('UpdatedAt') else None
+                'status': sub.get('status'),
+                'created_at': str(sub.get('created_at')) if sub.get('created_at') else None,
+                'updated_at': str(sub.get('updated_at')) if sub.get('updated_at') else None
             })
         
         return jsonify({
