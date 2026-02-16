@@ -992,14 +992,15 @@ function clearTestData() {
     btnClear.disabled = true;
     btnClear.textContent = '🗑️ Clearing...';
     
-    fetch('/api/test-data/clear', {
+    fetch('/api/test/cleanup', {
         method: 'POST',
         headers: {'Content-Type': 'application/json'}
     })
     .then(r => r.json())
     .then(data => {
         if (data.status === 'success') {
-            alert(`✅ Deleted ${data.count} test applications`);
+            const remaining = data.remaining_test_apps ?? 0;
+            alert(`✅ Test data cleaned. Remaining test applications: ${remaining}`);
             students = {};
             totalStudents = 0;
             completedStudents = 0;
