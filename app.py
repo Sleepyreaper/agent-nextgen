@@ -1863,150 +1863,16 @@ def submit_test_data():
 @app.route('/api/test/submit-preset', methods=['POST'])
 def submit_preset_test_data():
     """
-    Submit preset test students for quick testing.
-    Uses the same 3 students each time for reproducible testing.
+    Submit randomized test students for quick testing.
+    Always generates fresh data.
     """
     try:
         # CLEANUP: Delete old test data
         logger.info("Cleaning up old test data...")
         cleanup_test_data()
-        logger.info("Test data cleanup complete. Creating preset students...")
-        
-        # Create preset students - consistent across runs for reproducible testing
-        preset_students = [
-            {
-                'name': 'Alice Chen',
-                'email': 'alice.chen@school.edu',
-                'application_text': '''
-I am Alice Chen, a dedicated high school student passionate about STEM and community service. 
+        logger.info("Test data cleanup complete. Creating randomized students...")
 
-Academic Achievements:
-- GPA: 3.95/4.0
-- AP Exams: Calculus (5), Physics (5), Chemistry (5), Biology (4)
-- National Merit Scholar
-- Founded and led the school's robotics team to state competition (2nd place)
-- President of Science Olympiad club
-
-Extracurricular Activities:
-- Volunteer tutor for underprivileged students (100+ hours)
-- Published research on sustainable building materials in school journal
-- Cross country team captain
-- Debate team, won regional tournament
-
-Goals and Vision:
-I aim to study engineering at a top university and eventually work on sustainable infrastructure projects. 
-My robotics experience has taught me the value of innovation and teamwork. I'm particularly interested in 
-using technology to solve real-world problems that benefit communities.
-
-This school has challenged me to grow beyond academics. I've learned that excellence isn't just about grades,
-but about making a positive impact on those around me.
-                '''
-            },
-            {
-                'name': 'Brian Rodriguez',
-                'email': 'brian.rodriguez@school.edu',
-                'application_text': '''
-I am Brian Rodriguez, a well-rounded student looking to make the most of my college experience.
-
-Academic Profile:
-- GPA: 3.45/4.0
-- SAT: 1340/1600
-- AP Exams: US History (4), English (3)
-- Regular course load with good grades in math and sciences
-
-Activities and Interests:
-- Varsity soccer player (3 years)
-- Member of cultural club (Spanish club treasurer)
-- Volunteer at local community center (occasional)
-- Work part-time at local retail store (15 hours/week)
-
-Background and Goals:
-I am a first-generation college student. My family is very important to me, and balancing school, work, 
-and family responsibilities has taught me time management and resilience. I'm interested in studying 
-business and perhaps working in my community to help other first-generation students succeed.
-
-While my grades are solid, I know I'm not at the top of my class, but I'm dedicated and willing to work hard 
-for my education.
-                '''
-            },
-            {
-                'name': 'Carol Thompson',
-                'email': 'carol.thompson@school.edu',
-                'application_text': '''
-I am Carol Thompson, a creative student who has overcome personal challenges to complete high school.
-
-Academic Information:
-- GPA: 2.85/4.0
-- Struggled with math and science early on, but improved senior year
-- Completed several vocational courses in digital design
-
-Experiences and Activities:
-- Art club member
-- Worked on the school newspaper as a designer
-- Part-time job at graphic design firm (part-time, 10 hours/week)
-
-Personal Story:
-High school has been challenging for me. I faced some personal difficulties in my sophomore year that affected 
-my grades. However, I've worked hard to build myself back up. I discovered my passion for design and have been 
-pursuing it. I'm not a traditional high-achieving student, but I'm determined and resilient.
-
-Future Plans:
-I want to study graphic design or digital media at a school that values growth and potential over just test scores.
-I believe my creative skills and persistence will serve me well in my career.
-                '''
-            }
-        ]
-
-        # Enrich preset students with transcript and recommendation data
-        preset_metadata = {
-            'Alice Chen': {
-                'school_data': {'name': 'Riverview High School', 'city': 'Austin', 'state': 'TX'},
-                'gpa': 3.95,
-                'ap_courses': ['AP Calculus', 'AP Physics', 'AP Chemistry', 'AP Biology'],
-                'activities': ['Founded robotics team', 'Science Olympiad president', 'Volunteer tutor'],
-                'quality_tier': 'high'
-            },
-            'Brian Rodriguez': {
-                'school_data': {'name': 'East Valley High School', 'city': 'Phoenix', 'state': 'AZ'},
-                'gpa': 3.45,
-                'ap_courses': ['AP US History', 'AP English'],
-                'activities': ['Varsity soccer', 'Spanish club treasurer', 'Community center volunteer'],
-                'quality_tier': 'medium'
-            },
-            'Carol Thompson': {
-                'school_data': {'name': 'Westview High School', 'city': 'Denver', 'state': 'CO'},
-                'gpa': 2.85,
-                'ap_courses': ['AP Art History'],
-                'activities': ['Art club member', 'School newspaper designer', 'Part-time graphic design job'],
-                'quality_tier': 'low'
-            }
-        }
-
-        for student in preset_students:
-            meta = preset_metadata.get(student['name'])
-            if not meta:
-                continue
-
-            transcript_text = test_data_generator.generate_transcript(
-                name=student['name'],
-                school_data=meta['school_data'],
-                gpa=meta['gpa'],
-                ap_courses=meta['ap_courses'],
-                quality_tier=meta['quality_tier']
-            )
-            recommendation_text, _, _ = test_data_generator.generate_recommendation(
-                name=student['name'],
-                quality_tier=meta['quality_tier'],
-                activities=meta['activities']
-            )
-
-            student['transcript_text'] = transcript_text
-            student['recommendation_text'] = recommendation_text
-            student['school_data'] = meta['school_data']
-            student['gpa'] = meta['gpa']
-            student['ap_courses'] = meta['ap_courses']
-            student['activities'] = meta['activities']
-            student['quality_tier'] = meta['quality_tier']
+        preset_students = test_data_generator.generate_batch(count=3)
         
         # Generate session ID
         session_id = str(uuid.uuid4())
@@ -2035,73 +1901,15 @@ I believe my creative skills and persistence will serve me well in my career.
 @app.route('/api/test/submit-single', methods=['POST'])
 def submit_single_test_data():
     """
-    Submit a single preset test student for quick testing.
-    Generates just Alice Chen for fast iteration and testing.
+    Submit a single randomized test student for quick testing.
     """
     try:
         # CLEANUP: Delete old test data
         logger.info("Cleaning up old test data...")
         cleanup_test_data()
         logger.info("Test data cleanup complete. Creating single student...")
-        
-        # Create single preset student - Alice Chen
-        single_student = [
-            {
-                'name': 'Alice Chen',
-                'email': 'alice.chen@school.edu',
-                'application_text': '''
-I am Alice Chen, a dedicated high school student passionate about STEM and community service. 
 
-Academic Achievements:
-- GPA: 3.95/4.0
-- AP Exams: Calculus (5), Physics (5), Chemistry (5), Biology (4)
-- National Merit Scholar
-- Founded and led the school's robotics team to state competition (2nd place)
-- President of Science Olympiad club
-
-Extracurricular Activities:
-- Volunteer tutor for underprivileged students (100+ hours)
-- Published research on sustainable building materials in school journal
-- Cross country team captain
-- Debate team, won regional tournament
-
-Goals and Vision:
-I aim to study engineering at a top university and eventually work on sustainable infrastructure projects. 
-My robotics experience has taught me the value of innovation and teamwork. I'm particularly interested in 
-using technology to solve real-world problems that benefit communities.
-
-This school has challenged me to grow beyond academics. I've learned that excellence isn't just about grades,
-but about making a positive impact on those around me.
-                '''
-            }
-        ]
-
-        # Enrich single student with transcript and recommendation data
-        school_data = {'name': 'Riverview High School', 'city': 'Austin', 'state': 'TX'}
-        gpa = 3.95
-        ap_courses = ['AP Calculus', 'AP Physics', 'AP Chemistry', 'AP Biology']
-        activities = ['Founded robotics team', 'Science Olympiad president', 'Volunteer tutor']
-
-        transcript_text = test_data_generator.generate_transcript(
-            name=single_student[0]['name'],
-            school_data=school_data,
-            gpa=gpa,
-            ap_courses=ap_courses,
-            quality_tier='high'
-        )
-        recommendation_text, _, _ = test_data_generator.generate_recommendation(
-            name=single_student[0]['name'],
-            quality_tier='high',
-            activities=activities
-        )
-
-        single_student[0]['transcript_text'] = transcript_text
-        single_student[0]['recommendation_text'] = recommendation_text
-        single_student[0]['school_data'] = school_data
-        single_student[0]['gpa'] = gpa
-        single_student[0]['ap_courses'] = ap_courses
-        single_student[0]['activities'] = activities
-        single_student[0]['quality_tier'] = 'high'
+        single_student = test_data_generator.generate_batch(count=1)
         
         # Generate session ID
         session_id = str(uuid.uuid4())
