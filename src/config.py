@@ -100,6 +100,7 @@ class Config:
         self.azure_openai_endpoint: str = self._get_secret("azure-openai-endpoint", "AZURE_OPENAI_ENDPOINT")
         self.deployment_name: str = self._get_secret("azure-deployment-name", "AZURE_DEPLOYMENT_NAME")
         self.api_version: str = self._get_secret("azure-api-version", "AZURE_API_VERSION") or "2024-12-01-preview"
+        self.azure_openai_api_key: Optional[str] = self._get_secret("azure-openai-api-key", "AZURE_OPENAI_API_KEY")
         self.subscription_id: str = self._get_secret("azure-subscription-id", "AZURE_SUBSCRIPTION_ID")
         self.resource_group: str = self._get_secret("azure-resource-group", "AZURE_RESOURCE_GROUP")
         
@@ -151,7 +152,6 @@ class Config:
         self.flask_secret_key: str = self._get_secret("flask-secret-key", "FLASK_SECRET_KEY")
         
         # Legacy compatibility
-        self.azure_openai_api_key: Optional[str] = None  # We use Azure AD instead
         self.connection_string: Optional[str] = None
         self.project_name: Optional[str] = None
         self.region: str = "westus2"

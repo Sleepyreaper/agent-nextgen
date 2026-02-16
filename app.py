@@ -51,6 +51,13 @@ init_telemetry(service_name="nextgen-agents-web", capture_prompts=True)
 # Initialize Azure OpenAI client
 def get_ai_client():
     """Get Azure OpenAI client."""
+    if config.azure_openai_api_key:
+        return AzureOpenAI(
+            api_key=config.azure_openai_api_key,
+            api_version=config.api_version,
+            azure_endpoint=config.azure_openai_endpoint
+        )
+
     token_provider = get_bearer_token_provider(
         DefaultAzureCredential(),
         "https://cognitiveservices.azure.com/.default"
