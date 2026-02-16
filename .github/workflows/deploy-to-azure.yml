@@ -54,14 +54,33 @@ jobs:
         python-version: ${{ env.PYTHON_VERSION }}
         cache: 'pip'
 
-    - name: Create deployment package
+    - name: Create deployment package with pre-built venv
       run: |
+        # Create and build virtual environment
+        python -m venv venv
+        source venv/bin/activate
+        pip install --upgrade pip
+        pip install -r requirements.txt
+        deactivate
+        
+        # Create deployment directory with app and pre-built venv
         mkdir -p deployment
         cp -r app.py wsgi.py startup.py src web database uploads requirements.txt deployment/ 2>/dev/null || true
+        cp -r venv deployment/venv
+        
+        # Zip the deployment (exclude unnecessary files)
         cd deployment
-        zip -r ../app.zip . -x "*.git*" "__pycache__/*" "*.pyc" ".venv/*"
+        zip -r ../app.zip . \
+          -x "*.git*" \
+          "__pycache__/*" \
+          "*.pyc" \
+          "venv/lib/python3.11/site-packages/pip/*" \
+          "venv/lib/python3.11/site-packages/setuptools/*" \
+          "venv/lib/python3.11/site-packages/wheel/*" \
+          ".DS_Store"
         cd ..
         ls -lh app.zip
+        echo "✅ Deployment package created with pre-built virtual environment"
 
     - name: Extract publish profile metadata
       id: publish_profile
