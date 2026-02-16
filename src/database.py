@@ -5,6 +5,7 @@ from datetime import datetime
 import psycopg
 from .config import config
 import json
+import time
 from urllib.parse import urlparse, parse_qsl, urlencode, urlunparse
 
 
@@ -19,12 +20,22 @@ class Database:
         self._table_names_cache = None
         self._training_example_column = None
         self._test_data_column = None
+        self._schema_probe_failed_at = None
+        self._schema_probe_cooldown_seconds = 30
+
+    def _schema_probe_allowed(self) -> bool:
+        if self._schema_probe_failed_at is None:
+            return True
+        return (time.time() - self._schema_probe_failed_at) >= self._schema_probe_cooldown_seconds
 
     def _get_table_columns(self, table_name: str) -> set:
         """Return a cached set of column names for a table (lowercase)."""
         table_key = table_name.lower()
         if table_key in self._table_columns_cache:
             return self._table_columns_cache[table_key]
+
+        if not self._schema_probe_allowed():
+            return set()
 
         try:
             conn = self.connect()
@@ -41,6 +52,7 @@ class Database:
             cursor.close()
         except Exception:
             columns = set()
+            self._schema_probe_failed_at = time.time()
 
         self._table_columns_cache[table_key] = columns
         return columns
@@ -48,6 +60,9 @@ class Database:
     def _get_table_names(self) -> set:
         if self._table_names_cache is not None:
             return self._table_names_cache
+
+        if not self._schema_probe_allowed():
+            return set()
 
         try:
             conn = self.connect()
@@ -63,6 +78,7 @@ class Database:
             cursor.close()
         except Exception:
             names = set()
+            self._schema_probe_failed_at = time.time()
 
         self._table_names_cache = names
         return names
@@ -179,9 +195,9 @@ class Database:
             'dbname': database,  # psycopg uses 'dbname' not 'database'
             'user': username,
             'password': password,
-            'connect_timeout': 10,
+            'connect_timeout': 5,
             'sslmode': 'require',  # PostgreSQL Azure requires SSL
-            'options': '-c statement_timeout=10000'
+            'options': '-c statement_timeout=5000'
         }
         self._params_validated = True
         return self.connection_params
@@ -194,8 +210,8 @@ class Database:
 
         params = dict(parse_qsl(parsed.query, keep_blank_values=True))
         params.setdefault('sslmode', 'require')
-        params.setdefault('connect_timeout', '10')
-        params.setdefault('statement_timeout', '10000')
+        params.setdefault('connect_timeout', '5')
+        params.setdefault('statement_timeout', '5000')
 
         updated_query = urlencode(params, doseq=True)
         return urlunparse(parsed._replace(query=updated_query))
