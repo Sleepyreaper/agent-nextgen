@@ -1,7 +1,11 @@
 """Base agent class for Azure AI Foundry agents."""
 
+import json
+import time
 from abc import ABC, abstractmethod
 from typing import Any, Optional
+
+from src.telemetry import get_tracer, should_capture_prompts
 
 
 class BaseAgent(ABC):
@@ -38,6 +42,52 @@ class BaseAgent(ABC):
             "role": role,
             "content": content
         })
+
+    def _create_chat_completion(self, operation: str, model: str, messages: list, **kwargs):
+        """Create a chat completion with telemetry attached."""
+        tracer = get_tracer()
+        if not tracer:
+            return self.client.chat.completions.create(
+                model=model,
+                messages=messages,
+                **kwargs
+            )
+
+        start_time = time.time()
+        with tracer.start_as_current_span(operation) as span:
+            span.set_attribute("agent.name", self.name)
+            span.set_attribute("gen_ai.model", model or "")
+            max_tokens = kwargs.get("max_completion_tokens") or kwargs.get("max_tokens")
+            if max_tokens is not None:
+                span.set_attribute("gen_ai.request.max_tokens", int(max_tokens))
+            temperature = kwargs.get("temperature")
+            if temperature is not None:
+                span.set_attribute("gen_ai.request.temperature", float(temperature))
+
+            if should_capture_prompts():
+                span.set_attribute("gen_ai.prompt", json.dumps(messages, ensure_ascii=True))
+
+            response = self.client.chat.completions.create(
+                model=model,
+                messages=messages,
+                **kwargs
+            )
+
+            span.set_attribute("gen_ai.latency_ms", int((time.time() - start_time) * 1000))
+
+            usage = getattr(response, "usage", None)
+            if usage:
+                input_tokens = getattr(usage, "prompt_tokens", None)
+                output_tokens = getattr(usage, "completion_tokens", None)
+                total_tokens = getattr(usage, "total_tokens", None)
+                if input_tokens is not None:
+                    span.set_attribute("gen_ai.usage.prompt_tokens", int(input_tokens))
+                if output_tokens is not None:
+                    span.set_attribute("gen_ai.usage.completion_tokens", int(output_tokens))
+                if total_tokens is not None:
+                    span.set_attribute("gen_ai.usage.total_tokens", int(total_tokens))
+
+            return response
     
     def clear_history(self):
         """Clear the conversation history."""

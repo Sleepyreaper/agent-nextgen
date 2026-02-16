@@ -19,6 +19,7 @@ from src.document_processor import DocumentProcessor
 from src.storage import storage
 from src.test_data_generator import test_data_generator
 from src.logger import app_logger as logger, audit_logger
+from src.telemetry import init_telemetry
 from src.agents import (
     GastonEvaluator,
     SmeeOrchestrator,
@@ -43,6 +44,9 @@ app.config['UPLOAD_FOLDER'] = 'uploads'
 # Ensure upload folder exists
 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 logger.info("Flask app initialized", extra={'upload_folder': app.config['UPLOAD_FOLDER']})
+
+# Initialize telemetry (includes prompt content when enabled)
+init_telemetry(service_name="nextgen-agents-web", capture_prompts=True)
 
 # Initialize Azure OpenAI client
 def get_ai_client():

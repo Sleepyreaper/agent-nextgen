@@ -54,7 +54,8 @@ class BashfulAgent(BaseAgent):
         
         try:
             # Make the API call to Azure OpenAI
-            response = self.client.chat.completions.create(
+            response = self._create_chat_completion(
+                operation="bashful.process",
                 model=self.model,
                 messages=messages,
                 max_completion_tokens=800

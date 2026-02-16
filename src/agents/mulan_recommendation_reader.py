@@ -25,7 +25,8 @@ class MulanRecommendationReader(BaseAgent):
         prompt = self._build_prompt(applicant_name, recommendation_text)
 
         try:
-            response = self.client.chat.completions.create(
+            response = self._create_chat_completion(
+                operation="mulan.parse_recommendation",
                 model=self.model,
                 messages=[
                     {
@@ -107,7 +108,8 @@ class MulanRecommendationReader(BaseAgent):
             }
         ] + self.conversation_history
 
-        response = self.client.chat.completions.create(
+        response = self._create_chat_completion(
+            operation="mulan.process",
             model=self.model,
             messages=messages,
             max_completion_tokens=1000,

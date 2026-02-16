@@ -31,7 +31,8 @@ class TianaApplicationReader(BaseAgent):
         prompt = self._build_prompt(applicant_name, application_text, application)
 
         try:
-            response = self.client.chat.completions.create(
+            response = self._create_chat_completion(
+                operation="tiana.parse_application",
                 model=self.model,
                 messages=[
                     {
@@ -118,7 +119,8 @@ class TianaApplicationReader(BaseAgent):
             }
         ] + self.conversation_history
 
-        response = self.client.chat.completions.create(
+        response = self._create_chat_completion(
+            operation="tiana.process",
             model=self.model,
             messages=messages,
             max_completion_tokens=1000,

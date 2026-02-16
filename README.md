@@ -22,6 +22,7 @@ An AI-powered application evaluation system that uses Azure OpenAI to assess int
 This system uses a multi-agent approach with specialized agents:
 
 - **🎩 Smee (Orchestrator)**: Coordinates all agents and manages the evaluation workflow
+- **📖 Belle (Document Analyzer)**: Identifies document type and extracts structured fields
 - **👸 Tiana (Application Reader)**: Parses student applications into structured profiles
 - **💇 Rapunzel (Grade Reader)**: Analyzes transcripts and academic performance
 - **🌊 Moana (School Context)**: Discovers school environment and program access
@@ -30,6 +31,13 @@ This system uses a multi-agent approach with specialized agents:
   - Provides socioeconomic context for fair evaluation
 - **🗡️ Mulan (Recommendation Reader)**: Parses and analyzes recommendation letters
 - **🧙 Merlin (Student Evaluator)**: Synthesizes all agent outputs into final recommendation
+- **✨ Aurora (Results Formatter)**: Builds executive summaries from agent outputs
+- **🪄 Fairy Godmother (Document Generator)**: Produces the final evaluation document
+- **🧪 Milo (Data Scientist)**: Analyzes training data to inform selection patterns
+
+Additional agents used in specific flows:
+- **🦹 Gaston (Evaluator)**: Legacy evaluator for rubric-based scoring
+- **😳 Bashful (Sample Agent)**: Example Foundry SDK agent
 
 See [MOANA_GEORGIA_DATA.md](documents/verification/MOANA_GEORGIA_DATA.md) for details on Georgia school data integration.
 
@@ -142,14 +150,20 @@ The evaluator agent:
 │   ├── document_processor.py   # Extract text from documents
 │   └── agents/
 │       ├── base_agent.py       # Base agent class
-│       ├── simple_agent.py     # Simple chat agent
-│       ├── evaluator_agent.py  # Application evaluator
+│       ├── agent_requirements.py # Agent data requirements
+│       ├── system_prompts.py   # Shared system prompts
 │       ├── smee_orchestrator.py # Agent orchestrator
+│       ├── belle_document_analyzer.py
 │       ├── tiana_application_reader.py
 │       ├── rapunzel_grade_reader.py
 │       ├── moana_school_context.py
 │       ├── mulan_recommendation_reader.py
-│       └── merlin_student_evaluator.py
+│       ├── merlin_student_evaluator.py
+│       ├── aurora_agent.py
+│       ├── fairy_godmother_document_generator.py
+│       ├── milo_data_scientist.py
+│       ├── gaston_evaluator.py
+│       └── bashful_agent.py
 ├── testing/                    # Test scripts and examples
 │   ├── test_agent.py
 │   ├── test_smee.py

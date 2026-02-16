@@ -69,7 +69,8 @@ class RapunzelGradeReader(BaseAgent):
         print(f"🎓 {self.name}: Analyzing {len(transcript_text)} characters of transcript data...")
         
         try:
-            response = self.client.chat.completions.create(
+            response = self._create_chat_completion(
+                operation="rapunzel.parse_grades",
                 model=self.model,
                 messages=[
                     {
@@ -308,7 +309,8 @@ Return your analysis in clear, structured format (not JSON, but clearly organize
         ] + self.conversation_history
         
         try:
-            response = self.client.chat.completions.create(
+            response = self._create_chat_completion(
+                operation="rapunzel.process",
                 model=self.model,
                 messages=messages,
                 max_completion_tokens=1500,
