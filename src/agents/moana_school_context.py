@@ -209,8 +209,9 @@ class MoanaSchoolContext(BaseAgent):
 
         transcript_school = self._extract_school_from_transcript(transcript_text)
         if transcript_school:
-            school_name = transcript_school
-            confidence = 0.9
+            if not school_name or self._is_better_school_name(transcript_school, school_name):
+                school_name = transcript_school
+                confidence = 0.9
 
         city, state = self._extract_location_from_transcript(transcript_text)
         if not city and application_school.get('city'):
@@ -274,6 +275,8 @@ class MoanaSchoolContext(BaseAgent):
                 continue
             if any(bad in upper_line for bad in ['COUNTY', 'DISTRICT', 'PUBLIC SCHOOLS', 'BOARD OF EDUCATION']):
                 continue
+            if any(bad in upper_line for bad in ['LOCATION', 'ADDRESS']):
+                continue
             if 'HIGH SCHOOL' in upper_line or upper_line.endswith('ACADEMY') or upper_line.endswith('SCHOOL'):
                 candidates.append(line)
 
@@ -299,7 +302,8 @@ class MoanaSchoolContext(BaseAgent):
     def _extract_location_from_transcript(self, transcript_text: str) -> Tuple[Optional[str], Optional[str]]:
         location_patterns = [
             r'(?:CITY|LOCATION|ADDRESS)[:\s]+([A-Z][a-z\s]+),?\s*([A-Z]{2})',
-            r'([A-Z][a-z\s]+),\s*([A-Z]{2})\s*\d{5}'
+            r'([A-Z][a-z\s]+),\s*([A-Z]{2})\s*\d{5}',
+            r'([A-Z][a-z\s]+),\s*([A-Z]{2})(?:\s|$)'
         ]
 
         for pattern in location_patterns:
@@ -314,11 +318,31 @@ class MoanaSchoolContext(BaseAgent):
             return None
         cleaned = re.sub(r'\s+', ' ', str(name)).strip()
         cleaned = cleaned.strip('-:,')
+        cleaned = re.sub(r'\b(Location|Campus|Site)\b$', '', cleaned, flags=re.IGNORECASE).strip()
+        cleaned = re.sub(r'\bSchool\s+School\b', 'School', cleaned, flags=re.IGNORECASE)
+        cleaned = re.sub(r'\bHigh School\s+School\b', 'High School', cleaned, flags=re.IGNORECASE)
         if len(cleaned) < 3:
             return None
         if any(bad in cleaned.upper() for bad in ['TRANSCRIPT', 'RECORD OF', 'STUDENT ID']):
             return None
         return cleaned
+
+    def _is_better_school_name(self, candidate: str, current: str) -> bool:
+        if not candidate:
+            return False
+        if not current:
+            return True
+        candidate_lower = candidate.lower()
+        current_lower = current.lower()
+        if 'location' in candidate_lower or 'address' in candidate_lower:
+            return False
+        if re.search(r'\bschool\s+school\b', candidate_lower):
+            return False
+        if 'high school' in candidate_lower and 'high school' not in current_lower:
+            return True
+        if len(candidate) > len(current) + 3:
+            return True
+        return False
     
     async def _extract_program_participation(
         self,
