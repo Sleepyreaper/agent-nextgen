@@ -58,6 +58,8 @@ class BaseAgent(ABC):
             span.set_attribute("agent.name", self.name)
             span.set_attribute("ai.agent.name", self.name)
             span.set_attribute("gen_ai.agent.name", self.name)
+            span.set_attribute("ai.span.kind", "agent")
+            span.set_attribute("gen_ai.span.kind", "agent")
             span.set_attribute("gen_ai.model", model or "")
             span.set_attribute("gen_ai.request.model", model or "")
             span.set_attribute("gen_ai.system", "azure_openai")
