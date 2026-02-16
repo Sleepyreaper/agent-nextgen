@@ -11,6 +11,8 @@ from typing import Optional
 from flask import Flask, render_template, request, redirect, url_for, flash, jsonify, Response
 from werkzeug.utils import secure_filename
 from openai import AzureOpenAI
+from opentelemetry.instrumentation.flask import FlaskInstrumentor
+from opentelemetry.instrumentation.requests import RequestsInstrumentor
 from azure.identity import DefaultAzureCredential, get_bearer_token_provider
 
 from src.config import config
@@ -40,6 +42,10 @@ app = Flask(__name__, template_folder='web/templates', static_folder='web/static
 app.secret_key = config.flask_secret_key or 'dev-secret-key-change-in-production'
 app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB max file size
 app.config['UPLOAD_FOLDER'] = 'uploads'
+
+# Instrument Flask and outbound HTTP calls for App Insights.
+FlaskInstrumentor().instrument_app(app)
+RequestsInstrumentor().instrument()
 
 # Ensure upload folder exists
 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
@@ -179,6 +185,32 @@ def get_orchestrator():
         )
 
     return orchestrator_agent
+
+
+def refresh_foundry_dataset_async(reason: str) -> None:
+    def run():
+        try:
+            orchestrator = get_orchestrator()
+            milo = orchestrator.agents.get("data_scientist") if orchestrator else None
+            if not milo:
+                logger.warning("Milo agent not available for dataset refresh")
+                return
+
+            result = asyncio.run(milo.build_and_upload_foundry_dataset())
+            if result.get("status") == "success":
+                logger.info(
+                    "Foundry dataset refreshed",
+                    extra={"dataset": result.get("dataset_name"), "version": result.get("dataset_version"), "reason": reason}
+                )
+            else:
+                logger.warning(
+                    "Foundry dataset refresh failed",
+                    extra={"error": result.get("error"), "reason": reason}
+                )
+        except Exception as exc:
+            logger.warning("Foundry dataset refresh error", exc_info=True, extra={"reason": reason, "error": str(exc)})
+
+    threading.Thread(target=run, daemon=True).start()
 
 
 @app.route('/')
@@ -389,6 +421,7 @@ def upload():
                 flash(f'✅ Training data uploaded! Student ID: {student_id}', 'success')
                 if doc_analysis.get('document_type') != 'unknown':
                     flash(f"📖 Belle identified: {doc_analysis['document_type'].replace('_', ' ').title()}", 'info')
+                refresh_foundry_dataset_async("training_upload")
                 return redirect(url_for('training'))
             elif is_test:
                 flash(f'✅ Test file uploaded! Student ID: {student_id}. Processing with agents...', 'success')
@@ -758,7 +791,7 @@ def api_process_student(application_id):
         result = asyncio.run(
             orchestrator.coordinate_evaluation(
                 application=application,
-                evaluation_steps=['application_reader', 'grade_reader', 'recommendation_reader', 'school_context', 'student_evaluator']
+                evaluation_steps=['application_reader', 'grade_reader', 'recommendation_reader', 'school_context', 'data_scientist', 'student_evaluator']
             )
         )
         
@@ -880,7 +913,7 @@ def api_get_agent_questions(application_id):
         from src.agents.agent_requirements import AgentRequirements
         
         # Get all agent questions for the standard evaluation pipeline
-        evaluation_steps = ['application_reader', 'grade_reader', 'recommendation_reader', 'school_context', 'student_evaluator']
+        evaluation_steps = ['application_reader', 'grade_reader', 'recommendation_reader', 'school_context', 'data_scientist', 'student_evaluator']
         agent_questions = AgentRequirements.get_all_questions(evaluation_steps)
         
         # Get current missing fields
@@ -1058,7 +1091,7 @@ def api_resume_evaluation(application_id):
         result = asyncio.run(
             orchestrator.coordinate_evaluation(
                 application=application,
-                evaluation_steps=['application_reader', 'grade_reader', 'recommendation_reader', 'school_context', 'student_evaluator']
+                evaluation_steps=['application_reader', 'grade_reader', 'recommendation_reader', 'school_context', 'data_scientist', 'student_evaluator']
             )
         )
         
@@ -1137,7 +1170,7 @@ def api_provide_missing_info(application_id):
             result = asyncio.run(
                 orchestrator.coordinate_evaluation(
                     application=application,
-                    evaluation_steps=['application_reader', 'grade_reader', 'recommendation_reader', 'school_context', 'student_evaluator']
+                    evaluation_steps=['application_reader', 'grade_reader', 'recommendation_reader', 'school_context', 'data_scientist', 'student_evaluator']
                 )
             )
             
@@ -1463,6 +1496,8 @@ def delete_training(application_id):
         )
         
         flash(f'Training example deleted successfully', 'success')
+
+        refresh_foundry_dataset_async("training_delete")
         
         # Reset evaluator to reload training data
         global evaluator_agent
@@ -1662,6 +1697,7 @@ def _process_session(session_id):
                         'grade_reader',
                         'recommendation_reader',
                         'school_context',
+                        'data_scientist',
                         'student_evaluator'
                     ]
 

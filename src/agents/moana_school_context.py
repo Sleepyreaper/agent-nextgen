@@ -199,63 +199,126 @@ class MoanaSchoolContext(BaseAgent):
         application: Dict[str, Any]
     ) -> Dict[str, Any]:
         """Extract school name and location from transcript and application."""
-        
         school_name = None
-        
-        # First, try very specific patterns for well-formatted transcripts
-        # Look for school name near the beginning of document
-        first_500_chars = transcript_text[:500].upper()
-        if 'HIGH SCHOOL' in first_500_chars:
-            # Find the school name pattern
-            match = re.search(r'([A-Z][A-Za-z\s&\-\']*)\s*(?:HIGH\s*SCHOOL|SCHOOL)\s*\n', transcript_text, re.IGNORECASE)
-            if match:
-                school_name = match.group(1).strip()
-        
-        # Fallback patterns
-        if not school_name:
-            patterns = [
-                r'([A-Z][A-Za-z\s&\-\']{3,50})\s*HIGH\s*SCHOOL',  # "Westview High School"
-                r'SCHOOL[:\s]+([A-Za-z\s&\-\']{3,})',
-                r'FROM:\s*([A-Za-z\s&\-\']+)\s*(?:HIGH|SCHOOL)',
-            ]
-            for pattern in patterns:
-                match = re.search(pattern, transcript_text, re.IGNORECASE)
-                if match:
-                    candidate = match.group(1).strip()
-                    # Verify it's not a false positive
-                    if len(candidate) > 2 and len(candidate) < 100:
-                        if not any(bad in candidate.upper() for bad in ['TRANSCRIPT', 'RECORD', 'OF RECORD', 'STUDENT ID']):
-                            school_name = candidate
-                            break
-        
-        # Extract location
-        location_patterns = [
-            r'(?:CITY|LOCATION|ADDRESS)[:\s]+([A-Z][a-z\s]+),?\s*([A-Z]{2})',
-            r'([A-Z][a-z\s]+),\s*([A-Z]{2})\s*\d{5}',
-        ]
-        
-        city = None
-        state = None
-        for pattern in location_patterns:
-            match = re.search(pattern, transcript_text)
-            if match:
-                city = match.group(1).strip()
-                state = match.group(2).strip()
-                break
-        
-        # If no location found, use generic
+        confidence = 0.4
+
+        application_school = self._extract_school_from_application(application)
+        if application_school.get('school_name'):
+            school_name = application_school['school_name']
+            confidence = 0.85
+
+        transcript_school = self._extract_school_from_transcript(transcript_text)
+        if transcript_school:
+            school_name = transcript_school
+            confidence = 0.9
+
+        city, state = self._extract_location_from_transcript(transcript_text)
+        if not city and application_school.get('city'):
+            city = application_school.get('city')
+        if not state and application_school.get('state'):
+            state = application_school.get('state')
+
         if not city:
             city = "Unknown City"
         if not state:
             state = "Unknown"
-        
+
+        if not school_name:
+            school_name = 'High School'
+            confidence = 0.4
+
         return {
-            'school_name': school_name or 'High School',
+            'school_name': school_name,
             'city': city,
             'state': state,
-            'confidence': 0.8 if school_name and school_name.lower() != 'high school' else 0.4,
-            'extraction_method': 'transcript_parsing'
+            'confidence': confidence,
+            'extraction_method': 'application+transcript_parsing'
         }
+
+    def _extract_school_from_application(self, application: Dict[str, Any]) -> Dict[str, Optional[str]]:
+        school_data = application.get('school_data') if isinstance(application.get('school_data'), dict) else {}
+        candidates = [
+            school_data.get('name'),
+            application.get('school_name'),
+            application.get('SchoolName'),
+            application.get('high_school'),
+            application.get('HighSchool'),
+            application.get('school')
+        ]
+        school_name = next((self._clean_school_name(name) for name in candidates if name), None)
+        return {
+            'school_name': school_name,
+            'city': school_data.get('city') or application.get('school_city'),
+            'state': school_data.get('state') or application.get('school_state')
+        }
+
+    def _extract_school_from_transcript(self, transcript_text: str) -> Optional[str]:
+        if not transcript_text:
+            return None
+
+        labeled_match = re.search(
+            r'(?:SCHOOL NAME|SCHOOL|HIGH SCHOOL)\s*[:\-]\s*([A-Za-z0-9\s&\-\'\.,]{3,100})',
+            transcript_text,
+            re.IGNORECASE
+        )
+        if labeled_match:
+            candidate = self._clean_school_name(labeled_match.group(1))
+            if candidate:
+                return candidate
+
+        header_lines = [line.strip() for line in transcript_text.splitlines()[:40] if line.strip()]
+        candidates = []
+        for line in header_lines:
+            upper_line = line.upper()
+            if any(bad in upper_line for bad in ['TRANSCRIPT', 'REPORT CARD', 'STUDENT ID', 'STUDENT NUMBER']):
+                continue
+            if any(bad in upper_line for bad in ['COUNTY', 'DISTRICT', 'PUBLIC SCHOOLS', 'BOARD OF EDUCATION']):
+                continue
+            if 'HIGH SCHOOL' in upper_line or upper_line.endswith('ACADEMY') or upper_line.endswith('SCHOOL'):
+                candidates.append(line)
+
+        best_candidate = None
+        best_score = 0
+        for candidate in candidates:
+            score = 0
+            upper_candidate = candidate.upper()
+            if 'HIGH SCHOOL' in upper_candidate:
+                score += 3
+            if upper_candidate.endswith('HIGH SCHOOL'):
+                score += 2
+            if upper_candidate.isupper():
+                score += 1
+            if len(candidate) > 8:
+                score += 1
+            if score > best_score:
+                best_score = score
+                best_candidate = candidate
+
+        return self._clean_school_name(best_candidate) if best_candidate else None
+
+    def _extract_location_from_transcript(self, transcript_text: str) -> Tuple[Optional[str], Optional[str]]:
+        location_patterns = [
+            r'(?:CITY|LOCATION|ADDRESS)[:\s]+([A-Z][a-z\s]+),?\s*([A-Z]{2})',
+            r'([A-Z][a-z\s]+),\s*([A-Z]{2})\s*\d{5}'
+        ]
+
+        for pattern in location_patterns:
+            match = re.search(pattern, transcript_text)
+            if match:
+                return match.group(1).strip(), match.group(2).strip()
+
+        return None, None
+
+    def _clean_school_name(self, name: Optional[str]) -> Optional[str]:
+        if not name:
+            return None
+        cleaned = re.sub(r'\s+', ' ', str(name)).strip()
+        cleaned = cleaned.strip('-:,')
+        if len(cleaned) < 3:
+            return None
+        if any(bad in cleaned.upper() for bad in ['TRANSCRIPT', 'RECORD OF', 'STUDENT ID']):
+            return None
+        return cleaned
     
     async def _extract_program_participation(
         self,
@@ -389,7 +452,7 @@ Provide this as a structured analysis. Be honest about data availability - if ex
                 messages=[
                     {
                         "role": "system",
-                        "content": "You are an expert in finding and synthesizing publicly available school data from education databases and government sources."
+                        "content": "You are part of an NIH Department of Genetics review panel evaluating Emory NextGen applicants. You find and synthesize publicly available school data to contextualize opportunity and STEM access."
                     },
                     {
                         "role": "user",
@@ -498,14 +561,14 @@ Provide realistic, conservative estimates. Format as clear categories."""
                 messages=[
                     {
                         "role": "system",
-                        "content": "You are an education data analyst. Provide realistic assessments of high schools based on common patterns. Be specific with numbers."
+                        "content": "You are part of an NIH Department of Genetics review panel evaluating Emory NextGen applicants. Provide realistic assessments of high schools based on common patterns. Be specific with numbers and opportunity context."
                     },
                     {
                         "role": "user",
                         "content": profile_prompt
                     }
                 ],
-                max_completion_tokens=1200,
+                        "content": "You are Moana, part of an NIH Department of Genetics review panel evaluating Emory NextGen applicants. You analyze education systems, socioeconomic context, and access to advanced STEM opportunities."
                 temperature=0.7
             )
             

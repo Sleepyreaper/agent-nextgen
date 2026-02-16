@@ -31,7 +31,7 @@ class MulanRecommendationReader(BaseAgent):
                 messages=[
                     {
                         "role": "system",
-                        "content": "You are Mulan, an expert at reading recommendation letters and extracting reliable, structured insights. Return valid JSON only."
+                        "content": "You are Mulan, part of an NIH Department of Genetics review panel evaluating Emory NextGen applicants. Apply the requirements: rising junior or senior in high school, must be 16 years old by June 1, 2026, and must demonstrate interest in advancing STEM education to groups from a variety of backgrounds. Extract reliable, structured insights with evidence. Return valid JSON only."
                     },
                     {"role": "user", "content": prompt}
                 ],
@@ -104,7 +104,7 @@ class MulanRecommendationReader(BaseAgent):
         messages = [
             {
                 "role": "system",
-                "content": "You are Mulan, a recommendation reader who extracts structured insights from recommendation letters."
+                "content": "You are Mulan, part of an NIH Department of Genetics review panel evaluating Emory NextGen applicants. You extract structured insights with evidence and note any eligibility signals from recommendations."
             }
         ] + self.conversation_history
 

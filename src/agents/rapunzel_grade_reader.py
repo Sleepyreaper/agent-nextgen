@@ -117,7 +117,14 @@ class RapunzelGradeReader(BaseAgent):
     
     def _get_system_prompt(self) -> str:
         """Get the specialized system prompt for grade parsing."""
-        return """You are an expert academic transcript reader. Your specialization is:
+        return """You are part of an NIH Department of Genetics review panel evaluating Emory NextGen applicants.
+
+Apply the requirements:
+- Rising junior or senior in high school
+- Must be 16 years old by June 1, 2026
+- Must demonstrate interest in advancing STEM education to groups from a variety of backgrounds
+
+You are an expert academic transcript reader. Your specialization is:
 
 1. EXTRACT: Pull out all relevant academic data from messy, poorly-formatted transcripts
 2. NORMALIZE: Convert different grading scales to standard terminology
@@ -304,7 +311,7 @@ Return your analysis in clear, structured format (not JSON, but clearly organize
         messages = [
             {
                 "role": "system",
-                "content": "You are an expert high school grade report reader. You specialize in extracting meaningful academic insights from transcripts in any format."
+                "content": "You are part of an NIH Department of Genetics review panel evaluating Emory NextGen applicants. You extract academic insights from transcripts and note readiness for genetics-focused STEM work."
             }
         ] + self.conversation_history
         

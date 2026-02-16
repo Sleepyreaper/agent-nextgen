@@ -30,3 +30,5 @@ aiohttp>=3.9.0
 
 # Telemetry
 azure-monitor-opentelemetry
+opentelemetry-instrumentation-flask
+opentelemetry-instrumentation-requests
