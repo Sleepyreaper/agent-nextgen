@@ -28,10 +28,10 @@ from gunicorn.app.wsgiapp import run
 if __name__ == '__main__':
     sys.argv = [
         'gunicorn',
-        '--workers=4',
-        '--worker-class=sync',
-        '--threads=2',
-        '--timeout=60',
+        '--workers=2',
+        '--worker-class=gthread',
+        '--threads=4',
+        '--timeout=600',
         '--bind=0.0.0.0:' + os.getenv('PORT', '8000'),
         '--access-logfile=-',
         '--error-logfile=-',

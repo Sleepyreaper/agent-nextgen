@@ -343,6 +343,7 @@ class SmeeOrchestrator(BaseAgent):
                         elif agent_id == 'student_evaluator':
                             # Evaluation completed - clear all remaining fields
                             self.db.set_missing_fields(application_id, [])
+                            self.db.update_application_status(application_id, 'Completed')
                             
                     except Exception as save_err:
                         logger.warning(f"Could not save {agent_id} results to database: {str(save_err)}")
