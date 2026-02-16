@@ -211,7 +211,14 @@ class Database:
         params = dict(parse_qsl(parsed.query, keep_blank_values=True))
         params.setdefault('sslmode', 'require')
         params.setdefault('connect_timeout', '5')
-        params.setdefault('statement_timeout', '5000')
+        # psycopg does not accept statement_timeout as a URL param; use options instead.
+        statement_timeout = params.pop('statement_timeout', '5000')
+        options_value = params.get('options', '')
+        timeout_option = f"-c statement_timeout={statement_timeout}"
+        if timeout_option not in options_value:
+            options_value = f"{options_value} {timeout_option}".strip()
+        if options_value:
+            params['options'] = options_value
 
         updated_query = urlencode(params, doseq=True)
         return urlunparse(parsed._replace(query=updated_query))
