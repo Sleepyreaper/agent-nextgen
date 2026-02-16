@@ -1,0 +1,15 @@
+# Oryx build manifest - tells the build system to build this Python app
+# See: https://github.com/microsoft/Oryx/blob/main/doc/runtimes/python.md
+
+version = 1
+
+[build]
+name = "python"
+
+[python]
+version = "3.11"
+requirementsFile = "requirements.txt"
+
+[[python.pip]]
+# Ensure pip is upgraded before using it
+upgradeInstalled = true
