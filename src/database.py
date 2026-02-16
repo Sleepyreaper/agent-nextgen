@@ -356,7 +356,9 @@ class Database:
     
     def get_application(self, application_id: int) -> Optional[Dict[str, Any]]:
         """Get application by ID."""
-        query = "SELECT * FROM Applications WHERE application_id = %s"
+        applications_table = self.get_table_name("applications")
+        app_id_col = self.get_applications_column("application_id")
+        query = f"SELECT * FROM {applications_table} WHERE {app_id_col} = %s"
         results = self.execute_query(query, (application_id,))
         if not results:
             return None
