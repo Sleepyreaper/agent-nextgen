@@ -756,9 +756,8 @@ function connectStream(streamUrl) {
     
     eventSource.onerror = (e) => {
         eventSource.close();
-        status.innerHTML = '✅ Test run complete!';
-        document.getElementById('btnStartTest').disabled = false;
-        document.getElementById('btnSingle').disabled = false;
+        status.innerHTML = '⚠️ Stream paused. Switching to polling...';
+        pollStudentStatus();
     };
 }
 

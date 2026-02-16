@@ -1541,16 +1541,21 @@ def generate_session_updates(session_id):
 
     yield f"data: {json.dumps({'type': 'connected', 'message': 'Connected to test stream'})}\n\n"
 
+    last_sent = time.time()
     while True:
         try:
             update = submission['queue'].get(timeout=0.5)
         except queue.Empty:
+            if time.time() - last_sent >= 10:
+                yield "event: keepalive\ndata: {}\n\n"
+                last_sent = time.time()
             continue
 
         if update.get('_session_complete'):
             break
 
         yield f"data: {json.dumps(update)}\n\n"
+        last_sent = time.time()
 
 
 def _process_session(session_id):
