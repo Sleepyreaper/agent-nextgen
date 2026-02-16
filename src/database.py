@@ -15,6 +15,7 @@ class Database:
         self.connection = None
         self._params_validated = False
         self._table_columns_cache = {}
+        self._table_names_cache = None
         self._training_example_column = None
         self._test_data_column = None
 
@@ -42,6 +43,78 @@ class Database:
 
         self._table_columns_cache[table_key] = columns
         return columns
+
+    def _get_table_names(self) -> set:
+        if self._table_names_cache is not None:
+            return self._table_names_cache
+
+        try:
+            conn = self.connect()
+            cursor = conn.cursor()
+            cursor.execute(
+                """
+                SELECT table_name
+                FROM information_schema.tables
+                WHERE table_schema = 'public'
+                """
+            )
+            names = {row[0].lower() for row in cursor.fetchall()}
+            cursor.close()
+        except Exception:
+            names = set()
+
+        self._table_names_cache = names
+        return names
+
+    def _resolve_table_name(self, candidates: List[str]) -> str:
+        names = self._get_table_names()
+        for candidate in candidates:
+            if candidate.lower() in names:
+                return candidate.lower()
+        return candidates[0].lower() if candidates else None
+
+    def has_table(self, table_name: str) -> bool:
+        if not table_name:
+            return False
+        return table_name.lower() in self._get_table_names()
+
+    def get_table_name(self, logical_name: str) -> Optional[str]:
+        table_map = {
+            "applications": ["applications", "Applications"],
+            "merlin_evaluations": ["merlin_evaluations", "merlinevaluations", "MerlinEvaluations"],
+            "tiana_applications": ["tiana_applications", "tianaapplications", "TianaApplications"],
+            "mulan_recommendations": ["mulan_recommendations", "mulanrecommendations", "MulanRecommendations"],
+            "student_school_context": ["student_school_context", "studentschoolcontext", "StudentSchoolContext"],
+            "schools": ["schools", "Schools"],
+            "aurora_evaluations": ["aurora_evaluations", "auroraevaluations", "AuroraEvaluations"],
+            "ai_evaluations": ["ai_evaluations", "aievaluations", "AIEvaluations"],
+            "agent_audit_logs": ["agent_audit_logs", "agentauditlogs", "AgentAuditLogs"],
+            "test_submissions": ["test_submissions", "testsubmissions", "TestSubmissions"],
+            "grade_records": ["grade_records", "graderecords", "GradeRecords", "grades", "Grades"],
+            "rapunzel_grades": ["rapunzel_grades", "rapunzelgrades", "RapunzelGrades", "grade_records", "graderecords", "grades", "Grades"],
+        }
+        candidates = table_map.get(logical_name, [logical_name])
+        return self._resolve_table_name(candidates)
+
+    def resolve_table_column(self, table_logical: str, candidates: List[str]) -> Optional[str]:
+        table_name = self.get_table_name(table_logical)
+        return self._resolve_column(table_name, candidates)
+
+    def get_applications_column(self, logical: str) -> Optional[str]:
+        column_map = {
+            "application_id": ["application_id", "applicationid"],
+            "applicant_name": ["applicant_name", "applicantname"],
+            "email": ["email"],
+            "status": ["status"],
+            "uploaded_date": ["uploaded_date", "uploadeddate"],
+            "was_selected": ["was_selected", "wasselected"],
+            "missing_fields": ["missing_fields", "missingfields"],
+            "application_text": ["application_text", "applicationtext"],
+            "transcript_text": ["transcript_text", "transcripttext"],
+            "recommendation_text": ["recommendation_text", "recommendationtext"],
+            "student_id": ["student_id", "studentid"],
+        }
+        return self.resolve_table_column("applications", column_map.get(logical, [logical]))
 
     def _column_exists(self, table_name: str, column_name: str) -> bool:
         if not column_name:
@@ -935,60 +1008,132 @@ class Database:
             List of dicts with: first_name, last_name, high_school, merlin_score, 
             application_id, email, status, uploaded_date, missing_fields
         """
+        applications_table = self.get_table_name("applications")
+        merlin_table = self.get_table_name("merlin_evaluations")
+        context_table = self.get_table_name("student_school_context")
+        schools_table = self.get_table_name("schools")
+
+        app_id_col = self.get_applications_column("application_id")
+        applicant_col = self.get_applications_column("applicant_name")
+        email_col = self.get_applications_column("email")
+        status_col = self.get_applications_column("status")
+        uploaded_col = self.get_applications_column("uploaded_date")
+        was_selected_col = self.get_applications_column("was_selected")
+        missing_fields_col = self.get_applications_column("missing_fields")
+
         training_col = self.get_training_example_column()
         test_col = self.get_test_data_column()
         test_filter = ""
         if self.has_applications_column(test_col):
             test_filter = f" AND (a.{test_col} = FALSE OR a.{test_col} IS NULL)"
 
-        if is_training:
-            base_query = """
-                SELECT 
-                    a.application_id as application_id,
-                    a.applicant_name as applicant_name,
-                    a.email as email,
-                    a.status as status,
-                    a.uploaded_date as uploaded_date,
-                    a.was_selected as was_selected,
-                    m.overall_score as merlin_score,
-                    s.school_name as school_name,
-                    a.missing_fields as missing_fields
-                FROM Applications a
-                LEFT JOIN merlin_evaluations m ON a.application_id = m.application_id
-                LEFT JOIN student_school_context ssc ON a.application_id = ssc.application_id
-                LEFT JOIN schools s ON ssc.school_id = s.school_id
-                WHERE a.{training_col} = TRUE
-            """
-        else:
-            base_query = """
-                SELECT 
-                    a.application_id as application_id,
-                    a.applicant_name as applicant_name,
-                    a.email as email,
-                    a.status as status,
-                    a.uploaded_date as uploaded_date,
-                    a.was_selected as was_selected,
-                    m.overall_score as merlin_score,
-                    s.school_name as school_name,
-                    a.missing_fields as missing_fields
-                FROM Applications a
-                LEFT JOIN merlin_evaluations m ON a.application_id = m.application_id
-                LEFT JOIN student_school_context ssc ON a.application_id = ssc.application_id
-                LEFT JOIN schools s ON ssc.school_id = s.school_id
-                                WHERE a.{training_col} = FALSE{test_filter}
-            """
+        merlin_score_col = None
+        merlin_join = ""
+        if self.has_table(merlin_table):
+            merlin_score_col = self.resolve_table_column(
+                "merlin_evaluations",
+                ["overall_score", "overallscore"],
+            )
+            merlin_app_id_col = self.resolve_table_column(
+                "merlin_evaluations",
+                ["application_id", "applicationid"],
+            )
+            if merlin_score_col and merlin_app_id_col:
+                merlin_join = f"LEFT JOIN {merlin_table} m ON a.{app_id_col} = m.{merlin_app_id_col}"
+
+        context_join = ""
+        school_join = ""
+        school_select = "NULL as school_name"
+        if self.has_table(context_table):
+            context_app_id_col = self.resolve_table_column(
+                "student_school_context",
+                ["application_id", "applicationid"],
+            )
+            context_school_id_col = self.resolve_table_column(
+                "student_school_context",
+                ["school_id", "schoolid"],
+            )
+            context_school_name_col = self.resolve_table_column(
+                "student_school_context",
+                ["school_name", "schoolname"],
+            )
+            if context_app_id_col:
+                context_join = f"LEFT JOIN {context_table} ssc ON a.{app_id_col} = ssc.{context_app_id_col}"
+            if self.has_table(schools_table) and context_school_id_col:
+                school_name_col = self.resolve_table_column(
+                    "schools",
+                    ["school_name", "schoolname"],
+                )
+                school_id_col = self.resolve_table_column(
+                    "schools",
+                    ["school_id", "schoolid"],
+                )
+                if school_name_col and school_id_col:
+                    school_join = f"LEFT JOIN {schools_table} s ON ssc.{context_school_id_col} = s.{school_id_col}"
+                    school_select = f"s.{school_name_col} as school_name"
+            elif context_school_name_col:
+                school_select = f"ssc.{context_school_name_col} as school_name"
+
+        merlin_select = "NULL as merlin_score"
+        if merlin_score_col and merlin_join:
+            merlin_select = f"m.{merlin_score_col} as merlin_score"
+
+        was_selected_select = "NULL as was_selected"
+        if self.has_applications_column(was_selected_col):
+            was_selected_select = f"a.{was_selected_col} as was_selected"
+
+        missing_fields_select = "NULL as missing_fields"
+        if self.has_applications_column(missing_fields_col):
+            missing_fields_select = f"a.{missing_fields_col} as missing_fields"
+
+        base_query = """
+            SELECT
+                a.{app_id_col} as application_id,
+                a.{applicant_col} as applicant_name,
+                a.{email_col} as email,
+                a.{status_col} as status,
+                a.{uploaded_col} as uploaded_date,
+                {was_selected_select},
+                {merlin_select},
+                {school_select},
+                {missing_fields_select}
+            FROM {applications_table} a
+            {merlin_join}
+            {context_join}
+            {school_join}
+            WHERE a.{training_col} = {training_flag}{test_filter}
+        """
+
+        training_flag = "TRUE" if is_training else "FALSE"
+        base_query = base_query.format(
+            app_id_col=app_id_col,
+            applicant_col=applicant_col,
+            email_col=email_col,
+            status_col=status_col,
+            uploaded_col=uploaded_col,
+            was_selected_select=was_selected_select,
+            merlin_select=merlin_select,
+            school_select=school_select,
+            missing_fields_select=missing_fields_select,
+            applications_table=applications_table,
+            merlin_join=merlin_join,
+            context_join=context_join,
+            school_join=school_join,
+            training_col=training_col,
+            training_flag=training_flag,
+            test_filter=test_filter,
+        )
         
         # Add search filter if provided
         if search_query:
-            base_query += " AND (a.applicant_name ILIKE %s OR a.email ILIKE %s)"
+            base_query += f" AND (a.{applicant_col} ILIKE %s OR a.{email_col} ILIKE %s)"
             search_param = f"%{search_query}%"
             params = (search_param, search_param)
         else:
             params = None
         
         # Always sort by last name
-        base_query = base_query.format(training_col=training_col, test_filter=test_filter)
-        base_query += " ORDER BY a.applicant_name"
+        base_query += f" ORDER BY a.{applicant_col}"
         
         results = self.execute_query(base_query, params)
         
