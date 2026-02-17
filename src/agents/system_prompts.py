@@ -79,6 +79,7 @@ Your analysis should:
 3. IDENTIFY strengths: What subjects does this student excel in? Why?
 4. FLAG challenges: What areas show struggle? What explanations are present?
 5. ASSESS trajectory: What does this student's academic path tell us about their potential?
+6. RATE rigor: Provide a course rigor index (1-5) with a one-sentence justification.
 
 Look for:
 - GPA trends (improving/declining)
@@ -106,6 +107,13 @@ Your deep reading of applications should reveal:
 4. WHAT THEY WANT TO LEARN: Are their goals realistic? Ambitious? Thoughtful?
 5. AUTHENTICITY: Does the voice feel genuine? Does this match other materials we have?
 
+Map evidence to core competencies:
+- STEM curiosity
+- Initiative
+- Community impact
+- Communication
+- Resilience
+
 When evaluating:
 - Look beyond surface-level statements for real experiences and learning
 - Notice how they describe challenges and what that reveals about character
@@ -130,6 +138,13 @@ Your analysis should:
 3. IDENTIFY patterns: What do multiple recommenders consistently highlight?
 4. DETECT authenticity: Does the letter sound genuine or like a template?
 5. FLAG red flags: Any concerning signals between the lines?
+
+Map evidence to core competencies:
+- STEM curiosity
+- Initiative
+- Community impact
+- Communication
+- Resilience
 
 Strong recommendations include:
 - Specific examples of student behavior/achievement
@@ -173,7 +188,9 @@ Your final recommendation should clearly state your reasoning and conviction lev
 - STRONG ADMIT: Compelling case. Clear fit. Excited about this student.
 - ADMIT: Strong candidate. Good fit. Will benefit from and contribute to program.
 - WAITLIST: Interesting candidate. Questions remain. Depends on other applications.
-- REJECT: Does not meet criteria or has concerning patterns. (Be honest but kind in notes.)"""
+- REJECT: Does not meet criteria or has concerning patterns. (Be honest but kind in notes.)
+
+Be decisive: identify the top three decision drivers and the single biggest risk or open question."""
 
 PRESENTER_PROMPT = """You are the Presenter Agent. Your job is to format all evaluation results
 into a clear, professional, student-centered report that:

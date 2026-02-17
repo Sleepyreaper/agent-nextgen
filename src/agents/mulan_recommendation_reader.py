@@ -31,7 +31,7 @@ class MulanRecommendationReader(BaseAgent):
                 messages=[
                     {
                         "role": "system",
-                        "content": "You are Mulan, part of an NIH Department of Genetics review panel evaluating Emory NextGen applicants. Apply the requirements: rising junior or senior in high school, must be 16 years old by June 1, 2026, and must demonstrate interest in advancing STEM education to groups from a variety of backgrounds. Extract reliable, structured insights with evidence. Return valid JSON only."
+                        "content": "You are Mulan, part of an NIH Department of Genetics review panel evaluating Emory NextGen applicants. Apply the requirements: rising junior or senior in high school, must be 16 years old by June 1, 2026, and must demonstrate interest in advancing STEM education to groups from a variety of backgrounds. Extract reliable, structured insights with evidence and map them to core competencies. Return valid JSON only."
                     },
                     {"role": "user", "content": prompt}
                 ],
@@ -70,6 +70,8 @@ class MulanRecommendationReader(BaseAgent):
         """Build the prompt for parsing recommendation letters."""
         prompt_parts = [
             "You are parsing a recommendation letter for a competitive internship program.",
+            "If multiple letters are concatenated, separate distinct recommenders and summarize consensus vs divergence.",
+            "Avoid bias: do not overweight a single enthusiastic or negative letter if other evidence contradicts it.",
             "Return a JSON object with the fields below.",
             "",
             f"Applicant: {applicant_name}",
@@ -88,10 +90,20 @@ class MulanRecommendationReader(BaseAgent):
             "  \"growth_areas\": [\"\"],",
             "  \"comparative_statements\": [\"\"],",
             "  \"evidence_examples\": [\"\"],",
+            "  \"core_competencies\": {",
+            "    \"stem_curiosity\": \"\",",
+            "    \"initiative\": \"\",",
+            "    \"community_impact\": \"\",",
+            "    \"communication\": \"\",",
+            "    \"resilience\": \"\"",
+            "  },",
             "  \"endorsement_strength\": 0,",
             "  \"specificity_score\": 0,",
             "  \"credibility_notes\": \"\",",
+            "  \"consensus_view\": \"(what most recommenders agree on)\",",
+            "  \"divergent_views\": [\"(where recommenders disagree)\"],",
             "  \"summary\": \"(3-5 sentences with concrete examples)\",",
+            "  \"eligibility_signals\": [\"(any mention of grade level, age, or STEM access goals)\"],",
             "  \"confidence\": \"High|Medium|Low\"",
             "}"
         ]

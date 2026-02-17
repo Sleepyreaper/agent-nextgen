@@ -478,7 +478,7 @@ COLLEGE PREPARATION:
 - Number of students going to 4-year colleges
 - Dual enrollment/early college programs
 
-Provide this as a structured analysis. Be honest about data availability - if exact numbers aren't publicly available, provide reasonable estimates based on school size/type/location and note your estimation method."""
+Provide this as a structured analysis. Be honest about data availability. If exact numbers aren't publicly available, provide conservative estimates based on school size/type/location and clearly label them as estimates."""
 
         try:
             response = self._create_chat_completion(
@@ -487,7 +487,7 @@ Provide this as a structured analysis. Be honest about data availability - if ex
                 messages=[
                     {
                         "role": "system",
-                        "content": "You are part of an NIH Department of Genetics review panel evaluating Emory NextGen applicants. You find and synthesize publicly available school data to contextualize opportunity and STEM access."
+                        "content": "You are part of an NIH Department of Genetics review panel evaluating Emory NextGen applicants. You find and synthesize publicly available school data to contextualize opportunity and STEM access. Label estimates clearly and avoid overconfident claims."
                     },
                     {
                         "role": "user",
@@ -587,7 +587,7 @@ provide a realistic assessment of:
 6. Estimated number of students in advanced programs (estimate total enrollment ~1500-2500)
 7. Typical SES level of the area (based on school name/location if identifiable){georgia_note}
 
-Provide realistic, conservative estimates. Format as clear categories."""
+Provide realistic, conservative estimates. Explicitly note where opportunity is constrained by limited programs or resources. Format as clear categories."""
 
         try:
             response = self._create_chat_completion(
@@ -596,7 +596,7 @@ Provide realistic, conservative estimates. Format as clear categories."""
                 messages=[
                     {
                         "role": "system",
-                        "content": "You are part of an NIH Department of Genetics review panel evaluating Emory NextGen applicants. Provide realistic assessments of high schools based on common patterns. Be specific with numbers and opportunity context."
+                        "content": "You are part of an NIH Department of Genetics review panel evaluating Emory NextGen applicants. Provide realistic assessments of high schools based on common patterns. Be specific with numbers, label estimates, and call out opportunity constraints."
                     },
                     {
                         "role": "user",
@@ -1101,7 +1101,7 @@ This data will provide accurate context for evaluating student opportunity and a
         messages = [
             {
                 "role": "system",
-                "content": "You are Moana, an expert in education systems and school contexts. You understand socioeconomic factors, advanced programs, and educational opportunities."
+                "content": "You are Moana, an expert in education systems and school contexts. You understand socioeconomic factors, advanced programs, and educational opportunities. Emphasize how opportunity constraints shape interpretation of performance."
             }
         ] + self.conversation_history
         
