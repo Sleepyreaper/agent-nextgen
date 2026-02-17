@@ -91,12 +91,23 @@ class AuroraAgent(BaseAgent):
             or merlin_assessment.get('context_factors')
             or []
         )
+        decision_drivers = (
+            merlin_assessment.get('decision_drivers')
+            or merlin_assessment.get('key_strengths')
+            or []
+        )
+        top_risk = (
+            merlin_assessment.get('top_risk')
+            or (considerations[0] if considerations else None)
+        )
         result['merlin_summary'] = {
             'score': merlin_assessment.get('overall_score', 0),
             'recommendation': merlin_assessment.get('recommendation', 'PENDING'),
             'overall': overall_text,
             'key_strengths': merlin_assessment.get('key_strengths', []),
-            'considerations': considerations
+            'considerations': considerations,
+            'decision_drivers': decision_drivers,
+            'top_risk': top_risk
         }
         
         # Format each agent's output consistently

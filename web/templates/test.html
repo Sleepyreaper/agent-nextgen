@@ -483,16 +483,18 @@
         📋 <strong>What we're testing:</strong>
         <br/>1️⃣ Generate synthetic student application data (simulates file uploads)
         <br/>2️⃣ Store applications in database with unique student IDs
-        <br/>3️⃣ 🎩 Smee Orchestrator retrieves data and coordinates the evaluation pipeline
-        <br/>4️⃣ Agent pipeline processes in sequence:
+        <br/>3️⃣ 📖 Belle classifies documents and extracts key fields
+        <br/>4️⃣ 🎩 Smee Orchestrator retrieves data and coordinates the evaluation pipeline
+        <br/>5️⃣ Agent pipeline processes in sequence:
         <br/>&nbsp;&nbsp;&nbsp;&nbsp;👸 Tiana reads application text
         <br/>&nbsp;&nbsp;&nbsp;&nbsp;👑 Rapunzel analyzes grades and transcripts
         <br/>&nbsp;&nbsp;&nbsp;&nbsp;🌊 Moana evaluates school context and demographics
-        <br/>&nbsp;&nbsp;&nbsp;&nbsp;🥋 Mulan reads recommendation letters
+        <br/>&nbsp;&nbsp;&nbsp;&nbsp;🥋 Mulan reviews recommendation letters (supports multiple letters per student)
+        <br/>&nbsp;&nbsp;&nbsp;&nbsp;🧪 Milo provides training pattern context (if available)
         <br/>&nbsp;&nbsp;&nbsp;&nbsp;🧙 Merlin creates comprehensive student evaluation
         <br/>&nbsp;&nbsp;&nbsp;&nbsp;✨ Aurora generates executive summary
-        <br/>&nbsp;&nbsp;&nbsp;&nbsp;🪄 Fairy Godmother creates beautiful evaluation documents
-        <br/>5️⃣ All documents and evaluations stored in Azure Storage with student ID
+        <br/>&nbsp;&nbsp;&nbsp;&nbsp;🪄 Fairy Godmother creates evaluation documents
+        <br/>6️⃣ All documents and evaluations stored in Azure Storage with student ID
         <br/><strong>Result:</strong> Complete multi-agent evaluation with documents ready for admissions review
     </div>
 
@@ -536,6 +538,7 @@
         <h3 style="margin: 0 0 1rem 0; color: #1e40af;">📁 Upload Real Test Files</h3>
         <p style="color: #6b7280; margin-bottom: 1rem; font-size: 0.9rem;">
             Upload actual application files (PDF, DOCX, TXT) to test how well the agents perform with real data.
+            Multiple files for the same student (including multiple recommendation letters) will be combined.
         </p>
         
         <form id="uploadTestForm" enctype="multipart/form-data" style="display: flex; gap: 1rem; align-items: center; flex-wrap: wrap;">

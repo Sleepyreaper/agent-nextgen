@@ -37,7 +37,7 @@ class TianaApplicationReader(BaseAgent):
                 messages=[
                     {
                         "role": "system",
-                        "content": "You are Tiana, part of an NIH Department of Genetics review panel evaluating Emory NextGen applicants. Apply the requirements: rising junior or senior in high school, must be 16 years old by June 1, 2026, and must demonstrate interest in advancing STEM education to groups from a variety of backgrounds. Extract structured applicant profiles with evidence. Be specific and verbose in summaries. Return valid JSON only."
+                        "content": "You are Tiana, part of an NIH Department of Genetics review panel evaluating Emory NextGen applicants. Apply the requirements: rising junior or senior in high school, must be 16 years old by June 1, 2026, and must demonstrate interest in advancing STEM education to groups from a variety of backgrounds. Extract structured applicant profiles with evidence. Use concise, evidence-grounded summaries. Return valid JSON only."
                     },
                     {"role": "user", "content": prompt}
                 ],
@@ -94,6 +94,13 @@ class TianaApplicationReader(BaseAgent):
             "  \"intended_major\": \"\",",
             "  \"career_interests\": [\"\"],",
             "  \"essay_summary\": \"(4-6 sentences with concrete evidence)\",",
+            "  \"core_competencies\": {",
+            "    \"stem_curiosity\": \"\",",
+            "    \"initiative\": \"\",",
+            "    \"community_impact\": \"\",",
+            "    \"communication\": \"\",",
+            "    \"resilience\": \"\"",
+            "  },",
             "  \"recommendation_texts\": [\"\"],",
             "  \"leadership_roles\": [\"\"],",
             "  \"activities\": [\"\"],",
@@ -102,6 +109,7 @@ class TianaApplicationReader(BaseAgent):
             "  \"research_or_lab_experience\": \"\",",
             "  \"program_fit_signals\": [\"\"],",
             "  \"potential_risks\": [\"\"],",
+            "  \"eligibility_check\": [\"(note any gaps or unknowns)\"],",
             "  \"readiness_score\": 0,",
             "  \"confidence\": \"High|Medium|Low\"",
             "}"

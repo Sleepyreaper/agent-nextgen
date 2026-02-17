@@ -2050,7 +2050,14 @@ def upload_test_files():
         if len(files) == 0:
             return jsonify({'status': 'error', 'error': 'No files selected'}), 400
         
-        uploaded_students = []
+        uploaded_students_map = {}
+        app_doc_types = {
+            'application',
+            'personal_statement',
+            'essay'
+        }
+        transcript_doc_types = {'transcript', 'grades'}
+        recommendation_doc_types = {'letter_of_recommendation'}
         
         for file in files:
             if file.filename == '':
@@ -2107,20 +2114,49 @@ def upload_test_files():
 
             doc_type = doc_analysis.get('document_type', 'unknown')
             agent_fields = doc_analysis.get('agent_fields', {})
-            transcript_text = agent_fields.get('transcript_text') or application_text
-            recommendation_text = agent_fields.get('recommendation_text') or application_text
             school_name = agent_fields.get('school_name')
-            
-            uploaded_students.append({
-                'name': student_name or f"Student from {filename}",
-                'email': student_email or "",
-                'application_text': application_text,
-                'filename': filename,
-                'transcript_text': transcript_text,
-                'recommendation_text': recommendation_text,
-                'school_data': {'name': school_name} if school_name else {}
-            })
+
+            identity_key = (student_email or student_name or filename).strip().lower()
+            if identity_key not in uploaded_students_map:
+                uploaded_students_map[identity_key] = {
+                    'name': student_name or f"Student from {filename}",
+                    'email': student_email or "",
+                    'application_text': "",
+                    'transcript_text': "",
+                    'recommendation_text': "",
+                    'recommendation_texts': [],
+                    'filenames': [],
+                    'school_data': {'name': school_name} if school_name else {}
+                }
+
+            record = uploaded_students_map[identity_key]
+            record['filenames'].append(filename)
+            if school_name and not record.get('school_data'):
+                record['school_data'] = {'name': school_name}
+
+            if doc_type in app_doc_types:
+                if record['application_text']:
+                    record['application_text'] += "\n\n--- Additional Application Document ---\n\n"
+                record['application_text'] += application_text
+            elif doc_type in transcript_doc_types:
+                if record['transcript_text']:
+                    record['transcript_text'] += "\n\n--- Additional Transcript Document ---\n\n"
+                record['transcript_text'] += application_text
+            elif doc_type in recommendation_doc_types:
+                record['recommendation_texts'].append(application_text)
+                if record['recommendation_text']:
+                    record['recommendation_text'] += "\n\n--- Additional Recommendation Letter ---\n\n"
+                record['recommendation_text'] += application_text
+            else:
+                if not record['application_text']:
+                    record['application_text'] = application_text
+                elif not record['recommendation_text']:
+                    record['recommendation_text'] = application_text
+                else:
+                    record['transcript_text'] = record['transcript_text'] or application_text
         
+        uploaded_students = list(uploaded_students_map.values())
+
         if len(uploaded_students) == 0:
             return jsonify({'status': 'error', 'error': 'No valid files uploaded'}), 400
         

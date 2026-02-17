@@ -273,6 +273,10 @@ python testing/test_smee.py
 2. Upload a test application
 3. Click "Evaluate" to see AI assessment
 
+**Test Page Uploads:**
+- Upload multiple files for the same student (including multiple recommendation letters); the test pipeline groups them before agent review.
+- Use the Test page to run quick synthetic batches or clear test data safely.
+
 ## 📤 Upload Flow (2026, Test, Training)
 
 All uploads share the same pipeline: file upload, text extraction, blob storage, and database persistence. The behavior differs by type:
@@ -299,6 +303,7 @@ Agent runs, model usage, and token counts appear in the Agents view once telemet
 - Mark them as "Training Examples"
 - Indicate if they were selected
 - The AI learns what excellence looks like
+- Use the Training page to clear legacy training data when you need a fresh baseline.
 
 ### Best Practices
 - Provide detailed applications for better evaluation  

@@ -34,7 +34,7 @@ class MerlinStudentEvaluator(BaseAgent):
                 messages=[
                     {
                         "role": "system",
-                        "content": "You are Merlin, part of an NIH Department of Genetics review panel evaluating Emory NextGen applicants. Apply the requirements: rising junior or senior in high school, must be 16 years old by June 1, 2026, and must demonstrate interest in advancing STEM education to groups from a variety of backgrounds. Produce a fair, consistent final recommendation using evidence from all agents. Explain how evidence maps to the overall score. Return valid JSON only."
+                        "content": "You are Merlin, part of an NIH Department of Genetics review panel evaluating Emory NextGen applicants. Apply the requirements: rising junior or senior in high school, must be 16 years old by June 1, 2026, and must demonstrate interest in advancing STEM education to groups from a variety of backgrounds. Produce a fair, consistent final recommendation using evidence from all agents. Explicitly map evidence to the overall score and recommendation. Be decisive and avoid hedging. Return valid JSON only."
                     },
                     {"role": "user", "content": prompt}
                 ],
@@ -106,6 +106,8 @@ class MerlinStudentEvaluator(BaseAgent):
             '  "overall_score": 0,  // 0-100 integer',
             '  "recommendation": "Strongly Recommend|Recommend|Consider|Do Not Recommend",',
             '  "rationale": "(2-3 short paragraphs with evidence)",',
+            '  "decision_drivers": ["(top 3 evidence-based drivers of the decision)"] ,',
+            '  "top_risk": "(single biggest risk or open question)",',
             '  "key_strengths": ["(3-6 detailed strengths with evidence)"],',
             '  "key_risks": ["(2-4 specific risks or gaps)"],',
             '  "context_factors": ["(2-4 context notes that shaped the decision)"],',
