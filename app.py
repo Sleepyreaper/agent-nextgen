@@ -2492,20 +2492,27 @@ def test_stats():
     """
     try:
         training_col = db.get_training_example_column()
+        test_col = db.get_test_data_column()
         applications_table = db.get_table_name("applications")
         app_id_col = db.get_applications_column("application_id")
         applicant_col = db.get_applications_column("applicant_name")
         status_col = db.get_applications_column("status")
         uploaded_col = db.get_applications_column("uploaded_date")
-        test_count = db.execute_query(
-            f"SELECT COUNT(*) as count FROM {applications_table} WHERE {training_col} = TRUE"
-        )
+        if db.has_applications_column(test_col):
+            test_count = db.execute_query(
+                f"SELECT COUNT(*) as count FROM {applications_table} WHERE {test_col} = TRUE"
+            )
+        else:
+            test_count = []
         count = test_count[0].get('count', 0) if test_count else 0
         
         # Get list of test students
-        test_apps = db.execute_query(
-            f"SELECT {app_id_col} as application_id, {applicant_col} as applicant_name, {status_col} as status, {uploaded_col} as uploaded_date FROM {applications_table} WHERE {training_col} = TRUE ORDER BY {uploaded_col} DESC"
-        )
+        if db.has_applications_column(test_col):
+            test_apps = db.execute_query(
+                f"SELECT {app_id_col} as application_id, {applicant_col} as applicant_name, {status_col} as status, {uploaded_col} as uploaded_date FROM {applications_table} WHERE {test_col} = TRUE ORDER BY {uploaded_col} DESC"
+            )
+        else:
+            test_apps = []
         
         return jsonify({
             'status': 'success',
