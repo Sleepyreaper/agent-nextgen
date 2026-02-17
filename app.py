@@ -416,6 +416,23 @@ def upload():
             # Determine initial missing fields (only for 2026 applications)
             if missing_fields:
                 db.set_missing_fields(application_id, missing_fields)
+
+            if is_training:
+                application_record = db.get_application(application_id) or {}
+                placeholder_fields = {}
+
+                if not application_record.get('application_text'):
+                    placeholder_fields['application_text'] = 'No application essay provided for this training run.'
+                if not application_record.get('transcript_text'):
+                    placeholder_fields['transcript_text'] = 'No transcript provided for this training run.'
+                if not application_record.get('recommendation_text'):
+                    placeholder_fields['recommendation_text'] = 'No recommendation letter provided for this training run.'
+
+                if placeholder_fields:
+                    db.update_application_fields(application_id, placeholder_fields)
+
+                db.set_missing_fields(application_id, [])
+                start_training_processing(application_id)
             
             # Flash success message with student ID and Belle's analysis
             if is_training:
@@ -1575,6 +1592,44 @@ test_submissions = {}  # {session_id: {students, queue, processor_started}}
 aurora = AuroraAgent()
 
 
+def start_training_processing(application_id: int) -> None:
+    def run():
+        try:
+            application = db.get_application(application_id)
+            if not application:
+                return
+
+            orchestrator = get_orchestrator()
+            result = asyncio.run(
+                orchestrator.coordinate_evaluation(
+                    application=application,
+                    evaluation_steps=[
+                        'application_reader',
+                        'grade_reader',
+                        'recommendation_reader',
+                        'school_context',
+                        'data_scientist',
+                        'student_evaluator'
+                    ]
+                )
+            )
+
+            if result.get('status') == 'paused':
+                db.update_application_status(application_id, 'Needs Docs')
+                return
+
+            db.update_application_status(application_id, 'Completed')
+        except Exception as e:
+            logger.error(
+                f"Training processing failed for application {application_id}: {str(e)}",
+                exc_info=True
+            )
+            db.update_application_status(application_id, 'Uploaded')
+
+    db.update_application_status(application_id, 'Processing')
+    threading.Thread(target=run, daemon=True).start()
+
+
 def start_session_processing(session_id: str) -> None:
     submission = test_submissions.get(session_id)
     if not submission or submission.get('processor_started'):
@@ -2156,6 +2211,18 @@ def upload_test_files():
                     record['transcript_text'] = record['transcript_text'] or application_text
         
         uploaded_students = list(uploaded_students_map.values())
+
+        for record in uploaded_students:
+            if not record.get('application_text'):
+                record['application_text'] = (
+                    record.get('recommendation_text')
+                    or record.get('transcript_text')
+                    or 'No application essay provided for this test run.'
+                )
+            if not record.get('transcript_text'):
+                record['transcript_text'] = 'No transcript provided for this test run.'
+            if not record.get('recommendation_text'):
+                record['recommendation_text'] = 'No recommendation letter provided for this test run.'
 
         if len(uploaded_students) == 0:
             return jsonify({'status': 'error', 'error': 'No valid files uploaded'}), 400

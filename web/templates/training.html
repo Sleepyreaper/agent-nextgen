@@ -3,6 +3,12 @@
 {% block title %}Training Data{% endblock %}
 
 {% block content %}
+<style>
+@keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.5; }
+}
+</style>
 <div class="card">
     <div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 2rem; gap: 1rem;">
         <div>
@@ -57,6 +63,16 @@
         </div>
     </form>
 
+    {% set has_processing = training_data|selectattr('status', 'equalto', 'Processing')|list|length > 0 %}
+    {% if has_processing %}
+    <div style="margin-bottom: 1.5rem; padding: 0.85rem 1rem; border-radius: 8px; background: #eff6ff; color: #1e40af; display: flex; align-items: center; gap: 0.75rem;">
+        <span style="display: inline-block; width: 12px; height: 12px; border-radius: 999px; background: #3b82f6; animation: pulse 1s infinite;"></span>
+        <div>
+            <strong>Processing training uploads...</strong> This page will refresh automatically.
+        </div>
+    </div>
+    {% endif %}
+
     <!-- Training Data List Component -->
     {% set students = training_data %}
     {% include '_student_list.html' %}
@@ -102,6 +118,13 @@ async function clearTrainingData() {
     } catch (error) {
         alert(`Error: ${error.message}`);
     }
+}
+
+const hasProcessing = {{ 'true' if has_processing else 'false' }};
+if (hasProcessing) {
+    setInterval(() => {
+        window.location.reload();
+    }, 12000);
 }
 </script>
 {% endblock %}
