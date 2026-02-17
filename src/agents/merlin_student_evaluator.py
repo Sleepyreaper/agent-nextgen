@@ -45,6 +45,14 @@ class MerlinStudentEvaluator(BaseAgent):
 
             payload = response.choices[0].message.content
             data = json.loads(payload)
+            normalized = self._normalize_score(
+                data.get("overall_score"),
+                data.get("recommendation")
+            )
+            data["overall_score"] = normalized["score"]
+            if normalized["adjusted"]:
+                data["score_adjusted"] = True
+                data["score_adjustment_reason"] = normalized["reason"]
             data["status"] = "success"
             data["agent"] = self.name
 
@@ -95,7 +103,7 @@ class MerlinStudentEvaluator(BaseAgent):
             "Return a JSON object with the fields below:",
             "{",
             '  "applicant_name": "",',
-            '  "overall_score": 0,',
+            '  "overall_score": 0,  // 0-100 integer',
             '  "recommendation": "Strongly Recommend|Recommend|Consider|Do Not Recommend",',
             '  "rationale": "(2-3 short paragraphs with evidence)",',
             '  "key_strengths": ["(3-6 detailed strengths with evidence)"],',
@@ -128,3 +136,44 @@ class MerlinStudentEvaluator(BaseAgent):
         assistant_message = response.choices[0].message.content
         self.add_to_history("assistant", assistant_message)
         return assistant_message
+
+    def _normalize_score(self, score: Any, recommendation: Any) -> Dict[str, Any]:
+        """Normalize score to 0-100 and align with recommendation bands when needed."""
+        adjusted = False
+        reason = ""
+
+        try:
+            score_val = float(score)
+        except (TypeError, ValueError):
+            return {"score": None, "adjusted": False, "reason": ""}
+
+        if 0 <= score_val <= 1:
+            score_val = score_val * 100
+            adjusted = True
+            reason = "Scaled 0-1 score to 0-100."
+        elif 0 <= score_val <= 10:
+            score_val = score_val * 10
+            adjusted = True
+            reason = "Scaled 0-10 score to 0-100."
+
+        score_val = max(0, min(100, score_val))
+
+        rec = (recommendation or "").strip().lower()
+        bands = {
+            "strongly recommend": (85, 100),
+            "recommend": (70, 84),
+            "consider": (55, 69),
+            "do not recommend": (0, 54)
+        }
+        if rec in bands:
+            low, high = bands[rec]
+            if score_val < low:
+                score_val = float(low)
+                adjusted = True
+                reason = reason or "Adjusted score to match recommendation band."
+            elif score_val > high:
+                score_val = float(high)
+                adjusted = True
+                reason = reason or "Adjusted score to match recommendation band."
+
+        return {"score": round(score_val, 1), "adjusted": adjusted, "reason": reason}
