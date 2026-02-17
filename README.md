@@ -246,7 +246,7 @@ az webapp create \
 
 **Complete Deployment Guide:** See [documents/deployment/AZURE_WEBAPP_DEPLOY.md](documents/deployment/AZURE_WEBAPP_DEPLOY.md)
 
-**CI/CD Notes:** The active workflow is [/.github/workflows/deploy-to-azure.yml](.github/workflows/deploy-to-azure.yml). Set GitHub Secrets `AZURE_WEBAPP_NAME` and `AZURE_WEBAPP_PUBLISH_PROFILE`. The legacy [/.github/workflows/deploy.yml](.github/workflows/deploy.yml) is manual-only and left as a reference.
+**CI/CD Notes:** The active workflow is [/.github/workflows/deploy-to-azure.yml](.github/workflows/deploy-to-azure.yml) and uses Azure OIDC. Set GitHub Secrets `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, and `AZURE_SUBSCRIPTION_ID`. The legacy publish profile workflow is no longer required.
 
 ### Features When Deployed
 - ✅ Automatic HTTPS/SSL
@@ -272,6 +272,25 @@ python testing/test_smee.py
 1. Run `python app.py`
 2. Upload a test application
 3. Click "Evaluate" to see AI assessment
+
+## 📤 Upload Flow (2026, Test, Training)
+
+All uploads share the same pipeline: file upload, text extraction, blob storage, and database persistence. The behavior differs by type:
+
+- **2026 Applicants:** Full agent processing; missing documents tracked in status.
+- **Test Uploads:** Stored as test data and processed in the Test page flow.
+- **Training Data:** Stored as historical examples; triggers Milo dataset refresh but no evaluation run.
+
+Status badges in the Applicants and Training pages reflect upload state, missing docs, and completion.
+
+## 🔐 Azure Storage Access
+
+Storage uploads use Azure AD authentication via the App Service managed identity. Ensure the web app identity has the **Storage Blob Data Contributor** role on the storage account, and that storage network access allows the app to reach Blob endpoints.
+
+## 📈 Application Insights (Agents View)
+
+Telemetry is enabled when `APPLICATIONINSIGHTS_CONNECTION_STRING` is set. Prompt capture is controlled by `NEXTGEN_CAPTURE_PROMPTS`.
+Agent runs, model usage, and token counts appear in the Agents view once telemetry is flowing.
 
 ## 💡 Usage Tips
 
@@ -400,7 +419,7 @@ az keyvault secret show \
 ## 🎓 Next Steps
 
 1. **Add More Agents**: Create specialized evaluators for different positions
-2. **Integrate Blob Storage**: Store original documents in Azure Blob Storage  
+2. **Enhance Storage Lifecycle**: Add retention and cleanup policies for uploads  
 3. **Add Analytics**: Dashboard for evaluation trends and insights
 4. **Email Notifications**: Notify applicants of decisions
 5. **API Endpoints**: Build REST API for integrations

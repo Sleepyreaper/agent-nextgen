@@ -83,6 +83,26 @@
         background: #dbeafe;
         color: #1e3a8a;
     }
+
+    .status-uploaded {
+        background: #e0f2fe;
+        color: #075985;
+    }
+
+    .status-needs-docs {
+        background: #fee2e2;
+        color: #991b1b;
+    }
+
+    .status-selected {
+        background: #d1fae5;
+        color: #065f46;
+    }
+
+    .status-not-selected {
+        background: #fee2e2;
+        color: #991b1b;
+    }
     
     .student-actions {
         display: flex;
@@ -145,8 +165,16 @@
                     <span class="status-badge status-{{ normalized_status.lower() }}">
                         {{ normalized_status }}
                     </span>
+                {% elif student.was_selected is not none %}
+                    {% if student.was_selected %}
+                        <span class="status-badge status-selected">Selected</span>
+                    {% else %}
+                        <span class="status-badge status-not-selected">Not Selected</span>
+                    {% endif %}
+                {% elif student.missing_fields and student.missing_fields|length > 0 %}
+                    <span class="status-badge status-needs-docs">Needs Docs</span>
                 {% else %}
-                    <span class="status-badge status-pending">Pending</span>
+                    <span class="status-badge status-uploaded">Uploaded</span>
                 {% endif %}
             </td>
             <td>
