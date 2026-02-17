@@ -4,16 +4,24 @@
 
 {% block content %}
 <div class="card">
-    <div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 2rem;">
+    <div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 2rem; gap: 1rem;">
         <div>
             <h2>📚 Training Data</h2>
             <p style="color: #6b7280; margin-top: 0.5rem;">
                 Historical applications sorted by last name. Students marked "Selected" became our successful interns.
             </p>
+            <p style="color: #6b7280; margin-top: 0.5rem;">
+                Status badges show selection outcomes and whether training data is fully captured.
+            </p>
         </div>
-        <a href="{{ url_for('upload') }}" class="btn btn-primary">
-            ➕ Add Training Example
-        </a>
+        <div style="display: flex; gap: 0.75rem;">
+            <button type="button" class="btn btn-secondary" onclick="clearTrainingData()">
+                🧹 Clear Training Data
+            </button>
+            <a href="{{ url_for('upload') }}" class="btn btn-primary">
+                ➕ Add Training Example
+            </a>
+        </div>
     </div>
 
     <!-- Statistics -->
@@ -71,4 +79,29 @@
         </ul>
     </div>
 </div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+async function clearTrainingData() {
+    if (!confirm('Clear ALL training data (excluding test uploads)? This cannot be undone.')) {
+        return;
+    }
+
+    try {
+        const response = await fetch('/api/training-data/clear', { method: 'POST' });
+        const data = await response.json();
+
+        if (!response.ok || data.status !== 'success') {
+            alert(`Error: ${data.error || 'Unable to clear training data'}`);
+            return;
+        }
+
+        alert(`${data.message}`);
+        location.reload();
+    } catch (error) {
+        alert(`Error: ${error.message}`);
+    }
+}
+</script>
 {% endblock %}

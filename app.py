@@ -1496,6 +1496,76 @@ def delete_training(application_id):
         return redirect(url_for('training'))
 
 
+# API endpoint to clear all training data (excluding test data)
+@app.route('/api/training-data/clear', methods=['POST'])
+def clear_training_data():
+    """Clear all training data from the database (excludes test uploads)."""
+    try:
+        training_col = db.get_training_example_column()
+        test_col = db.get_test_data_column()
+
+        if not db.has_applications_column(training_col):
+            return jsonify({
+                'status': 'success',
+                'message': 'No training data column found; nothing to delete',
+                'count': 0
+            })
+
+        where_clause = f"{training_col} = TRUE"
+        if db.has_applications_column(test_col):
+            where_clause += f" AND ({test_col} = FALSE OR {test_col} IS NULL)"
+
+        training_apps = db.execute_query(f"""
+            SELECT application_id
+            FROM applications
+            WHERE {where_clause}
+        """)
+
+        training_app_ids = [app.get('application_id') for app in training_apps]
+        count_deleted = len(training_app_ids)
+
+        if count_deleted == 0:
+            logger.info("No training data to clear")
+            return jsonify({
+                'status': 'success',
+                'message': 'No training data found to delete',
+                'count': 0
+            })
+
+        for app_id in training_app_ids:
+            try:
+                db.execute_non_query("DELETE FROM agent_audit_logs WHERE application_id = %s", (app_id,))
+                db.execute_non_query("DELETE FROM tiana_applications WHERE application_id = %s", (app_id,))
+                db.execute_non_query("DELETE FROM mulan_recommendations WHERE application_id = %s", (app_id,))
+                db.execute_non_query("DELETE FROM merlin_evaluations WHERE application_id = %s", (app_id,))
+                db.execute_non_query("DELETE FROM aurora_evaluations WHERE application_id = %s", (app_id,))
+                db.execute_non_query("DELETE FROM student_school_context WHERE application_id = %s", (app_id,))
+                db.execute_non_query("DELETE FROM grade_records WHERE application_id = %s", (app_id,))
+                db.execute_non_query("DELETE FROM ai_evaluations WHERE application_id = %s", (app_id,))
+            except Exception as delete_error:
+                logger.warning(f"Error deleting related data for application_id {app_id}: {delete_error}")
+
+        db.execute_non_query(f"DELETE FROM applications WHERE {where_clause}")
+
+        refresh_foundry_dataset_async("training_clear")
+
+        global evaluator_agent
+        evaluator_agent = None
+
+        logger.info(f"✅ Cleared {count_deleted} training applications and associated data")
+
+        return jsonify({
+            'status': 'success',
+            'message': f'Deleted {count_deleted} training applications',
+            'count': count_deleted
+        })
+    except Exception as e:
+        logger.error(f"Error clearing training data: {str(e)}", exc_info=True)
+        return jsonify({
+            'status': 'error',
+            'error': str(e)
+        }), 500
+
 # ============================================================================
 # REAL-TIME TEST SYSTEM WITH SERVER-SENT EVENTS (SSE)
 # ============================================================================
