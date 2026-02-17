@@ -13,7 +13,7 @@
 <div class="card">
     <form method="POST" enctype="multipart/form-data" style="margin-top: 1.5rem;">
         <!-- File Upload -->
-        <div style="margin-bottom: 2rem;">
+        <div id="applicationTypeSection" style="margin-bottom: 2rem;">
             <label style="display: block; font-weight: 600; margin-bottom: 0.75rem; color: #1f2937;">
                 📄 Application File *
             </label>
@@ -72,13 +72,21 @@
 
         <!-- Selection Status (shown only for training data) -->
         <div id="selectionStatus" style="display: none; margin-bottom: 2rem; padding: 1.5rem; background: #fef3c7; border-radius: 8px; border: 2px solid #fcd34d;">
-            <label style="display: flex; align-items: center; cursor: pointer; font-weight: 600;">
-                <input type="checkbox" name="was_selected" id="wasSelected"
-                       style="margin-right: 0.75rem; width: 20px; height: 20px;">
-                <span style="color: #78350f;">✅ This student was selected</span>
-            </label>
+            <p style="margin: 0 0 0.75rem 0; color: #78350f; font-weight: 600;">
+                ✅ Was this student accepted?
+            </p>
+            <div style="display: flex; gap: 1.5rem; align-items: center;">
+                <label style="display: flex; align-items: center; cursor: pointer; font-weight: 600;">
+                    <input type="radio" name="was_selected" value="yes" style="margin-right: 0.5rem;">
+                    <span style="color: #78350f;">Yes</span>
+                </label>
+                <label style="display: flex; align-items: center; cursor: pointer; font-weight: 600;">
+                    <input type="radio" name="was_selected" value="no" style="margin-right: 0.5rem;">
+                    <span style="color: #78350f;">No</span>
+                </label>
+            </div>
             <p style="color: #92400e; margin-top: 0.5rem; font-size: 0.9rem;">
-                Mark whether this student was ultimately accepted. This helps train our models to identify successful applicants.
+                This helps the system learn what strong applicants look like.
             </p>
         </div>
 
@@ -116,6 +124,10 @@
                 <strong>Processing Behavior:</strong> 2026 and test uploads trigger agent processing; training uploads refresh the Milo dataset only
             </li>
         </ol>
+        <p style="margin-top: 1rem;">
+            <strong>Evaluation Standard:</strong> Training applicants are often top performers (though not always), and every file
+            runs through the same rigorous, multi-step evaluation so the final recommendation reflects a full perspective.
+        </p>
         <p style="margin-top: 1rem;">
             <strong>Status Tip:</strong> Track progress on the Applicants or Training pages. "Needs Docs" means transcripts or recommendations are still missing.
         </p>
@@ -157,12 +169,37 @@ function updateApplicationType() {
     } else if (typeTraining) {
         typeInfoDisplay.innerHTML = `
             <h3 style="color: #b45309; margin-bottom: 0.5rem;">📚 Training Data</h3>
-            <p style="color: #92400e; margin: 0;">This will be saved as historical training data for agents to learn from.</p>
+            <p style="color: #92400e; margin: 0;">This will be saved as historical training data to learn from.</p>
         `;
         typeInfoDisplay.style.background = '#fef3c7';
         typeInfoDisplay.style.borderLeft = '4px solid #f59e0b';
         selectionStatus.style.display = 'block';
     }
+}
+
+function applyTrainingPreset() {
+    const params = new URLSearchParams(window.location.search);
+    const presetType = params.get('app_type');
+    if (presetType !== 'training') {
+        return;
+    }
+
+    const typeTraining = document.getElementById('typeTraining');
+    const type2026 = document.getElementById('type2026');
+    const typeTest = document.getElementById('typeTest');
+    const typeSection = document.getElementById('applicationTypeSection');
+
+    if (typeTraining && type2026 && typeTest) {
+        typeTraining.checked = true;
+        type2026.checked = false;
+        typeTest.checked = false;
+    }
+
+    if (typeSection) {
+        typeSection.style.display = 'none';
+    }
+
+    updateApplicationType();
 }
 
 // Drag and drop
@@ -202,6 +239,8 @@ function handleDrop(e) {
     document.getElementById('fileInput').files = files;
     updateFileName(document.getElementById('fileInput'));
 }
+
+applyTrainingPreset();
 </script>
 
 {% endblock %}

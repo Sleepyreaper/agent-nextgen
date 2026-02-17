@@ -485,15 +485,15 @@
         <br/>2️⃣ Store applications in database with unique student IDs
         <br/>3️⃣ 📖 Belle classifies documents and extracts key fields
         <br/>4️⃣ 🎩 Smee Orchestrator retrieves data and coordinates the evaluation pipeline
-        <br/>5️⃣ Agent pipeline processes in sequence:
-        <br/>&nbsp;&nbsp;&nbsp;&nbsp;👸 Tiana reads application text
-        <br/>&nbsp;&nbsp;&nbsp;&nbsp;👑 Rapunzel analyzes grades and transcripts
-        <br/>&nbsp;&nbsp;&nbsp;&nbsp;🌊 Moana evaluates school context and demographics
-        <br/>&nbsp;&nbsp;&nbsp;&nbsp;🥋 Mulan reviews recommendation letters (supports multiple letters per student)
-        <br/>&nbsp;&nbsp;&nbsp;&nbsp;🧪 Milo provides training pattern context (if available)
-        <br/>&nbsp;&nbsp;&nbsp;&nbsp;🧙 Merlin creates comprehensive student evaluation
-        <br/>&nbsp;&nbsp;&nbsp;&nbsp;✨ Aurora generates executive summary
-        <br/>&nbsp;&nbsp;&nbsp;&nbsp;🪄 Fairy Godmother creates evaluation documents
+        <br/>5️⃣ Evaluation pipeline processes in sequence:
+        <br/>&nbsp;&nbsp;&nbsp;&nbsp;👸 Application review (essay + intent)
+        <br/>&nbsp;&nbsp;&nbsp;&nbsp;👑 Transcript analysis (grades + rigor)
+        <br/>&nbsp;&nbsp;&nbsp;&nbsp;🌊 School context (resources + demographics)
+        <br/>&nbsp;&nbsp;&nbsp;&nbsp;🥋 Recommendation analysis (supports multiple letters per student)
+        <br/>&nbsp;&nbsp;&nbsp;&nbsp;🧪 Training pattern context (if available)
+        <br/>&nbsp;&nbsp;&nbsp;&nbsp;🧙 Comprehensive evaluation (score + recommendation)
+        <br/>&nbsp;&nbsp;&nbsp;&nbsp;✨ Executive summary
+        <br/>&nbsp;&nbsp;&nbsp;&nbsp;🪄 Evaluation documents
         <br/>6️⃣ All documents and evaluations stored in Azure Storage with student ID
         <br/><strong>Result:</strong> Complete multi-agent evaluation with documents ready for admissions review
     </div>
@@ -580,9 +580,9 @@
     <!-- Students Table -->
     <div class="table-section">
         <div class="table-header">
-            <h3>� Test Applications & Agent Analysis <span id="completionRate" class="completion-rate"></span></h3>
+            <h3>� Test Applications & Evaluation Status <span id="completionRate" class="completion-rate"></span></h3>
             <p style="font-size: 0.9rem; color: #6b7280; margin: 0.5rem 0 0 0;">
-                Synthetic applications stored in database → Smee orchestrates agents to analyze → Results saved
+                Synthetic applications stored in database → Evaluation pipeline runs → Results saved
             </p>
         </div>
         
@@ -591,7 +591,7 @@
                 <tr>
                     <th style="width: 25%;">Candidate Name</th>
                     <th style="width: 15%;">Analysis Status</th>
-                    <th style="width: 45%;">Agents Completed</th>
+                    <th style="width: 45%;">Steps Completed</th>
                     <th style="width: 15%;">View Summary</th>
                 </tr>
             </thead>
@@ -608,15 +608,15 @@
 
 <script>
 const agentNames = {
-    'smee': 'Smee',
-    'belle': 'Belle',
-    'application_reader': 'Tiana',
-    'grade_reader': 'Rapunzel',
-    'school_context': 'Moana',
-    'recommendation_reader': 'Mulan',
-    'student_evaluator': 'Merlin',
-    'aurora': 'Aurora',
-    'fairy_godmother': 'Fairy Godmother'
+    'smee': 'Orchestration',
+    'belle': 'Document intake',
+    'application_reader': 'Application review',
+    'grade_reader': 'Transcript analysis',
+    'school_context': 'School context',
+    'recommendation_reader': 'Recommendation analysis',
+    'student_evaluator': 'Comprehensive evaluation',
+    'aurora': 'Executive summary',
+    'fairy_godmother': 'Evaluation documents'
 };
 
 const agentEmojis = {

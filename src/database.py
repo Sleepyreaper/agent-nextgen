@@ -1007,6 +1007,64 @@ class Database:
         query = f"UPDATE applications SET {', '.join(updates)} WHERE application_id = %s"
         values.append(application_id)
         self.execute_non_query(query, tuple(values))
+
+    def get_application_match_candidates(self, is_training: bool, is_test_data: bool) -> List[Dict[str, Any]]:
+        """Get potential application matches for a given upload type."""
+        applications_table = self.get_table_name("applications")
+        context_table = self.get_table_name("student_school_context")
+
+        app_id_col = self.get_applications_column("application_id")
+        applicant_col = self.get_applications_column("applicant_name")
+        email_col = self.get_applications_column("email")
+        status_col = self.get_applications_column("status")
+        app_text_col = self.get_applications_column("application_text")
+        transcript_col = self.get_applications_column("transcript_text")
+        recommendation_col = self.get_applications_column("recommendation_text")
+        student_id_col = self.get_applications_column("student_id")
+
+        training_col = self.get_training_example_column()
+        test_col = self.get_test_data_column()
+
+        context_join = ""
+        school_select = "NULL as school_name"
+        if context_table and self.has_table(context_table):
+            context_app_id_col = self.resolve_table_column(
+                "student_school_context",
+                ["application_id", "applicationid"],
+            )
+            context_school_name_col = self.resolve_table_column(
+                "student_school_context",
+                ["school_name", "schoolname"],
+            )
+            if context_app_id_col and context_school_name_col:
+                context_join = f"LEFT JOIN {context_table} ssc ON a.{app_id_col} = ssc.{context_app_id_col}"
+                school_select = f"ssc.{context_school_name_col} as school_name"
+
+        where_clause = f"a.{training_col} = %s"
+        params: List[Any] = [is_training]
+        if self.has_applications_column(test_col):
+            if is_test_data:
+                where_clause += f" AND a.{test_col} = TRUE"
+            else:
+                where_clause += f" AND (a.{test_col} = FALSE OR a.{test_col} IS NULL)"
+
+        query = f"""
+            SELECT
+                a.{app_id_col} as application_id,
+                a.{applicant_col} as applicant_name,
+                a.{email_col} as email,
+                a.{status_col} as status,
+                a.{app_text_col} as application_text,
+                a.{transcript_col} as transcript_text,
+                a.{recommendation_col} as recommendation_text,
+                a.{student_id_col} as student_id,
+                {school_select}
+            FROM {applications_table} a
+            {context_join}
+            WHERE {where_clause}
+        """
+
+        return self.execute_query(query, tuple(params))
     
     def add_missing_field(self, application_id: int, field_name: str) -> None:
         """Add a missing field to a student's missing_fields list."""
