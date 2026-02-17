@@ -24,7 +24,7 @@
             <button type="button" class="btn btn-secondary" onclick="clearTrainingData()">
                 🧹 Clear Training Data
             </button>
-            <a href="{{ url_for('upload') }}" class="btn btn-primary">
+            <a href="{{ url_for('upload', app_type='training') }}" class="btn btn-primary">
                 ➕ Add Training Example
             </a>
         </div>
@@ -83,15 +83,19 @@
     <h3 style="color: #1e40af; margin-bottom: 1rem;">💡 About Training Data</h3>
     <div style="color: #1e3a8a; line-height: 1.8;">
         <p style="margin-bottom: 1rem;">
-            Training data helps agents understand what makes excellent applicants by learning from historical examples. 
-            The Merlin score shown is the AI's evaluation of each historical student.
+            Training data helps the system understand what makes excellent applicants by learning from historical examples.
+            The overall score shown is the AI's evaluation of each historical student.
+        </p>
+        <p style="margin-bottom: 1rem;">
+            These applicants are typically top of their class (though not always). Every training example runs through
+            the full, rigorous evaluation pipeline so the final recommendation reflects a complete perspective.
         </p>
         <ul style="margin-left: 1.5rem;">
-            <li>🧙 <strong>Merlin</strong> compares new applicants against historical excellence</li>
-            <li>🌊 <strong>Moana</strong> learns patterns from schools that produced successful students</li>
-            <li>💇 <strong>Rapunzel</strong> calibrates grade expectations based on past selections</li>
-            <li>👸 <strong>Tiana</strong> identifies essay qualities that correlate with success</li>
-            <li>🗡️ <strong>Mulan</strong> weights recommendation attributes from past winners</li>
+            <li>🧙 <strong>Comprehensive evaluation</strong> compares new applicants against historical excellence</li>
+            <li>🌊 <strong>School context</strong> learns patterns from schools that produced successful students</li>
+            <li>💇 <strong>Transcript analysis</strong> calibrates grade expectations based on past selections</li>
+            <li>👸 <strong>Application review</strong> identifies essay qualities that correlate with success</li>
+            <li>🗡️ <strong>Recommendation analysis</strong> weights recommendation attributes from past winners</li>
         </ul>
     </div>
 </div>

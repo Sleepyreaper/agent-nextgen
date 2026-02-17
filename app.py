@@ -5,9 +5,11 @@ import asyncio
 import time
 import uuid
 import json
+import re
+import difflib
 import threading
 import queue
-from typing import Optional
+from typing import Optional, Dict, Any
 from flask import Flask, render_template, request, redirect, url_for, flash, jsonify, Response
 from werkzeug.utils import secure_filename
 from openai import AzureOpenAI
@@ -327,7 +329,8 @@ def upload():
             # Get selection status for training data
             was_selected = None
             if is_training:
-                was_selected = request.form.get('was_selected') == 'on'
+                was_selected_value = (request.form.get('was_selected') or '').strip().lower()
+                was_selected = was_selected_value in {'on', 'yes', 'true', '1'}
             
             # Generate unique student ID
             student_id = storage.generate_student_id()
@@ -390,6 +393,75 @@ def upload():
             belle_student_info = doc_analysis.get('student_info', {})
             student_name = belle_student_info.get('name') or extract_student_name(application_text) or f"Student {student_id}"
             student_email = belle_student_info.get('email') or extract_student_email(application_text) or ""
+            school_name = (doc_analysis.get('agent_fields') or {}).get('school_name')
+
+            match = find_high_probability_match(
+                student_name=student_name,
+                student_email=student_email,
+                school_name=school_name,
+                transcript_text=application_text if target_field == 'transcript_text' else None,
+                is_training=is_training,
+                is_test=is_test
+            )
+            if match:
+                application_id = match.get('application_id')
+                if application_id:
+                    application_record = db.get_application(application_id) or {}
+                    match_target_field = target_field
+
+                    if not match_target_field:
+                        existing_missing = db.get_missing_fields(application_id)
+                        if 'transcript' in existing_missing:
+                            match_target_field = 'transcript_text'
+                        elif 'letters_of_recommendation' in existing_missing:
+                            match_target_field = 'recommendation_text'
+                        else:
+                            match_target_field = 'application_text'
+
+                    existing_value = application_record.get(match_target_field)
+                    label_map = {
+                        'application_text': 'Application',
+                        'transcript_text': 'Transcript',
+                        'recommendation_text': 'Recommendation'
+                    }
+                    merged_value = _merge_uploaded_text(
+                        existing_value,
+                        application_text,
+                        label_map.get(match_target_field, 'Document'),
+                        filename
+                    )
+
+                    db.update_application_fields(application_id, {match_target_field: merged_value})
+
+                    if match_target_field == 'transcript_text':
+                        db.remove_missing_field(application_id, 'transcript')
+                    elif match_target_field == 'recommendation_text':
+                        db.remove_missing_field(application_id, 'letters_of_recommendation')
+
+                    logger.info(
+                        "Matched upload to existing application",
+                        extra={
+                            'application_id': application_id,
+                            'match_score': match.get('match_score'),
+                            'match_reason': match.get('match_reason')
+                        }
+                    )
+
+                    start_application_processing(application_id)
+
+                    if is_training:
+                        refresh_foundry_dataset_async("training_match_update")
+
+                    flash(
+                        f"✅ Matched upload to {match.get('applicant_name', 'existing student')} "
+                        f"({int(match.get('match_score', 0) * 100)}% confidence). Re-running agents.",
+                        'success'
+                    )
+                    if is_training:
+                        return redirect(url_for('training'))
+                    if is_test:
+                        return redirect(url_for('test'))
+                    return redirect(url_for('student_detail', application_id=application_id))
             
             # Save to database with extracted info and storage path
             application_id = db.create_application(
@@ -501,6 +573,128 @@ def extract_student_email(text: str) -> Optional[str]:
     
     matches = re.findall(r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b', text)
     return matches[0] if matches else None
+
+
+def _normalize_match_text(value: Optional[str]) -> str:
+    if not value:
+        return ""
+    return re.sub(r"[^a-z0-9\s]", " ", value.lower()).strip()
+
+
+def _token_similarity(left: Optional[str], right: Optional[str]) -> float:
+    left_norm = _normalize_match_text(left)
+    right_norm = _normalize_match_text(right)
+    if not left_norm or not right_norm:
+        return 0.0
+
+    left_tokens = {token for token in left_norm.split() if len(token) > 1}
+    right_tokens = {token for token in right_norm.split() if len(token) > 1}
+    if not left_tokens or not right_tokens:
+        return 0.0
+
+    overlap = left_tokens.intersection(right_tokens)
+    return len(overlap) / max(len(left_tokens), len(right_tokens))
+
+
+def _string_similarity(left: Optional[str], right: Optional[str]) -> float:
+    left_norm = _normalize_match_text(left)
+    right_norm = _normalize_match_text(right)
+    if not left_norm or not right_norm:
+        return 0.0
+
+    return difflib.SequenceMatcher(None, left_norm, right_norm).ratio()
+
+
+def _extract_gpa(text: Optional[str]) -> Optional[float]:
+    if not text:
+        return None
+
+    match = re.search(r"\bGPA\b\s*[:\-]?\s*([0-4]\.\d{1,2})", text, re.IGNORECASE)
+    if match:
+        try:
+            return float(match.group(1))
+        except ValueError:
+            return None
+
+    return None
+
+
+def _merge_uploaded_text(existing: Optional[str], incoming: str, label: str, filename: str) -> str:
+    if not existing:
+        return incoming
+    if not incoming:
+        return existing
+    if incoming.strip() in existing:
+        return existing
+
+    header = f"--- New {label} Upload ({filename}) ---"
+    return f"{existing}\n\n{header}\n\n{incoming}"
+
+
+def find_high_probability_match(
+    student_name: Optional[str],
+    student_email: Optional[str],
+    school_name: Optional[str],
+    transcript_text: Optional[str],
+    is_training: bool,
+    is_test: bool
+) -> Optional[Dict[str, Any]]:
+    if not student_name and not student_email:
+        return None
+
+    candidates = db.get_application_match_candidates(is_training=is_training, is_test_data=is_test)
+    if not candidates:
+        return None
+
+    uploaded_gpa = _extract_gpa(transcript_text)
+
+    best_candidate = None
+    best_score = 0.0
+    best_reason = ""
+
+    for candidate in candidates:
+        candidate_name = candidate.get('applicant_name')
+        candidate_email = candidate.get('email')
+        candidate_school = candidate.get('school_name')
+        candidate_gpa = _extract_gpa(candidate.get('transcript_text'))
+
+        email_match = bool(student_email and candidate_email and student_email.lower() == candidate_email.lower())
+        name_similarity = max(
+            _string_similarity(student_name, candidate_name),
+            _token_similarity(student_name, candidate_name)
+        )
+        school_similarity = max(
+            _string_similarity(school_name, candidate_school),
+            _token_similarity(school_name, candidate_school)
+        )
+
+        gpa_similarity = 0.0
+        if uploaded_gpa is not None and candidate_gpa is not None:
+            gpa_diff = abs(uploaded_gpa - candidate_gpa)
+            gpa_similarity = max(0.0, 1.0 - min(gpa_diff / 1.0, 1.0))
+
+        score = 0.55 * name_similarity + 0.25 * school_similarity + 0.10 * gpa_similarity
+        if name_similarity > 0.85 and school_similarity > 0.6:
+            score += 0.1
+        if email_match:
+            score = max(score, 0.98)
+
+        score = min(score, 1.0)
+
+        if score > best_score:
+            best_score = score
+            best_candidate = candidate
+            best_reason = f"name={name_similarity:.2f}, school={school_similarity:.2f}, gpa={gpa_similarity:.2f}, email={email_match}"
+
+    if not best_candidate:
+        return None
+
+    if best_score >= 0.78 and (_string_similarity(student_name, best_candidate.get('applicant_name')) >= 0.6 or student_email):
+        best_candidate['match_score'] = best_score
+        best_candidate['match_reason'] = best_reason
+        return best_candidate
+
+    return None
 
 
 
@@ -1590,6 +1784,44 @@ def clear_training_data():
 # In-memory tracking of test submissions and processing status
 test_submissions = {}  # {session_id: {students, queue, processor_started}}
 aurora = AuroraAgent()
+
+
+def start_application_processing(application_id: int) -> None:
+    def run():
+        try:
+            application = db.get_application(application_id)
+            if not application:
+                return
+
+            orchestrator = get_orchestrator()
+            result = asyncio.run(
+                orchestrator.coordinate_evaluation(
+                    application=application,
+                    evaluation_steps=[
+                        'application_reader',
+                        'grade_reader',
+                        'recommendation_reader',
+                        'school_context',
+                        'data_scientist',
+                        'student_evaluator'
+                    ]
+                )
+            )
+
+            if result.get('status') == 'paused':
+                db.update_application_status(application_id, 'Needs Docs')
+                return
+
+            db.update_application_status(application_id, 'Completed')
+        except Exception as e:
+            logger.error(
+                f"Application processing failed for {application_id}: {str(e)}",
+                exc_info=True
+            )
+            db.update_application_status(application_id, 'Uploaded')
+
+    db.update_application_status(application_id, 'Processing')
+    threading.Thread(target=run, daemon=True).start()
 
 
 def start_training_processing(application_id: int) -> None:

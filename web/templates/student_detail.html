@@ -54,18 +54,18 @@
     </div>
 </div>
 
-<!-- Aurora Summary -->
+<!-- Executive Summary -->
 <div class="card aurora-block">
-    <h2 class="section-title">👑 Aurora Summary</h2>
+    <h2 class="section-title">👑 Executive Summary</h2>
     {% if agent_results.get('merlin') %}
     <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; margin-bottom: 1.25rem;">
         <div class="stat-box">
             <div class="stat-value" style="color: var(--champagne);">{{ agent_results.merlin.overallscore|round|int if agent_results.merlin.overallscore else 'N/A' }}/100</div>
-            <div class="stat-label">Merlin Overall Score</div>
+            <div class="stat-label">Overall Score</div>
         </div>
         <div class="stat-box">
             <div class="stat-value">{{ agent_results.merlin.recommendation or 'Pending' }}</div>
-            <div class="stat-label">Merlin Recommendation</div>
+            <div class="stat-label">Recommendation</div>
         </div>
         <div class="stat-box">
             <div class="stat-value">{{ agent_results.merlin.confidence or 'N/A' }}</div>
@@ -77,10 +77,10 @@
     </p>
     <div style="margin-top: 1.25rem;">
         {% if agent_results.get('rapunzel') and agent_results.rapunzel.summary %}
-            <p style="margin-bottom: 0.75rem;"><strong>Academic Summary (Rapunzel):</strong> {{ agent_results.rapunzel.summary }}</p>
+            <p style="margin-bottom: 0.75rem;"><strong>Academic Summary:</strong> {{ agent_results.rapunzel.summary }}</p>
         {% endif %}
         {% if agent_results.get('moana') and (agent_results.moana.comparison_notes or agent_results.moana.comparisonnotes) %}
-            <p style="margin-bottom: 0.75rem;"><strong>School Context (Moana):</strong> {{ agent_results.moana.comparison_notes or agent_results.moana.comparisonnotes }}</p>
+            <p style="margin-bottom: 0.75rem;"><strong>School Context:</strong> {{ agent_results.moana.comparison_notes or agent_results.moana.comparisonnotes }}</p>
         {% endif %}
         {% if agent_results.merlin.parsed_data and agent_results.merlin.parsed_data.key_strengths %}
             <p style="margin-bottom: 0.5rem;"><strong>Key Strengths:</strong></p>
@@ -104,7 +104,7 @@
         {% if agent_results.get('mulan') %}
             {% for rec in agent_results.mulan %}
                 {% if rec.summary %}
-                    <p style="margin-bottom: 0.75rem;"><strong>Recommendation:</strong> {{ rec.summary }}</p>
+                    <p style="margin-bottom: 0.75rem;"><strong>Recommendation Highlights:</strong> {{ rec.summary }}</p>
                     {% break %}
                 {% endif %}
             {% endfor %}
@@ -133,12 +133,12 @@
 <!-- Individual Agent Results -->
 {% if agent_results %}
 <div class="card">
-    <h2 class="section-title">🤖 Agent Evaluations</h2>
+    <h2 class="section-title">🤖 Evaluation Details</h2>
     
-    <!-- Tiana (Application Reader) -->
+    <!-- Application Review -->
     {% if agent_results.get('tiana') %}
     <div style="margin-bottom: 2rem; padding: 1rem; background: #fef3c7; border-left: 4px solid #f59e0b; border-radius: 6px;">
-        <h3 style="color: #92400e; margin-bottom: 0.75rem;">👸 Tiana - Application Reader</h3>
+        <h3 style="color: #92400e; margin-bottom: 0.75rem;">👸 Application Review</h3>
         {% if agent_results.tiana.essaysummary %}
             <p style="margin-bottom: 0.5rem;"><strong>Essay Summary:</strong></p>
             <p style="color: #78350f; margin-bottom: 1rem;">{{ agent_results.tiana.essaysummary }}</p>
@@ -152,10 +152,10 @@
     </div>
     {% endif %}
     
-    <!-- Rapunzel (Grade Reader) -->
+    <!-- Transcript Analysis -->
     {% if agent_results.get('rapunzel') %}
     <div style="margin-bottom: 2rem; padding: 1rem; background: #fce7f3; border-left: 4px solid #ec4899; border-radius: 6px;">
-        <h3 style="color: #831843; margin-bottom: 0.75rem;">� Rapunzel - Grade Reader</h3>
+        <h3 style="color: #831843; margin-bottom: 0.75rem;">📚 Transcript Analysis</h3>
         {% if agent_results.rapunzel.gpa %}
             <p style="margin-bottom: 0.5rem;"><strong>GPA:</strong> {{ agent_results.rapunzel.gpa }}</p>
         {% endif %}
@@ -174,10 +174,10 @@
     </div>
     {% endif %}
     
-    <!-- Mulan (Recommendation Reader) -->
+    <!-- Recommendation Analysis -->
     {% if agent_results.get('mulan') %}
     <div style="margin-bottom: 2rem; padding: 1rem; background: #dbeafe; border-left: 4px solid #3b82f6; border-radius: 6px;">
-        <h3 style="color: #1e3a8a; margin-bottom: 0.75rem;">🗡️ Mulan - Recommendation Reader</h3>
+        <h3 style="color: #1e3a8a; margin-bottom: 0.75rem;">🗡️ Recommendation Analysis</h3>
         {% for rec in agent_results.mulan %}
         <div style="margin-bottom: 1rem; padding: 0.75rem; background: white; border-radius: 4px;">
             {% if rec.recommendername %}
@@ -194,10 +194,10 @@
     </div>
     {% endif %}
     
-    <!-- Moana (School Context) -->
+    <!-- School Context -->
     {% if agent_results.get('moana') %}
     <div style="margin-bottom: 2rem; padding: 1rem; background: #dcfce7; border-left: 4px solid #10b981; border-radius: 6px;">
-        <h3 style="color: #065f46; margin-bottom: 0.75rem;">🌊 Moana - School Context</h3>
+        <h3 style="color: #065f46; margin-bottom: 0.75rem;">🌊 School Context</h3>
         {% if agent_results.moana.school_name or agent_results.moana.schoolname %}
             <p style="margin-bottom: 0.5rem;"><strong>School:</strong> {{ agent_results.moana.school_name or agent_results.moana.schoolname }}</p>
         {% endif %}
@@ -216,10 +216,10 @@
     </div>
     {% endif %}
     
-    <!-- Merlin (Student Evaluator) -->
+    <!-- Comprehensive Evaluation -->
     {% if agent_results.get('merlin') %}
     <div style="margin-bottom: 2rem; padding: 1rem; background: #f3e8ff; border-left: 4px solid #a855f7; border-radius: 6px;">
-        <h3 style="color: #581c87; margin-bottom: 0.75rem;">🧙 Merlin - Student Evaluator</h3>
+        <h3 style="color: #581c87; margin-bottom: 0.75rem;">🧙 Comprehensive Evaluation</h3>
         {% if agent_results.merlin.overallscore %}
             <p style="margin-bottom: 0.5rem;"><strong>Overall Score:</strong> {{ agent_results.merlin.overallscore }}/100</p>
         {% endif %}
@@ -235,29 +235,29 @@
     </div>
     {% endif %}
     
-    <!-- Aurora (Executive Summary) -->
+    <!-- Executive Summary -->
     {% if agent_results.get('aurora') %}
     <div style="margin-bottom: 2rem; padding: 1rem; background: #fef08a; border-left: 4px solid #f59e0b; border-radius: 6px;">
-        <h3 style="color: #78350f; margin-bottom: 0.75rem;">✨ Aurora - Executive Summary</h3>
+        <h3 style="color: #78350f; margin-bottom: 0.75rem;">✨ Executive Summary</h3>
         {% if agent_results.aurora.formatted_evaluation %}
             <p style="margin-bottom: 0.75rem; color: #78350f; line-height: 1.6;">{{ agent_results.aurora.formatted_evaluation }}</p>
         {% endif %}
         {% if agent_results.aurora.merlin_score %}
-            <p style="margin-bottom: 0.5rem;"><strong>Merlin Score:</strong> {{ agent_results.aurora.merlin_score }}/100</p>
+            <p style="margin-bottom: 0.5rem;"><strong>Overall Score:</strong> {{ agent_results.aurora.merlin_score }}/100</p>
         {% endif %}
         {% if agent_results.aurora.merlin_recommendation %}
             <p style="margin-bottom: 0.5rem;"><strong>Recommendation:</strong> {{ agent_results.aurora.merlin_recommendation }}</p>
         {% endif %}
         {% if agent_results.aurora.agents_completed %}
-            <p style="margin-bottom: 0.5rem; font-size: 0.9rem; color: #92400e;"><strong>Agents Completed:</strong> {{ agent_results.aurora.agents_completed }}</p>
+            <p style="margin-bottom: 0.5rem; font-size: 0.9rem; color: #92400e;"><strong>Steps Completed:</strong> {{ agent_results.aurora.agents_completed }}</p>
         {% endif %}
     </div>
     {% endif %}
     
-    <!-- Fairy Godmother (Document Generator) -->
+    <!-- Evaluation Document -->
     {% if document_available %}
     <div style="margin-bottom: 2rem; padding: 1rem; background: #f0e7ff; border-left: 4px solid #d946ef; border-radius: 6px;">
-        <h3 style="color: #701a75; margin-bottom: 0.75rem;">🪄 Fairy Godmother - Evaluation Document</h3>
+        <h3 style="color: #701a75; margin-bottom: 0.75rem;">🪄 Evaluation Document</h3>
         <p style="margin-bottom: 0.75rem; color: #701a75;">A comprehensive evaluation document has been generated for this student.</p>
         <div style="display: flex; gap: 1rem; flex-wrap: wrap;">
             <a href="/download-evaluation/{{ summary.application_id }}" class="result-link" style="padding: 0.5rem 1rem; background: #d946ef; color: white; border-radius: 4px; text-decoration: none;">📥 Download Document</a>
