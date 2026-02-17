@@ -232,6 +232,12 @@ class SmeeOrchestrator(BaseAgent):
             })
             
             try:
+                if hasattr(agent, "set_trace_context"):
+                    agent.set_trace_context(
+                        application_id=application_id,
+                        student_id=student_id,
+                        applicant_name=applicant_name
+                    )
                 async with self._get_agent_semaphore(agent_id):
                     # Call the agent's process or specialized method
                     if agent_id == 'student_evaluator' and failed_agents:
@@ -381,6 +387,9 @@ class SmeeOrchestrator(BaseAgent):
                     'status': 'failed'
                 }
                 self._write_audit(application, agent.name)
+            finally:
+                if hasattr(agent, "clear_trace_context"):
+                    agent.clear_trace_context()
 
         if not merlin_run and 'student_evaluator' in self.agents:
             if failed_agents:

@@ -51,8 +51,8 @@ RequestsInstrumentor().instrument()
 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 logger.info("Flask app initialized", extra={'upload_folder': app.config['UPLOAD_FOLDER']})
 
-# Initialize telemetry (includes prompt content when enabled)
-init_telemetry(service_name="nextgen-agents-web", capture_prompts=True)
+# Initialize telemetry (prompt capture controlled by NEXTGEN_CAPTURE_PROMPTS)
+init_telemetry(service_name="nextgen-agents-web")
 
 # Initialize Azure OpenAI client
 def get_ai_client():

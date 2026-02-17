@@ -22,6 +22,7 @@ class BaseAgent(ABC):
         self.name = name
         self.client = client
         self.conversation_history = []
+        self._trace_context = {}
     
     @abstractmethod
     async def process(self, message: str) -> str:
@@ -71,6 +72,10 @@ class BaseAgent(ABC):
             if temperature is not None:
                 span.set_attribute("gen_ai.request.temperature", float(temperature))
 
+                for key, value in self._trace_context.items():
+                    if value is not None:
+                        span.set_attribute(key, value)
+
             if should_capture_prompts():
                 span.set_attribute("gen_ai.prompt", json.dumps(messages, ensure_ascii=True))
 
@@ -95,6 +100,21 @@ class BaseAgent(ABC):
                     span.set_attribute("gen_ai.usage.total_tokens", int(total_tokens))
 
             return response
+
+    def set_trace_context(
+        self,
+        application_id: Optional[Any] = None,
+        student_id: Optional[Any] = None,
+        applicant_name: Optional[str] = None
+    ) -> None:
+        self._trace_context = {
+            "app.application_id": application_id,
+            "app.student_id": student_id,
+            "app.applicant_name": applicant_name
+        }
+
+    def clear_trace_context(self) -> None:
+        self._trace_context = {}
     
     def clear_history(self):
         """Clear the conversation history."""

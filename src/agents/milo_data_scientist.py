@@ -12,6 +12,7 @@ from azure.identity import DefaultAzureCredential
 from openai import AzureOpenAI
 from src.agents.base_agent import BaseAgent
 from src.config import config
+from src.telemetry import get_tracer
 
 
 class MiloDataScientist(BaseAgent):
@@ -131,7 +132,21 @@ class MiloDataScientist(BaseAgent):
                 "error": "Foundry project endpoint not configured"
             }
 
-        rows = self._build_dataset_rows()
+        dataset_name = config.foundry_dataset_name or "nextgen-training-dataset"
+        version = datetime.utcnow().strftime("v%Y%m%d%H%M%S")
+        tracer = get_tracer()
+
+        if tracer:
+            with tracer.start_as_current_span("milo.foundry_dataset.build") as span:
+                rows = self._build_dataset_rows()
+                span.set_attribute("dataset.name", dataset_name)
+                span.set_attribute("dataset.version", version)
+                span.set_attribute("dataset.row_count", len(rows))
+                file_path = self._write_jsonl(rows) if rows else None
+        else:
+            rows = self._build_dataset_rows()
+            file_path = self._write_jsonl(rows) if rows else None
+
         if not rows:
             return {
                 "status": "error",
@@ -139,22 +154,31 @@ class MiloDataScientist(BaseAgent):
                 "error": "No training examples available"
             }
 
-        dataset_name = config.foundry_dataset_name or "nextgen-training-dataset"
-        version = datetime.utcnow().strftime("v%Y%m%d%H%M%S")
-        file_path = self._write_jsonl(rows)
-
         try:
             project_client = AIProjectClient(
                 credential=DefaultAzureCredential(),
                 endpoint=project_endpoint
             )
             connection_name = self._resolve_dataset_connection(project_client)
-            dataset = project_client.datasets.upload_file(
-                name=dataset_name,
-                version=version,
-                file_path=file_path,
-                connection_name=connection_name
-            )
+            if tracer:
+                with tracer.start_as_current_span("milo.foundry_dataset.upload") as span:
+                    span.set_attribute("dataset.name", dataset_name)
+                    span.set_attribute("dataset.version", version)
+                    span.set_attribute("dataset.row_count", len(rows))
+                    span.set_attribute("dataset.connection", connection_name)
+                    dataset = project_client.datasets.upload_file(
+                        name=dataset_name,
+                        version=version,
+                        file_path=file_path,
+                        connection_name=connection_name
+                    )
+            else:
+                dataset = project_client.datasets.upload_file(
+                    name=dataset_name,
+                    version=version,
+                    file_path=file_path,
+                    connection_name=connection_name
+                )
             return {
                 "status": "success",
                 "agent": self.name,
@@ -170,10 +194,11 @@ class MiloDataScientist(BaseAgent):
                 "error": str(e)
             }
         finally:
-            try:
-                os.remove(file_path)
-            except OSError:
-                pass
+            if file_path:
+                try:
+                    os.remove(file_path)
+                except OSError:
+                    pass
 
     async def process(self, message: str) -> str:
         """Generic message handler."""

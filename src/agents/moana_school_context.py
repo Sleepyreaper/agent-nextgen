@@ -90,9 +90,8 @@ class MoanaSchoolContext(BaseAgent):
         Returns:
             Comprehensive school context analysis
         """
-        self.add_to_history("user", f"Analyze school context for {application.get('ApplicantName', 'candidate')}")
-        
-        student_name = application.get('ApplicantName', 'Unknown')
+        student_name = self._resolve_student_name(application)
+        self.add_to_history("user", f"Analyze school context for {student_name}")
         print(f"\n🌊 {self.name}: Discovering educational context for {student_name}...")
         
         try:
@@ -235,6 +234,18 @@ class MoanaSchoolContext(BaseAgent):
             'confidence': confidence,
             'extraction_method': 'application+transcript_parsing'
         }
+
+    def _resolve_student_name(self, application: Dict[str, Any]) -> str:
+        applicant_name = application.get('applicant_name') or application.get('ApplicantName')
+        if applicant_name:
+            return applicant_name
+        student_id = application.get('student_id') or application.get('StudentID')
+        if student_id:
+            return str(student_id)
+        application_id = application.get('application_id') or application.get('ApplicationID')
+        if application_id:
+            return f"Application {application_id}"
+        return "Unknown"
 
     def _extract_school_from_application(self, application: Dict[str, Any]) -> Dict[str, Optional[str]]:
         school_data = application.get('school_data') if isinstance(application.get('school_data'), dict) else {}
