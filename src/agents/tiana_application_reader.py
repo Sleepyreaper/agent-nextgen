@@ -4,6 +4,7 @@ import json
 from typing import Dict, Any, Optional, List
 from openai import AzureOpenAI
 from src.agents.base_agent import BaseAgent
+from src.agents.telemetry_helpers import agent_run, tool_call
 
 
 class TianaApplicationReader(BaseAgent):
@@ -25,54 +26,56 @@ class TianaApplicationReader(BaseAgent):
     async def parse_application(self, application: Dict[str, Any]) -> Dict[str, Any]:
         """Parse a full application record into structured data."""
         applicant_name = application.get("applicant_name", application.get("ApplicantName", "Unknown"))
-        application_text = application.get("application_text", application.get("ApplicationText", ""))
         application_id = application.get("application_id", application.get("ApplicationID"))
+        
+        with agent_run(self.name, "parse_application", {"applicant_name": applicant_name, "application_id": application_id}):
+            application_text = application.get("application_text", application.get("ApplicationText", ""))
+            prompt = self._build_prompt(applicant_name, application_text, application)
 
-        prompt = self._build_prompt(applicant_name, application_text, application)
-
-        try:
-            response = self._create_chat_completion(
-                operation="tiana.parse_application",
-                model=self.model,
-                messages=[
-                    {
-                        "role": "system",
-                        "content": "You are Tiana, part of an NIH Department of Genetics review panel evaluating Emory NextGen applicants. Apply the requirements: rising junior or senior in high school, must be 16 years old by June 1, 2026, and must demonstrate interest in advancing STEM education to groups from a variety of backgrounds. Extract structured applicant profiles with evidence. Use concise, evidence-grounded summaries. Return valid JSON only."
-                    },
-                    {"role": "user", "content": prompt}
-                ],
-                max_completion_tokens=1500,
-                temperature=1,
-                response_format={"type": "json_object"}
-            )
-
-            payload = response.choices[0].message.content
-            data = json.loads(payload)
-            data["status"] = "success"
-            data["agent"] = self.name
-
-            recommendation_texts = data.get("recommendation_texts")
-            recommendation_payload = None
-            if isinstance(recommendation_texts, list) and recommendation_texts:
-                recommendation_payload = json.dumps(recommendation_texts, ensure_ascii=True)
-
-            if self.db and application_id:
-                self.db.save_tiana_application(
-                    application_id=application_id,
-                    agent_name=self.name,
-                    essay_summary=data.get("essay_summary"),
-                    recommendation_texts=recommendation_payload,
-                    readiness_score=data.get("readiness_score"),
-                    confidence=data.get("confidence"),
-                    parsed_json=json.dumps(data, ensure_ascii=True)
+            try:
+                response = self._create_chat_completion(
+                    operation="tiana.parse_application",
+                    model=self.model,
+                    messages=[
+                        {
+                            "role": "system",
+                            "content": "You are Tiana, part of an NIH Department of Genetics review panel evaluating Emory NextGen applicants. Apply the requirements: rising junior or senior in high school, must be 16 years old by June 1, 2026, and must demonstrate interest in advancing STEM education to groups from a variety of backgrounds. Extract structured applicant profiles with evidence. Use concise, evidence-grounded summaries. Return valid JSON only."
+                        },
+                        {"role": "user", "content": prompt}
+                    ],
+                    max_completion_tokens=1500,
+                    temperature=1,
+                    response_format={"type": "json_object"}
                 )
-            return data
 
-        except Exception as e:
-            return {
-                "status": "error",
-                "agent": self.name,
-                "error": str(e)
+                payload = response.choices[0].message.content
+                data = json.loads(payload)
+                data["status"] = "success"
+                data["agent"] = self.name
+
+                recommendation_texts = data.get("recommendation_texts")
+                recommendation_payload = None
+                if isinstance(recommendation_texts, list) and recommendation_texts:
+                    recommendation_payload = json.dumps(recommendation_texts, ensure_ascii=True)
+
+                if self.db and application_id:
+                    with tool_call("save_tiana_application", "database", {"application_id": application_id}):
+                        self.db.save_tiana_application(
+                            application_id=application_id,
+                            agent_name=self.name,
+                            essay_summary=data.get("essay_summary"),
+                            recommendation_texts=recommendation_payload,
+                            readiness_score=data.get("readiness_score"),
+                            confidence=data.get("confidence"),
+                            parsed_json=json.dumps(data, ensure_ascii=True)
+                        )
+                return data
+
+            except Exception as e:
+                return {
+                    "status": "error",
+                    "agent": self.name,
+                    "error": str(e)
             }
 
     def _build_prompt(self, applicant_name: str, application_text: str, application: Dict[str, Any]) -> str:

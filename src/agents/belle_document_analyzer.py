@@ -11,6 +11,7 @@ from typing import Dict, List, Any, Optional, Tuple
 from openai import AzureOpenAI
 from src.agents.base_agent import BaseAgent
 from src.agents.system_prompts import BELLE_ANALYZER_PROMPT
+from src.agents.telemetry_helpers import agent_run, tool_call
 from src.config import config
 from src.services.content_processing_client import ContentProcessingClient
 
@@ -82,16 +83,17 @@ class BelleDocumentAnalyzer(BaseAgent):
             - raw_text: The original text
         """
         
-        # Step 1: Identify document type
-        doc_type, confidence = self._identify_document_type(text_content, original_filename)
+        with agent_run(self.name, "analyze_document", {"filename": original_filename}):
+            # Step 1: Identify document type
+            doc_type, confidence = self._identify_document_type(text_content, original_filename)
 
-        # Step 2: Extract type-specific data
-        extracted_data = self._extract_data_by_type(text_content, doc_type)
+            # Step 2: Extract type-specific data
+            extracted_data = self._extract_data_by_type(text_content, doc_type)
 
-        # Step 3: Extract common student info across all documents
-        student_info = self._extract_student_info(text_content)
+            # Step 3: Extract common student info across all documents
+            student_info = self._extract_student_info(text_content)
 
-        # Step 4: Generate summary
+            # Step 4: Generate summary
         summary = self._generate_summary(text_content, doc_type, extracted_data)
 
         enhanced = self._run_content_processing(text_content, original_filename)
