@@ -75,6 +75,21 @@ CREATE TABLE IF NOT EXISTS TrainingFeedback (
     ProvidedBy VARCHAR(255)
 );
 
+-- Table: UserFeedback - Store dashboard feedback submissions
+CREATE TABLE IF NOT EXISTS UserFeedback (
+    FeedbackID SERIAL PRIMARY KEY,
+    FeedbackDate TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FeedbackType VARCHAR(50) NOT NULL,
+    Message TEXT NOT NULL,
+    Email VARCHAR(255),
+    Page VARCHAR(1000),
+    AppVersion VARCHAR(50),
+    UserAgent TEXT,
+    TriageJSON TEXT,
+    IssueURL VARCHAR(1000),
+    Status VARCHAR(50) DEFAULT 'received'
+);
+
 -- Table: Schools - High school information
 CREATE TABLE IF NOT EXISTS Schools (
     SchoolID SERIAL PRIMARY KEY,
