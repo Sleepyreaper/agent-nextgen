@@ -10,6 +10,7 @@ Ensures schools are analyzed once and reused:
 
 import logging
 from typing import Dict, Any, Optional
+from src.agents.agent_monitor import get_agent_monitor, AgentStatus
 
 logger = logging.getLogger(__name__)
 
@@ -89,12 +90,28 @@ class SchoolDataWorkflow:
             extra={'school': school_name, 'state': state_code}
         )
         
-        # Call Naveen to do deep school analysis
-        enriched_result = aurora_agent.analyze_school(
-            school_name=school_name,
-            school_district=school_district,
-            state_code=state_code
+        # Call Naveen to do deep school analysis with monitoring
+        monitor = get_agent_monitor()
+        execution = monitor.start_execution(
+            agent_name="Naveen (School Data Scientist)",
+            model="o4miniagent"
         )
+        
+        try:
+            enriched_result = aurora_agent.analyze_school(
+                school_name=school_name,
+                school_district=school_district,
+                state_code=state_code
+            )
+            monitor.end_execution("Naveen (School Data Scientist)", status=AgentStatus.COMPLETED)
+        except Exception as e:
+            logger.error(f"Naveen analysis failed: {e}")
+            monitor.end_execution(
+                "Naveen (School Data Scientist)",
+                status=AgentStatus.FAILED,
+                error_message=str(e)
+            )
+            raise
         
         # Step 3: Store results in database
         if enriched_result.get('status') == 'success':

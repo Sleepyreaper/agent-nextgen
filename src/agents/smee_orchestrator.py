@@ -9,6 +9,7 @@ from src.agents.base_agent import BaseAgent
 from src.agents.system_prompts import SMEE_ORCHESTRATOR_PROMPT
 from src.agents.agent_requirements import AgentRequirements
 from src.agents.belle_document_analyzer import BelleDocumentAnalyzer
+from src.agents.agent_monitor import AgentStatus, get_agent_monitor
 
 logger = logging.getLogger(__name__)
 
@@ -61,6 +62,43 @@ class SmeeOrchestrator(BaseAgent):
         if agent_id not in self._agent_semaphores:
             self._agent_semaphores[agent_id] = asyncio.Semaphore(self._max_concurrent_per_agent)
         return self._agent_semaphores[agent_id]
+    
+    def _monitor_agent_execution(self, agent_id: str, agent_name: str, 
+                                  model: Optional[str] = None, input_size: Optional[int] = None):
+        """
+        Context manager wrapper for monitoring agent execution.
+        
+        Usage:
+            with self._monitor_agent_execution(agent_id, agent.name, model):
+                result = await agent.some_method(...)
+        """
+        class AgentExecutionMonitor:
+            def __init__(self, vm):
+                self.vm = vm
+                self.agent_id = agent_id
+                self.agent_name = agent_name
+                self.model = model
+                self.execution = None
+            
+            def __enter__(self):
+                self.execution = get_agent_monitor().start_execution(
+                    self.agent_name, 
+                    model=self.model,
+                    input_size=input_size
+                )
+                return self
+            
+            def __exit__(self, exc_type, exc_val, exc_tb):
+                status = AgentStatus.FAILED if exc_type else AgentStatus.COMPLETED
+                error_msg = f"{exc_type.__name__}: {exc_val}" if exc_type else None
+                get_agent_monitor().end_execution(
+                    self.agent_name,
+                    status=status,
+                    error_message=error_msg
+                )
+                return False  # Re-raise exceptions
+        
+        return AgentExecutionMonitor(self)
     
     def register_agent(self, agent_id: str, agent: BaseAgent):
         """
