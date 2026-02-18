@@ -1,0 +1,435 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Agent Monitor - Real-Time Debugging</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Monaco', 'Courier New', monospace;
+            background: #0d1117;
+            color: #e6edf3;
+            padding: 20px;
+        }
+        
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+        
+        h1 {
+            margin-bottom: 20px;
+            color: #58a6ff;
+            border-bottom: 2px solid #30363d;
+            padding-bottom: 10px;
+        }
+        
+        h2 {
+            margin-top: 20px;
+            margin-bottom: 10px;
+            color: #79c0ff;
+            font-size: 16px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+        
+        .metrics {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin-bottom: 30px;
+        }
+        
+        .metric-card {
+            background: #161b22;
+            border: 1px solid #30363d;
+            border-radius: 6px;
+            padding: 15px;
+        }
+        
+        .metric-label {
+            color: #8b949e;
+            font-size: 12px;
+            text-transform: uppercase;
+            margin-bottom: 5px;
+        }
+        
+        .metric-value {
+            font-size: 28px;
+            font-weight: bold;
+            color: #58a6ff;
+        }
+        
+        .metric-value.error {
+            color: #f85149;
+        }
+        
+        .section {
+            background: #161b22;
+            border: 1px solid #30363d;
+            border-radius: 6px;
+            padding: 20px;
+            margin-bottom: 20px;
+        }
+        
+        .currently-running {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+        
+        .agent-execution {
+            background: #0d1117;
+            border: 2px solid #30363d;
+            border-radius: 6px;
+            padding: 15px;
+            position: relative;
+        }
+        
+        .agent-execution.running {
+            border-color: #58a6ff;
+            background: rgba(88, 166, 255, 0.05);
+        }
+        
+        .agent-execution.completed {
+            border-color: #3fb950;
+            background: rgba(63, 185, 80, 0.05);
+        }
+        
+        .agent-execution.failed {
+            border-color: #f85149;
+            background: rgba(248, 81, 73, 0.05);
+        }
+        
+        .agent-execution.skipped {
+            border-color: #8b949e;
+            background: rgba(139, 148, 158, 0.05);
+        }
+        
+        .agent-name {
+            font-weight: bold;
+            font-size: 14px;
+            margin-bottom: 8px;
+            color: #79c0ff;
+        }
+        
+        .status-badge {
+            display: inline-block;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 11px;
+            font-weight: bold;
+            text-transform: uppercase;
+            margin-bottom: 10px;
+        }
+        
+        .status-badge.running {
+            background: #1f6feb;
+            color: #e6edf3;
+            animation: pulse 1.5s ease-in-out infinite;
+        }
+        
+        .status-badge.completed {
+            background: #238636;
+            color: #e6edf3;
+        }
+        
+        .status-badge.failed {
+            background: #da3633;
+            color: #e6edf3;
+        }
+        
+        .status-badge.skipped {
+            background: #6e7681;
+            color: #e6edf3;
+        }
+        
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.6; }
+        }
+        
+        .execution-details {
+            font-size: 12px;
+            color: #8b949e;
+        }
+        
+        .execution-details div {
+            margin: 4px 0;
+        }
+        
+        .timeline {
+            display: flex;
+            justify-content: space-between;
+            font-size: 11px;
+            color: #8b949e;
+            margin-top: 10px;
+        }
+        
+        .progress-bar {
+            width: 100%;
+            height: 4px;
+            background: #30363d;
+            border-radius: 2px;
+            margin: 8px 0;
+            overflow: hidden;
+        }
+        
+        .progress {
+            height: 100%;
+            background: #58a6ff;
+            width: 0%;
+            animation: progress 1.5s ease-in-out infinite;
+        }
+        
+        @keyframes progress {
+            0% { width: 20%; }
+            50% { width: 70%; }
+            100% { width: 90%; }
+        }
+        
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 10px;
+        }
+        
+        th {
+            background: #0d1117;
+            border: 1px solid #30363d;
+            padding: 10px;
+            text-align: left;
+            font-size: 12px;
+            text-transform: uppercase;
+            color: #79c0ff;
+        }
+        
+        td {
+            border: 1px solid #30363d;
+            padding: 10px;
+            font-size: 12px;
+        }
+        
+        tr:hover {
+            background: #0d1117;
+        }
+        
+        .error-text {
+            color: #f85149;
+        }
+        
+        .success-text {
+            color: #3fb950;
+        }
+        
+        .refresh-info {
+            color: #8b949e;
+            font-size: 12px;
+            margin-bottom: 10px;
+        }
+        
+        .controls {
+            margin-bottom: 20px;
+        }
+        
+        button {
+            background: #1f6feb;
+            color: #e6edf3;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-family: inherit;
+            font-size: 12px;
+            margin-right: 10px;
+            transition: background 0.2s;
+        }
+        
+        button:hover {
+            background: #388bfd;
+        }
+        
+        button:active {
+            background: #1f6feb;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🤖 Agent Monitor - Real-Time Execution Tracker</h1>
+        
+        <div class="controls">
+            <button onclick="refreshStatus()">🔄 Refresh Now</button>
+            <button onclick="clearHistory()">🗑️ Clear History</button>
+            <label>
+                <input type="checkbox" id="autoRefresh" checked> Auto-refresh every 2s
+            </label>
+        </div>
+        
+        <div class="refresh-info">Last updated: <span id="lastUpdate">-</span></div>
+        
+        <div class="metrics">
+            <div class="metric-card">
+                <div class="metric-label">Total Agent Calls</div>
+                <div class="metric-value" id="totalCalls">0</div>
+            </div>
+            <div class="metric-card">
+                <div class="metric-label">Currently Running</div>
+                <div class="metric-value" id="runningCount">0</div>
+            </div>
+            <div class="metric-card">
+                <div class="metric-label">Total Errors</div>
+                <div class="metric-value error" id="totalErrors">0</div>
+            </div>
+            <div class="metric-card">
+                <div class="metric-label">Avg Duration (ms)</div>
+                <div class="metric-value" id="avgDuration">0</div>
+            </div>
+        </div>
+        
+        <div class="section">
+            <h2>Currently Running Agents</h2>
+            <div id="currentlyRunning" class="currently-running">
+                <div style="color: #8b949e; grid-column: 1/-1;">No agents currently running</div>
+            </div>
+        </div>
+        
+        <div class="section">
+            <h2>Recent Execution History</h2>
+            <table id="historyTable">
+                <thead>
+                    <tr>
+                        <th>Agent</th>
+                        <th>Status</th>
+                        <th>Duration (ms)</th>
+                        <th>Model</th>
+                        <th>Timestamp</th>
+                        <th>Details</th>
+                    </tr>
+                </thead>
+                <tbody id="historyBody">
+                    <tr><td colspan="6" style="color: #8b949e;">No execution history yet</td></tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+    
+    <script>
+        let autoRefreshInterval;
+        
+        function formatTime(ms) {
+            if (ms === 0) return '-';
+            if (ms < 1000) return ms.toFixed(0) + 'ms';
+            return (ms / 1000).toFixed(2) + 's';
+        }
+        
+        function formatTimestamp(iso) {
+            const date = new Date(iso);
+            return date.toLocaleTimeString('en-US', { 
+                hour: '2-digit', 
+                minute: '2-digit', 
+                second: '2-digit' 
+            });
+        }
+        
+        async function refreshStatus() {
+            try {
+                const response = await fetch('/api/debug/agent-status');
+                const data = await response.json();
+                
+                document.getElementById('lastUpdate').textContent = 
+                    formatTimestamp(data.timestamp);
+                document.getElementById('totalCalls').textContent = 
+                    data.total_calls;
+                document.getElementById('runningCount').textContent = 
+                    data.running_count;
+                document.getElementById('totalErrors').textContent = 
+                    data.total_errors;
+                document.getElementById('avgDuration').textContent = 
+                    data.average_duration_ms.toFixed(0);
+                
+                // Update currently running
+                const runningDiv = document.getElementById('currentlyRunning');
+                if (data.running_count === 0) {
+                    runningDiv.innerHTML = '<div style="color: #8b949e; grid-column: 1/-1;">No agents currently running</div>';
+                } else {
+                    runningDiv.innerHTML = Object.entries(data.currently_running)
+                        .map(([name, exec]) => createAgentCard(exec))
+                        .join('');
+                }
+                
+                // Update history table
+                const tbody = document.getElementById('historyBody');
+                if (data.recent_executions.length === 0) {
+                    tbody.innerHTML = '<tr><td colspan="6" style="color: #8b949e;">No execution history yet</td></tr>';
+                } else {
+                    tbody.innerHTML = data.recent_executions
+                        .reverse()
+                        .map(exec => `
+                            <tr>
+                                <td>${exec.agent_name}</td>
+                                <td><span class="status-badge ${exec.status}">${exec.status}</span></td>
+                                <td>${formatTime(exec.duration_ms)}</td>
+                                <td>${exec.model_used || '-'}</td>
+                                <td>${formatTimestamp(exec.timestamp)}</td>
+                                <td>${exec.error_message ? `<span class="error-text">❌ ${exec.error_message}</span>` : '✓'}</td>
+                            </tr>
+                        `).join('');
+                }
+            } catch (error) {
+                console.error('Failed to fetch status:', error);
+            }
+        }
+        
+        function createAgentCard(exec) {
+            const duration = formatTime(exec.duration_ms);
+            const elapsed = exec.start_time ? 
+                formatTime((Date.now() / 1000 - exec.start_time) * 1000) : '-';
+            
+            return `
+                <div class="agent-execution ${exec.status}">
+                    <div class="agent-name">${exec.agent_name}</div>
+                    <div class="status-badge ${exec.status}">${exec.status}</div>
+                    <div class="execution-details">
+                        ${exec.model_used ? `<div><strong>Model:</strong> ${exec.model_used}</div>` : ''}
+                        <div><strong>Elapsed:</strong> ${elapsed}</div>
+                        ${exec.input_size ? `<div><strong>Input:</strong> ${(exec.input_size / 1024).toFixed(1)}KB</div>` : ''}
+                    </div>
+                    ${exec.status === 'running' ? '<div class="progress-bar"><div class="progress"></div></div>' : ''}
+                </div>
+            `;
+        }
+        
+        async function clearHistory() {
+            if (!confirm('Clear execution history? Running agents will not be affected.')) return;
+            try {
+                await fetch('/api/debug/agent-status/clear', { method: 'POST' });
+                refreshStatus();
+            } catch (error) {
+                console.error('Failed to clear history:', error);
+            }
+        }
+        
+        function startAutoRefresh() {
+            if (document.getElementById('autoRefresh').checked) {
+                autoRefreshInterval = setInterval(refreshStatus, 2000);
+            } else {
+                clearInterval(autoRefreshInterval);
+            }
+        }
+        
+        document.getElementById('autoRefresh').addEventListener('change', startAutoRefresh);
+        
+        // Initial load and setup
+        refreshStatus();
+        startAutoRefresh();
+    </script>
+</body>
+</html>

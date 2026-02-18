@@ -43,6 +43,7 @@ from src.agents import (
 )
 from src.agents.agent_requirements import AgentRequirements
 from src.agents.fairy_godmother_document_generator import FairyGodmotherDocumentGenerator
+from src.agents.agent_monitor import get_agent_monitor
 
 # Initialize Flask app
 app = Flask(__name__, template_folder='web/templates', static_folder='web/static')
@@ -3980,6 +3981,43 @@ def trigger_school_analysis(school_id):
     except Exception as e:
         logger.error(f"Error triggering school analysis: {e}")
         return jsonify({'status': 'error', 'error': str(e)}), 500
+
+
+# ============================================================================
+# DEBUG & MONITORING ENDPOINTS
+# ============================================================================
+
+@app.route('/debug/agents')
+def debug_agents():
+    """Real-time agent monitoring dashboard."""
+    return render_template('agent_monitor.html')
+
+
+@app.route('/api/debug/agent-status')
+def get_agent_status():
+    """Get current agent execution status."""
+    monitor = get_agent_monitor()
+    return jsonify(monitor.get_status())
+
+
+@app.route('/api/debug/agent-status/clear', methods=['POST'])
+def clear_agent_history():
+    """Clear agent execution history."""
+    monitor = get_agent_monitor()
+    monitor.clear_history()
+    return jsonify({'status': 'success', 'message': 'History cleared'})
+
+
+@app.route('/api/debug/agent/<agent_name>/history')
+def get_agent_history(agent_name):
+    """Get execution history for a specific agent."""
+    monitor = get_agent_monitor()
+    limit = request.args.get('limit', 20, type=int)
+    history = monitor.get_agent_history(agent_name, limit=limit)
+    return jsonify({
+        'agent_name': agent_name,
+        'executions': history
+    })
 
 
 if __name__ == '__main__':
