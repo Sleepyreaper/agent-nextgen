@@ -71,12 +71,20 @@ logger.info("Flask app initialized", extra={'upload_folder': app.config['UPLOAD_
 init_telemetry(service_name="nextgen-agents-web")
 
 # Initialize Azure OpenAI client
-def get_ai_client():
-    """Get Azure OpenAI client."""
+def get_ai_client(api_version: str = None):
+    """
+    Get Azure OpenAI client with specified API version.
+    
+    Args:
+        api_version: API version to use. If None, uses config.api_version
+    """
+    if api_version is None:
+        api_version = config.api_version
+        
     if config.azure_openai_api_key:
         return AzureOpenAI(
             api_key=config.azure_openai_api_key,
-            api_version=config.api_version,
+            api_version=api_version,
             azure_endpoint=config.azure_openai_endpoint
         )
 
@@ -86,9 +94,13 @@ def get_ai_client():
     )
     return AzureOpenAI(
         azure_ad_token_provider=token_provider,
-        api_version=config.api_version,
+        api_version=api_version,
         azure_endpoint=config.azure_openai_endpoint
     )
+
+def get_ai_client_mini():
+    """Get Azure OpenAI client for o4-mini deployment with correct API version."""
+    return get_ai_client(api_version=config.api_version_mini)
 
 # Initialize evaluator agent
 evaluator_agent = None
@@ -141,6 +153,7 @@ def get_orchestrator():
     global orchestrator_agent
     if not orchestrator_agent:
         client = get_ai_client()
+        client_mini = get_ai_client_mini()
         orchestrator_agent = SmeeOrchestrator(
             name="Smee",
             client=client,
@@ -197,7 +210,7 @@ def get_orchestrator():
             "data_scientist",
             MiloDataScientist(
                 name="Milo Data Scientist",
-                client=client,
+                client=client_mini,
                 model=config.deployment_name_mini,
                 db_connection=db
             )
@@ -206,6 +219,7 @@ def get_orchestrator():
             "naveen",
             NaveenSchoolDataScientist(
                 name="Naveen School Data Scientist",
+                client=client_mini,
                 model=config.deployment_name_mini
             )
         )
@@ -4053,9 +4067,11 @@ def trigger_school_analysis(school_id):
         
         def background_analysis():
             try:
-                # Use Naveen School Data Scientist agent with mini model
+                # Use Naveen School Data Scientist agent with mini model and client
+                client_mini = get_ai_client_mini()
                 scientist = NaveenSchoolDataScientist(
                     name="Naveen School Data Scientist",
+                    client=client_mini,
                     model=config.deployment_name_mini
                 )
                 

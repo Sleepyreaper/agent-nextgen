@@ -239,9 +239,21 @@ class SmeeOrchestrator(BaseAgent):
             'results': {}
         }
 
+        # Create shared context for all agents
+        agent_context = {
+            'applicant_name': applicant_name,
+            'application_id': application_id,
+            'student_id': student_id,
+            'application_data': application,
+            'completed_agents': {}  # Will accumulate results from completed agents
+        }
+
         merlin_run = False
         failed_agents = []
+        # Separate required agents (must complete before optional) from optional
         required_agents = ['application_reader', 'grade_reader', 'recommendation_reader', 'school_context']
+        optional_agents = ['data_scientist', 'naveen']  # Can skip if prerequisites fail
+        student_evaluator = 'student_evaluator'  # Merlin - runs last after all others
 
         def is_success(result: Optional[Dict[str, Any]]) -> bool:
             if not isinstance(result, dict):
@@ -254,6 +266,27 @@ class SmeeOrchestrator(BaseAgent):
             if agent_id not in self.agents:
                 logger.warning(f"Agent '{agent_id}' not found. Skipping.")
                 continue
+            
+            # Check if required agents are complete before proceeding to optional/Merlin
+            if agent_id in optional_agents:
+                incomplete_required = [a for a in required_agents if a not in agent_context['completed_agents']]
+                if incomplete_required:
+                    logger.warning(f"Skipping {agent_id}: required agents not complete: {incomplete_required}")
+                    self._report_progress({
+                        'type': 'agent_progress',
+                        'agent': agent_id,
+                        'agent_id': agent_id,
+                        'status': 'blocked',
+                        'message': f'Waiting for: {", ".join(incomplete_required)}'
+                    })
+                    continue
+            
+            if agent_id == student_evaluator:
+                # Ensure all other agents (required + optional that were attempted) are complete
+                incomplete = [a for a in evaluation_steps if a != student_evaluator and a not in agent_context['completed_agents']]
+                if incomplete:
+                    logger.info(f"Merlin will wait for incomplete agents to finish: {incomplete}")
+                    # Don't skip - Merlin should wait, but log what it's waiting for
             
             agent = self.agents[agent_id]
             logger.debug(f"[Step {step_idx}] Delegating to {agent.name}...")
@@ -376,6 +409,14 @@ class SmeeOrchestrator(BaseAgent):
                         )
                 
                 self.evaluation_results['results'][agent_id] = result
+                
+                # Update shared agent context with this agent's results
+                if is_success(result):
+                    agent_context['completed_agents'][agent_id] = result
+                    logger.info(f"Agent {agent_id} completed successfully, added to shared context for other agents")
+                else:
+                    logger.warning(f"Agent {agent_id} did not succeed, not adding to completed context")
+                
                 self._write_audit(application, agent.name)
 
                 if agent_id in required_agents and not is_success(result):
