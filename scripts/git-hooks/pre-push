@@ -2,8 +2,28 @@
 
 set -e
 
-if [ -f scripts/bump_version.py ]; then
-  python3 scripts/bump_version.py --mode patch > /dev/null
-  echo "Bumped VERSION. Commit the change before pushing."
+if [ ! -f scripts/bump_version.py ]; then
+  exit 0
+fi
+
+if ! git diff --quiet || ! git diff --cached --quiet; then
+  echo "Working tree is not clean. Commit or stash changes before pushing."
   exit 1
 fi
+
+UPSTREAM=$(git rev-parse --abbrev-ref --symbolic-full-name @{u} 2>/dev/null || true)
+if [ -z "$UPSTREAM" ]; then
+  exit 0
+fi
+
+if [ "$(git rev-list --count ${UPSTREAM}..HEAD)" -eq 0 ]; then
+  exit 0
+fi
+
+if git diff --name-only ${UPSTREAM}..HEAD -- VERSION | grep -q VERSION; then
+  exit 0
+fi
+
+python3 scripts/bump_version.py --mode patch > /dev/null
+git add VERSION
+git commit -m "Bump version" > /dev/null
