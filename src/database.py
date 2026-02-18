@@ -1386,12 +1386,14 @@ class Database:
                 opportunity_score, total_students, graduation_rate, college_acceptance_rate,
                 free_lunch_percentage, ap_course_count, ap_exam_pass_rate, stem_program_available,
                 ib_program_available, dual_enrollment_available, analysis_status, 
-                human_review_status, web_sources_analyzed, data_confidence_score, created_by
-            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                human_review_status, web_sources_analyzed, data_confidence_score, created_by,
+                school_investment_level
+            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             RETURNING school_enrichment_id
         """
         
         try:
+            # Map Naveen's field names to database column names
             result = self.execute_query(
                 query,
                 (
@@ -1401,26 +1403,31 @@ class Database:
                     school_data.get('county_name'),
                     school_data.get('school_url'),
                     school_data.get('opportunity_score', 0),
-                    school_data.get('total_students'),
-                    school_data.get('graduation_rate'),
-                    school_data.get('college_acceptance_rate'),
-                    school_data.get('free_lunch_percentage'),
-                    school_data.get('ap_course_count'),
-                    school_data.get('ap_exam_pass_rate'),
-                    school_data.get('stem_program_available', False),
-                    school_data.get('ib_program_available', False),
-                    school_data.get('dual_enrollment_available', False),
-                    school_data.get('analysis_status', 'pending'),
+                    school_data.get('enrollment_size') or school_data.get('total_students'),  # Naveen uses enrollment_size
+                    school_data.get('graduation_rate', 0),
+                    school_data.get('college_placement_rate') or school_data.get('college_acceptance_rate', 0) or 0,  # Naveen uses college_placement_rate
+                    school_data.get('free_lunch_percentage', 0),
+                    school_data.get('ap_classes_count') or school_data.get('ap_course_count', 0),  # Naveen uses ap_classes_count
+                    school_data.get('ap_exam_pass_rate', 0),
+                    school_data.get('stem_programs', False) or school_data.get('stem_program_available', False),  # Naveen uses stem_programs
+                    school_data.get('ib_offerings', False) or school_data.get('ib_program_available', False),  # Naveen uses ib_offerings
+                    school_data.get('honors_programs', False) or school_data.get('dual_enrollment_available', False),
+                    school_data.get('analysis_status', 'complete'),
                     school_data.get('human_review_status', 'pending'),
-                    json.dumps(school_data.get('web_sources', [])),
-                    school_data.get('data_confidence_score', 0),
-                    school_data.get('created_by', 'system')
+                    json.dumps(school_data.get('web_sources', [])) if school_data.get('web_sources') else None,
+                    school_data.get('confidence_score', 0) or school_data.get('data_confidence_score', 0),
+                    school_data.get('created_by', 'naveen'),
+                    school_data.get('school_investment_level', 'medium')
                 )
             )
             
             return result[0].get('school_enrichment_id') if result else None
         except Exception as e:
-            logger.error(f"Error creating school enriched data: {e}")
+            logger.error(
+                f"Error creating school enriched data: {e}", 
+                exc_info=True, 
+                extra={'school_name': school_data.get('school_name'), 'school_data_keys': list(school_data.keys())}
+            )
             return None
 
     def get_school_enriched_data(self, school_id: Optional[int] = None, school_name: Optional[str] = None, 

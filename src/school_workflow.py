@@ -105,7 +105,7 @@ class SchoolDataWorkflow:
             )
             monitor.end_execution("Naveen (School Data Scientist)", status=AgentStatus.COMPLETED)
         except Exception as e:
-            logger.error(f"Naveen analysis failed: {e}")
+            logger.error(f"Naveen analysis failed: {e}", exc_info=True)
             monitor.end_execution(
                 "Naveen (School Data Scientist)",
                 status=AgentStatus.FAILED,
@@ -246,6 +246,7 @@ class SchoolDataWorkflow:
         except Exception as e:
             logger.error(
                 f"Error storing school enrichment: {e}",
+                exc_info=True,
                 extra={'school': school_name, 'error': str(e)}
             )
             return None

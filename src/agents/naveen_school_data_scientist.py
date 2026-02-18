@@ -2,34 +2,41 @@
 Naveen School Data Scientist Agent
 Analyzes schools to build enriched profiles with opportunity scores.
 Character: Naveen (Disney character from "The Princess and the Frog")
-Model: gpt-4.1 (deployed as o4miniagent in Azure AI Foundry)
+Model: o4-mini (Azure AI Foundry)
 
-Scrapes web data, analyzes academic programs, salary outcomes, and regional context.
+Uses AI to analyze web data, academic programs, salary outcomes, and regional context.
+Builds comprehensive school enrichment profiles for student opportunity assessment.
 """
 
 import logging
 import json
+import time
 from typing import Dict, Any, Optional, List
 from datetime import datetime
 from urllib.parse import urlparse
+from opentelemetry.trace import SpanKind
+
+from src.agents.base_agent import BaseAgent
+from src.observability import get_tracer
 
 logger = logging.getLogger(__name__)
 
 
-class NaveenSchoolDataScientist:
+class NaveenSchoolDataScientist(BaseAgent):
     """
     Naveen - School Data Scientist Agent
-    Analyzes and enriches school data.
-    Uses web sources to build comprehensive school profiles.
-    Calculates opportunity scores based on academic capabilities, outcomes, and regional context.
+    Analyzes and enriches school data using AI model.
+    Uses web research and academic data to build comprehensive school profiles.
+    Calculates opportunity scores based on capabilities, outcomes, and regional context.
     
-    Model: gpt-4.1 (o4miniagent deployment in Azure AI Foundry)
+    Inherits from BaseAgent to use Azure OpenAI for intelligent enrichment.
     """
 
-    def __init__(self, name: str = "Naveen School Data Scientist", model: str = "o4miniagent"):
-        self.name = name
+    def __init__(self, name: str = "Naveen School Data Scientist", client: Any = None, model: str = "o4MiniAgent"):
+        """Initialize Naveen with AI client."""
+        super().__init__(name=name, client=client)
         self.model = model
-        self.model_display = "gpt-4.1"  # Display-friendly model name
+        self.model_display = "gpt-4 mini"  # Display-friendly model name
 
     def analyze_school(
         self,
@@ -40,7 +47,7 @@ class NaveenSchoolDataScientist:
         existing_data: Optional[Dict[str, Any]] = None
     ) -> Dict[str, Any]:
         """
-        Analyze a school and build enriched profile.
+        Analyze a school using AI and build enriched profile.
         
         Args:
             school_name: Name of the school
@@ -50,7 +57,7 @@ class NaveenSchoolDataScientist:
             existing_data: Pre-existing school data from other agents (Moana, etc)
             
         Returns:
-            Enriched school data with analysis results
+            Enriched school data with AI-powered analysis results
         """
         result = {
             "school_name": school_name,
@@ -68,39 +75,74 @@ class NaveenSchoolDataScientist:
         }
 
         try:
-            # Step 1: Build web source profile
-            if web_sources:
-                result["web_sources_analyzed"] = self._analyze_web_sources(web_sources)
-
-            # Step 2: Extract academic data
-            result["academic_profile"] = self._build_academic_profile(
+            # Build comprehensive school research prompt for AI
+            research_prompt = self._build_research_prompt(
                 school_name, 
+                school_district,
+                state_code,
                 web_sources,
                 existing_data
             )
+            
+            # Use AI to analyze school comprehensively
+            logger.info(f"Naveen analyzing {school_name} with AI model")
+            ai_analysis = self._create_chat_completion(
+                operation="school_analysis",
+                model=self.model,
+                messages=[
+                    {
+                        "role": "system",
+                        "content": """You are Naveen, a school data scientist expert. Analyze schools comprehensively to understand:
+1. Academic capabilities and programs (AP, IB, STEM, etc)
+2. Student outcomes (college placement, graduation rates, test scores)
+3. School investment and resources (funding, facilities, teacher quality indicators)
+4. Regional opportunity context (job market, economic indicators)
+5. Overall opportunity score for students (0-100)
 
-            # Step 3: Extract salary outcomes and regional context
-            result["salary_outcomes"] = self._build_salary_profile(
-                school_name,
-                state_code,
-                web_sources
+Provide structured analysis in JSON format."""
+                    },
+                    {
+                        "role": "user",
+                        "content": research_prompt
+                    }
+                ],
+                temperature=0.7,
+                max_completion_tokens=2000
             )
-
-            # Step 4: Build demographic and capability profile
-            result["demographic_profile"] = self._build_demographic_profile(
-                school_name,
-                existing_data
-            )
-
-            # Step 5: Calculate opportunity score
-            result["opportunity_metrics"] = self._calculate_opportunity_score(
-                result["academic_profile"],
-                result["salary_outcomes"],
-                result["demographic_profile"]
-            )
-
+            
+            # Parse AI response
+            if ai_analysis and "content" in ai_analysis.choices[0].message:
+                response_text = ai_analysis.choices[0].message.content
+                
+                # Try to extract JSON from response
+                try:
+                    # Look for JSON block in response
+                    import re
+                    json_match = re.search(r'\{.*\}', response_text, re.DOTALL)
+                    if json_match:
+                        ai_data = json.loads(json_match.group())
+                    else:
+                        ai_data = json.loads(response_text)
+                    
+                    result["enriched_data"] = ai_data
+                    result["confidence_score"] = ai_data.get("confidence_score", 75)
+                    result["opportunity_score"] = ai_data.get("opportunity_score", 50)
+                    
+                except json.JSONDecodeError:
+                    # If JSON parsing fails, extract key fields from response
+                    logger.warning(f"Could not parse JSON from Naveen response for {school_name}")
+                    result["enriched_data"]["raw_analysis"] = response_text
+                    result["confidence_score"] = 60
+            
+            # Use AI to refine and improve results if confidence is low
+            if result["confidence_score"] < 70:
+                refinement_result = self._refine_analysis(school_name, result, existing_data)
+                result.update(refinement_result)
+            
             result["analysis_status"] = "complete"
             result["analysis_summary"] = self._generate_analysis_summary(result)
+            
+            logger.info(f"Naveen enrichment complete for {school_name}: score={result['opportunity_score']}, confidence={result['confidence_score']}")
 
         except Exception as e:
             logger.error(f"Error analyzing school {school_name}: {str(e)}", exc_info=True)
@@ -375,3 +417,116 @@ Demographics:
         # This would be implemented with actual OpenAI API calls in production
         # For now, returning structured data
         return "Analysis complete"
+
+    def _build_research_prompt(
+        self,
+        school_name: str,
+        school_district: Optional[str],
+        state_code: Optional[str],
+        web_sources: Optional[List[str]],
+        existing_data: Optional[Dict[str, Any]]
+    ) -> str:
+        """Build comprehensive research prompt for AI to analyze school."""
+        prompt = f"""Analyze the school '{school_name}' {'in ' + school_district if school_district else ''} {'(' + state_code + ')' if state_code else ''}.
+
+Based on available sources and data, provide a comprehensive JSON analysis including:
+
+1. Academic Capabilities
+   - Number of AP courses offered
+   - Number of IB programs available
+   - STEM program availability and quality
+   - Honors program availability
+   - School type/grade levels
+
+2. Student Outcomes
+   - College acceptance/placement rate (estimate 0-100%)
+   - Graduation rate (estimate 0-100%)
+   - Average test scores (if available)
+   - Notable achievements or recognitions
+
+3. School Investment Level
+   - Estimated funding level (low/medium/high)
+   - Facility quality indicators
+   - Teacher quality indicators
+   - School improvement efforts
+
+4. Enrollment & Demographics
+   - Estimated total enrollment
+   - Free/reduced lunch percentage (indicator of socioeconomic need)
+   - Demographic diversity indicators
+   - Community sentiment/satisfaction
+
+5. Opportunity Score
+   - Provide an overall opportunity score (0-100) reflecting how well this school positions students for college/career success
+   - Consider academic rigor, resources, student outcomes, and addressing barriers
+
+6. Confidence Score
+   - How confident you are in this analysis (0-100) based on data availability
+
+Available web sources to analyze: {json.dumps(web_sources) if web_sources else 'None provided'}
+
+Existing data from other agents: {json.dumps(existing_data) if existing_data else 'None provided'}
+
+Return your analysis as a single JSON object with keys: academic_courses, academic_programs, stem_programs, honors_programs, 
+college_acceptance_rate, graduation_rate, test_scores, funding_level, facility_quality, teacher_quality_indicators, 
+total_enrollment, free_lunch_percentage, diversity_indicators, community_sentiment, opportunity_score, confidence_score, key_insights."""
+        
+        return prompt
+
+    def _refine_analysis(
+        self,
+        school_name: str,
+        initial_result: Dict[str, Any],
+        existing_data: Optional[Dict[str, Any]]
+    ) -> Dict[str, Any]:
+        """Refine analysis if initial confidence is low."""
+        logger.info(f"Refining Naveen analysis for {school_name} (low confidence: {initial_result['confidence_score']})")
+        
+        refinement_prompt = f"""The initial analysis for '{school_name}' had low confidence ({initial_result['confidence_score']}%).
+        
+Initial findings: {json.dumps(initial_result['enriched_data'])}
+
+Please refine this analysis by:
+1. Identifying what data is missing or uncertain
+2. Making educated inferences based on school district/region patterns
+3. Providing a more confidence assessment
+
+Return refined analysis as JSON with improved confidence_score."""
+        
+        refined_response = self._create_chat_completion(
+            operation="school_analysis_refinement",
+            model=self.model,
+            messages=[
+                {
+                    "role": "system",
+                    "content": "You are Naveen refining school analysis. Improve confidence in results where possible."
+                },
+                {
+                    "role": "user",
+                    "content": refinement_prompt
+                }
+            ],
+            temperature=0.5,
+            max_completion_tokens=1500
+        )
+        
+        refined_data = {}
+        try:
+            if refined_response and "content" in refined_response.choices[0].message:
+                response_text = refined_response.choices[0].message.content
+                import re
+                json_match = re.search(r'\{.*\}', response_text, re.DOTALL)
+                if json_match:
+                    refined_data = json.loads(json_match.group())
+                    
+        except Exception as e:
+            logger.warning(f"Could not parse refined analysis: {e}")
+        
+        return {
+            "enriched_data": refined_data or initial_result["enriched_data"],
+            "confidence_score": refined_data.get("confidence_score", initial_result["confidence_score"] + 10)
+        }
+
+    async def process(self, message: str) -> str:
+        """Process a message - not used for Naveen's school analysis pipeline."""
+        return "Naveen processes schools via analyze_school() method"

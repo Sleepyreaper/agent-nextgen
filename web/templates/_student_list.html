@@ -115,6 +115,20 @@
         font-size: 0.85rem;
     }
     
+    .btn-info {
+        background-color: #0ea5e9;
+        color: white;
+        border: none;
+        text-decoration: none;
+        border-radius: 4px;
+        cursor: pointer;
+        transition: background-color 0.2s ease;
+    }
+    
+    .btn-info:hover {
+        background-color: #0284c7;
+    }
+    
     .empty-state {
         text-align: center;
         padding: 3rem;
@@ -183,6 +197,12 @@
                        class="btn btn-secondary">
                         📄 Details
                     </a>
+                    {% if student.high_school %}
+                    <a href="{{ url_for('schools_dashboard') }}?search={{ student.high_school|urlencode }}" 
+                       class="btn btn-info" title="View school enrichment data">
+                        🏫 School
+                    </a>
+                    {% endif %}
                     {% if student.status != 'Completed' and student.status != 'Processing' %}
                     <a href="{{ url_for('process_student', application_id=student.application_id) }}" 
                        class="btn btn-success">
