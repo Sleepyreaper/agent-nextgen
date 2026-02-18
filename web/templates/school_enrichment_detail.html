@@ -1,0 +1,691 @@
+{% extends "base.html" %}
+
+{% block title %}School Enrichment Details - {{ school.school_name }}{% endblock %}
+
+{% block extra_css %}
+<style>
+    .school-detail-container {
+        max-width: 1200px;
+        margin: 0 auto;
+        padding: 2rem;
+    }
+
+    .school-header {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        padding: 2rem;
+        border-radius: 8px;
+        margin-bottom: 2rem;
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+    }
+
+    .school-header h1 {
+        margin: 0;
+        font-size: 2rem;
+    }
+
+    .school-header .info {
+        font-size: 0.95rem;
+        opacity: 0.9;
+    }
+
+    .edit-button {
+        background: white;
+        color: #667eea;
+        padding: 0.75rem 1.5rem;
+        border: none;
+        border-radius: 6px;
+        cursor: pointer;
+        font-weight: 600;
+        transition: all 0.3s ease;
+    }
+
+    .edit-button:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+    }
+
+    .detail-sections {
+        display: grid;
+        gap: 2rem;
+        margin-bottom: 2rem;
+    }
+
+    .detail-section {
+        background: white;
+        border: 1px solid #e5e7eb;
+        border-radius: 8px;
+        padding: 1.5rem;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+    }
+
+    .section-title {
+        font-size: 1.25rem;
+        font-weight: 600;
+        margin-bottom: 1rem;
+        color: #111827;
+        padding-bottom: 0.75rem;
+        border-bottom: 2px solid #667eea;
+    }
+
+    .field-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+        gap: 1.5rem;
+    }
+
+    .field-item {
+        display: flex;
+        flex-direction: column;
+    }
+
+    .field-label {
+        font-weight: 600;
+        color: #6b7280;
+        font-size: 0.85rem;
+        text-transform: uppercase;
+        margin-bottom: 0.5rem;
+    }
+
+    .field-value {
+        color: #111827;
+        font-size: 1rem;
+        padding: 0.75rem;
+        background: #f9fafb;
+        border-radius: 6px;
+    }
+
+    .field-value.empty {
+        color: #9ca3af;
+        font-style: italic;
+    }
+
+    .sources-list {
+        list-style: none;
+        padding: 0;
+        margin: 0;
+    }
+
+    .sources-list li {
+        padding: 0.5rem;
+        background: #f9fafb;
+        border-radius: 4px;
+        margin-bottom: 0.5rem;
+    }
+
+    .sources-list a {
+        color: #667eea;
+        text-decoration: none;
+        word-break: break-word;
+    }
+
+    .sources-list a:hover {
+        text-decoration: underline;
+    }
+
+    .opportunity-score {
+        font-size: 2rem;
+        font-weight: bold;
+        color: #667eea;
+    }
+
+    .modal {
+        display: none;
+        position: fixed;
+        z-index: 1000;
+        left: 0;
+        top: 0;
+        width: 100%;
+        height: 100%;
+        background-color: rgba(0,0,0,0.5);
+    }
+
+    .modal.show {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    }
+
+    .modal-content {
+        background: white;
+        padding: 2rem;
+        border-radius: 8px;
+        width: 90%;
+        max-width: 800px;
+        max-height: 90vh;
+        overflow-y: auto;
+        box-shadow: 0 10px 40px rgba(0,0,0,0.3);
+    }
+
+    .modal-header {
+        font-size: 1.5rem;
+        font-weight: 600;
+        margin-bottom: 1.5rem;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+    }
+
+    .close-button {
+        background: none;
+        border: none;
+        font-size: 1.5rem;
+        cursor: pointer;
+        color: #6b7280;
+    }
+
+    .form-group {
+        margin-bottom: 1.5rem;
+        display: flex;
+        flex-direction: column;
+    }
+
+    .form-group label {
+        font-weight: 600;
+        margin-bottom: 0.5rem;
+        color: #111827;
+    }
+
+    .form-group input,
+    .form-group textarea,
+    .form-group select {
+        padding: 0.75rem;
+        border: 1px solid #e5e7eb;
+        border-radius: 6px;
+        font-size: 0.95rem;
+        font-family: inherit;
+    }
+
+    .form-group textarea {
+        resize: vertical;
+        min-height: 100px;
+    }
+
+    .form-actions {
+        display: flex;
+        gap: 1rem;
+        justify-content: flex-end;
+        margin-top: 2rem;
+        padding-top: 1.5rem;
+        border-top: 1px solid #e5e7eb;
+    }
+
+    .btn-primary {
+        background: #667eea;
+        color: white;
+        padding: 0.75rem 1.5rem;
+        border: none;
+        border-radius: 6px;
+        cursor: pointer;
+        font-weight: 600;
+        transition: all 0.3s ease;
+    }
+
+    .btn-primary:hover {
+        background: #5a67d8;
+    }
+
+    .btn-secondary {
+        background: #e5e7eb;
+        color: #111827;
+        padding: 0.75rem 1.5rem;
+        border: none;
+        border-radius: 6px;
+        cursor: pointer;
+        font-weight: 600;
+    }
+
+    .btn-secondary:hover {
+        background: #d1d5db;
+    }
+
+    .status-badge {
+        display: inline-block;
+        padding: 0.5rem 1rem;
+        border-radius: 12px;
+        font-size: 0.85rem;
+        font-weight: 600;
+    }
+
+    .status-badge.approved {
+        background: #d1fae5;
+        color: #065f46;
+    }
+
+    .status-badge.pending {
+        background: #fef3c7;
+        color: #92400e;
+    }
+
+    .status-badge.needs-review {
+        background: #fee2e2;
+        color: #991b1b;
+    }
+
+    .back-link {
+        display: inline-block;
+        margin-bottom: 1.5rem;
+        color: #667eea;
+        text-decoration: none;
+        font-weight: 500;
+    }
+
+    .back-link:hover {
+        text-decoration: underline;
+    }
+
+    .timestamp {
+        color: #9ca3af;
+        font-size: 0.85rem;
+    }
+
+    .alert {
+        padding: 1rem;
+        border-radius: 6px;
+        margin-bottom: 1.5rem;
+    }
+
+    .alert.success {
+        background: #d1fae5;
+        color: #065f46;
+        border: 1px solid #6ee7b7;
+    }
+
+    .alert.error {
+        background: #fee2e2;
+        color: #991b1b;
+        border: 1px solid #fca5a5;
+    }
+
+    .alert.info {
+        background: #dbeafe;
+        color: #0c4a6e;
+        border: 1px solid #93c5fd;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="school-detail-container">
+    <a href="{{ url_for('schools_dashboard') }}" class="back-link">← Back to Schools</a>
+
+    <div class="school-header">
+        <div>
+            <h1>{{ school.school_name }}</h1>
+            <div class="info">
+                {{ school.school_district or 'Unknown District' }} • {{ school.state_code or 'Unknown State' }}
+            </div>
+            {% if school.human_review_status %}
+            <div style="margin-top: 0.5rem;">
+                <span class="status-badge {% if school.human_review_status == 'approved' %}approved{% elif school.human_review_status == 'needs_review' %}needs-review{% else %}pending{% endif %}">
+                    {{ school.human_review_status|replace('_', ' ')|title }}
+                </span>
+            </div>
+            {% endif %}
+        </div>
+        <button class="edit-button" onclick="showEditModal()">✎ Edit Data</button>
+    </div>
+
+    <div class="detail-sections">
+        <!-- Core Information -->
+        <div class="detail-section">
+            <div class="section-title">Basic Information</div>
+            <div class="field-grid">
+                <div class="field-item">
+                    <div class="field-label">School Name</div>
+                    <div class="field-value">{{ school.school_name }}</div>
+                </div>
+                <div class="field-item">
+                    <div class="field-label">District</div>
+                    <div class="field-value">{{ school.school_district or '—' }}</div>
+                </div>
+                <div class="field-item">
+                    <div class="field-label">State Code</div>
+                    <div class="field-value">{{ school.state_code }}</div>
+                </div>
+                <div class="field-item">
+                    <div class="field-label">Enrollment Size</div>
+                    <div class="field-value">{{ school.enrollment_size|default('—') }}</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Demographics -->
+        <div class="detail-section">
+            <div class="section-title">Demographics & Context</div>
+            <div class="field-grid">
+                <div class="field-item">
+                    <div class="field-label">Diversity Index</div>
+                    <div class="field-value">{{ school.diversity_index|default('—') }}</div>
+                </div>
+                <div class="field-item">
+                    <div class="field-label">Socioeconomic Level</div>
+                    <div class="field-value">{{ school.socioeconomic_level|default('—') }}</div>
+                </div>
+                <div class="field-item">
+                    <div class="field-label">School Investment Level</div>
+                    <div class="field-value">{{ school.school_investment_level|default('—') }}</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Academic Programs -->
+        <div class="detail-section">
+            <div class="section-title">Academic Programs</div>
+            <div class="field-grid">
+                <div class="field-item">
+                    <div class="field-label">AP Classes Available</div>
+                    <div class="field-value">{{ school.ap_classes_count|default('—') }}</div>
+                </div>
+                <div class="field-item">
+                    <div class="field-label">IB Offerings</div>
+                    <div class="field-value">{{ school.ib_offerings|default('—') }}</div>
+                </div>
+                <div class="field-item">
+                    <div class="field-label">Honors Programs</div>
+                    <div class="field-value">{{ school.honors_programs|default('—') }}</div>
+                </div>
+                <div class="field-item">
+                    <div class="field-label">STEM Programs</div>
+                    <div class="field-value">{{ school.stem_programs|default('—') }}</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Performance Metrics -->
+        <div class="detail-section">
+            <div class="section-title">Performance Metrics</div>
+            <div class="field-grid">
+                <div class="field-item">
+                    <div class="field-label">Graduation Rate</div>
+                    <div class="field-value">{{ school.graduation_rate|default('—') }}</div>
+                </div>
+                <div class="field-item">
+                    <div class="field-label">College Placement Rate</div>
+                    <div class="field-value">{{ school.college_placement_rate|default('—') }}</div>
+                </div>
+                <div class="field-item">
+                    <div class="field-label">Average Test Scores</div>
+                    <div class="field-value">{{ school.avg_test_scores|default('—') }}</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Opportunity Score -->
+        <div class="detail-section">
+            <div class="section-title">Analysis Summary</div>
+            <div class="field-grid">
+                <div class="field-item">
+                    <div class="field-label">Opportunity Score (0-100)</div>
+                    <div class="opportunity-score">{{ school.opportunity_score|default('—') }}</div>
+                </div>
+            </div>
+            {% if school.analysis_summary %}
+            <div style="margin-top: 1.5rem;">
+                <div class="field-label">Summary from Naveen Analysis</div>
+                <div class="field-value" style="white-space: pre-wrap; font-family: monospace; font-size: 0.9rem;">{{ school.analysis_summary }}</div>
+            </div>
+            {% endif %}
+        </div>
+
+        <!-- Web Sources -->
+        {% if school.web_sources_analyzed %}
+        <div class="detail-section">
+            <div class="section-title">Sources Analyzed</div>
+            <p style="color: #6b7280; margin-bottom: 1rem;">Data gathered from the following sources by Naveen:</p>
+            {% set sources = school.web_sources_analyzed %}
+            {% if sources is string %}
+                {% set sources = sources.split(',') %}
+            {% endif %}
+            <ul class="sources-list">
+                {% for source in sources %}
+                <li>
+                    {% if source.startswith('http') %}
+                    <a href="{{ source }}" target="_blank" rel="noopener noreferrer">{{ source }}</a>
+                    {% else %}
+                    {{ source }}
+                    {% endif %}
+                </li>
+                {% endfor %}
+            </ul>
+        </div>
+        {% endif %}
+
+        <!-- Human Review -->
+        <div class="detail-section">
+            <div class="section-title">Human Review & Validation</div>
+            <div class="field-grid">
+                <div class="field-item">
+                    <div class="field-label">Review Status</div>
+                    <div class="field-value">
+                        {% if school.human_review_status %}
+                        <span class="status-badge {% if school.human_review_status == 'approved' %}approved{% elif school.human_review_status == 'needs_review' %}needs-review{% else %}pending{% endif %}">
+                            {{ school.human_review_status|replace('_', ' ')|title }}
+                        </span>
+                        {% else %}
+                        <span class="status-badge pending">Pending Review</span>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+            {% if school.human_review_notes %}
+            <div style="margin-top: 1rem;">
+                <div class="field-label">Review Notes</div>
+                <div class="field-value" style="white-space: pre-wrap;">{{ school.human_review_notes }}</div>
+            </div>
+            {% endif %}
+        </div>
+
+        <!-- Metadata -->
+        <div class="detail-section">
+            <div class="section-title">Metadata</div>
+            <div class="field-grid">
+                <div class="field-item">
+                    <div class="field-label">Analysis Date</div>
+                    <div class="field-value">
+                        {% if school.analysis_date %}
+                        <span class="timestamp">{{ school.analysis_date }}</span>
+                        {% else %}
+                        <span class="field-value empty">Not recorded</span>
+                        {% endif %}
+                    </div>
+                </div>
+                <div class="field-item">
+                    <div class="field-label">Last Updated</div>
+                    <div class="field-value">
+                        {% if school.updated_at %}
+                        <span class="timestamp">{{ school.updated_at }}</span>
+                        {% else %}
+                        <span class="field-value empty">Not recorded</span>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Edit Modal -->
+<div id="editModal" class="modal">
+    <div class="modal-content">
+        <div class="modal-header">
+            <span>Edit School Enrichment Data</span>
+            <button class="close-button" onclick="closeEditModal()">✕</button>
+        </div>
+        <form id="editForm">
+            <div class="form-group">
+                <label>School Name</label>
+                <input type="text" id="school_name" value="{{ school.school_name }}" required>
+            </div>
+
+            <div class="form-group">
+                <label>District</label>
+                <input type="text" id="school_district" value="{{ school.school_district or '' }}">
+            </div>
+
+            <div class="form-group">
+                <label>State Code</label>
+                <input type="text" id="state_code" value="{{ school.state_code }}" required maxlength="2">
+            </div>
+
+            <div class="form-group">
+                <label>Enrollment Size</label>
+                <input type="number" id="enrollment_size" value="{{ school.enrollment_size or '' }}">
+            </div>
+
+            <div class="form-group">
+                <label>Diversity Index</label>
+                <input type="text" id="diversity_index" value="{{ school.diversity_index or '' }}">
+            </div>
+
+            <div class="form-group">
+                <label>Socioeconomic Level</label>
+                <input type="text" id="socioeconomic_level" value="{{ school.socioeconomic_level or '' }}">
+            </div>
+
+            <div class="form-group">
+                <label>AP Classes Count</label>
+                <input type="number" id="ap_classes_count" value="{{ school.ap_classes_count or '' }}">
+            </div>
+
+            <div class="form-group">
+                <label>IB Offerings</label>
+                <input type="number" id="ib_offerings" value="{{ school.ib_offerings or '' }}">
+            </div>
+
+            <div class="form-group">
+                <label>Honors Programs</label>
+                <input type="number" id="honors_programs" value="{{ school.honors_programs or '' }}">
+            </div>
+
+            <div class="form-group">
+                <label>STEM Programs</label>
+                <input type="number" id="stem_programs" value="{{ school.stem_programs or '' }}">
+            </div>
+
+            <div class="form-group">
+                <label>Graduation Rate (%)</label>
+                <input type="number" id="graduation_rate" value="{{ school.graduation_rate or '' }}" min="0" max="100">
+            </div>
+
+            <div class="form-group">
+                <label>College Placement Rate (%)</label>
+                <input type="number" id="college_placement_rate" value="{{ school.college_placement_rate or '' }}" min="0" max="100">
+            </div>
+
+            <div class="form-group">
+                <label>Average Test Scores</label>
+                <input type="text" id="avg_test_scores" value="{{ school.avg_test_scores or '' }}">
+            </div>
+
+            <div class="form-group">
+                <label>School Investment Level</label>
+                <select id="school_investment_level">
+                    <option value="">—</option>
+                    <option value="low" {% if school.school_investment_level == 'low' %}selected{% endif %}>Low</option>
+                    <option value="moderate" {% if school.school_investment_level == 'moderate' %}selected{% endif %}>Moderate</option>
+                    <option value="high" {% if school.school_investment_level == 'high' %}selected{% endif %}>High</option>
+                </select>
+            </div>
+
+            <div class="form-group">
+                <label>Opportunity Score (0-100)</label>
+                <input type="number" id="opportunity_score" value="{{ school.opportunity_score or '' }}" min="0" max="100">
+            </div>
+
+            <div class="form-group">
+                <label>Analysis Summary</label>
+                <textarea id="analysis_summary">{{ school.analysis_summary or '' }}</textarea>
+            </div>
+
+            <div class="form-group">
+                <label>Review Status</label>
+                <select id="human_review_status">
+                    <option value="">Pending Review</option>
+                    <option value="approved" {% if school.human_review_status == 'approved' %}selected{% endif %}>Approved</option>
+                    <option value="needs_review" {% if school.human_review_status == 'needs_review' %}selected{% endif %}>Needs Review</option>
+                    <option value="pending" {% if school.human_review_status == 'pending' %}selected{% endif %}>Pending</option>
+                </select>
+            </div>
+
+            <div class="form-group">
+                <label>Review Notes</label>
+                <textarea id="human_review_notes">{{ school.human_review_notes or '' }}</textarea>
+            </div>
+
+            <div class="form-actions">
+                <button type="button" class="btn-secondary" onclick="closeEditModal()">Cancel</button>
+                <button type="submit" class="btn-primary">Save Changes</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<script>
+function showEditModal() {
+    document.getElementById('editModal').classList.add('show');
+}
+
+function closeEditModal() {
+    document.getElementById('editModal').classList.remove('show');
+}
+
+document.getElementById('editForm').addEventListener('submit', async function(e) {
+    e.preventDefault();
+
+    const formData = {
+        school_name: document.getElementById('school_name').value,
+        school_district: document.getElementById('school_district').value,
+        state_code: document.getElementById('state_code').value,
+        enrollment_size: document.getElementById('enrollment_size').value || null,
+        diversity_index: document.getElementById('diversity_index').value,
+        socioeconomic_level: document.getElementById('socioeconomic_level').value,
+        ap_classes_count: document.getElementById('ap_classes_count').value || null,
+        ib_offerings: document.getElementById('ib_offerings').value || null,
+        honors_programs: document.getElementById('honors_programs').value || null,
+        stem_programs: document.getElementById('stem_programs').value || null,
+        graduation_rate: document.getElementById('graduation_rate').value || null,
+        college_placement_rate: document.getElementById('college_placement_rate').value || null,
+        avg_test_scores: document.getElementById('avg_test_scores').value,
+        school_investment_level: document.getElementById('school_investment_level').value,
+        opportunity_score: document.getElementById('opportunity_score').value || null,
+        analysis_summary: document.getElementById('analysis_summary').value,
+        human_review_status: document.getElementById('human_review_status').value,
+        human_review_notes: document.getElementById('human_review_notes').value
+    };
+
+    try {
+        const response = await fetch(`/api/school/{{ school.school_enrichment_id }}/update`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(formData)
+        });
+
+        const result = await response.json();
+
+        if (result.status === 'success') {
+            alert('School enrichment data updated successfully!');
+            closeEditModal();
+            location.reload();
+        } else {
+            alert('Error: ' + result.error);
+        }
+    } catch (error) {
+        console.error('Error:', error);
+        alert('Failed to save changes: ' + error.message);
+    }
+});
+
+// Close modal when clicking outside
+window.onclick = function(event) {
+    const modal = document.getElementById('editModal');
+    if (event.target === modal) {
+        closeEditModal();
+    }
+}
+</script>
+{% endblock %}

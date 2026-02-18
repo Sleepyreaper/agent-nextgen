@@ -1,8 +1,6 @@
 """Bashful agent - a simple example agent using Azure AI Foundry."""
 
-from typing import Optional
-from azure.ai.projects import AIProjectClient
-from azure.ai.inference import ChatCompletionsClient
+from typing import Optional, Any
 from azure.ai.inference.models import SystemMessage, UserMessage
 from .base_agent import BaseAgent
 
@@ -13,7 +11,7 @@ class BashfulAgent(BaseAgent):
     def __init__(
         self, 
         name: str, 
-        client: AIProjectClient,
+        client: Any,
         system_prompt: Optional[str] = None,
         model: Optional[str] = None
     ):
@@ -22,7 +20,7 @@ class BashfulAgent(BaseAgent):
         
         Args:
             name: The name of the agent
-            client: Azure AI Project client instance
+            client: AI client instance (AzureOpenAI or similar)
             system_prompt: Optional system prompt for the agent
             model: Optional model name to use
         """

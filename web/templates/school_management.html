@@ -514,48 +514,50 @@ function renderSchools(schools) {
     }
     
     schoolList.innerHTML = schools.map(school => `
-        <div class="school-card" onclick="openSchoolDetail(${school.school_enrichment_id})">
-            <div class="school-card-header">
-                <div>
-                    <div class="school-name">${school.school_name}</div>
-                    <div class="school-district">${school.school_district || ''} • ${school.state_code || ''}</div>
+        <a href="/school/${school.school_enrichment_id}" style="text-decoration: none; color: inherit;">
+            <div class="school-card">
+                <div class="school-card-header">
+                    <div>
+                        <div class="school-name">${school.school_name}</div>
+                        <div class="school-district">${school.school_district || ''} • ${school.state_code || ''}</div>
+                    </div>
+                    <div class="opportunity-badge">
+                        <div class="opportunity-score">${(school.opportunity_score || 0).toFixed(1)}</div>
+                        <div class="opportunity-label">Opportunity</div>
+                    </div>
                 </div>
-                <div class="opportunity-badge">
-                    <div class="opportunity-score">${(school.opportunity_score || 0).toFixed(1)}</div>
-                    <div class="opportunity-label">Opportunity</div>
+                
+                <div class="school-metrics">
+                    <div class="metric-box">
+                        <div class="metric-label">AP Courses</div>
+                        <div class="metric-value">${school.ap_classes_count || 0}</div>
+                    </div>
+                    <div class="metric-box">
+                        <div class="metric-label">College Acceptance</div>
+                        <div class="metric-value">${(school.college_placement_rate || 0).toFixed(0)}%</div>
+                    </div>
+                    <div class="metric-box">
+                        <div class="metric-label">Graduation Rate</div>
+                        <div class="metric-value">${(school.graduation_rate || 0).toFixed(0)}%</div>
+                    </div>
+                    <div class="metric-box">
+                        <div class="metric-label">Students</div>
+                        <div class="metric-value">${(school.enrollment_size || 0).toLocaleString()}</div>
+                    </div>
+                </div>
+                
+                <div style="display: flex; justify-content: space-between; align-items: center;">
+                    <div>
+                        <span class="review-status ${school.human_review_status || 'pending'}">
+                            ${(school.human_review_status || 'pending').replace('_', ' ')}
+                        </span>
+                    </div>
+                    <div style="font-size: 0.85rem; color: #6b7280;">
+                        📋 Click to view & edit
+                    </div>
                 </div>
             </div>
-            
-            <div class="school-metrics">
-                <div class="metric-box">
-                    <div class="metric-label">AP Courses</div>
-                    <div class="metric-value">${school.ap_course_count || 0}</div>
-                </div>
-                <div class="metric-box">
-                    <div class="metric-label">College Acceptance</div>
-                    <div class="metric-value">${(school.college_acceptance_rate || 0).toFixed(0)}%</div>
-                </div>
-                <div class="metric-box">
-                    <div class="metric-label">Graduation Rate</div>
-                    <div class="metric-value">${(school.graduation_rate || 0).toFixed(0)}%</div>
-                </div>
-                <div class="metric-box">
-                    <div class="metric-label">Students</div>
-                    <div class="metric-value">${(school.total_students || 0).toLocaleString()}</div>
-                </div>
-            </div>
-            
-            <div style="display: flex; justify-content: space-between; align-items: center;">
-                <div>
-                    <span class="review-status ${school.human_review_status || 'pending'}">
-                        ${(school.human_review_status || 'pending').replace('_', ' ')}
-                    </span>
-                </div>
-                <div style="font-size: 0.85rem; color: #6b7280;">
-                    ${school.analysis_status === 'complete' ? '✓ Analyzed' : '⏳ ' + school.analysis_status}
-                </div>
-            </div>
-        </div>
+        </a>
     `).join('');
 }
 
