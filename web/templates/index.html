@@ -29,8 +29,9 @@
 <div class="card">
     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem; border-bottom: 1px solid #eee; padding-bottom: 1rem;">
         <h2 style="color: var(--emory-blue);">📋 Recent Applications</h2>
-        <div style="display: flex; gap: 1rem;">
+        <div style="display: flex; gap: 1rem; flex-wrap: wrap;">
             <a href="{{ url_for('students') }}" class="btn btn-secondary">👥 View All Students</a>
+            <a href="{{ url_for('schools_dashboard') }}" class="btn btn-secondary">🏫 Manage Schools</a>
             <a href="{{ url_for('upload') }}" class="btn btn-success">+ Add New Student</a>
         </div>
     </div>
