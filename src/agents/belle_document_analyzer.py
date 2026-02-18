@@ -236,6 +236,12 @@ class BelleDocumentAnalyzer(BaseAgent):
         # Name extraction using AI
         student_info["name"] = self._extract_name_with_ai(text)
 
+        if student_info.get("name") and not student_info.get("first_name") and not student_info.get("last_name"):
+            name_parts = [part for part in student_info["name"].split() if part]
+            if len(name_parts) >= 2:
+                student_info["first_name"] = name_parts[0]
+                student_info["last_name"] = name_parts[-1]
+
         # First/Last name explicit fields
         first_match = re.search(r'First\s*Name\s*[:\-]?\s*([A-Za-z\'\-]+)', text, re.IGNORECASE)
         last_match = re.search(r'Last\s*Name\s*[:\-]?\s*([A-Za-z\'\-]+)', text, re.IGNORECASE)

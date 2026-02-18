@@ -525,18 +525,13 @@ def upload():
     """
     if request.method == 'POST':
         try:
-            # Get uploaded file
             if 'file' not in request.files:
                 flash('No file uploaded', 'error')
                 return redirect(request.url)
-            
-            file = request.files['file']
-            if file.filename == '':
+
+            files = request.files.getlist('file')
+            if not files or all(not f.filename for f in files):
                 flash('No file selected', 'error')
-                return redirect(request.url)
-            
-            if not DocumentProcessor.validate_file_type(file.filename):
-                flash('Invalid file type. Please upload PDF, DOCX, or TXT files.', 'error')
                 return redirect(request.url)
             
             # Determine application type from radio buttons
@@ -550,198 +545,311 @@ def upload():
                 was_selected_value = (request.form.get('was_selected') or '').strip().lower()
                 was_selected = was_selected_value in {'on', 'yes', 'true', '1'}
             
-            # Generate unique student ID
-            student_id = storage.generate_student_id()
-            
-            # Save file temporarily to extract text
-            filename = secure_filename(file.filename)
-            temp_path = os.path.join(app.config['UPLOAD_FOLDER'], f"temp_{student_id}_{filename}")
-            file.save(temp_path)
-            
-            # Extract text from file
-            application_text, file_type = DocumentProcessor.process_document(temp_path)
-            
-            # Read file content for Azure Storage
-            with open(temp_path, 'rb') as f:
-                file_content = f.read()
-            
-            # Upload to Azure Storage
-            storage_result = storage.upload_file(
-                file_content=file_content,
-                filename=filename,
-                student_id=student_id,
-                application_type=app_type
-            )
-            
-            # Clean up temporary file
-            try:
-                os.remove(temp_path)
-            except:
-                pass
-            
-            if not storage_result.get('success'):
-                flash(f"Error uploading to storage: {storage_result.get('error')}", 'error')
-                return redirect(request.url)
-            
-            # Use Belle to analyze the document and extract structured data
-            try:
-                belle = get_belle()
-                doc_analysis = belle.analyze_document(application_text, filename)
-            except Exception as e:
-                logger.warning(f"Belle analysis failed: {e}")
-                doc_analysis = {
-                    "document_type": "unknown",
-                    "confidence": 0,
-                    "student_info": {},
-                    "extracted_data": {}
-                }
+            belle = get_belle()
+            grouped_uploads: Dict[str, Dict[str, Any]] = {}
+            valid_files = 0
 
-            doc_type = doc_analysis.get('document_type', 'unknown')
-            doc_type_map = {
-                'application': 'application_text',
-                'personal_statement': 'application_text',
-                'essay': 'application_text',
-                'transcript': 'transcript_text',
-                'grades': 'transcript_text',
-                'letter_of_recommendation': 'recommendation_text'
-            }
-            target_field = doc_type_map.get(doc_type)
-            
-            # Extract student info from Belle's analysis and backup sources
-            belle_student_info = doc_analysis.get('student_info', {})
-            student_name = belle_student_info.get('name') or extract_student_name(application_text) or f"Student {student_id}"
-            student_email = belle_student_info.get('email') or extract_student_email(application_text) or ""
-            school_name = (doc_analysis.get('agent_fields') or {}).get('school_name')
+            for file in files:
+                if not file.filename:
+                    continue
 
-            match = find_high_probability_match(
-                student_name=student_name,
-                student_email=student_email,
-                school_name=school_name,
-                transcript_text=application_text if target_field == 'transcript_text' else None,
-                is_training=is_training,
-                is_test=is_test
-            )
-            if match:
-                application_id = match.get('application_id')
-                if application_id:
-                    application_record = db.get_application(application_id) or {}
-                    match_target_field = target_field
+                if not DocumentProcessor.validate_file_type(file.filename):
+                    flash(f"Invalid file type: {file.filename}. Please upload PDF, DOCX, or TXT files.", 'error')
+                    continue
 
-                    if not match_target_field:
-                        existing_missing = db.get_missing_fields(application_id)
-                        if 'transcript' in existing_missing:
-                            match_target_field = 'transcript_text'
-                        elif 'letters_of_recommendation' in existing_missing:
-                            match_target_field = 'recommendation_text'
-                        else:
-                            match_target_field = 'application_text'
+                valid_files += 1
+                filename = secure_filename(file.filename)
+                temp_id = uuid.uuid4().hex
+                temp_path = os.path.join(app.config['UPLOAD_FOLDER'], f"temp_{temp_id}_{filename}")
+                file.save(temp_path)
 
-                    existing_value = application_record.get(match_target_field)
-                    label_map = {
-                        'application_text': 'Application',
-                        'transcript_text': 'Transcript',
-                        'recommendation_text': 'Recommendation'
+                application_text, file_type = DocumentProcessor.process_document(temp_path)
+
+                with open(temp_path, 'rb') as handle:
+                    file_content = handle.read()
+
+                try:
+                    os.remove(temp_path)
+                except Exception:
+                    pass
+
+                try:
+                    doc_analysis = belle.analyze_document(application_text, filename)
+                except Exception as e:
+                    logger.warning(f"Belle analysis failed: {e}")
+                    doc_analysis = {
+                        "document_type": "unknown",
+                        "confidence": 0,
+                        "student_info": {},
+                        "extracted_data": {}
                     }
-                    merged_value = _merge_uploaded_text(
-                        existing_value,
-                        application_text,
-                        label_map.get(match_target_field, 'Document'),
-                        filename
+
+                belle_student_info = doc_analysis.get('student_info', {})
+                extracted_name = belle_student_info.get('name') or extract_student_name(application_text)
+                first_name = belle_student_info.get('first_name')
+                last_name = belle_student_info.get('last_name')
+                if extracted_name and not (first_name and last_name):
+                    first_name, last_name = _split_name_parts(extracted_name)
+
+                student_email = belle_student_info.get('email') or extract_student_email(application_text) or ""
+                school_name = (doc_analysis.get('agent_fields') or {}).get('school_name') or belle_student_info.get('school_name')
+
+                identity_key = _build_identity_key(
+                    first_name=first_name,
+                    last_name=last_name,
+                    school_name=school_name,
+                    email=student_email,
+                    full_name=extracted_name,
+                    filename=filename
+                )
+
+                if identity_key not in grouped_uploads:
+                    grouped_uploads[identity_key] = {
+                        'first_name': first_name,
+                        'last_name': last_name,
+                        'student_name': extracted_name,
+                        'student_email': student_email,
+                        'school_name': school_name,
+                        'files': []
+                    }
+
+                group = grouped_uploads[identity_key]
+                if first_name and not group.get('first_name'):
+                    group['first_name'] = first_name
+                if last_name and not group.get('last_name'):
+                    group['last_name'] = last_name
+                if extracted_name and not group.get('student_name'):
+                    group['student_name'] = extracted_name
+                if student_email and not group.get('student_email'):
+                    group['student_email'] = student_email
+                if school_name and not group.get('school_name'):
+                    group['school_name'] = school_name
+
+                group['files'].append({
+                    'filename': filename,
+                    'text': application_text,
+                    'file_type': file_type,
+                    'file_content': file_content,
+                    'document_type': doc_analysis.get('document_type', 'unknown'),
+                    'student_info': belle_student_info,
+                    'agent_fields': doc_analysis.get('agent_fields', {})
+                })
+
+            if valid_files == 0:
+                flash('No valid files uploaded.', 'error')
+                return redirect(request.url)
+
+            results = []
+            for group in grouped_uploads.values():
+                group_first = group.get('first_name')
+                group_last = group.get('last_name')
+                group_name = group.get('student_name')
+                if group_first and group_last:
+                    group_name = f"{group_first} {group_last}".strip()
+
+                group_email = group.get('student_email')
+                group_school = group.get('school_name')
+
+                aggregated = _aggregate_documents(group['files'])
+                match = find_high_probability_match(
+                    student_name=group_name,
+                    student_first_name=group_first,
+                    student_last_name=group_last,
+                    student_email=group_email,
+                    school_name=group_school,
+                    transcript_text=aggregated.get('transcript_text'),
+                    is_training=is_training,
+                    is_test=is_test
+                )
+
+                if match and match.get('application_id'):
+                    application_id = match['application_id']
+                    application_record = db.get_application(application_id) or {}
+                    student_id = (
+                        application_record.get('student_id')
+                        or match.get('student_id')
+                        or storage.generate_student_id()
                     )
 
-                    db.update_application_fields(application_id, {match_target_field: merged_value})
+                    if not application_record.get('student_id') and student_id:
+                        db.update_application_fields(application_id, {'student_id': student_id})
 
-                    if match_target_field == 'transcript_text':
-                        db.remove_missing_field(application_id, 'transcript')
-                    elif match_target_field == 'recommendation_text':
-                        db.remove_missing_field(application_id, 'letters_of_recommendation')
+                    for file_entry in group['files']:
+                        storage_result = storage.upload_file(
+                            file_content=file_entry['file_content'],
+                            filename=file_entry['filename'],
+                            student_id=student_id,
+                            application_type=app_type
+                        )
+                        if not storage_result.get('success'):
+                            flash(
+                                f"Error uploading {file_entry['filename']} to storage: "
+                                f"{storage_result.get('error')}",
+                                'error'
+                            )
 
-                    logger.info(
-                        "Matched upload to existing application",
-                        extra={
-                            'application_id': application_id,
-                            'match_score': match.get('match_score'),
-                            'match_reason': match.get('match_reason')
-                        }
-                    )
+                    documents = _collect_documents_from_storage(student_id, app_type, belle)
+                    if not documents:
+                        documents = group['files']
+
+                    aggregated = _aggregate_documents(documents)
+                    updates = {}
+                    for field in ['application_text', 'transcript_text', 'recommendation_text']:
+                        new_value = aggregated.get(field)
+                        if new_value:
+                            updates[field] = new_value
+                        elif application_record.get(field):
+                            updates[field] = application_record.get(field)
+
+                    db.update_application_fields(application_id, updates)
+
+                    missing_fields = []
+                    if not updates.get('transcript_text'):
+                        missing_fields.append('transcript')
+                    if not updates.get('recommendation_text'):
+                        missing_fields.append('letters_of_recommendation')
+                    db.set_missing_fields(application_id, missing_fields)
+
+                    reprocess_note = _summarize_filenames([f['filename'] for f in group['files']])
+                    try:
+                        db.save_agent_audit(
+                            application_id,
+                            'System',
+                            f"reprocess:new_upload:{reprocess_note}"
+                        )
+                    except Exception:
+                        pass
 
                     start_application_processing(application_id)
 
                     if is_training:
                         refresh_foundry_dataset_async("training_match_update")
 
-                    flash(
-                        f"✅ Matched upload to {match.get('applicant_name', 'existing student')} "
-                        f"({int(match.get('match_score', 0) * 100)}% confidence). Re-running agents.",
-                        'success'
+                    results.append({
+                        'application_id': application_id,
+                        'action': 'matched',
+                        'applicant_name': match.get('applicant_name') or group_name,
+                        'match_score': match.get('match_score')
+                    })
+                    continue
+            
+                student_id = storage.generate_student_id()
+                for file_entry in group['files']:
+                    storage_result = storage.upload_file(
+                        file_content=file_entry['file_content'],
+                        filename=file_entry['filename'],
+                        student_id=student_id,
+                        application_type=app_type
                     )
-                    if is_training:
-                        return redirect(url_for('training'))
-                    if is_test:
-                        return redirect(url_for('test'))
-                    return redirect(url_for('student_detail', application_id=application_id))
-            
-            # Save to database with extracted info and storage path
-            application_id = db.create_application(
-                applicant_name=student_name or f"Student {student_id}",
-                email=student_email or "",
-                application_text=application_text,
-                file_name=filename,
-                file_type=file_type,
-                is_training=(is_training or is_test),  # Mark both training and test as training=TRUE
-                is_test_data=is_test,  # Flag test data separately
-                was_selected=was_selected,
-                student_id=student_id  # Store unique student ID
-            )
+                    if not storage_result.get('success'):
+                        flash(
+                            f"Error uploading {file_entry['filename']} to storage: {storage_result.get('error')}",
+                            'error'
+                        )
 
-            if target_field and target_field != 'application_text':
-                db.update_application_fields(application_id, {target_field: application_text})
+                application_text = aggregated.get('application_text') or group['files'][0]['text']
+                file_type = group['files'][0].get('file_type')
+                filename = group['files'][0].get('filename')
+                student_name = group_name or f"Student {student_id}"
 
-            missing_fields = ['transcript', 'letters_of_recommendation']
-            if target_field == 'transcript_text' and 'transcript' in missing_fields:
-                missing_fields.remove('transcript')
-            if target_field == 'recommendation_text' and 'letters_of_recommendation' in missing_fields:
-                missing_fields.remove('letters_of_recommendation')
-            
-            # Determine initial missing fields (only for 2026 applications)
-            if missing_fields:
-                db.set_missing_fields(application_id, missing_fields)
+                application_id = db.create_application(
+                    applicant_name=student_name,
+                    email=group_email or "",
+                    application_text=application_text,
+                    file_name=filename,
+                    file_type=file_type,
+                    is_training=(is_training or is_test),
+                    is_test_data=is_test,
+                    was_selected=was_selected,
+                    student_id=student_id
+                )
+
+                additional_fields = {}
+                if aggregated.get('transcript_text'):
+                    additional_fields['transcript_text'] = aggregated.get('transcript_text')
+                if aggregated.get('recommendation_text'):
+                    additional_fields['recommendation_text'] = aggregated.get('recommendation_text')
+                if additional_fields:
+                    db.update_application_fields(application_id, additional_fields)
+
+                missing_fields = []
+                if not additional_fields.get('transcript_text'):
+                    missing_fields.append('transcript')
+                if not additional_fields.get('recommendation_text'):
+                    missing_fields.append('letters_of_recommendation')
+                if missing_fields:
+                    db.set_missing_fields(application_id, missing_fields)
+
+                if is_training:
+                    application_record = db.get_application(application_id) or {}
+                    placeholder_fields = {}
+
+                    if not application_record.get('application_text'):
+                        placeholder_fields['application_text'] = 'No application essay provided for this training run.'
+                    if not application_record.get('transcript_text'):
+                        placeholder_fields['transcript_text'] = 'No transcript provided for this training run.'
+                    if not application_record.get('recommendation_text'):
+                        placeholder_fields['recommendation_text'] = 'No recommendation letter provided for this training run.'
+
+                    if placeholder_fields:
+                        db.update_application_fields(application_id, placeholder_fields)
+
+                    db.set_missing_fields(application_id, [])
+                    start_training_processing(application_id)
+
+                results.append({
+                    'application_id': application_id,
+                    'action': 'created',
+                    'applicant_name': student_name
+                })
+
+            if not results:
+                flash('No valid uploads were processed.', 'error')
+                return redirect(request.url)
+
+            matched_count = len([r for r in results if r.get('action') == 'matched'])
+            created_count = len([r for r in results if r.get('action') == 'created'])
 
             if is_training:
-                application_record = db.get_application(application_id) or {}
-                placeholder_fields = {}
-
-                if not application_record.get('application_text'):
-                    placeholder_fields['application_text'] = 'No application essay provided for this training run.'
-                if not application_record.get('transcript_text'):
-                    placeholder_fields['transcript_text'] = 'No transcript provided for this training run.'
-                if not application_record.get('recommendation_text'):
-                    placeholder_fields['recommendation_text'] = 'No recommendation letter provided for this training run.'
-
-                if placeholder_fields:
-                    db.update_application_fields(application_id, placeholder_fields)
-
-                db.set_missing_fields(application_id, [])
-                start_training_processing(application_id)
-            
-            # Flash success message with student ID and Belle's analysis
-            if is_training:
-                flash(f'✅ Training data uploaded! Student ID: {student_id}', 'success')
-                if doc_analysis.get('document_type') != 'unknown':
-                    flash(f"📖 Belle identified: {doc_analysis['document_type'].replace('_', ' ').title()}", 'info')
+                flash(
+                    f"✅ Uploaded {len(results)} student group(s). "
+                    f"Matched {matched_count}, created {created_count}.",
+                    'success'
+                )
                 refresh_foundry_dataset_async("training_upload")
                 return redirect(url_for('training'))
-            elif is_test:
-                flash(f'✅ Test file uploaded! Student ID: {student_id}. Processing with agents...', 'success')
-                if doc_analysis.get('document_type') != 'unknown':
-                    flash(f"📖 Belle identified: {doc_analysis['document_type'].replace('_', ' ').title()}", 'info')
-                # Redirect to test page to see processing
+
+            if is_test:
+                flash(
+                    f"✅ Uploaded {len(results)} test student group(s). "
+                    f"Matched {matched_count}, created {created_count}.",
+                    'success'
+                )
                 return redirect(url_for('test'))
-            else:
-                flash(f'✅ Application uploaded! Student ID: {student_id}. Information needed before processing.', 'success')
-                if doc_analysis.get('document_type') != 'unknown':
-                    flash(f"📖 Belle identified: {doc_analysis['document_type'].replace('_', ' ').title()}", 'info')
-                return redirect(url_for('process_student', application_id=application_id))
+
+            if len(results) == 1:
+                result = results[0]
+                if result.get('action') == 'matched':
+                    flash(
+                        f"✅ Matched upload to {result.get('applicant_name', 'existing student')}. "
+                        "Re-running agents with all documents.",
+                        'success'
+                    )
+                    return redirect(url_for('student_detail', application_id=result['application_id']))
+
+                flash(
+                    f"✅ Application uploaded for {result.get('applicant_name', 'student')}. "
+                    "Information needed before processing.",
+                    'success'
+                )
+                return redirect(url_for('process_student', application_id=result['application_id']))
+
+            flash(
+                f"✅ Uploaded {len(results)} student group(s). "
+                f"Matched {matched_count}, created {created_count}.",
+                'success'
+            )
+            return redirect(url_for('students'))
             
         except Exception as e:
             flash(f'Error uploading file: {str(e)}', 'error')
@@ -849,8 +957,149 @@ def _merge_uploaded_text(existing: Optional[str], incoming: str, label: str, fil
     return f"{existing}\n\n{header}\n\n{incoming}"
 
 
+def _split_name_parts(full_name: Optional[str]) -> tuple[Optional[str], Optional[str]]:
+    if not full_name:
+        return None, None
+    tokens = [token for token in re.split(r"\s+", full_name.strip()) if token]
+    if len(tokens) < 2:
+        return tokens[0], None
+    return tokens[0], tokens[-1]
+
+
+def _build_identity_key(
+    first_name: Optional[str],
+    last_name: Optional[str],
+    school_name: Optional[str],
+    email: Optional[str],
+    full_name: Optional[str],
+    filename: str
+) -> str:
+    def normalize(value: Optional[str]) -> Optional[str]:
+        return _normalize_match_text(value) if value else None
+
+    first_norm = normalize(first_name)
+    last_norm = normalize(last_name)
+    school_norm = normalize(school_name)
+    email_norm = (email or "").strip().lower() or None
+    name_norm = normalize(full_name)
+
+    if first_norm and last_norm and school_norm:
+        return f"name={first_norm}|{last_norm}|school={school_norm}"
+    if email_norm:
+        return f"email={email_norm}"
+    if name_norm:
+        return f"name={name_norm}"
+    return f"file={filename.strip().lower()}"
+
+
+def _summarize_filenames(filenames: list[str], max_names: int = 3) -> str:
+    cleaned = [name for name in filenames if name]
+    if len(cleaned) <= max_names:
+        return ", ".join(cleaned)
+    return f"{', '.join(cleaned[:max_names])} (+{len(cleaned) - max_names} more)"
+
+
+def _aggregate_documents(documents: list[Dict[str, Any]]) -> Dict[str, Optional[str]]:
+    fields = {
+        "application_text": None,
+        "transcript_text": None,
+        "recommendation_text": None
+    }
+
+    doc_type_map = {
+        'application': 'application_text',
+        'personal_statement': 'application_text',
+        'essay': 'application_text',
+        'transcript': 'transcript_text',
+        'grades': 'transcript_text',
+        'letter_of_recommendation': 'recommendation_text'
+    }
+
+    label_map = {
+        'application_text': 'Application',
+        'transcript_text': 'Transcript',
+        'recommendation_text': 'Recommendation'
+    }
+
+    for doc in documents:
+        doc_type = doc.get('document_type') or 'unknown'
+        target_field = doc_type_map.get(doc_type)
+        text = doc.get('text') or ""
+        filename = doc.get('filename') or "document"
+
+        if target_field:
+            fields[target_field] = _merge_uploaded_text(
+                fields.get(target_field),
+                text,
+                label_map.get(target_field, 'Document'),
+                filename
+            )
+            continue
+
+        if not fields.get('application_text'):
+            fields['application_text'] = text
+        elif not fields.get('recommendation_text'):
+            fields['recommendation_text'] = text
+        else:
+            fields['transcript_text'] = fields.get('transcript_text') or text
+
+    return fields
+
+
+def _collect_documents_from_storage(
+    student_id: str,
+    application_type: str,
+    belle: Any
+) -> list[Dict[str, Any]]:
+    if not storage.client:
+        return []
+
+    documents: list[Dict[str, Any]] = []
+    blob_names = storage.list_student_files(student_id, application_type)
+    for blob_name in blob_names:
+        filename = os.path.basename(blob_name)
+        file_content = storage.download_file(student_id, filename, application_type)
+        if not file_content:
+            continue
+
+        temp_path = os.path.join(
+            app.config['UPLOAD_FOLDER'],
+            f"reprocess_{student_id}_{uuid.uuid4().hex}_{filename}"
+        )
+        try:
+            with open(temp_path, 'wb') as handle:
+                handle.write(file_content)
+            file_text, _ = DocumentProcessor.process_document(temp_path)
+        finally:
+            try:
+                os.remove(temp_path)
+            except Exception:
+                pass
+
+        try:
+            analysis = belle.analyze_document(file_text, filename)
+        except Exception as exc:
+            logger.warning(f"Belle analysis failed during reprocess: {exc}")
+            analysis = {
+                "document_type": "unknown",
+                "agent_fields": {}
+            }
+
+        documents.append({
+            'filename': filename,
+            'text': file_text,
+            'document_type': analysis.get('document_type', 'unknown'),
+            'student_info': analysis.get('student_info', {}),
+            'agent_fields': analysis.get('agent_fields', {})
+        })
+
+    return documents
+
+
 def find_high_probability_match(
     student_name: Optional[str],
+    student_first_name: Optional[str],
+    student_last_name: Optional[str],
     student_email: Optional[str],
     school_name: Optional[str],
     transcript_text: Optional[str],
@@ -870,11 +1119,23 @@ def find_high_probability_match(
     best_score = 0.0
     best_reason = ""
 
+    def split_candidate_name(name: Optional[str]) -> tuple[Optional[str], Optional[str]]:
+        if not name:
+            return None, None
+        tokens = [token for token in re.split(r"\s+", name.strip()) if token]
+        if len(tokens) < 2:
+            return tokens[0], None
+        return tokens[0], tokens[-1]
+
     for candidate in candidates:
         candidate_name = candidate.get('applicant_name')
         candidate_email = candidate.get('email')
         candidate_school = candidate.get('school_name')
         candidate_gpa = _extract_gpa(candidate.get('transcript_text'))
+
+        candidate_first, candidate_last = split_candidate_name(candidate_name)
+        first_similarity = _string_similarity(student_first_name, candidate_first)
+        last_similarity = _string_similarity(student_last_name, candidate_last)
 
         email_match = bool(student_email and candidate_email and student_email.lower() == candidate_email.lower())
         name_similarity = max(
@@ -898,6 +1159,10 @@ def find_high_probability_match(
             score = max(score, 0.98)
 
         score = min(score, 1.0)
+
+        if student_first_name and student_last_name and school_name:
+            if first_similarity < 0.75 or last_similarity < 0.75 or school_similarity < 0.6:
+                continue
 
         if score > best_score:
             best_score = score
@@ -1752,6 +2017,50 @@ def student_detail(application_id):
         document_path = application.get('evaluation_document_path')
         document_url = application.get('evaluation_document_url')
         document_available = bool(document_path and os.path.exists(document_path))
+
+        reprocess_notice = None
+        try:
+            audit_table = db.get_table_name("agent_audit_logs")
+            if audit_table and db.has_table(audit_table):
+                audit_app_id_col = db.resolve_table_column(
+                    "agent_audit_logs",
+                    ["application_id", "applicationid"],
+                )
+                audit_agent_col = db.resolve_table_column(
+                    "agent_audit_logs",
+                    ["agent_name", "agentname"],
+                )
+                audit_source_col = db.resolve_table_column(
+                    "agent_audit_logs",
+                    ["source_file_name", "sourcefilename"],
+                )
+                audit_created_col = db.resolve_table_column(
+                    "agent_audit_logs",
+                    ["created_at", "createdat"],
+                )
+                if not audit_created_col:
+                    audit_created_col = "created_at"
+                if audit_app_id_col and audit_agent_col and audit_source_col:
+                    audit_query = f"""
+                        SELECT {audit_source_col} as source_file_name, {audit_created_col} as created_at
+                        FROM {audit_table}
+                        WHERE {audit_app_id_col} = %s AND {audit_agent_col} = %s
+                        ORDER BY {audit_created_col} DESC
+                        LIMIT 1
+                    """
+                    audit_rows = db.execute_query(audit_query, (application_id, 'System'))
+                    if audit_rows:
+                        source = audit_rows[0].get('source_file_name') or ''
+                        if source.startswith('reprocess:'):
+                            message = source.replace('reprocess:', '').strip()
+                            if message.startswith('new_upload:'):
+                                message = message.replace('new_upload:', 'New upload: ', 1).strip()
+                            reprocess_notice = {
+                                'message': message,
+                                'created_at': audit_rows[0].get('created_at')
+                            }
+        except Exception as exc:
+            logger.debug(f"Reprocess audit lookup failed: {exc}")
         
         # Fetch Aurora evaluation (formatted) - prefer this if available - BACKWARD COMPATIBILITY
         aurora_evaluation = db.get_aurora_evaluation(application_id)
@@ -1788,7 +2097,8 @@ def student_detail(application_id):
                              document_path=document_path,
                              aurora_evaluation=aurora_evaluation,  # For backward compatibility
                              merlin_evaluation=merlin_evaluation,  # For backward compatibility
-                             is_training=application.get('is_training_example', False))
+                             is_training=application.get('is_training_example', False),
+                             reprocess_notice=reprocess_notice)
         
     except Exception as e:
         logger.error(f"Error in student_detail: {str(e)}", exc_info=True)
