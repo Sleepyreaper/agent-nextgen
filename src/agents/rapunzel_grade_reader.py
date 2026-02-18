@@ -360,7 +360,7 @@ Return your analysis in clear, structured format (not JSON, but clearly organize
                 row_idx += 1
 
             headers = self._parse_markdown_row(table_lines[0])
-            rows = [self._parse_markdown_row(line) for line in table_lines[2:]]
+            rows = [self._normalize_row(self._parse_markdown_row(line), len(headers)) for line in table_lines[2:]]
             return {
                 'markdown': "\n".join(table_lines),
                 'headers': headers,
@@ -372,6 +372,14 @@ Return your analysis in clear, structured format (not JSON, but clearly organize
         """Parse a Markdown table row into cells."""
         cleaned = row_line.strip().strip('|')
         return [cell.strip() for cell in cleaned.split('|')]
+
+    def _normalize_row(self, row: List[str], target_len: int) -> List[str]:
+        """Ensure table rows align with headers for rendering."""
+        if len(row) > target_len:
+            return row[:target_len]
+        if len(row) < target_len:
+            return row + [""] * (target_len - len(row))
+        return row
     
     async def process(self, message: str) -> str:
         """

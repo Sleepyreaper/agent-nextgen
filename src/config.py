@@ -170,9 +170,15 @@ class Config:
         # App metadata
         self.app_version: str = os.getenv("APP_VERSION", "0.1")
 
-        # GitHub feedback tracking
-        self.github_repo: str = os.getenv("GITHUB_REPO", "sleepyreaper/agent-nextgen")
-        self.github_token: Optional[str] = os.getenv("GITHUB_TOKEN") or os.getenv("GH_TOKEN")
+        # GitHub feedback tracking (Key Vault first, then env)
+        self.github_repo: str = (
+            self._get_secret("github-repo", "GITHUB_REPO")
+            or "Sleepyreaper/agent-nextgen"
+        )
+        self.github_token: Optional[str] = (
+            self._get_secret("github-token", "GITHUB_TOKEN")
+            or os.getenv("GH_TOKEN")
+        )
         
         # Legacy compatibility
         self.connection_string: Optional[str] = None

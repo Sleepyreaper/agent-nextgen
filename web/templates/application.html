@@ -232,7 +232,7 @@
         {{ agent_results.rapunzel.summary or 'Summary pending.' }}
         {% if agent_results.rapunzel.grade_table_headers and agent_results.rapunzel.grade_table_rows %}
         <div style="margin-top: 0.75rem;">
-            <table>
+            <table class="grade-table">
                 <thead>
                     <tr>
                         {% for header in agent_results.rapunzel.grade_table_headers %}
@@ -526,7 +526,7 @@
             {% endif %}
             {% if aurora.agents.rapunzel.grade_table_headers and aurora.agents.rapunzel.grade_table_rows %}
             <div style="margin-top: 0.75rem;">
-                <table>
+                <table class="grade-table">
                     <thead>
                         <tr>
                             {% for header in aurora.agents.rapunzel.grade_table_headers %}
@@ -548,6 +548,39 @@
             {% elif aurora.agents.rapunzel.grade_table_markdown %}
             <div style="margin-top: 0.75rem; white-space: pre-wrap; font-family: 'IBM Plex Sans', 'Segoe UI', Arial, sans-serif;">
                 {{ aurora.agents.rapunzel.grade_table_markdown }}
+            </div>
+            {% endif %}
+            {% if aurora.agents.moana %}
+            <div style="margin-top: 0.9rem;">
+                <div style="font-weight: 600; color: #0b1f36; margin-bottom: 0.4rem;">Academic Context Snapshot</div>
+                <table class="context-table">
+                    <tbody>
+                        <tr>
+                            <th style="width: 30%;">School</th>
+                            <td>{{ aurora.agents.moana.school_name or 'Unknown' }}</td>
+                        </tr>
+                        <tr>
+                            <th>SES Level</th>
+                            <td>{{ aurora.agents.moana.ses_level or 'Unknown' }}</td>
+                        </tr>
+                        <tr>
+                            <th>Resource Tier</th>
+                            <td>{{ aurora.agents.moana.resource_tier or 'Unknown' }}</td>
+                        </tr>
+                        <tr>
+                            <th>Opportunity Score</th>
+                            <td>{{ aurora.agents.moana.opportunity_score or 'N/A' }}/100</td>
+                        </tr>
+                        <tr>
+                            <th>AP Available / Taken</th>
+                            <td>{{ aurora.agents.moana.ap_courses_available or 0 }} / {{ aurora.agents.moana.ap_courses_taken or 0 }}</td>
+                        </tr>
+                        <tr>
+                            <th>Honors / IB / STEM</th>
+                            <td>{{ aurora.agents.moana.honors_courses_available or 0 }} / {{ aurora.agents.moana.ib_courses_available or 0 }} / {{ aurora.agents.moana.stem_programs_count or 0 }}</td>
+                        </tr>
+                    </tbody>
+                </table>
             </div>
             {% endif %}
         </div>
