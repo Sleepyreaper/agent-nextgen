@@ -282,13 +282,30 @@ class SmeeOrchestrator(BaseAgent):
                         merlin_run = True
                     elif hasattr(agent, 'analyze_student_school_context'):
                         # For MoanaSchoolContext
+                        # Step 1: Ensure school data is enriched and cached
+                        from src.school_workflow import ensure_school_context_in_pipeline
+                        
+                        school_name = application.get('school_name') or application.get('SchoolName')
+                        state_code = application.get('state_code') or application.get('StateCode')
+                        
+                        # Get or enrich school data (checks cache first, calls Aurora if needed)
+                        aurora_agent = self.agents.get('aurora')
+                        school_enrichment = ensure_school_context_in_pipeline(
+                            school_name=school_name,
+                            state_code=state_code,
+                            db_connection=self.db,
+                            aurora_agent=aurora_agent
+                        )
+                        
+                        # Step 2: Pass enriched school data to Moana
                         # Get grade data from previous results if available
                         rapunzel_data = self.evaluation_results['results'].get('grade_reader')
                         transcript_text = application.get('transcript_text') or application.get('TranscriptText') or application.get('application_text') or application.get('ApplicationText', '')
                         result = await agent.analyze_student_school_context(
                             application=application,
                             transcript_text=transcript_text,
-                            rapunzel_grades_data=rapunzel_data
+                            rapunzel_grades_data=rapunzel_data,
+                            school_enrichment=school_enrichment  # Pass cached/enriched school data
                         )
                     elif hasattr(agent, 'analyze_training_insights'):
                         # For MiloDataScientist
