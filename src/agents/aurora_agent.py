@@ -211,7 +211,15 @@ class AuroraAgent(BaseAgent):
             'school_ranking': moana_data.get('school_ranking') or moana_data.get('ranking'),
             'school_info': moana_data.get('school_info') or moana_data.get('description'),
             'key_context': moana_data.get('key_context', []),
-            'context': moana_data.get('contextual_summary') or moana_data.get('comparison_notes')
+            'context': moana_data.get('contextual_summary') or moana_data.get('comparison_notes'),
+            'ses_level': (moana_data.get('ses_context') or {}).get('ses_level'),
+            'resource_tier': (moana_data.get('school_resources') or {}).get('resource_tier'),
+            'ap_courses_available': (moana_data.get('school_resources') or {}).get('ap_courses_available'),
+            'honors_courses_available': (moana_data.get('school_resources') or {}).get('honors_courses_available'),
+            'ib_courses_available': (moana_data.get('school_resources') or {}).get('ib_courses_available'),
+            'stem_programs_count': (moana_data.get('school_resources') or {}).get('stem_programs_count'),
+            'opportunity_score': (moana_data.get('opportunity_scores') or {}).get('overall_opportunity_score'),
+            'ap_courses_taken': len((moana_data.get('program_participation') or {}).get('ap_courses_taken', []))
         }
 
     def _build_grade_context(

@@ -361,6 +361,17 @@ def _build_feedback_issue_body(
     return "\n".join(lines)
 
 
+def _store_feedback_fallback(payload: Dict[str, Any]) -> None:
+    try:
+        os.makedirs("logs/feedback", exist_ok=True)
+        timestamp = time.strftime("%Y%m%d_%H%M%S")
+        filename = f"logs/feedback/feedback_{timestamp}_{uuid.uuid4().hex[:6]}.json"
+        with open(filename, "w", encoding="utf-8") as handle:
+            json.dump(payload, handle, ensure_ascii=True, indent=2)
+    except Exception as exc:
+        logger.error(f"Failed to store feedback fallback: {exc}", exc_info=True)
+
+
 def _create_github_issue(title: str, body: str, labels: list[str]) -> Dict[str, Any]:
     if not config.github_token:
         raise ValueError("Missing GitHub token for issue creation")
@@ -369,7 +380,8 @@ def _create_github_issue(title: str, body: str, labels: list[str]) -> Dict[str, 
     headers = {
         "Authorization": f"Bearer {config.github_token}",
         "Accept": "application/vnd.github+json",
-        "X-GitHub-Api-Version": "2022-11-28"
+        "X-GitHub-Api-Version": "2022-11-28",
+        "User-Agent": "nextgen-feedback-bot"
     }
     payload = {
         "title": title,
@@ -397,6 +409,18 @@ def submit_feedback():
         return jsonify({'error': 'Feedback type must be issue or feature.'}), 400
     if not message:
         return jsonify({'error': 'Feedback message is required.'}), 400
+
+    if not config.github_token:
+        _store_feedback_fallback({
+            "type": feedback_type,
+            "message": message,
+            "email": email,
+            "page": page,
+            "app_version": app_version,
+            "user_agent": user_agent,
+            "error": "GitHub token not configured"
+        })
+        return jsonify({'error': 'GitHub integration is not configured yet. Feedback saved locally.'}), 503
 
     try:
         triage_agent = get_feedback_agent()
@@ -428,6 +452,15 @@ def submit_feedback():
         )
         return jsonify({'status': 'success', 'issue_url': issue.get('html_url')}), 201
     except Exception as exc:
+        _store_feedback_fallback({
+            "type": feedback_type,
+            "message": message,
+            "email": email,
+            "page": page,
+            "app_version": app_version,
+            "user_agent": user_agent,
+            "error": str(exc)
+        })
         logger.error(f"Feedback submission failed: {exc}", exc_info=True)
         return jsonify({'error': 'Unable to submit feedback right now.'}), 500
 
