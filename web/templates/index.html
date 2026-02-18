@@ -6,7 +6,6 @@
 <div style="background: linear-gradient(135deg, rgba(0,51,102,0.05) 0%, rgba(0,153,169,0.05) 100%); padding: 2rem; border-radius: 8px; margin-bottom: 2rem; border-left: 4px solid var(--accent-teal);">
     <div style="display: flex; align-items: center; justify-content: space-between; gap: 1rem; flex-wrap: wrap;">
         <h2 style="color: var(--emory-blue); margin-bottom: 0.5rem;">NextGen High School Internship Program</h2>
-        <div class="version-badge">Version {{ app_version }}</div>
     </div>
     <p style="color: #555;">Our mission: Recognizing that our differences make us stronger, we actively recruit and support learners from all backgrounds in STEM to improve outcomes for our entire community.</p>
 </div>
@@ -31,7 +30,6 @@
         <h2 style="color: var(--emory-blue);">📋 Recent Applications</h2>
         <div style="display: flex; gap: 1rem; flex-wrap: wrap;">
             <a href="{{ url_for('students') }}" class="btn btn-secondary">👥 View All Students</a>
-            <a href="{{ url_for('schools_dashboard') }}" class="btn btn-secondary">🏫 Manage Schools</a>
             <a href="{{ url_for('upload') }}" class="btn btn-success">+ Add New Student</a>
         </div>
     </div>
@@ -45,6 +43,17 @@
             View All {{ total_count }} Students →
         </a>
     </div>
+</div>
+
+<div class="card">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; border-bottom: 1px solid #eee; padding-bottom: 0.75rem;">
+        <h2 style="color: var(--emory-blue);">📚 Training Data</h2>
+        <div style="display: flex; gap: 1rem; flex-wrap: wrap;">
+            <a href="{{ url_for('training') }}" class="btn btn-secondary">📚 View Training Data</a>
+            <a href="{{ url_for('schools_dashboard') }}" class="btn btn-secondary">🏫 Manage Schools</a>
+        </div>
+    </div>
+    <p style="color: #6b7280; margin: 0;">Training examples and school enrichment data power scoring for new applicants.</p>
 </div>
 
 <div class="card">

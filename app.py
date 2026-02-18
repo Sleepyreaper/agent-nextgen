@@ -11,7 +11,7 @@ import threading
 import queue
 from typing import Optional, Dict, Any
 import requests
-from flask import Flask, render_template, request, redirect, url_for, flash, jsonify, Response
+from flask import Flask, render_template, request, redirect, url_for, flash, jsonify, Response, stream_with_context
 from werkzeug.utils import secure_filename
 from openai import AzureOpenAI
 from opentelemetry.instrumentation.flask import FlaskInstrumentor
@@ -25,6 +25,7 @@ from src.storage import storage
 from src.test_data_generator import test_data_generator
 from src.logger import app_logger as logger, audit_logger
 from src.telemetry import init_telemetry
+from src.observability import is_observability_enabled
 from src.agents import (
     GastonEvaluator,
     SmeeOrchestrator,
@@ -1581,6 +1582,92 @@ def api_process_student(application_id):
             'error': str(e),
             'traceback': traceback.format_exc()
         }), 500
+
+
+def generate_process_updates(application_id: int):
+    """Stream real-time orchestration updates for a single application."""
+    application = db.get_application(application_id)
+    if not application:
+        yield f"data: {json.dumps({'type': 'error', 'error': 'Student not found', 'application_id': application_id}, ensure_ascii=True)}\n\n"
+        return
+
+    orchestrator = get_orchestrator()
+    update_queue = queue.Queue()
+
+    def progress_callback(update):
+        logger.debug(
+            f"Progress callback: {update.get('type', 'unknown')} - {update.get('agent', 'N/A')}",
+            extra=update
+        )
+        update_queue.put(update)
+
+    def run_orchestration():
+        try:
+            logger.debug(f"Starting orchestration thread for application {application_id}")
+            evaluation_steps = [
+                'application_reader',
+                'grade_reader',
+                'recommendation_reader',
+                'school_context',
+                'data_scientist',
+                'student_evaluator'
+            ]
+
+            result = asyncio.run(orchestrator.coordinate_evaluation(
+                application=application,
+                evaluation_steps=evaluation_steps,
+                progress_callback=progress_callback
+            ))
+
+            update_queue.put({'_orchestration_complete': True, 'result': result})
+        except Exception as exc:
+            logger.error(
+                f"Orchestration error for application {application_id}: {str(exc)}",
+                exc_info=True
+            )
+            update_queue.put({'_orchestration_error': True, 'error': str(exc)})
+
+    orchestration_thread = threading.Thread(target=run_orchestration, daemon=True)
+    orchestration_thread.start()
+
+    yield f"data: {json.dumps({'type': 'orchestrator_start', 'application_id': application_id}, ensure_ascii=True)}\n\n"
+
+    while True:
+        try:
+            update = update_queue.get(timeout=1.0)
+        except queue.Empty:
+            if not orchestration_thread.is_alive():
+                break
+            yield ": keepalive\n\n"
+            continue
+
+        if update.get('_orchestration_complete'):
+            result = update.get('result') or {}
+            if result.get('status') != 'paused':
+                db.update_application_status(application_id, 'Completed')
+            yield f"data: {json.dumps({'type': 'orchestration_complete', 'result': result, 'application_id': application_id}, ensure_ascii=True)}\n\n"
+            break
+        if update.get('_orchestration_error'):
+            yield f"data: {json.dumps({'type': 'orchestration_error', 'error': update.get('error'), 'application_id': application_id}, ensure_ascii=True)}\n\n"
+            break
+
+        yield f"data: {json.dumps(update, ensure_ascii=True, default=str)}\n\n"
+
+    yield f"data: {json.dumps({'type': 'stream_complete', 'application_id': application_id}, ensure_ascii=True)}\n\n"
+
+
+@app.route('/api/process/stream/<int:application_id>')
+def api_process_student_stream(application_id):
+    """Server-Sent Events endpoint for real-time agent progress updates."""
+    return Response(
+        stream_with_context(generate_process_updates(application_id)),
+        mimetype='text/event-stream',
+        headers={
+            'Cache-Control': 'no-cache',
+            'Connection': 'keep-alive',
+            'X-Accel-Buffering': 'no'
+        }
+    )
 
 
 @app.route('/api/status/<int:application_id>')
@@ -4049,6 +4136,21 @@ def get_agent_history(agent_name):
     return jsonify({
         'agent_name': agent_name,
         'executions': history
+    })
+
+
+@app.route('/api/debug/telemetry-status')
+def get_telemetry_status():
+    """Report whether observability is configured and where it would export."""
+    connection_string_set = bool(os.getenv("APPLICATIONINSIGHTS_CONNECTION_STRING"))
+    otlp_endpoint = os.getenv("OTEL_EXPORTER_OTLP_ENDPOINT")
+    telemetry_enabled = is_observability_enabled()
+
+    return jsonify({
+        'telemetry_enabled': telemetry_enabled,
+        'app_insights_configured': connection_string_set,
+        'otlp_endpoint_configured': bool(otlp_endpoint),
+        'otlp_endpoint': otlp_endpoint if otlp_endpoint else None,
     })
 
 
