@@ -233,6 +233,10 @@ class Config:
             version_path = Path("VERSION")
             if version_path.exists():
                 return version_path.read_text(encoding="utf-8").strip()
+            repo_root = Path(__file__).resolve().parents[1]
+            repo_version = repo_root / "VERSION"
+            if repo_version.exists():
+                return repo_version.read_text(encoding="utf-8").strip()
         except Exception:
             return None
         return None
