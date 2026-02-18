@@ -12,6 +12,7 @@ from .merlin_student_evaluator import MerlinStudentEvaluator
 from .aurora_agent import AuroraAgent
 from .belle_document_analyzer import BelleDocumentAnalyzer
 from .milo_data_scientist import MiloDataScientist
+from .feedback_triage_agent import FeedbackTriageAgent
 
 __all__ = [
 	"BaseAgent",
@@ -25,6 +26,7 @@ __all__ = [
 	"MerlinStudentEvaluator",
 	"AuroraAgent",
 	"BelleDocumentAnalyzer",
-	"MiloDataScientist"
+	"MiloDataScientist",
+	"FeedbackTriageAgent"
 ]
 

@@ -172,7 +172,8 @@ class MoanaSchoolContext(BaseAgent):
                     program_participation,
                     scores,
                     ses_context,
-                    school_resources
+                    school_resources,
+                    rapunzel_grades_data
                 ),
                 'model_used': self.model
             }
@@ -487,7 +488,7 @@ Provide this as a structured analysis. Be honest about data availability. If exa
                 messages=[
                     {
                         "role": "system",
-                        "content": "You are part of an NIH Department of Genetics review panel evaluating Emory NextGen applicants. You find and synthesize publicly available school data to contextualize opportunity and STEM access. Label estimates clearly and avoid overconfident claims."
+                        "content": "You are part of an NIH Department of Genetics review panel evaluating Emory NextGen applicants. You find and synthesize publicly available school data to contextualize opportunity and STEM access. Use national and state sources, not just Georgia data. Label estimates clearly and avoid overconfident claims."
                     },
                     {
                         "role": "user",
@@ -864,7 +865,8 @@ Provide realistic, conservative estimates. Explicitly note where opportunity is 
         participation: Dict[str, Any],
         scores: Dict[str, Any],
         ses_context: Dict[str, Any],
-        school_resources: Dict[str, Any]
+        school_resources: Dict[str, Any],
+        rapunzel_grades_data: Optional[Dict[str, Any]] = None
     ) -> str:
         """Build a comprehensive summary of school context."""
         
@@ -899,6 +901,19 @@ Provide realistic, conservative estimates. Explicitly note where opportunity is 
             "",
             f"Context: {scores.get('interpretation', 'Analysis complete')}"
         ])
+
+        if rapunzel_grades_data:
+            resource_tier = school_resources.get('resource_tier', 'Unknown')
+            ses_level = ses_context.get('ses_level', 'Unknown')
+            gpa_value = rapunzel_grades_data.get('gpa')
+            gpa_note = f"GPA: {gpa_value}." if gpa_value is not None else "GPA: not extracted."
+            summary_parts.extend([
+                "",
+                "Grade Context:",
+                f"• {gpa_note}",
+                "• Interpretation note: Grades should be weighed against opportunity. A B from a high-rigor school can be as meaningful as an A from a low-rigor setting.",
+                f"• SES context: {ses_level} socioeconomic indicators with {resource_tier} academic resources."
+            ])
 
         return "\n".join(summary_parts)
 
@@ -1101,7 +1116,7 @@ This data will provide accurate context for evaluating student opportunity and a
         messages = [
             {
                 "role": "system",
-                "content": "You are Moana, an expert in education systems and school contexts. You understand socioeconomic factors, advanced programs, and educational opportunities. Emphasize how opportunity constraints shape interpretation of performance."
+                "content": "You are Moana, an expert in education systems and school contexts. You understand socioeconomic factors, advanced programs, and educational opportunities. Use broader knowledge and public sources beyond Georgia. Emphasize how opportunity constraints shape interpretation of performance."
             }
         ] + self.conversation_history
         

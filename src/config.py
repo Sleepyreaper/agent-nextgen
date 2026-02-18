@@ -166,6 +166,13 @@ class Config:
         
         # Flask configuration
         self.flask_secret_key: str = self._get_secret("flask-secret-key", "FLASK_SECRET_KEY")
+
+        # App metadata
+        self.app_version: str = os.getenv("APP_VERSION", "0.1")
+
+        # GitHub feedback tracking
+        self.github_repo: str = os.getenv("GITHUB_REPO", "sleepyreaper/agent-nextgen")
+        self.github_token: Optional[str] = os.getenv("GITHUB_TOKEN") or os.getenv("GH_TOKEN")
         
         # Legacy compatibility
         self.connection_string: Optional[str] = None
@@ -214,6 +221,15 @@ class Config:
         if value:
             self._secrets_cache[key_vault_secret_name] = value
         return value
+
+    def _read_version_file(self) -> Optional[str]:
+        try:
+            version_path = Path("VERSION")
+            if version_path.exists():
+                return version_path.read_text(encoding="utf-8").strip()
+        except Exception:
+            return None
+        return None
     
     def validate(self) -> bool:
         """Validate that required configuration is present."""
