@@ -1427,6 +1427,9 @@ class Database:
                                  state_code: Optional[str] = None) -> Optional[Dict[str, Any]]:
         """Retrieve enriched school data by ID or name/state."""
         try:
+            if not self.has_table("school_enriched_data"):
+                logger.warning("School enrichment table missing: school_enriched_data")
+                return None
             if school_id:
                 query = "SELECT * FROM school_enriched_data WHERE school_enrichment_id = %s"
                 result = self.execute_query(query, (school_id,))
@@ -1445,6 +1448,9 @@ class Database:
                                 limit: int = 100) -> List[Dict[str, Any]]:
         """Get all enriched schools with optional filters."""
         try:
+            if not self.has_table("school_enriched_data"):
+                logger.warning("School enrichment table missing: school_enriched_data")
+                return []
             query = "SELECT * FROM school_enriched_data WHERE is_active = TRUE"
             params = []
             

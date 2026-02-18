@@ -336,15 +336,39 @@ class MoanaSchoolContext(BaseAgent):
     
     def _categorize_size(self, enrollment: Optional[int]) -> str:
         """Categorize school size by enrollment."""
-        if not enrollment:
+        enrollment_count = self._safe_count(enrollment)
+        if not enrollment_count:
             return "unknown"
-        if enrollment < 500:
+        if enrollment_count < 500:
             return "small"
-        if enrollment < 1500:
+        if enrollment_count < 1500:
             return "medium"
-        if enrollment < 3000:
+        if enrollment_count < 3000:
             return "large"
         return "very_large"
+
+    @staticmethod
+    def _safe_count(value: Any) -> int:
+        """Normalize counts that might come in as lists, strings, or numbers."""
+        if value is None:
+            return 0
+        if isinstance(value, bool):
+            return int(value)
+        if isinstance(value, (int, float)):
+            return int(value)
+        if isinstance(value, (list, tuple, set)):
+            return len(value)
+        if isinstance(value, dict):
+            return len(value)
+        if isinstance(value, str):
+            stripped = value.strip()
+            if stripped.isdigit():
+                return int(stripped)
+            try:
+                return int(float(stripped))
+            except ValueError:
+                return 0
+        return 0
     
     def _calculate_opportunity_scores_from_enrichment(
         self,
@@ -358,17 +382,22 @@ class MoanaSchoolContext(BaseAgent):
         
         # Adjust based on what student actually participated in
         participation_adjustment = 0
-        if program_participation.get('ap_courses_taken', 0) > 0:
+        ap_taken = self._safe_count(program_participation.get('ap_courses_taken', 0))
+        honors_taken = self._safe_count(program_participation.get('honors_courses_taken', 0))
+        advanced_count = self._safe_count(
+            program_participation.get('advanced_courses_count', program_participation.get('advanced_courses', []))
+        )
+        if ap_taken > 0:
             participation_adjustment += 10
-        if program_participation.get('honors_courses_taken', 0) > 0:
+        if honors_taken > 0:
             participation_adjustment += 5
-        if program_participation.get('advanced_courses_count', 0) > 5:
+        if advanced_count > 5:
             participation_adjustment += 10
         
         return {
             'opportunity_score': min(100, base_score + participation_adjustment),
             'program_access_score': school_profile.get('ap_count', 0) * 2,  # Roughly
-            'program_participation_score': len(program_participation.get('advanced_courses', [])) * 5,
+            'program_participation_score': advanced_count * 5,
             'relative_advantage_score': base_score / 100 * 50  # Normalized
         }
     
@@ -382,8 +411,8 @@ class MoanaSchoolContext(BaseAgent):
     ) -> str:
         """Build contextual summary using enriched school data."""
         school_name = school_enrichment.get('school_name', 'their school')
-        ap_available = school_enrichment.get('ap_classes_count', 0)
-        ap_taken = program_participation.get('ap_courses_taken', 0)
+        ap_available = self._safe_count(school_enrichment.get('ap_classes_count', 0))
+        ap_taken = self._safe_count(program_participation.get('ap_courses_taken', 0))
         opportunity = school_enrichment.get('opportunity_score', 50)
         investment_level = school_enrichment.get('school_investment_level', 'moderate')
         
@@ -400,9 +429,10 @@ class MoanaSchoolContext(BaseAgent):
                 f"with advanced curricula."
             )
         
-        if program_participation.get('honors_courses_taken', 0) > 0:
+        honors_taken = self._safe_count(program_participation.get('honors_courses_taken', 0))
+        if honors_taken > 0:
             parts.append(
-                f"{student_name} also participated in {program_participation.get('honors_courses_taken')} "
+                f"{student_name} also participated in {honors_taken} "
                 f"honors courses, showing consistent rigor seeking."
             )
         
