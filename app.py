@@ -410,19 +410,19 @@ def submit_feedback():
     if not message:
         return jsonify({'error': 'Feedback message is required.'}), 400
 
-    if not config.github_token:
-        _store_feedback_fallback({
-            "type": feedback_type,
-            "message": message,
-            "email": email,
-            "page": page,
-            "app_version": app_version,
-            "user_agent": user_agent,
-            "error": "GitHub token not configured"
-        })
-        return jsonify({'error': 'GitHub integration is not configured yet. Feedback saved locally.'}), 503
-
+    feedback_id = None
     try:
+        if db:
+            feedback_id = db.save_user_feedback(
+                feedback_type=feedback_type,
+                message=message,
+                email=email,
+                page=page,
+                app_version=app_version,
+                user_agent=user_agent,
+                status='received'
+            )
+
         triage_agent = get_feedback_agent()
         triage = asyncio.run(
             triage_agent.analyze_feedback(
@@ -433,6 +433,12 @@ def submit_feedback():
                 app_version=app_version
             )
         )
+        if feedback_id and db:
+            db.update_user_feedback(
+                feedback_id=feedback_id,
+                triage_json=triage,
+                status='triaged'
+            )
         issue_body = _build_feedback_issue_body(
             triage=triage,
             feedback_type=feedback_type,
@@ -444,14 +450,48 @@ def submit_feedback():
         )
         labels = set(triage.get('suggested_labels', []))
         labels.update({'feedback', feedback_type})
+        issue = None
+        if config.github_token:
+            issue = _create_github_issue(
+                title=triage.get('title') or f"User feedback: {feedback_type}",
+                body=issue_body,
+                labels=sorted(labels)
+            )
+            if feedback_id and db:
+                db.update_user_feedback(
+                    feedback_id=feedback_id,
+                    issue_url=issue.get('html_url'),
+                    status='submitted'
+                )
+        else:
+            if feedback_id and db:
+                db.update_user_feedback(
+                    feedback_id=feedback_id,
+                    status='awaiting_github'
+                )
+            _store_feedback_fallback({
+                "feedback_id": feedback_id,
+                "type": feedback_type,
+                "message": message,
+                "email": email,
+                "page": page,
+                "app_version": app_version,
+                "user_agent": user_agent,
+                "error": "GitHub token not configured"
+            })
+            return jsonify({'error': 'GitHub integration is not configured yet. Feedback saved locally.'}), 503
 
-        issue = _create_github_issue(
-            title=triage.get('title') or f"User feedback: {feedback_type}",
-            body=issue_body,
-            labels=sorted(labels)
-        )
         return jsonify({'status': 'success', 'issue_url': issue.get('html_url')}), 201
     except Exception as exc:
+        if db:
+            try:
+                if feedback_id:
+                    db.update_user_feedback(
+                        feedback_id=feedback_id,
+                        status='error'
+                    )
+            except Exception:
+                pass
         _store_feedback_fallback({
             "type": feedback_type,
             "message": message,
@@ -463,6 +503,18 @@ def submit_feedback():
         })
         logger.error(f"Feedback submission failed: {exc}", exc_info=True)
         return jsonify({'error': 'Unable to submit feedback right now.'}), 500
+
+
+@app.route('/feedback/admin')
+def feedback_admin():
+    """View recent feedback submissions."""
+    try:
+        feedback_items = db.get_recent_user_feedback(limit=100) if db else []
+        return render_template('feedback_admin.html', feedback_items=feedback_items)
+    except Exception as exc:
+        logger.error(f"Feedback admin error: {exc}", exc_info=True)
+        flash('Unable to load feedback right now.', 'error')
+        return render_template('feedback_admin.html', feedback_items=[])
 
 
 @app.route('/upload', methods=['GET', 'POST'])

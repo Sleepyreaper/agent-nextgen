@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+
+{% block title %}Feedback Admin - NextGen{% endblock %}
+
+{% block content %}
+<div class="card">
+    <h2 style="color: var(--emory-blue); margin-bottom: 0.5rem;">📝 Feedback Admin</h2>
+    <p style="color: #6b7280;">Recent user feedback and GitHub issue status.</p>
+
+    {% if feedback_items and feedback_items|length > 0 %}
+    <div style="margin-top: 1.5rem; overflow-x: auto;">
+        <table class="grade-table">
+            <thead>
+                <tr>
+                    <th>Created</th>
+                    <th>Type</th>
+                    <th>Status</th>
+                    <th>Summary</th>
+                    <th>GitHub Issue</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for item in feedback_items %}
+                {% set triage = item.triage_json or {} %}
+                <tr>
+                    <td>{{ item.created_at or item.CreatedAt or '—' }}</td>
+                    <td><span class="level-badge">{{ item.feedback_type or item.FeedbackType }}</span></td>
+                    <td>{{ item.status or item.Status }}</td>
+                    <td style="max-width: 420px;">
+                        <strong>{{ triage.title or 'Feedback' }}</strong><br>
+                        <span style="color: #6b7280;">{{ triage.summary or item.message }}</span>
+                    </td>
+                    <td>
+                        {% if item.issue_url %}
+                        <a href="{{ item.issue_url }}" target="_blank" rel="noopener">Open</a>
+                        {% else %}
+                        —
+                        {% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <div style="margin-top: 1.5rem; color: #6b7280;">No feedback submitted yet.</div>
+    {% endif %}
+</div>
+{% endblock %}

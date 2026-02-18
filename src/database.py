@@ -913,6 +913,95 @@ class Database:
                         result[app_ids_key] = []
         return results
 
+    def save_user_feedback(
+        self,
+        feedback_type: str,
+        message: str,
+        email: Optional[str] = None,
+        page: Optional[str] = None,
+        app_version: Optional[str] = None,
+        user_agent: Optional[str] = None,
+        status: str = 'received'
+    ) -> int:
+        """Save a user feedback submission."""
+        query = """
+            INSERT INTO user_feedback
+            (feedback_type, message, email, page, app_version, user_agent, status, created_at, updated_at)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            RETURNING feedback_id
+        """
+        return self.execute_scalar(query, (
+            feedback_type,
+            message,
+            email,
+            page,
+            app_version,
+            user_agent,
+            status
+        ))
+
+    def update_user_feedback(
+        self,
+        feedback_id: int,
+        triage_json: Optional[Dict[str, Any]] = None,
+        issue_url: Optional[str] = None,
+        status: Optional[str] = None
+    ) -> None:
+        """Update feedback record with triage and issue metadata."""
+        query = """
+            UPDATE user_feedback
+            SET triage_json = COALESCE(%s, triage_json),
+                issue_url = COALESCE(%s, issue_url),
+                status = COALESCE(%s, status),
+                updated_at = CURRENT_TIMESTAMP
+            WHERE feedback_id = %s
+        """
+        self.execute_non_query(query, (
+            json.dumps(triage_json) if triage_json is not None else None,
+            issue_url,
+            status,
+            feedback_id
+        ))
+
+    def get_user_feedback(self, feedback_id: int) -> Optional[Dict[str, Any]]:
+        """Fetch a feedback record by id."""
+        query = """
+            SELECT * FROM user_feedback
+            WHERE feedback_id = %s
+        """
+        results = self.execute_query(query, (feedback_id,))
+        if not results:
+            return None
+        result = results[0]
+        triage_key = next((k for k in result.keys() if 'triage' in k.lower()), None)
+        if triage_key:
+            val = result.get(triage_key)
+            if isinstance(val, str):
+                try:
+                    result[triage_key] = json.loads(val)
+                except Exception:
+                    pass
+        return result
+
+    def get_recent_user_feedback(self, limit: int = 50) -> List[Dict[str, Any]]:
+        """Get recent user feedback records."""
+        query = """
+            SELECT * FROM user_feedback
+            ORDER BY created_at DESC
+            LIMIT %s
+        """
+        results = self.execute_query(query, (limit,))
+        for result in results:
+            triage_key = next((k for k in result.keys() if 'triage' in k.lower()), None)
+            if triage_key:
+                val = result.get(triage_key)
+                if isinstance(val, str):
+                    try:
+                        result[triage_key] = json.loads(val)
+                    except Exception:
+                        pass
+        return results
+
     def clear_test_data(self) -> int:
         """Clear all test/training data from the database."""
         try:

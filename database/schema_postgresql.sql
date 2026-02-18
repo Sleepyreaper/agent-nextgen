@@ -274,6 +274,25 @@ CREATE TABLE IF NOT EXISTS training_feedback (
 CREATE INDEX IF NOT EXISTS idx_training_feedback_app_id ON training_feedback(application_id);
 CREATE INDEX IF NOT EXISTS idx_training_feedback_agent_name ON training_feedback(agent_name);
 
+-- User Feedback
+CREATE TABLE IF NOT EXISTS user_feedback (
+    feedback_id SERIAL PRIMARY KEY,
+    feedback_type VARCHAR(50) NOT NULL,
+    message TEXT NOT NULL,
+    email VARCHAR(255),
+    page VARCHAR(1000),
+    app_version VARCHAR(50),
+    user_agent TEXT,
+    triage_json JSONB,
+    issue_url VARCHAR(1000),
+    status VARCHAR(50) DEFAULT 'received',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_user_feedback_status ON user_feedback(status);
+CREATE INDEX IF NOT EXISTS idx_user_feedback_created_at ON user_feedback(created_at);
+
 -- =====================================================================
 -- Views for Common Queries
 -- =====================================================================

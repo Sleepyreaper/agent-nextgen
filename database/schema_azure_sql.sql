@@ -98,6 +98,25 @@ BEGIN
 END
 GO
 
+-- Table: UserFeedback - Store dashboard feedback submissions
+IF NOT EXISTS (SELECT * FROM sys.objects WHERE object_id = OBJECT_ID(N'[dbo].[UserFeedback]') AND type in (N'U'))
+BEGIN
+    CREATE TABLE UserFeedback (
+        FeedbackID INT IDENTITY(1,1) PRIMARY KEY,
+        FeedbackDate DATETIME2 DEFAULT GETDATE(),
+        FeedbackType NVARCHAR(50) NOT NULL,
+        Message NVARCHAR(MAX) NOT NULL,
+        Email NVARCHAR(255),
+        Page NVARCHAR(1000),
+        AppVersion NVARCHAR(50),
+        UserAgent NVARCHAR(MAX),
+        TriageJSON NVARCHAR(MAX),
+        IssueURL NVARCHAR(1000),
+        Status NVARCHAR(50) DEFAULT 'received'
+    )
+END
+GO
+
 -- Table: Schools - High school information
 IF NOT EXISTS (SELECT * FROM sys.objects WHERE object_id = OBJECT_ID(N'[dbo].[Schools]') AND type in (N'U'))
 BEGIN
