@@ -169,7 +169,7 @@ class Config:
         self.flask_secret_key: str = self._get_secret("flask-secret-key", "FLASK_SECRET_KEY")
 
         # App metadata
-        self.app_version: str = self._read_version_file() or os.getenv("APP_VERSION") or "0.1"
+        self.app_version: str = self._read_env_version() or self._read_version_file() or "0.1"
 
         # GitHub feedback tracking (Key Vault first, then env)
         self.github_repo: str = (
@@ -240,6 +240,21 @@ class Config:
                 return repo_version.read_text(encoding="utf-8").strip()
         except Exception:
             return None
+        return None
+
+    def _read_env_version(self) -> Optional[str]:
+        raw_version = os.getenv("APP_VERSION")
+        if raw_version:
+            return raw_version.strip()
+
+        commit_id = (
+            os.getenv("SCM_COMMIT_ID")
+            or os.getenv("GITHUB_SHA")
+            or os.getenv("SOURCE_VERSION")
+        )
+        if commit_id:
+            return commit_id.strip()[:7]
+
         return None
     
     def validate(self) -> bool:

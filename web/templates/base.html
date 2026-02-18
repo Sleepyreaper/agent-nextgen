@@ -265,7 +265,10 @@
 <body>
     <div class="container">
         <header>
-            <h1>NextGen Application Evaluation</h1>
+            <div style="display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap;">
+                <h1 style="margin-bottom: 0;">NextGen Application Evaluation</h1>
+                <span class="version-badge">Version {{ app_version }}</span>
+            </div>
             <p>Secure, evidence-based reviews powered by Azure AI</p>
             <nav>
                 <a href="{{ url_for('index') }}">📊 Dashboard</a>
