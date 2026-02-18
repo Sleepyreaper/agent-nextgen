@@ -305,7 +305,8 @@ def index():
                              students=recent_students,
                              pending_count=pending_count,
                              evaluated_count=evaluated_count,
-                             total_count=total_count)
+                             total_count=total_count,
+                             app_version=config.app_version)
     except Exception as e:
         logger.error(f"Index page error: {e}", exc_info=True)
         flash(f'Error loading applications: {str(e)}', 'error')
@@ -509,7 +510,9 @@ def submit_feedback():
 def feedback_admin():
     """View recent feedback submissions."""
     try:
-        feedback_items = db.get_recent_user_feedback(limit=100) if db else []
+        all_feedback = db.get_recent_user_feedback(limit=100) if db else []
+        # Filter to only show GitHub issues (those with issue_url)
+        feedback_items = [item for item in all_feedback if item.get('issue_url') or item.get('IssueUrl')]
         return render_template('feedback_admin.html', feedback_items=feedback_items)
     except Exception as exc:
         logger.error(f"Feedback admin error: {exc}", exc_info=True)
@@ -1383,13 +1386,34 @@ def test_data():
 def cleanup_test_data():
     """
     Delete all old test data (applications marked with is_test_data = TRUE).
+    Also removes any incomplete/orphaned training applications (missing required fields).
     Called at the start of each new test run to ensure clean slate.
     """
     try:
         # Delete all related evaluation data first (foreign key constraints)
         applications_table = db.get_table_name("applications")
         test_col = db.get_test_data_column()
+        training_col = db.get_training_example_column()
         app_id_col = db.get_applications_column("application_id")
+        applicant_col = db.get_applications_column("applicant_name")
+
+        # First, clean up any incomplete training applications (NULL application_id or applicant_name)
+        if db.has_applications_column(training_col):
+            incomplete_ids = db.execute_query(
+                f"SELECT {app_id_col} as application_id FROM {applications_table} WHERE {training_col} = TRUE AND ({app_id_col} IS NULL OR {applicant_col} IS NULL)"
+            )
+            for app_record in incomplete_ids:
+                app_id = app_record.get('application_id')
+                if app_id:
+                    # Clean up related data
+                    for table in ["tiana_applications", "mulan_recommendations", "merlin_evaluations", 
+                                 "student_school_context", "grade_records", "ai_evaluations", "agent_audit_logs"]:
+                        try:
+                            db.execute_non_query(f"DELETE FROM {table} WHERE application_id = %s", (app_id,))
+                        except:
+                            pass
+            # Delete the incomplete applications themselves
+            db.execute_non_query(f"DELETE FROM {applications_table} WHERE {training_col} = TRUE AND ({app_id_col} IS NULL OR {applicant_col} IS NULL)")
 
         test_app_ids = []
         if db.has_applications_column(test_col):
@@ -3579,6 +3603,7 @@ def get_test_data_list():
                 merlin_score_select = f"m.{merlin_score_col} as merlin_score"
 
         # Get all applications marked as training (includes both training and test uploads)
+        # Filter out incomplete records (missing application_id or applicant_name)
         query = f"""
             SELECT 
                 a.{app_id_col} as application_id,
@@ -3590,6 +3615,8 @@ def get_test_data_list():
             FROM {applications_table} a
             {merlin_join}
             WHERE a.{training_col} = TRUE
+            AND a.{app_id_col} IS NOT NULL
+            AND a.{applicant_col} IS NOT NULL
             ORDER BY a.{uploaded_col} DESC
             LIMIT 100
         """
