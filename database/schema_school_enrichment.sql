@@ -11,6 +11,8 @@ CREATE TABLE IF NOT EXISTS school_enriched_data (
     state_code VARCHAR(2),
     county_name VARCHAR(100),
     school_url VARCHAR(1000),
+    school_url_verified BOOLEAN DEFAULT FALSE,
+    school_url_verified_date TIMESTAMP,
     
     -- Opportunity Score (0-100) - composite metric
     opportunity_score NUMERIC(5,2),
