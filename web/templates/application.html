@@ -203,7 +203,7 @@
     <div class="agent-summary">
         <strong>🌊 Moana:</strong>
         {% if aurora.agents.moana %}
-            {{ aurora.agents.moana.school_info|default(aurora.agents.moana.key_context|default('Summary pending.')) }}
+            {{ aurora.agents.moana.context|default(aurora.agents.moana.school_info|default(aurora.agents.moana.key_context|default('Summary pending.'))) }}
         {% else %}
             Summary pending.
         {% endif %}
@@ -230,6 +230,28 @@
     <div class="agent-summary">
         <strong>💇 Rapunzel:</strong>
         {{ agent_results.rapunzel.summary or 'Summary pending.' }}
+        {% if agent_results.rapunzel.grade_table_headers and agent_results.rapunzel.grade_table_rows %}
+        <div style="margin-top: 0.75rem;">
+            <table>
+                <thead>
+                    <tr>
+                        {% for header in agent_results.rapunzel.grade_table_headers %}
+                        <th>{{ header }}</th>
+                        {% endfor %}
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for row in agent_results.rapunzel.grade_table_rows %}
+                    <tr>
+                        {% for cell in row %}
+                        <td>{{ cell }}</td>
+                        {% endfor %}
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% endif %}
     </div>
     {% endif %}
     {% if agent_results.moana %}
@@ -492,6 +514,42 @@
             <div style="margin-top: 0.5rem; font-size: 0.95rem;">
                 GPA: {% if aurora.agents.rapunzel.gpa %}<strong>{{ aurora.agents.rapunzel.gpa }}</strong>{% else %}Not extracted{% endif %}
             </div>
+            {% if aurora.agents.rapunzel.course_rigor_index %}
+            <div style="margin-top: 0.35rem; color: #0b7f8f;">
+                Course Rigor Index: <strong>{{ aurora.agents.rapunzel.course_rigor_index }}/5</strong>
+            </div>
+            {% endif %}
+            {% if aurora.agents.rapunzel.contextual_comparison %}
+            <div style="margin-top: 0.5rem; color: #334155;">
+                {{ aurora.agents.rapunzel.contextual_comparison }}
+            </div>
+            {% endif %}
+            {% if aurora.agents.rapunzel.grade_table_headers and aurora.agents.rapunzel.grade_table_rows %}
+            <div style="margin-top: 0.75rem;">
+                <table>
+                    <thead>
+                        <tr>
+                            {% for header in aurora.agents.rapunzel.grade_table_headers %}
+                            <th>{{ header }}</th>
+                            {% endfor %}
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for row in aurora.agents.rapunzel.grade_table_rows %}
+                        <tr>
+                            {% for cell in row %}
+                            <td>{{ cell }}</td>
+                            {% endfor %}
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% elif aurora.agents.rapunzel.grade_table_markdown %}
+            <div style="margin-top: 0.75rem; white-space: pre-wrap; font-family: 'IBM Plex Sans', 'Segoe UI', Arial, sans-serif;">
+                {{ aurora.agents.rapunzel.grade_table_markdown }}
+            </div>
+            {% endif %}
         </div>
         {% endif %}
         

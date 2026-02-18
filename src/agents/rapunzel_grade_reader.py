@@ -103,6 +103,10 @@ class RapunzelGradeReader(BaseAgent):
                 'notable_patterns': parsed_data.get('notable_patterns', []),
                 'confidence_level': parsed_data.get('confidence_level'),
                 'summary': parsed_data.get('summary'),
+                'course_rigor_index': parsed_data.get('course_rigor_index'),
+                'grade_table_markdown': parsed_data.get('grade_table_markdown'),
+                'grade_table_headers': parsed_data.get('grade_table_headers'),
+                'grade_table_rows': parsed_data.get('grade_table_rows'),
                 'model_used': self.model
             }
             
@@ -144,7 +148,9 @@ Key focus areas:
 Be thorough but precise. If information is unclear or missing, note it explicitly.
 Return structured data that can be easily parsed, with clear categories.
 Provide a concise summary (4-6 sentences) grounded in transcript evidence.
-Include a course rigor index (1-5) and explain it in one sentence."""
+Include a course rigor index (1-5) and explain it in one sentence.
+Use deep reasoning to connect grades with course rigor and available opportunities.
+Remember: a B in a high-rigor environment can be as meaningful as an A in a low-rigor setting."""
     
     def _build_parsing_prompt(
         self,
@@ -211,13 +217,22 @@ For each of these categories, extract and normalize the data:
 7. **Opportunity Context**
     - Note if rigor appears constrained by school offerings or scheduling
 
-8. **Confidence in Parsing**
+8. **Contextual Comparison**
+     - If any school capability or SES clues appear (AP availability, school type, resource constraints),
+         briefly explain how that context affects grade interpretation
+
+9. **Confidence in Parsing**
    Rate: High | Medium | Low
    If low, explain what was unclear or missing
 
-9. **Summary Assessment**
+10. **Summary Assessment**
     - 4-6 sentences with specific evidence from the transcript
    One paragraph synthesizing this student's academic profile as it would appear to a college admissions officer.
+
+FORMAT REQUIREMENTS:
+- Use clear section headers.
+- Include a "Grade Summary Table" in Markdown with columns: Course, Level, Grade, Term/Year, Notes.
+- If transcript data is too sparse for course-level rows, provide a summary table with GPA, rigor index, and transcript quality.
 
 Return your analysis in clear, structured format (not JSON, but clearly organized sections)."""
         
@@ -241,7 +256,11 @@ Return your analysis in clear, structured format (not JSON, but clearly organize
             'transcript_quality': None,
             'notable_patterns': [],
             'confidence_level': None,
-            'summary': None
+            'summary': None,
+            'grade_table_markdown': None,
+            'grade_table_headers': None,
+            'grade_table_rows': None,
+            'course_rigor_index': None
         }
         
         # Extract GPA with regex
@@ -265,6 +284,15 @@ Return your analysis in clear, structured format (not JSON, but clearly organize
         )
         if quality_match:
             parsed['transcript_quality'] = quality_match.group(1)
+
+        # Extract course rigor index
+        rigor_match = re.search(
+            r'Course Rigor Index[:\s]+([1-5])',
+            response_text,
+            re.IGNORECASE
+        )
+        if rigor_match:
+            parsed['course_rigor_index'] = int(rigor_match.group(1))
         
         # Extract first mention of academic strength/weakness
         strength_section = re.search(
@@ -302,8 +330,48 @@ Return your analysis in clear, structured format (not JSON, but clearly organize
         )
         if summary_match:
             parsed['summary'] = summary_match.group(1).strip()[:500]  # Limit to 500 chars
+
+        table_data = self._extract_markdown_table(response_text)
+        if table_data:
+            parsed['grade_table_markdown'] = table_data['markdown']
+            parsed['grade_table_headers'] = table_data['headers']
+            parsed['grade_table_rows'] = table_data['rows']
         
         return parsed
+
+    def _extract_markdown_table(self, response_text: str) -> Optional[Dict[str, Any]]:
+        """Extract the first Markdown table from the response."""
+        lines = [line.rstrip() for line in response_text.splitlines()]
+        for idx in range(len(lines) - 1):
+            header_line = lines[idx]
+            divider_line = lines[idx + 1]
+            if '|' not in header_line:
+                continue
+            if not re.match(r'^\s*\|?\s*[-:|\s]+\|\s*$', divider_line):
+                continue
+
+            table_lines = [header_line, divider_line]
+            row_idx = idx + 2
+            while row_idx < len(lines):
+                row_line = lines[row_idx]
+                if not row_line.strip() or '|' not in row_line:
+                    break
+                table_lines.append(row_line)
+                row_idx += 1
+
+            headers = self._parse_markdown_row(table_lines[0])
+            rows = [self._parse_markdown_row(line) for line in table_lines[2:]]
+            return {
+                'markdown': "\n".join(table_lines),
+                'headers': headers,
+                'rows': rows
+            }
+        return None
+
+    def _parse_markdown_row(self, row_line: str) -> List[str]:
+        """Parse a Markdown table row into cells."""
+        cleaned = row_line.strip().strip('|')
+        return [cell.strip() for cell in cleaned.split('|')]
     
     async def process(self, message: str) -> str:
         """

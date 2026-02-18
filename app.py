@@ -10,6 +10,7 @@ import difflib
 import threading
 import queue
 from typing import Optional, Dict, Any
+import requests
 from flask import Flask, render_template, request, redirect, url_for, flash, jsonify, Response
 from werkzeug.utils import secure_filename
 from openai import AzureOpenAI
@@ -34,7 +35,8 @@ from src.agents import (
     MerlinStudentEvaluator,
     AuroraAgent,
     BelleDocumentAnalyzer,
-    MiloDataScientist
+    MiloDataScientist,
+    FeedbackTriageAgent
 )
 from src.agents.agent_requirements import AgentRequirements
 from src.agents.fairy_godmother_document_generator import FairyGodmotherDocumentGenerator
@@ -44,6 +46,13 @@ app = Flask(__name__, template_folder='web/templates', static_folder='web/static
 app.secret_key = config.flask_secret_key or 'dev-secret-key-change-in-production'
 app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB max file size
 app.config['UPLOAD_FOLDER'] = 'uploads'
+
+
+@app.context_processor
+def inject_app_metadata():
+    return {
+        'app_version': config.app_version
+    }
 
 # Instrument Flask and outbound HTTP calls for App Insights.
 FlaskInstrumentor().instrument_app(app)
@@ -80,6 +89,7 @@ def get_ai_client():
 evaluator_agent = None
 orchestrator_agent = None
 belle_analyzer = None
+feedback_agent = None
 
 def get_evaluator():
     """Get or create Gaston evaluator agent."""
@@ -106,6 +116,19 @@ def get_belle():
             model=config.deployment_name
         )
     return belle_analyzer
+
+
+def get_feedback_agent():
+    """Get or create feedback triage agent."""
+    global feedback_agent
+    if not feedback_agent:
+        client = get_ai_client()
+        feedback_agent = FeedbackTriageAgent(
+            name="Feedback Triage",
+            client=client,
+            model=config.deployment_name
+        )
+    return feedback_agent
 
 
 def get_orchestrator():
@@ -295,8 +318,118 @@ def health():
     return jsonify({
         'status': 'healthy',
         'app': 'NextGen Agent System',
-        'version': '1.0'
+        'version': config.app_version
     }), 200
+
+
+def _build_feedback_issue_body(
+    triage: Dict[str, Any],
+    feedback_type: str,
+    message: str,
+    email: Optional[str],
+    page: Optional[str],
+    user_agent: Optional[str],
+    app_version: Optional[str]
+) -> str:
+    lines = [
+        "## Summary",
+        triage.get("summary") or message,
+        "",
+        "## Details",
+        f"- Feedback type: {feedback_type}",
+        f"- Category: {triage.get('category', 'other')}",
+        f"- Priority: {triage.get('priority', 'medium')}",
+        "",
+        "## Steps to Reproduce",
+        triage.get("steps_to_reproduce") or "Not provided.",
+        "",
+        "## Expected Behavior",
+        triage.get("expected_behavior") or "Not provided.",
+        "",
+        "## Actual Behavior",
+        triage.get("actual_behavior") or "Not provided.",
+        "",
+        "## User Context",
+        f"- Email: {email or 'Not provided'}",
+        f"- Page: {page or 'Unknown'}",
+        f"- App version: {app_version or 'Unknown'}",
+        f"- User agent: {user_agent or 'Unknown'}",
+        "",
+        "## Raw Feedback",
+        message
+    ]
+    return "\n".join(lines)
+
+
+def _create_github_issue(title: str, body: str, labels: list[str]) -> Dict[str, Any]:
+    if not config.github_token:
+        raise ValueError("Missing GitHub token for issue creation")
+
+    url = f"https://api.github.com/repos/{config.github_repo}/issues"
+    headers = {
+        "Authorization": f"Bearer {config.github_token}",
+        "Accept": "application/vnd.github+json",
+        "X-GitHub-Api-Version": "2022-11-28"
+    }
+    payload = {
+        "title": title,
+        "body": body,
+        "labels": labels
+    }
+    response = requests.post(url, headers=headers, json=payload, timeout=15)
+    if response.status_code >= 300:
+        raise RuntimeError(f"GitHub issue creation failed: {response.status_code} {response.text}")
+    return response.json()
+
+
+@app.route('/feedback', methods=['POST'])
+def submit_feedback():
+    """Capture user feedback and create a GitHub issue."""
+    data = request.get_json(silent=True) or {}
+    feedback_type = (data.get('type') or '').strip().lower()
+    message = (data.get('message') or '').strip()
+    email = (data.get('email') or '').strip() or None
+    page = (data.get('page') or '').strip() or request.referrer
+    app_version = config.app_version
+    user_agent = request.headers.get('User-Agent')
+
+    if feedback_type not in {'issue', 'feature'}:
+        return jsonify({'error': 'Feedback type must be issue or feature.'}), 400
+    if not message:
+        return jsonify({'error': 'Feedback message is required.'}), 400
+
+    try:
+        triage_agent = get_feedback_agent()
+        triage = asyncio.run(
+            triage_agent.analyze_feedback(
+                feedback_type=feedback_type,
+                message=message,
+                email=email,
+                page=page,
+                app_version=app_version
+            )
+        )
+        issue_body = _build_feedback_issue_body(
+            triage=triage,
+            feedback_type=feedback_type,
+            message=message,
+            email=email,
+            page=page,
+            user_agent=user_agent,
+            app_version=app_version
+        )
+        labels = set(triage.get('suggested_labels', []))
+        labels.update({'feedback', feedback_type})
+
+        issue = _create_github_issue(
+            title=triage.get('title') or f"User feedback: {feedback_type}",
+            body=issue_body,
+            labels=sorted(labels)
+        )
+        return jsonify({'status': 'success', 'issue_url': issue.get('html_url')}), 201
+    except Exception as exc:
+        logger.error(f"Feedback submission failed: {exc}", exc_info=True)
+        return jsonify({'error': 'Unable to submit feedback right now.'}), 500
 
 
 @app.route('/upload', methods=['GET', 'POST'])

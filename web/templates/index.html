@@ -4,7 +4,10 @@
 
 {% block content %}
 <div style="background: linear-gradient(135deg, rgba(0,51,102,0.05) 0%, rgba(0,153,169,0.05) 100%); padding: 2rem; border-radius: 8px; margin-bottom: 2rem; border-left: 4px solid var(--accent-teal);">
-    <h2 style="color: var(--emory-blue); margin-bottom: 0.5rem;">NextGen High School Internship Program</h2>
+    <div style="display: flex; align-items: center; justify-content: space-between; gap: 1rem; flex-wrap: wrap;">
+        <h2 style="color: var(--emory-blue); margin-bottom: 0.5rem;">NextGen High School Internship Program</h2>
+        <div class="version-badge">Version {{ app_version }}</div>
+    </div>
     <p style="color: #555;">Our mission: Recognizing that our differences make us stronger, we actively recruit and support learners from all backgrounds in STEM to improve outcomes for our entire community.</p>
 </div>
 
@@ -41,6 +44,32 @@
             View All {{ total_count }} Students →
         </a>
     </div>
+</div>
+
+<div class="card">
+    <h2 style="color: var(--emory-blue); margin-bottom: 0.5rem;">💬 Feedback</h2>
+    <p style="color: #6b7280; margin-bottom: 1rem;">Report an issue or request a feature. We'll open a tracker item automatically.</p>
+    <form id="feedbackForm" style="display: grid; gap: 1rem;">
+        <div>
+            <label for="feedbackType" style="font-weight: 600;">Type</label>
+            <select id="feedbackType" name="feedbackType" class="btn" style="background: white; color: var(--ink-navy); border: 1px solid #e5e7eb; width: 100%;">
+                <option value="issue">Issue</option>
+                <option value="feature">Feature Request</option>
+            </select>
+        </div>
+        <div>
+            <label for="feedbackMessage" style="font-weight: 600;">Details</label>
+            <textarea id="feedbackMessage" name="feedbackMessage" rows="4" style="width: 100%; padding: 0.75rem; border-radius: 6px; border: 1px solid #e5e7eb; font-family: inherit;" placeholder="Tell us what's happening or what you'd like to see."></textarea>
+        </div>
+        <div>
+            <label for="feedbackEmail" style="font-weight: 600;">Email (optional)</label>
+            <input id="feedbackEmail" name="feedbackEmail" type="email" style="width: 100%; padding: 0.75rem; border-radius: 6px; border: 1px solid #e5e7eb;" placeholder="you@example.com">
+        </div>
+        <div style="display: flex; gap: 1rem; align-items: center;">
+            <button type="submit" class="btn btn-primary">Submit Feedback</button>
+            <span id="feedbackStatus" style="color: #6b7280;"></span>
+        </div>
+    </form>
 </div>
 {% endblock %}
 
@@ -96,6 +125,51 @@ async function evaluateAll() {
         btn.disabled = false;
         btn.textContent = '🤖 Evaluate All Pending';
     }
+}
+
+const feedbackForm = document.getElementById('feedbackForm');
+const feedbackStatus = document.getElementById('feedbackStatus');
+
+if (feedbackForm) {
+    feedbackForm.addEventListener('submit', async (event) => {
+        event.preventDefault();
+
+        const type = document.getElementById('feedbackType').value;
+        const message = document.getElementById('feedbackMessage').value.trim();
+        const email = document.getElementById('feedbackEmail').value.trim();
+
+        if (!message) {
+            feedbackStatus.textContent = 'Please add details before submitting.';
+            feedbackStatus.style.color = '#b45309';
+            return;
+        }
+
+        feedbackStatus.textContent = 'Submitting...';
+        feedbackStatus.style.color = '#6b7280';
+
+        try {
+            const response = await fetch('/feedback', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    type,
+                    message,
+                    email: email || null,
+                    page: window.location.href
+                })
+            });
+            const data = await response.json();
+            if (!response.ok) {
+                throw new Error(data.error || 'Unable to submit feedback');
+            }
+            feedbackStatus.textContent = 'Thank you! Your feedback was captured.';
+            feedbackStatus.style.color = '#059669';
+            feedbackForm.reset();
+        } catch (error) {
+            feedbackStatus.textContent = error.message;
+            feedbackStatus.style.color = '#b91c1c';
+        }
+    });
 }
 </script>
 {% endblock %}

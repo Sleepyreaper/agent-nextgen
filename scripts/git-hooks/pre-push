@@ -1,0 +1,9 @@
+#!/bin/sh
+
+set -e
+
+if [ -f scripts/bump_version.py ]; then
+  python3 scripts/bump_version.py --mode patch > /dev/null
+  echo "Bumped VERSION. Commit the change before pushing."
+  exit 1
+fi

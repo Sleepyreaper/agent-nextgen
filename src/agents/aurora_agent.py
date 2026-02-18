@@ -111,11 +111,21 @@ class AuroraAgent(BaseAgent):
         }
         
         # Format each agent's output consistently
+        tiana_output = self._format_tiana_output(agent_outputs.get('tiana'))
+        rapunzel_output = self._format_rapunzel_output(agent_outputs.get('rapunzel'))
+        moana_output = self._format_moana_output(agent_outputs.get('moana'))
+        mulan_output = self._format_mulan_output(agent_outputs.get('mulan'))
+
+        rapunzel_output['contextual_comparison'] = self._build_grade_context(
+            agent_outputs.get('rapunzel'),
+            agent_outputs.get('moana')
+        )
+
         result['agents'] = {
-            'tiana': self._format_tiana_output(agent_outputs.get('tiana')),
-            'rapunzel': self._format_rapunzel_output(agent_outputs.get('rapunzel')),
-            'moana': self._format_moana_output(agent_outputs.get('moana')),
-            'mulan': self._format_mulan_output(agent_outputs.get('mulan'))
+            'tiana': tiana_output,
+            'rapunzel': rapunzel_output,
+            'moana': moana_output,
+            'mulan': mulan_output
         }
         
         # Include application text
@@ -177,7 +187,12 @@ class AuroraAgent(BaseAgent):
             'academic_score': rapunzel_data.get('academic_score') or rapunzel_data.get('overall_score'),
             'courses_analyzed': rapunzel_data.get('courses_analyzed') or '',
             'grade_trends': rapunzel_data.get('grade_pattern') or rapunzel_data.get('grade_trends'),
-            'key_findings': rapunzel_data.get('key_findings', [])
+            'key_findings': rapunzel_data.get('key_findings', []),
+            'summary': rapunzel_data.get('summary'),
+            'course_rigor_index': rapunzel_data.get('course_rigor_index'),
+            'grade_table_headers': rapunzel_data.get('grade_table_headers'),
+            'grade_table_rows': rapunzel_data.get('grade_table_rows'),
+            'grade_table_markdown': rapunzel_data.get('grade_table_markdown')
         }
     
     def _format_moana_output(self, moana_data: Optional[Dict]) -> Dict[str, Any]:
@@ -195,8 +210,38 @@ class AuroraAgent(BaseAgent):
             'location': moana_data.get('location') or moana_data.get('city'),
             'school_ranking': moana_data.get('school_ranking') or moana_data.get('ranking'),
             'school_info': moana_data.get('school_info') or moana_data.get('description'),
-            'key_context': moana_data.get('key_context', [])
+            'key_context': moana_data.get('key_context', []),
+            'context': moana_data.get('contextual_summary') or moana_data.get('comparison_notes')
         }
+
+    def _build_grade_context(
+        self,
+        rapunzel_data: Optional[Dict[str, Any]],
+        moana_data: Optional[Dict[str, Any]]
+    ) -> Optional[str]:
+        """Create a grade context note based on school resources and SES."""
+        if not rapunzel_data or not moana_data:
+            return None
+
+        school_name = (moana_data.get('school', {}) or {}).get('name') or moana_data.get('school_name')
+        ses_level = (moana_data.get('ses_context') or {}).get('ses_level')
+        resource_tier = (moana_data.get('school_resources') or {}).get('resource_tier')
+        ap_available = (moana_data.get('school_resources') or {}).get('ap_courses_available')
+
+        context_bits = []
+        if school_name:
+            context_bits.append(f"{school_name}")
+        if resource_tier:
+            context_bits.append(f"{resource_tier} resources")
+        if ses_level:
+            context_bits.append(f"SES: {ses_level}")
+        if ap_available is not None:
+            context_bits.append(f"AP available: {ap_available}")
+
+        base_context = ", ".join(context_bits) if context_bits else "School context available"
+        return (
+            f"{base_context}. Interpret grades against opportunity: a B in a high-rigor environment can be as meaningful as an A in a low-rigor setting."
+        )
     
     def _format_mulan_output(self, mulan_data: Optional[Dict]) -> Dict[str, Any]:
         """Format Mulan's (Recommendation Reader) output consistently."""
