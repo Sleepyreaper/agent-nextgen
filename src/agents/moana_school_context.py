@@ -77,15 +77,22 @@ class MoanaSchoolContext(BaseAgent):
         self,
         application: Dict[str, Any],
         transcript_text: str,
-        rapunzel_grades_data: Optional[Dict[str, Any]] = None
+        rapunzel_grades_data: Optional[Dict[str, Any]] = None,
+        school_enrichment: Optional[Dict[str, Any]] = None
     ) -> Dict[str, Any]:
         """
-        Analyze student's school context and program access.
+        Analyze student's school context using cached/enriched school data.
+        
+        Workflow:
+        1. If school_enrichment provided (from Aurora via workflow): Use it directly
+        2. Otherwise: Perform legacy analysis (backwards compatible)
         
         Args:
             application: Application data
             transcript_text: Grade report text
             rapunzel_grades_data: Data from Rapunzel Grade Reader (contains school hints)
+            school_enrichment: Pre-enriched school data from Aurora (via school_workflow)
+                              If provided, skips school analysis and uses cached results
             
         Returns:
             Comprehensive school context analysis
@@ -95,6 +102,20 @@ class MoanaSchoolContext(BaseAgent):
         print(f"\n🌊 {self.name}: Discovering educational context for {student_name}...")
         
         try:
+            # CHECK: If school enrichment provided by workflow, use it directly
+            if school_enrichment and school_enrichment.get('school_name'):
+                print(f"  ✓ Using cached/enriched school data from database")
+                return await self._analyze_with_enriched_school_data(
+                    student_name=student_name,
+                    application=application,
+                    transcript_text=transcript_text,
+                    rapunzel_grades_data=rapunzel_grades_data,
+                    school_enrichment=school_enrichment
+                )
+            
+            # FALLBACK: Legacy path for backwards compatibility
+            print(f"  → No pre-enriched school data, performing analysis...")
+
             # Step 1: Extract school name and location
             school_info = await self._extract_school_info(transcript_text, application)
             
@@ -192,6 +213,309 @@ class MoanaSchoolContext(BaseAgent):
                 'error': str(e),
                 'error_type': type(e).__name__
             }
+    
+    async def _analyze_with_enriched_school_data(
+        self,
+        student_name: str,
+        application: Dict[str, Any],
+        transcript_text: str,
+        rapunzel_grades_data: Optional[Dict[str, Any]],
+        school_enrichment: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """
+        Fast path: Use pre-enriched school data from Aurora (via school_workflow).
+        
+        Instead of analyzing the school from scratch, we:
+        1. Use Aurora's enriched school profile
+        2. Extract student's program participation from transcript
+        3. Calculate opportunity scores with the pre-analyzed school data
+        4. Build contextual summary
+        
+        This is much faster and more consistent than re-analyzing each school.
+        
+        Args:
+            student_name: Student's name
+            application: Application data
+            transcript_text: Grade report text
+            rapunzel_grades_data: Grade analysis from Rapunzel
+            school_enrichment: Pre-enriched school data from Aurora
+            
+        Returns:
+            School context analysis using enriched data
+        """
+        try:
+            print(f"  ✓ Using enriched school data: {school_enrichment.get('school_name')}")
+            
+            # Extract what student participated in
+            program_participation = await self._extract_program_participation(
+                transcript_text,
+                student_name
+            )
+            
+            # Build school profile from enrichment
+            school_profile = {
+                'school_name': school_enrichment.get('school_name'),
+                'enrollment_size': school_enrichment.get('enrollment_size'),
+                'socioeconomic_level': school_enrichment.get('socioeconomic_level'),
+                'ap_count': school_enrichment.get('ap_classes_count', 0),
+                'ib_offerings': school_enrichment.get('ib_offerings', 0),
+                'honors_programs': school_enrichment.get('honors_programs', 0),
+                'stem_programs': school_enrichment.get('stem_programs', 0),
+                'graduation_rate': school_enrichment.get('graduation_rate'),
+                'college_placement_rate': school_enrichment.get('college_placement_rate'),
+                'diversity_index': school_enrichment.get('diversity_index'),
+                'data_sources': school_enrichment.get('web_sources_analyzed', []),
+                'analysis_date': school_enrichment.get('analysis_date'),
+                'enrichment_source': 'aurora_cached'
+            }
+            
+            # Quick SES context from enrichment
+            ses_context = {
+                'socioeconomic_level': school_enrichment.get('socioeconomic_level', 'unknown'),
+                'diversity_index': school_enrichment.get('diversity_index'),
+                'regional_context': f"{school_enrichment.get('state_code', 'US')} school",
+                'based_on_enrichment': True
+            }
+            
+            # Calculate scores with enriched data
+            scores = self._calculate_opportunity_scores_from_enrichment(
+                school_profile,
+                program_participation,
+                school_enrichment
+            )
+            
+            # Build resources summary
+            school_resources = {
+                'ap_programs_available': school_profile.get('ap_count', 0),
+                'ib_available': bool(school_profile.get('ib_offerings', 0)),
+                'stem_available': bool(school_profile.get('stem_programs', 0)),
+                'enrollment_size_category': self._categorize_size(school_profile.get('enrollment_size')),
+                'investment_level': school_enrichment.get('school_investment_level', 'unknown'),
+                'opportunity_score': school_enrichment.get('opportunity_score', 0)
+            }
+            
+            # Final analysis
+            analysis = {
+                'status': 'success',
+                'student_name': student_name,
+                'school': {
+                    'name': school_enrichment.get('school_name'),
+                    'state': school_enrichment.get('state_code'),
+                    'identification_confidence': 0.99  # High confidence from Aurora
+                },
+                'school_profile': school_profile,
+                'ses_context': ses_context,
+                'program_participation': program_participation,
+                'school_resources': school_resources,
+                'opportunity_scores': scores,
+                'contextual_summary': self._build_summary_from_enrichment(
+                    student_name,
+                    school_enrichment,
+                    program_participation,
+                    scores,
+                    rapunzel_grades_data
+                ),
+                'model_used': self.model,
+                'data_source': 'enriched_aurora'  # Track that this used Aurora data
+            }
+            
+            self.add_to_history("assistant", json.dumps(analysis, default=str)[:1000])
+            return analysis
+            
+        except Exception as e:
+            import traceback
+            print(f"⚠ Error in enriched school analysis: {e}")
+            print(traceback.format_exc()[:200])
+            # Fall back to legacy analysis
+            return await self._legacy_school_analysis(
+                student_name=student_name,
+                application=application,
+                transcript_text=transcript_text,
+                rapunzel_grades_data=rapunzel_grades_data
+            )
+    
+    def _categorize_size(self, enrollment: Optional[int]) -> str:
+        """Categorize school size by enrollment."""
+        if not enrollment:
+            return "unknown"
+        if enrollment < 500:
+            return "small"
+        if enrollment < 1500:
+            return "medium"
+        if enrollment < 3000:
+            return "large"
+        return "very_large"
+    
+    def _calculate_opportunity_scores_from_enrichment(
+        self,
+        school_profile: Dict[str, Any],
+        program_participation: Dict[str, Any],
+        school_enrichment: Dict[str, Any]
+    ) -> Dict[str, float]:
+        """Calculate scores using pre-analyzed school data."""
+        # Use Aurora's opportunity score as base
+        base_score = float(school_enrichment.get('opportunity_score', 50))
+        
+        # Adjust based on what student actually participated in
+        participation_adjustment = 0
+        if program_participation.get('ap_courses_taken', 0) > 0:
+            participation_adjustment += 10
+        if program_participation.get('honors_courses_taken', 0) > 0:
+            participation_adjustment += 5
+        if program_participation.get('advanced_courses_count', 0) > 5:
+            participation_adjustment += 10
+        
+        return {
+            'opportunity_score': min(100, base_score + participation_adjustment),
+            'program_access_score': school_profile.get('ap_count', 0) * 2,  # Roughly
+            'program_participation_score': len(program_participation.get('advanced_courses', [])) * 5,
+            'relative_advantage_score': base_score / 100 * 50  # Normalized
+        }
+    
+    def _build_summary_from_enrichment(
+        self,
+        student_name: str,
+        school_enrichment: Dict[str, Any],
+        program_participation: Dict[str, Any],
+        scores: Dict[str, float],
+        rapunzel_grades_data: Optional[Dict[str, Any]] = None
+    ) -> str:
+        """Build contextual summary using enriched school data."""
+        school_name = school_enrichment.get('school_name', 'their school')
+        ap_available = school_enrichment.get('ap_classes_count', 0)
+        ap_taken = program_participation.get('ap_courses_taken', 0)
+        opportunity = school_enrichment.get('opportunity_score', 50)
+        investment_level = school_enrichment.get('school_investment_level', 'moderate')
+        
+        parts = [
+            f"{student_name} attends {school_name}, a {investment_level}-investment school "
+            f"with an opportunity score of {opportunity}/100."
+        ]
+        
+        if ap_available > 0:
+            parts.append(
+                f"The school offers {ap_available} AP course(s). "
+                f"{student_name} took {ap_taken} AP course(s), "
+                f"demonstrating {'strong' if ap_taken >= 3 else 'moderate'} engagement "
+                f"with advanced curricula."
+            )
+        
+        if program_participation.get('honors_courses_taken', 0) > 0:
+            parts.append(
+                f"{student_name} also participated in {program_participation.get('honors_courses_taken')} "
+                f"honors courses, showing consistent rigor seeking."
+            )
+        
+        contextual_insight = (
+            f"In the context of {school_name}'s resources and demographics, "
+            f"{student_name}'s course selection demonstrates a relative advantage score of "
+            f"{scores.get('relative_advantage_score', 0):.0f}/50."
+        )
+        parts.append(contextual_insight)
+        
+        if rapunzel_grades_data and rapunzel_grades_data.get('gpa'):
+            parts.append(
+                f"Combined with a GPA of {rapunzel_grades_data.get('gpa')}, "
+                f"{student_name} shows strong academic performance within their school context."
+            )
+        
+        return " ".join(parts)
+    
+    async def _legacy_school_analysis(
+        self,
+        student_name: str,
+        application: Dict[str, Any],
+        transcript_text: str,
+        rapunzel_grades_data: Optional[Dict[str, Any]] = None
+    ) -> Dict[str, Any]:
+        """
+        Fallback to original school analysis logic for backwards compatibility.
+        Called when enriched data is not available.
+        """
+        # Extract school name and location (original logic)
+        school_info = await self._extract_school_info(transcript_text, application)
+        
+        if not school_info.get('school_name') or school_info.get('school_name') == 'High School':
+            print(f"⚠ Could not identify school from available data")
+            return {
+                'status': 'incomplete',
+                'student_name': student_name,
+                'error': 'School identification failed',
+                'confidence': 0
+            }
+        
+        print(f"  School Identified: {school_info['school_name']}")
+        
+        # Determine state and data availability
+        school_state = school_info.get('state', '').upper()
+        is_georgia_school = school_state in ['GA', 'GEORGIA']
+        
+        # Identify available data sources for this state
+        available_data_sources = await self._identify_data_sources(school_state, school_info)
+        
+        if is_georgia_school:
+            print(f"  ✓ Georgia school detected - using Georgia state data")
+            school_info['georgia_data_available'] = True
+            school_info['data_source_url'] = self.georgia_data_source
+        else:
+            print(f"  🔍 {school_state} school - searching for public data sources...")
+            school_info['data_sources'] = available_data_sources['sources']
+            school_info['data_availability'] = available_data_sources
+        
+        # Extract programs from transcript
+        program_participation = await self._extract_program_participation(
+            transcript_text,
+            student_name
+        )
+        
+        # Look up school in database or create profile
+        school_profile = await self._get_or_create_school_profile(school_info)
+        
+        # Analyze SES context
+        ses_context = await self._analyze_socioeconomic_context(school_profile)
+        
+        # Analyze school resources and comparisons
+        school_resources = self._analyze_school_resources(
+            school_profile,
+            school_info,
+            ses_context
+        )
+        
+        # Score student's access and participation
+        scores = self._calculate_opportunity_scores(
+            school_profile,
+            program_participation,
+            ses_context
+        )
+        
+        # Compile comprehensive analysis
+        analysis = {
+            'status': 'success',
+            'student_name': student_name,
+            'school': {
+                'name': school_info['school_name'],
+                'city': school_info.get('city'),
+                'state': school_info.get('state'),
+                'identification_confidence': school_info.get('confidence', 0.7)
+            },
+            'school_profile': school_profile,
+            'ses_context': ses_context,
+            'program_participation': program_participation,
+            'school_resources': school_resources,
+            'opportunity_scores': scores,
+            'contextual_summary': self._build_summary(
+                student_name,
+                school_info,
+                program_participation,
+                scores,
+                ses_context,
+                school_resources,
+                rapunzel_grades_data
+            ),
+            'model_used': self.model
+        }
+        
+        return analysis
     
     async def _extract_school_info(
         self,
@@ -539,16 +863,42 @@ Provide this as a structured analysis. Be honest about data availability. If exa
         """
         Get school profile from database or create one with AI analysis.
         
-        For Georgia schools, uses Georgia public data sources.
-        For non-Georgia schools, uses AI to search and synthesize public data from:
-        - NCES (National Center for Education Statistics)
-        - State education department dashboards
-        - GreatSchools, Niche, and other public sources
+        Priority order:
+        1. Check for human-approved enriched data in school_enriched_data table
+        2. Check for AI-analyzed enriched data (if confidence is high)
+        3. Fall back to AI synthesis from web sources
+        4. For Georgia schools, uses Georgia public data sources
         """
         
         school_name = school_info['school_name']
         state = school_info.get('state', '').upper()
         is_georgia = state in ['GA', 'GEORGIA']
+        
+        # === NEW: Check enriched school database first ===
+        try:
+            from src.database import db
+            enriched_school = db.get_school_enriched_data(school_name=school_name, state_code=state)
+            
+            if enriched_school:
+                print(f"    ✓ Found enriched school data in database")
+                
+                # Prefer human-approved data
+                if enriched_school.get('human_review_status') == 'approved':
+                    print(f"    ✓ Using human-approved enriched data (opportunity score: {enriched_school.get('opportunity_score')})")
+                    self.school_cache[school_name] = self._format_enriched_to_profile(enriched_school, approved=True)
+                    return self.school_cache[school_name]
+                
+                # Use AI-analyzed data if confidence is high
+                elif enriched_school.get('analysis_status') == 'complete' and enriched_school.get('data_confidence_score', 0) >= 75:
+                    print(f"    ✓ Using AI-analyzed enriched data (confidence: {enriched_school.get('data_confidence_score')}, score: {enriched_school.get('opportunity_score')})")
+                    self.school_cache[school_name] = self._format_enriched_to_profile(enriched_school, approved=False)
+                    return self.school_cache[school_name]
+        except Exception as e:
+            # If database lookup fails, continue with normal flow
+            print(f"    ℹ Enriched data lookup unavailable: {str(e)}")
+            pass
+        
+        # === END NEW: Fall back to existing logic ===
         
         # Check Georgia-specific cache first
         if is_georgia and school_name in self.georgia_schools_cache:
@@ -1107,6 +1457,44 @@ This data will provide accurate context for evaluating student opportunity and a
                 'per_pupil_spending',
                 'school_type'
             ]
+        }
+    
+    
+    def _format_enriched_to_profile(self, enriched_school: Dict[str, Any], approved: bool = False) -> Dict[str, Any]:
+        """
+        Convert enriched school database record to Moana's expected profile format.
+        
+        Args:
+            enriched_school: School record from school_enriched_data table
+            approved: Whether this is human-approved data
+            
+        Returns:
+            Profile dict in Moana's expected format
+        """
+        return {
+            'school_name': enriched_school.get('school_name', 'Unknown'),
+            'school_type': 'Public',  # Will be enhanced with actual data later
+            'ap_courses_offered': enriched_school.get('ap_course_count', 0),
+            'ap_exam_pass_rate_pct': enriched_school.get('ap_exam_pass_rate', 0),
+            'ib_offered': enriched_school.get('ib_program_available', False),
+            'honors_courses_available': True,
+            'stem_programs': enriched_school.get('stem_program_available', False),
+            'dual_enrollment': enriched_school.get('dual_enrollment_available', False),
+            'total_enrollment': enriched_school.get('total_students', 1500),
+            'graduation_rate_pct': enriched_school.get('graduation_rate', 0),
+            'college_acceptance_rate_pct': enriched_school.get('college_acceptance_rate', 0),
+            'free_reduced_lunch_pct': enriched_school.get('free_lunch_percentage', 0),
+            'opportunity_score': enriched_school.get('opportunity_score', 0),
+            'data_source': 'enriched_database',
+            'data_quality': 'human_approved' if approved else 'ai_analyzed',
+            'data_confidence': enriched_school.get('data_confidence_score', 0),
+            'state_code': enriched_school.get('state_code'),
+            'school_district': enriched_school.get('school_district'),
+            'county': enriched_school.get('county_name'),
+            'analysis_summary': f"School enriched profile from {enriched_school.get('analysis_status', 'pending')} analysis. "
+                              f"Opportunity score: {enriched_school.get('opportunity_score', 0)}/100. "
+                              f"Status: {enriched_school.get('human_review_status', 'pending')}. "
+                              f"Data confidence: {enriched_school.get('data_confidence_score', 0)}%."
         }
     
     async def process(self, message: str) -> str:
