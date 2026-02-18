@@ -52,23 +52,39 @@ class RapunzelGradeReader(BaseAgent):
         student_name: Optional[str] = None
     ) -> Dict[str, Any]:
         """
-        Parse grade report and extract structured academic data.
+        Parse grade report and extract structured academic data using deep reasoning.
         
         Args:
-            transcript_text: The raw transcript text
+            transcript_text: The raw transcript text (should be detailed with course listings)
             student_name: Name of the student (optional)
             
         Returns:
             Dictionary with extracted grade data and analysis
         """
-        self.add_to_history("user", f"Parse grade report for {student_name or 'candidate'}")
+        self.add_to_history("user", f"Parse comprehensive grade report for {student_name or 'candidate'}")
         
-        # Build specialized parsing prompt
+        # Log to Application Insights
+        try:
+            from src.telemetry import telemetry
+            telemetry.track_event(
+                "RapunzelTranscriptAnalysis",
+                {
+                    "student_name": student_name or "Unknown",
+                    "transcript_length": len(transcript_text),
+                    "agent": "Rapunzel Grade Reader",
+                    "model": self.model
+                }
+            )
+        except:
+            pass  # Telemetry not available
+        
+        # Build specialized parsing prompt requiring deep reasoning
         parsing_prompt = self._build_parsing_prompt(transcript_text, student_name)
         
-        print(f"🎓 {self.name}: Analyzing {len(transcript_text)} characters of transcript data...")
+        print(f"🎓 {self.name}: Analyzing transcript ({len(transcript_text)} chars) - Using deep reasoning for comprehensive analysis...")
         
         try:
+            # Use extended tokens for deep analysis
             response = self._create_chat_completion(
                 operation="rapunzel.parse_grades",
                 model=self.model,
@@ -82,7 +98,7 @@ class RapunzelGradeReader(BaseAgent):
                         "content": parsing_prompt
                     }
                 ],
-                max_completion_tokens=2000,
+                max_completion_tokens=3500,  # Increased for detailed analysis
                 temperature=1  # GPT-5.2 only supports default temperature
             )
             
@@ -92,9 +108,12 @@ class RapunzelGradeReader(BaseAgent):
             # Parse the structured response
             parsed_data = self._parse_response(response_text)
             
-            return {
+            result = {
                 'status': 'success',
                 'student_name': student_name,
+                'agent_name': self.name,
+                'model_used': self.model,
+                'model_display': 'gpt-4',
                 'grades': parsed_data.get('grades', {}),
                 'gpa': parsed_data.get('gpa'),
                 'academic_strength': parsed_data.get('academic_strength'),
@@ -107,50 +126,107 @@ class RapunzelGradeReader(BaseAgent):
                 'grade_table_markdown': parsed_data.get('grade_table_markdown'),
                 'grade_table_headers': parsed_data.get('grade_table_headers'),
                 'grade_table_rows': parsed_data.get('grade_table_rows'),
-                'model_used': self.model
+                'full_analysis': response_text
             }
+            
+            # Log success to Application Insights
+            try:
+                from src.telemetry import telemetry
+                telemetry.track_event(
+                    "RapunzelAnalysisComplete",
+                    {
+                        "student_name": student_name or "Unknown",
+                        "status": "success",
+                        "gpa": str(parsed_data.get('gpa', 'N/A')),
+                        "rigor_index": str(parsed_data.get('course_rigor_index', 'N/A')),
+                        "confidence": parsed_data.get('confidence_level', 'Unknown'),
+                        "transcript_quality": parsed_data.get('transcript_quality', 'Unknown')
+                    }
+                )
+            except:
+                pass
+            
+            return result
             
         except Exception as e:
             error_msg = f"Error parsing transcript: {str(e)}"
-            print(f"❌ {error_msg}")
+            print(f"❌ {self.name}: {error_msg}")
+            
+            # Log error to Application Insights
+            try:
+                from src.telemetry import telemetry
+                telemetry.track_event(
+                    "RapunzelAnalysisError",
+                    {
+                        "student_name": student_name or "Unknown",
+                        "status": "error",
+                        "error": str(e)
+                    }
+                )
+            except:
+                pass
+            
             return {
                 'status': 'error',
                 'error': error_msg,
-                'student_name': student_name
+                'student_name': student_name,
+                'agent_name': self.name,
+                'model_used': self.model,
+                'model_display': 'gpt-4'
             }
     
     def _get_system_prompt(self) -> str:
-        """Get the specialized system prompt for grade parsing."""
-        return """You are part of an NIH Department of Genetics review panel evaluating Emory NextGen applicants.
+        """Get the specialized system prompt for grade parsing with deep reasoning."""
+        return """You are Rapunzel, the Grade Reader Agent for the Emory NextGen evaluation panel (NIH Department of Genetics).
 
-Apply the requirements:
+EVALUATION CONTEXT:
 - Rising junior or senior in high school
 - Must be 16 years old by June 1, 2026
-- Must demonstrate interest in advancing STEM education to groups from a variety of backgrounds
+- Must demonstrate interest in advancing STEM education to underrepresented groups
 
-You are an expert academic transcript reader. Your specialization is:
+YOUR CORE MISSION - Deep Analysis of Academic Rigor:
+You are the expert academic transcript analyst. Your job is to understand not just WHAT grades a student received, but WHY those grades matter in context. You provide the foundational academic data that all other agents depend on.
 
-1. EXTRACT: Pull out all relevant academic data from messy, poorly-formatted transcripts
-2. NORMALIZE: Convert different grading scales to standard terminology
-3. INTERPRET: Understand what different course levels mean (AP, Honors, Standard)
-4. IDENTIFY: Spot academic trends, strengths, and areas of concern
-5. ASSESS: Evaluate overall academic rigor and performance
-6. NORMALIZE: Use consistent rigor language so it aligns with other agents
+DEEP REASONING APPROACH:
+Before responding, think through:
+1. What is the OVERALL academic trajectory? (improving/declining/stable/erratic)
+2. What does the COURSE SELECTION tell us? (Risk-taking? Defensive choices? Strategic sequencing?)
+3. How do GRADES match COURSE RIGOR? (A's in AP courses vs A's in standard courses = completely different)
+4. What PATTERNS emerge? (Grade inflation in particular subjects? Course avoidance? Strategic choices?)
+5. What do NON-ACADEMIC markings reveal? (Attendance issues? Conduct concerns? Honor roll consistency?)
+6. How does SCHOOL CONTEXT constrain interpretation? (4 AP classes available vs 25? Matters enormously)
 
-Key focus areas:
-- GPA/cumulative grade point average
-- Subject-specific performance
-- Course level distribution (honors, AP, standard courses)
-- Trends over time (improving, declining, stable)
-- Non-academic notations (incomplete, withdrawn, etc.)
-- Special circumstances or patterns
+KEY INSIGHT: A B in AP Chemistry from a well-resourced school where 80% take AP classes tells a very different story than a B in AP Chemistry from a school where only 5 students take AP courses. Context is everything.
 
-Be thorough but precise. If information is unclear or missing, note it explicitly.
-Return structured data that can be easily parsed, with clear categories.
-Provide a concise summary (4-6 sentences) grounded in transcript evidence.
-Include a course rigor index (1-5) and explain it in one sentence.
-Use deep reasoning to connect grades with course rigor and available opportunities.
-Remember: a B in a high-rigor environment can be as meaningful as an A in a low-rigor setting."""
+EXTRACTION SPECIALIZATION:
+1. PARSE: Extract all course data - course name, level (AP/Honors/Standard), grade, percentage, credit hours, semester/year
+2. NORMALIZE: Convert to standard format (A=4.0, B+=3.3, etc.) and identify weighted multipliers
+3. STRUCTURALIZE: Organize by year, subject area, and course level
+4. CONTEXTUALIZE: Note class rank, percentile, honor roll status, attendance, honors/awards
+5. ANALYZE: Calculate subject-area performance, identify trends, assess overall rigor choices
+6. SYNTHESIZE: Create narrative that explains the academic story
+
+FOCUS AREAS (all required for complete analysis):
+- Cumulative GPA (both weighted and unweighted with scale noted)
+- Class rank and percentile
+- Course-by-course breakdown: Name, Level, Grade, Percentage, Credits, Semester/Year
+- Subject-area performance breakdown (Math vs Science vs English vs Social Studies)
+- AP/Honors course density and performance
+- Grade trend analysis (freshman to senior progression)
+- Standardized test scores (if present)
+- Non-academic factors: Attendance, conduct, special notations
+- Honors and awards
+- Special circumstances or constraints
+
+OUTPUT REQUIREMENTS:
+Return DETAILED, STRUCTURED analysis with:
+✓ Complete course roster with detailed specifications
+✓ Subject-area performance matrices
+✓ Trend analysis with specific evidence
+✓ Confidence assessment for each data point
+✓ Clear summary that an AI colleague could use for further analysis
+✓ Course rigor index (1-5) with detailed justification
+✓ Overall transcript assessment (Exceptional/Strong/Solid/Average/Below Average)"""
     
     def _build_parsing_prompt(
         self,
@@ -158,7 +234,7 @@ Remember: a B in a high-rigor environment can be as meaningful as an A in a low-
         student_name: Optional[str] = None
     ) -> str:
         """
-        Build the prompt for parsing a transcript.
+        Build the prompt for parsing a transcript with deep reasoning requirements.
         
         Args:
             transcript_text: Raw transcript text
@@ -167,74 +243,166 @@ Remember: a B in a high-rigor environment can be as meaningful as an A in a low-
         Returns:
             Detailed parsing prompt
         """
-        prompt = f"""Please analyze this high school grade report thoroughly.
+        prompt = f"""DETAILED TRANSCRIPT ANALYSIS REQUEST
 
-Student: {student_name or 'Unknown'}
-{'='*60}
+Student: {student_name or 'Unknown Student'}
+Analysis Date: {__import__('datetime').datetime.now().strftime('%B %d, %Y')}
+{'='*70}
 
-TRANSCRIPT TEXT:
+RAW TRANSCRIPT DATA:
 {transcript_text}
 
-{'='*60}
+{'='*70}
 
-EXTRACTION REQUIREMENTS:
-For each of these categories, extract and normalize the data:
+CRITICAL ANALYSIS REQUIREMENTS:
 
-1. **GPA Information**
-   - Unweighted GPA
-   - Weighted GPA (if applicable)
-   - Grading scale (e.g., 4.0, 5.0)
-   - Any caveats or special notes
+Use deep reasoning to understand the complete academic picture. Go beyond surface-level data extraction.
 
-2. **Course Performance by Grade Level**
-   List courses by level:
-   - AP/Advanced Placement courses (with grades)
-   - Honors level courses (with grades)
-   - Standard/Regular courses (with grades)
-   - Other specialized programs
-   
-3. **Academic Trends**
-   - Freshman to Senior progression (improving/declining/stable)
-   - Strongest subject areas
-   - Weakest subject areas
-   - Performance consistency
+═══════════════════════════════════════════════════════════════════════════════
+SECTION 1: COMPREHENSIVE GRADE DATA EXTRACTION
+═══════════════════════════════════════════════════════════════════════════════
 
-4. **Transcript Quality Assessment**
-   Rate: Exceptional | Strong | Solid | Average | Below Average
-   Reasoning: [1-2 sentences]
+Please extract and detail EVERY course with this information:
+- Course Name (exact as listed)
+- Level (AP / Honors / Standard / Other - specify)
+- Grade (letter grade and percentage if available)
+- Credit Hours
+- Semester/Quarter/Year
+- Subject Area (Math, Science, English, Social Studies, Language, Technology, Elective)
 
-5. **Course Rigor Index**
-    - Rate 1-5 based on AP/Honors density and progression
-    - One sentence justification
+Format as a detailed table. If percentage isn't shown, estimate from letter grade using standard scale.
 
-6. **Notable Patterns**
-   - Course load trends
-   - Attendance issues (if noted)
-   - Late grades or incomplete marks
-   - Grade recovery or improvement patterns
-   - Unusual notations
+═══════════════════════════════════════════════════════════════════════════════
+SECTION 2: GPA AND ACADEMIC STANDING
+═══════════════════════════════════════════════════════════════════════════════
 
-7. **Opportunity Context**
-    - Note if rigor appears constrained by school offerings or scheduling
+Extract and explain:
+- Unweighted GPA (scale noted, e.g., 4.0)
+- Weighted GPA (scale noted, e.g., 5.0, and multiplier system explained)
+- Class Rank (e.g., 5 of 480) and Percentile
+- Academic Status (excellent standing, honors, dean's list, etc.)
+- Cumulative Average by Subject Area (Math avg, Science avg, etc.)
 
-8. **Contextual Comparison**
-     - If any school capability or SES clues appear (AP availability, school type, resource constraints),
-         briefly explain how that context affects grade interpretation
+If class rank appears as weighted GPA calculation, explain the weighting system.
 
-9. **Confidence in Parsing**
-   Rate: High | Medium | Low
-   If low, explain what was unclear or missing
+═══════════════════════════════════════════════════════════════════════════════
+SECTION 3: ACADEMIC TRAJECTORY AND TREND ANALYSIS
+═══════════════════════════════════════════════════════════════════════════════
 
-10. **Summary Assessment**
-    - 4-6 sentences with specific evidence from the transcript
-   One paragraph synthesizing this student's academic profile as it would appear to a college admissions officer.
+Analyze grade progression year by year:
+- Grade 9: Overall average and pattern
+- Grade 10: Overall average and pattern
+- Grade 11: Overall average and pattern
+- Grade 12: Overall average and pattern (if available)
 
-FORMAT REQUIREMENTS:
-- Use clear section headers.
-- Include a "Grade Summary Table" in Markdown with columns: Course, Level, Grade, Term/Year, Notes.
-- If transcript data is too sparse for course-level rows, provide a summary table with GPA, rigor index, and transcript quality.
+Identify trends:
+- Is performance IMPROVING (grades trending up)?
+- Is performance DECLINING (grades trending down)?
+- Is performance STABLE (consistent)?
+- Are there SUBJECT-SPECIFIC trends? (Improving in Math but declining in English?)
 
-Return your analysis in clear, structured format (not JSON, but clearly organized sections)."""
+For each trend, provide SPECIFIC EVIDENCE (e.g., "Grade 9: 3.8 avg→ Grade 10: 3.9 avg → Grade 11: 4.0 avg = IMPROVING")
+
+═══════════════════════════════════════════════════════════════════════════════
+SECTION 4: COURSE RIGOR ANALYSIS
+═══════════════════════════════════════════════════════════════════════════════
+
+Calculate and explain Course Rigor Index (1-5 scale):
+
+Count:
+- Total AP/Advanced courses taken
+- Total Honors courses taken
+- Total Standard courses taken
+- Calculate AP/Honors percentage of total coursework
+
+Rate on 1-5 Scale:
+- Level 5 (Exceptional): 60%+ AP/Honors courses, consistent AP/Honors across all years
+- Level 4 (Strong): 40-60% AP/Honors, good progression into advanced courses
+- Level 3 (Solid): 20-40% AP/Honors, some advanced course taking
+- Level 2 (Limited): <20% AP/Honors, mostly standard courses
+- Level 1 (Minimal): No AP/Honors courses, all standard courses
+
+Provide ONE SENTENCE JUSTIFICATION for your rating.
+
+IMPORTANT: Also assess COURSE SELECTION STRATEGY:
+- Did the student take AP/Honors in core subjects (Math, Science, English)?
+- Or only in peripheral areas?
+- Does the choice suggest strength-building or strength-showcasing?
+- Any evident course avoidance patterns?
+
+═══════════════════════════════════════════════════════════════════════════════
+SECTION 5: STANDARDIZED TEST SCORES
+═══════════════════════════════════════════════════════════════════════════════
+
+If present, extract and note:
+- SAT score(s) and percentile
+- ACT score(s) and percentile
+- PSAT score
+- AP Exam scores (specific by exam with date)
+- Any National Merit recognition
+
+Compare standardized test performance to GPA (aligned or misaligned?).
+
+═══════════════════════════════════════════════════════════════════════════════
+SECTION 6: NON-ACADEMIC FACTORS
+═══════════════════════════════════════════════════════════════════════════════
+
+Extract and note:
+- Attendance: Days absent and tardy
+- Disciplinary record: Any infractions or conduct issues noted
+- Honor roll status: Semesters made honor roll
+- Honors and awards: All listed honors, awards, and special recognitions
+- Leadership: Any indicators of leadership roles or responsibilities
+
+═══════════════════════════════════════════════════════════════════════════════
+SECTION 7: OVERALL ASSESSMENT
+═══════════════════════════════════════════════════════════════════════════════
+
+Transcript Quality Rating: Exceptional | Strong | Solid | Average | Below Average
+Justification: 2-3 sentences explaining this rating with specific evidence.
+
+Confidence Level: High | Medium | Low
+If Medium or Low: What data is missing or unclear?
+
+Depth of Analysis:
+Show your reasoning for each major conclusion. For example:
+- "Transcript Quality = Strong because: (1) 3.9 GPA in weighted system, (2) 50% of courses AP/Honors,
+  (3) Consistent upward trend from 9-12, (4) AP scores of 4-5 on all exams"
+
+═══════════════════════════════════════════════════════════════════════════════
+SECTION 8: EXECUTIVE SUMMARY
+═══════════════════════════════════════════════════════════════════════════════
+
+Write a 6-8 sentence paragraph synthesizing this student's academic profile for a college admissions officer.
+
+Include:
+- Overall academic performance and trajectory
+- Notable strengths and any areas of concern
+- Most impressive achievements or unusual factors
+- How rigor of coursework compares to typical high school offerings
+- Overall readiness for advanced STEM work
+
+Make this summary actionable for downstream AI agents.
+
+═══════════════════════════════════════════════════════════════════════════════
+
+CRITICAL FORMAT REQUIREMENTS:
+✓ Use clear section headers as shown above
+✓ Present all course data in a detailed Markdown table (not abbreviated)
+✓ Show all calculations and reasoning
+✓ Highlight key numbers that other agents need to see
+✓ Provide both summary AND detailed data
+✓ Explain any inferences you make ("Estimated percentage as X% based on B+ grade typical = 87%")
+
+OUTPUT STRUCTURE:
+[Section 1: Course Table with all detail]
+[Section 2: GPA breakdown]
+[Section 3: Trend Analysis with year-by-year details]
+[Section 4: Rigor Index with calculation shown]
+[Section 5: Standardized Tests - if present]
+[Section 6: Non-academic factors]
+[Section 7: Overall Assessment with detailed reasoning]
+[Section 8: Executive Summary]"""
         
         return prompt
     

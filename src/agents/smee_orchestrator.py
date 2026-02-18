@@ -289,12 +289,12 @@ class SmeeOrchestrator(BaseAgent):
                         state_code = application.get('state_code') or application.get('StateCode')
                         
                         # Get or enrich school data (checks cache first, calls Aurora if needed)
-                        aurora_agent = self.agents.get('aurora')
+                        naveen_agent = self.agents.get('naveen')
                         school_enrichment = ensure_school_context_in_pipeline(
                             school_name=school_name,
                             state_code=state_code,
                             db_connection=self.db,
-                            aurora_agent=aurora_agent
+                            aurora_agent=naveen_agent
                         )
                         
                         # Step 2: Pass enriched school data to Moana

@@ -1,0 +1,5 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Documentation
+    url: https://github.com/Sleepyreaper/agent-nextgen
+    about: Check project docs and deployment guides

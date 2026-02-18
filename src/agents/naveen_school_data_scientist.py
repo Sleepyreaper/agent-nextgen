@@ -1,6 +1,9 @@
 """
-School Detail Data Scientist Agent
+Naveen School Data Scientist Agent
 Analyzes schools to build enriched profiles with opportunity scores.
+Character: Naveen (Disney character from "The Princess and the Frog")
+Model: gpt-4.1 (deployed as o4miniagent in Azure AI Foundry)
+
 Scrapes web data, analyzes academic programs, salary outcomes, and regional context.
 """
 
@@ -13,16 +16,20 @@ from urllib.parse import urlparse
 logger = logging.getLogger(__name__)
 
 
-class SchoolDetailDataScientist:
+class NaveenSchoolDataScientist:
     """
+    Naveen - School Data Scientist Agent
     Analyzes and enriches school data.
     Uses web sources to build comprehensive school profiles.
     Calculates opportunity scores based on academic capabilities, outcomes, and regional context.
+    
+    Model: gpt-4.1 (o4miniagent deployment in Azure AI Foundry)
     """
 
-    def __init__(self, name: str = "School Detail Data Scientist"):
+    def __init__(self, name: str = "Naveen School Data Scientist", model: str = "o4miniagent"):
         self.name = name
-        self.model = "gpt-4"
+        self.model = model
+        self.model_display = "gpt-4.1"  # Display-friendly model name
 
     def analyze_school(
         self,
@@ -99,6 +106,11 @@ class SchoolDetailDataScientist:
             logger.error(f"Error analyzing school {school_name}: {str(e)}", exc_info=True)
             result["analysis_status"] = "error"
             result["error"] = str(e)
+
+        # Add model information to result
+        result["agent_name"] = self.name
+        result["model_used"] = self.model
+        result["model_display"] = self.model_display
 
         return result
 
@@ -334,6 +346,7 @@ class SchoolDetailDataScientist:
 School Profile Analysis: {school}
 ========================================
 
+🔷 Agent: {self.name} ({self.model_display})
 Overall Opportunity Score: {score}/100
 
 Analysis Completed: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}

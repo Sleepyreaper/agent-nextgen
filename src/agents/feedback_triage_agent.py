@@ -1,4 +1,8 @@
-"""Feedback triage agent for user-submitted issues and feature requests."""
+"""
+Scuttle Feedback Triage Agent
+Character: Scuttle (Disney character from "The Little Mermaid")
+Understands user feedback and prepares a concise issue summary.
+"""
 
 import json
 from typing import Any, Dict, Optional
@@ -7,12 +11,16 @@ from openai import AzureOpenAI
 from src.agents.base_agent import BaseAgent
 
 
-class FeedbackTriageAgent(BaseAgent):
-    """Understands user feedback and prepares a concise issue summary."""
+class ScuttleFeedbackTriageAgent(BaseAgent):
+    """
+    Scuttle - Feedback Triage Agent
+    Understands user feedback and prepares a concise issue summary.
+    """
 
-    def __init__(self, name: str, client: AzureOpenAI, model: str):
+    def __init__(self, name: str = "Scuttle Feedback Triage", client: AzureOpenAI = None, model: str = None):
         super().__init__(name, client)
         self.model = model
+        self.model_display = "gpt-4"  # Default display model
 
     async def analyze_feedback(
         self,
@@ -113,5 +121,12 @@ class FeedbackTriageAgent(BaseAgent):
             "steps_to_reproduce": parsed.get("steps_to_reproduce") or "",
             "expected_behavior": parsed.get("expected_behavior") or "",
             "actual_behavior": parsed.get("actual_behavior") or "",
-            "user_context": parsed.get("user_context") or {}
+            "user_context": parsed.get("user_context") or {},
+            "agent_name": self.name,
+            "model_used": self.model,
+            "model_display": getattr(self, 'model_display', 'gpt-4')
         }
+
+
+# Backwards compatibility alias
+FeedbackTriageAgent = ScuttleFeedbackTriageAgent

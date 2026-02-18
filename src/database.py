@@ -4,6 +4,7 @@ from typing import Optional, List, Dict, Any
 from datetime import datetime
 import psycopg
 from .config import config
+from .logger import app_logger as logger
 import json
 import time
 from urllib.parse import urlparse, parse_qsl, urlencode, urlunparse, quote
@@ -1374,6 +1375,189 @@ class Database:
             })
         
         return formatted
+
+    # ==================== SCHOOL ENRICHMENT METHODS ====================
+    
+    def create_school_enriched_data(self, school_data: Dict[str, Any]) -> Optional[int]:
+        """Create a new enriched school record."""
+        query = """
+            INSERT INTO school_enriched_data (
+                school_name, school_district, state_code, county_name, school_url,
+                opportunity_score, total_students, graduation_rate, college_acceptance_rate,
+                free_lunch_percentage, ap_course_count, ap_exam_pass_rate, stem_program_available,
+                ib_program_available, dual_enrollment_available, analysis_status, 
+                human_review_status, web_sources_analyzed, data_confidence_score, created_by
+            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            RETURNING school_enrichment_id
+        """
+        
+        try:
+            result = self.execute_query(
+                query,
+                (
+                    school_data.get('school_name'),
+                    school_data.get('school_district'),
+                    school_data.get('state_code'),
+                    school_data.get('county_name'),
+                    school_data.get('school_url'),
+                    school_data.get('opportunity_score', 0),
+                    school_data.get('total_students'),
+                    school_data.get('graduation_rate'),
+                    school_data.get('college_acceptance_rate'),
+                    school_data.get('free_lunch_percentage'),
+                    school_data.get('ap_course_count'),
+                    school_data.get('ap_exam_pass_rate'),
+                    school_data.get('stem_program_available', False),
+                    school_data.get('ib_program_available', False),
+                    school_data.get('dual_enrollment_available', False),
+                    school_data.get('analysis_status', 'pending'),
+                    school_data.get('human_review_status', 'pending'),
+                    json.dumps(school_data.get('web_sources', [])),
+                    school_data.get('data_confidence_score', 0),
+                    school_data.get('created_by', 'system')
+                )
+            )
+            
+            return result[0].get('school_enrichment_id') if result else None
+        except Exception as e:
+            logger.error(f"Error creating school enriched data: {e}")
+            return None
+
+    def get_school_enriched_data(self, school_id: Optional[int] = None, school_name: Optional[str] = None, 
+                                 state_code: Optional[str] = None) -> Optional[Dict[str, Any]]:
+        """Retrieve enriched school data by ID or name/state."""
+        try:
+            if school_id:
+                query = "SELECT * FROM school_enriched_data WHERE school_enrichment_id = %s"
+                result = self.execute_query(query, (school_id,))
+            elif school_name and state_code:
+                query = "SELECT * FROM school_enriched_data WHERE LOWER(school_name) = LOWER(%s) AND state_code = %s"
+                result = self.execute_query(query, (school_name, state_code))
+            else:
+                return None
+            
+            return result[0] if result else None
+        except Exception as e:
+            logger.error(f"Error getting school enriched data: {e}")
+            return None
+
+    def get_all_schools_enriched(self, filters: Optional[Dict[str, Any]] = None, 
+                                limit: int = 100) -> List[Dict[str, Any]]:
+        """Get all enriched schools with optional filters."""
+        try:
+            query = "SELECT * FROM school_enriched_data WHERE is_active = TRUE"
+            params = []
+            
+            if filters:
+                if filters.get('state_code'):
+                    query += " AND state_code = %s"
+                    params.append(filters['state_code'])
+                if filters.get('human_review_status'):
+                    query += " AND human_review_status = %s"
+                    params.append(filters['human_review_status'])
+                if filters.get('opportunity_score_min'):
+                    query += " AND opportunity_score >= %s"
+                    params.append(filters['opportunity_score_min'])
+                if filters.get('search_text'):
+                    query += " AND (LOWER(school_name) LIKE LOWER(%s) OR LOWER(school_district) LIKE LOWER(%s))"
+                    search_pattern = f"%{filters['search_text']}%"
+                    params.append(search_pattern)
+                    params.append(search_pattern)
+            
+            query += " ORDER BY opportunity_score DESC LIMIT %s"
+            params.append(limit)
+            
+            return self.execute_query(query, tuple(params))
+        except Exception as e:
+            logger.error(f"Error getting all schools enriched: {e}")
+            return []
+
+    def update_school_review(self, school_id: int, review_data: Dict[str, Any]) -> bool:
+        """Update school record with human review."""
+        try:
+            query = """
+                UPDATE school_enriched_data
+                SET human_review_status = %s,
+                    opportunity_score = %s,
+                    reviewed_by = %s,
+                    reviewed_date = CURRENT_TIMESTAMP,
+                    human_notes = %s,
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE school_enrichment_id = %s
+            """
+            
+            self.execute_non_query(
+                query,
+                (
+                    review_data.get('review_status', 'pending'),
+                    review_data.get('opportunity_score'),
+                    review_data.get('reviewed_by', 'system'),
+                    review_data.get('human_notes'),
+                    school_id
+                )
+            )
+            
+            # Save version for audit trail
+            self._save_school_version(school_id, review_data, 'human_adjustment')
+            
+            # Save to analysis history
+            self._save_analysis_history(school_id, 'human_review', review_data)
+            
+            return True
+        except Exception as e:
+            logger.error(f"Error updating school review: {e}")
+            return False
+
+    def _save_school_version(self, school_id: int, data: Dict[str, Any], change_reason: str) -> None:
+        """Save version snapshot for audit trail."""
+        try:
+            school = self.get_school_enriched_data(school_id)
+            if not school:
+                return
+            
+            query = """
+                INSERT INTO school_data_versions (school_enrichment_id, data_snapshot, 
+                                                 change_summary, changed_by, change_reason)
+                VALUES (%s, %s, %s, %s, %s)
+            """
+            
+            self.execute_non_query(
+                query,
+                (
+                    school_id,
+                    json.dumps(dict(school)),
+                    data.get('human_notes', ''),
+                    data.get('reviewed_by', 'system'),
+                    change_reason
+                )
+            )
+        except Exception as e:
+            logger.error(f"Error saving school version: {e}")
+
+    def _save_analysis_history(self, school_id: int, analysis_type: str, data: Dict[str, Any]) -> None:
+        """Save to analysis history."""
+        try:
+            query = """
+                INSERT INTO school_analysis_history (school_enrichment_id, analysis_type, 
+                                                    agent_name, status, findings_summary, 
+                                                    reviewed_by, review_notes)
+                VALUES (%s, %s, %s, %s, %s, %s, %s)
+            """
+            
+            self.execute_non_query(
+                query,
+                (
+                    school_id,
+                    analysis_type,
+                    'human_review_system',
+                    'complete',
+                    data.get('human_notes', ''),
+                    data.get('reviewed_by', 'system'),
+                    json.dumps(data)
+                )
+            )
+        except Exception as e:
+            logger.error(f"Error saving analysis history: {e}")
 
 
 # Global database instance

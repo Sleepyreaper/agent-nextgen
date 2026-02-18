@@ -689,7 +689,51 @@ function openSchoolDetail(schoolId) {
                 <p>Edit school data and adjust opportunity scores below, then submit for reprocessing.</p>
             </div>
             
+            <!-- Website Link Audit Section -->
+            <div style="background: #f0f9ff; border: 1px solid #0284c7; border-radius: 6px; padding: 1rem; margin-bottom: 1.5rem;">
+                <h4 style="margin-top: 0; color: #0c4a6e;">📋 Data Source Audit Trail</h4>
+                <table style="width: 100%; font-size: 0.9rem;">
+                    <tr style="background: #e0f2fe;">
+                        <th style="text-align: left; padding: 0.75rem; border-bottom: 1px solid #0284c7;">School Website</th>
+                        <td style="padding: 0.75rem;">
+                            ${school.school_url ? `
+                                <a href="${school.school_url}" target="_blank" style="color: #0284c7; text-decoration: underline;">
+                                    ${school.school_url}
+                                </a>
+                                <span style="color: ${school.school_url_verified ? '#10b981' : '#ef4444'}; font-weight: bold; margin-left: 0.5rem;">
+                                    ${school.school_url_verified ? '✓ Verified Public Site' : '⚠ Pending Verification'}
+                                </span>
+                            ` : '<em>No website provided</em>'}
+                        </td>
+                    </tr>
+                </table>
+                
+                <div style="margin-top: 1rem; padding-top: 1rem; border-top: 1px solid #0284c7;">
+                    <strong style="color: #0c4a6e;">Sources Analyzed:</strong>
+                    <div id="websourceslist" style="margin-top: 0.5rem; padding: 0.75rem; background: white; border-radius: 4px; max-height: 150px; overflow-y: auto;">
+                        ${school.web_sources_analyzed ? 
+                            (Array.isArray(JSON.parse(school.web_sources_analyzed || '[]')) ? 
+                                JSON.parse(school.web_sources_analyzed).map((url, idx) => 
+                                    `<div style="padding: 0.25rem 0; color: #374151;"><span style="color: #6b7280;">${idx + 1}.</span> <a href="${url}" target="_blank" style="color: #0284c7; word-break: break-all;">${url}</a></div>`
+                                ).join('') : 
+                                '<em style="color: #9ca3af;">No sources tracked</em>'
+                            ) : '<em style="color: #9ca3af;">No sources tracked</em>'
+                        }
+                    </div>
+                </div>
+                
+                <div style="margin-top: 1rem; padding: 0.75rem; background: #fef2f2; border: 1px solid #fecaca; border-radius: 4px; font-size: 0.85rem; color: #7f1d1d;">
+                    ℹ️ <strong>Data Verification:</strong> All school information has been sourced from public, accessible websites. Sources are listed above for audit purposes.
+                </div>
+            </div>
+            
             <form onsubmit="submitReview(event, ${schoolId})">
+                <div class="form-group">
+                    <label>School Website (for verification)</label>
+                    <input type="url" name="schoolUrl" placeholder="https://example.edu" value="${school.school_url || ''}">
+                    <small style="color: #6b7280; margin-top: 0.25rem; display: block;">Enter or update the school's official website for verification</small>
+                </div>
+                
                 <div class="form-group">
                     <label>Review Notes</label>
                     <textarea name="reviewNotes" placeholder="Your observations and adjustments..."></textarea>

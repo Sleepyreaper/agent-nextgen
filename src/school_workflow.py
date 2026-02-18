@@ -3,7 +3,7 @@ School Data Workflow Manager - Handles school data lookup, enrichment, and cachi
 
 Ensures schools are analyzed once and reused:
 1. Check if school exists in database
-2. If not, call Aurora (school_detail_data_scientist) for deep analysis
+2. If not, call Naveen (school_data_scientist) for deep analysis
 3. Store results persistently
 4. Pass to Moana (moana_school_context) for contextual analysis with grades
 """
@@ -47,7 +47,7 @@ class SchoolDataWorkflow:
             school_name: High school name
             school_district: School district (optional)
             state_code: State code like 'GA', 'CA' (optional)
-            aurora_agent: AuroraAgent instance for enrichment analysis
+            aurora_agent: NaveenSchoolDataScientist instance for enrichment analysis (note: parameter name kept for backwards compatibility)
             
         Returns:
             Dictionary with enriched school data including:
@@ -85,11 +85,11 @@ class SchoolDataWorkflow:
             }
         
         logger.info(
-            f"→ Triggering Aurora for new school enrichment",
+            f"→ Triggering Naveen (school data scientist) for new school enrichment",
             extra={'school': school_name, 'state': state_code}
         )
         
-        # Call Aurora to do deep school analysis
+        # Call Naveen to do deep school analysis
         enriched_result = aurora_agent.analyze_school(
             school_name=school_name,
             school_district=school_district,
@@ -107,12 +107,12 @@ class SchoolDataWorkflow:
             
             enriched_result['school_enrichment_id'] = school_id
             logger.info(
-                f"✓ Stored Aurora enrichment in database",
+                f"✓ Stored Naveen enrichment in database",
                 extra={'school': school_name, 'id': school_id, 'opportunity_score': enriched_result.get('opportunity_score')}
             )
         else:
             logger.warning(
-                f"Aurora enrichment failed for {school_name}",
+                f"Naveen enrichment failed for {school_name}",
                 extra={'error': enriched_result.get('error')}
             )
         
@@ -175,7 +175,7 @@ class SchoolDataWorkflow:
         Store enriched school data in database.
         
         Args:
-            school_data: Enrichment data from Aurora
+            school_data: Enrichment data from Naveen
             school_name: School name
             school_district: School district
             state_code: State code
@@ -262,7 +262,7 @@ def ensure_school_context_in_pipeline(
         school_district: School district (optional)
         state_code: State code (optional)
         db_connection: Database connection
-        aurora_agent: Aurora agent for enrichment
+        aurora_agent: Naveen (school data scientist) agent for enrichment
         
     Returns:
         Enriched school data dictionary

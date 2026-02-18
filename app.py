@@ -36,7 +36,10 @@ from src.agents import (
     AuroraAgent,
     BelleDocumentAnalyzer,
     MiloDataScientist,
-    FeedbackTriageAgent
+    FeedbackTriageAgent,
+    NaveenSchoolDataScientist,
+    BashfulAgent,
+    ScuttleFeedbackTriageAgent
 )
 from src.agents.agent_requirements import AgentRequirements
 from src.agents.fairy_godmother_document_generator import FairyGodmotherDocumentGenerator
@@ -124,7 +127,7 @@ def get_feedback_agent():
     if not feedback_agent:
         client = get_ai_client()
         feedback_agent = FeedbackTriageAgent(
-            name="Feedback Triage",
+            name="Scuttle Feedback Triage",
             client=client,
             model=config.deployment_name
         )
@@ -193,8 +196,15 @@ def get_orchestrator():
             MiloDataScientist(
                 name="Milo Data Scientist",
                 client=client,
-                model=config.deployment_name,
+                model=config.deployment_name_mini,
                 db_connection=db
+            )
+        )
+        orchestrator_agent.register_agent(
+            "naveen",
+            NaveenSchoolDataScientist(
+                name="Naveen School Data Scientist",
+                model=config.deployment_name_mini
             )
         )
         orchestrator_agent.register_agent(
@@ -206,6 +216,42 @@ def get_orchestrator():
             FairyGodmotherDocumentGenerator(
                 db_connection=db,
                 storage_manager=storage
+            )
+        )
+        
+        # Register supporting agents
+        orchestrator_agent.register_agent(
+            "gaston",
+            GastonEvaluator(
+                name="Gaston Evaluator",
+                client=client,
+                model=config.deployment_name
+            )
+        )
+        orchestrator_agent.register_agent(
+            "bashful",
+            BashfulAgent(
+                name="Bashful Agent",
+                client=client,
+                model=config.deployment_name,
+                system_prompt="You are Bashful, a helpful assistant in the evaluation system."
+            )
+        )
+        orchestrator_agent.register_agent(
+            "belle",
+            BelleDocumentAnalyzer(
+                name="Belle Document Analyzer",
+                client=client,
+                model=config.deployment_name,
+                db_connection=db
+            )
+        )
+        orchestrator_agent.register_agent(
+            "scuttle",
+            ScuttleFeedbackTriageAgent(
+                name="Scuttle Feedback Triage",
+                client=client,
+                model=config.deployment_name
             )
         )
 
@@ -3719,6 +3765,127 @@ def clear_test_data():
             'status': 'error',
             'error': str(e)
         }), 500
+
+
+
+
+# ==================== SCHOOL MANAGEMENT ROUTES ====================
+
+@app.route('/schools', methods=['GET'])
+def schools_dashboard():
+    """School management and review dashboard."""
+    return render_template('school_management.html')
+
+
+@app.route('/api/schools/list', methods=['GET'])
+def get_schools_list():
+    """Get all schools with filters."""
+    try:
+        filters = {}
+        if request.args.get('state'):
+            filters['state_code'] = request.args.get('state')
+        if request.args.get('review'):
+            filters['human_review_status'] = request.args.get('review')
+        if request.args.get('score_min'):
+            try:
+                filters['opportunity_score_min'] = float(request.args.get('score_min'))
+            except:
+                pass
+        if request.args.get('search'):
+            filters['search_text'] = request.args.get('search')
+        
+        schools = db.get_all_schools_enriched(filters=filters, limit=200)
+        
+        return jsonify({
+            'status': 'success',
+            'schools': schools,
+            'count': len(schools)
+        })
+    except Exception as e:
+        logger.error(f"Error getting schools list: {e}")
+        return jsonify({'status': 'error', 'error': str(e)}), 500
+
+
+@app.route('/api/school/<int:school_id>/review', methods=['POST'])
+def submit_school_review(school_id):
+    """Submit human review for a school."""
+    try:
+        data = request.json or request.form.to_dict()
+        
+        # Add reviewer info
+        data['reviewed_by'] = 'admin_user'  # Can be enhanced with auth
+        
+        success = db.update_school_review(school_id, data)
+        
+        if success:
+            logger.info(f"School {school_id} review submitted by {data.get('reviewed_by')}")
+            
+            return jsonify({'status': 'success', 'message': 'Review submitted'})
+        else:
+            return jsonify({'status': 'error', 'error': 'Failed to update'}), 400
+            
+    except Exception as e:
+        logger.error(f"Error submitting school review: {e}")
+        return jsonify({'status': 'error', 'error': str(e)}), 500
+
+
+@app.route('/api/school/<int:school_id>/analyze', methods=['POST'])
+def trigger_school_analysis(school_id):
+    """Trigger re-analysis of a school."""
+    try:
+        school = db.get_school_enriched_data(school_id)
+        if not school:
+            return jsonify({'status': 'error', 'error': 'School not found'}), 404
+        
+        def background_analysis():
+            try:
+                # Use Naveen School Data Scientist agent with mini model
+                scientist = NaveenSchoolDataScientist(
+                    name="Naveen School Data Scientist",
+                    model=config.deployment_name_mini
+                )
+                
+                # Get web sources
+                web_sources = school.get('web_sources_analyzed', [])
+                if isinstance(web_sources, str):
+                    import json
+                    web_sources = json.loads(web_sources)
+                
+                # Run analysis
+                result = scientist.analyze_school(
+                    school_name=school['school_name'],
+                    school_district=school.get('school_district', ''),
+                    state_code=school.get('state_code', ''),
+                    web_sources=web_sources,
+                    existing_data=school
+                )
+                
+                # Update database with results
+                db.execute_non_query(
+                    "UPDATE school_enriched_data SET opportunity_score = %s, analysis_status = %s, "
+                    "data_confidence_score = %s, updated_at = CURRENT_TIMESTAMP WHERE school_enrichment_id = %s",
+                    (
+                        result.get('opportunity_metrics', {}).get('overall_opportunity_score'),
+                        result.get('analysis_status'),
+                        result.get('confidence_score'),
+                        school_id
+                    )
+                )
+                
+                logger.info(f"School {school_id} re-analysis completed by {result.get('agent_name')} using {result.get('model_display')}")
+            except Exception as e:
+                logger.error(f"Error in background analysis for school {school_id}: {e}")
+        
+        # Start background task
+        thread = threading.Thread(target=background_analysis)
+        thread.daemon = True
+        thread.start()
+        
+        return jsonify({'status': 'success', 'message': 'Analysis queued'})
+        
+    except Exception as e:
+        logger.error(f"Error triggering school analysis: {e}")
+        return jsonify({'status': 'error', 'error': str(e)}), 500
 
 
 if __name__ == '__main__':

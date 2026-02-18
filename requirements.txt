@@ -28,7 +28,23 @@ python-docx>=1.0.0
 requests>=2.31.0
 aiohttp>=3.9.0
 
-# Telemetry
-azure-monitor-opentelemetry
-opentelemetry-instrumentation-flask
-opentelemetry-instrumentation-requests
+# OpenTelemetry & Application Insights (Observability)
+# Core OpenTelemetry packages
+opentelemetry-api>=1.20.0
+opentelemetry-sdk>=1.20.0
+opentelemetry-semantic-conventions>=0.41b0
+opentelemetry-semantic-conventions-ai>=0.6.0
+
+# Exporters
+azure-monitor-opentelemetry>=1.0.0
+opentelemetry-exporter-otlp-proto-grpc>=0.41b0
+opentelemetry-exporter-otlp-proto-http>=0.41b0
+opentelemetry-exporter-prometheus>=0.41b0
+
+# Instrumentation (automatic span generation)
+opentelemetry-instrumentation>=0.41b0
+opentelemetry-instrumentation-flask>=0.41b0
+opentelemetry-instrumentation-requests>=0.41b0
+opentelemetry-instrumentation-sqlalchemy>=0.41b0
+opentelemetry-instrumentation-httpx>=0.41b0
+opentelemetry-instrumentation-aiohttp-client>=0.41b0

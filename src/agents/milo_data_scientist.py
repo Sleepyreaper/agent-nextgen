@@ -18,6 +18,8 @@ from src.telemetry import get_tracer
 class MiloDataScientist(BaseAgent):
     """
     Milo (Data Scientist) analyzes historical training data only.
+    Character: Milo (Disney character from "Atlantis: The Lost Empire")
+    Model: gpt-4.1 (deployed as o4miniagent in Azure AI Foundry)
 
     This agent:
     - Reads training examples (accepted vs not accepted)
@@ -36,6 +38,7 @@ class MiloDataScientist(BaseAgent):
     ):
         super().__init__(name, client)
         self.model = model
+        self.model_display = "gpt-4.1"  # Display-friendly model name
         self.db = db_connection
         self.max_samples_per_group = max_samples_per_group
         self.cache_seconds = cache_seconds
@@ -49,6 +52,8 @@ class MiloDataScientist(BaseAgent):
             return {
                 "status": "error",
                 "agent": self.name,
+                "model_used": self.model,
+                "model_display": self.model_display,
                 "error": "Database connection not available"
             }
 
@@ -58,6 +63,8 @@ class MiloDataScientist(BaseAgent):
             return {
                 "status": "error",
                 "agent": self.name,
+                "model_used": self.model,
+                "model_display": self.model_display,
                 "error": str(e)
             }
 
@@ -99,6 +106,8 @@ class MiloDataScientist(BaseAgent):
             data.update({
                 "status": "success",
                 "agent": self.name,
+                "model_used": self.model,
+                "model_display": self.model_display,
                 "cached": False,
                 "training_counts": samples["counts"],
                 "sample_sizes": samples["sample_sizes"]
@@ -107,6 +116,8 @@ class MiloDataScientist(BaseAgent):
             data = {
                 "status": "error",
                 "agent": self.name,
+                "model_used": self.model,
+                "model_display": self.model_display,
                 "error": str(e)
             }
 
