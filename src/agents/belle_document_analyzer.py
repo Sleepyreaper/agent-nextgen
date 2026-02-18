@@ -27,16 +27,19 @@ class BelleDocumentAnalyzer(BaseAgent):
     - Categorize and structure extracted data
     """
     
-    def __init__(self, client: AzureOpenAI, model: str):
+    def __init__(self, name: str = "Belle Document Analyzer", client: AzureOpenAI = None, model: str = None, db_connection=None):
         """
         Initialize Belle Document Analyzer.
         
         Args:
+            name: Agent name
             client: Azure OpenAI client
             model: Model deployment name
+            db_connection: Database connection (optional)
         """
-        super().__init__(name="Belle", client=client)
+        super().__init__(name=name, client=client)
         self.model = model
+        self.db_connection = db_connection
         self.emoji = "📖"
         self.description = "Analyzes documents and extracts structured data"
         self.content_processing_client: Optional[ContentProcessingClient] = None

@@ -3777,6 +3777,22 @@ def schools_dashboard():
     return render_template('school_management.html')
 
 
+@app.route('/school/<int:school_id>', methods=['GET'])
+def view_school_enrichment(school_id):
+    """View and edit a school enrichment record."""
+    try:
+        school = db.get_school_enriched_data(school_id)
+        if not school:
+            flash('School record not found', 'error')
+            return redirect(url_for('schools_dashboard'))
+        
+        return render_template('school_enrichment_detail.html', school=school)
+    except Exception as e:
+        logger.error(f"Error viewing school {school_id}: {e}")
+        flash(f'Error loading school: {str(e)}', 'error')
+        return redirect(url_for('schools_dashboard'))
+
+
 @app.route('/api/schools/list', methods=['GET'])
 def get_schools_list():
     """Get all schools with filters."""
@@ -3803,6 +3819,84 @@ def get_schools_list():
         })
     except Exception as e:
         logger.error(f"Error getting schools list: {e}")
+        return jsonify({'status': 'error', 'error': str(e)}), 500
+
+
+@app.route('/api/school/<int:school_id>', methods=['GET'])
+def get_school_details(school_id):
+    """Get detailed information about a school enrichment record."""
+    try:
+        school = db.get_school_enriched_data(school_id)
+        if not school:
+            return jsonify({'status': 'error', 'error': 'School not found'}), 404
+        
+        return jsonify({
+            'status': 'success',
+            'school': school
+        })
+    except Exception as e:
+        logger.error(f"Error getting school details: {e}")
+        return jsonify({'status': 'error', 'error': str(e)}), 500
+
+
+@app.route('/api/school/<int:school_id>/update', methods=['POST'])
+def update_school_enrichment(school_id):
+    """Update school enrichment data (human corrections/edits)."""
+    try:
+        school = db.get_school_enriched_data(school_id)
+        if not school:
+            return jsonify({'status': 'error', 'error': 'School not found'}), 404
+        
+        data = request.json or {}
+        
+        # Update allowed fields
+        update_fields = {
+            'school_name': data.get('school_name'),
+            'school_district': data.get('school_district'),
+            'state_code': data.get('state_code'),
+            'enrollment_size': data.get('enrollment_size'),
+            'diversity_index': data.get('diversity_index'),
+            'socioeconomic_level': data.get('socioeconomic_level'),
+            'ap_classes_count': data.get('ap_classes_count'),
+            'ib_offerings': data.get('ib_offerings'),
+            'honors_programs': data.get('honors_programs'),
+            'stem_programs': data.get('stem_programs'),
+            'graduation_rate': data.get('graduation_rate'),
+            'college_placement_rate': data.get('college_placement_rate'),
+            'avg_test_scores': data.get('avg_test_scores'),
+            'school_investment_level': data.get('school_investment_level'),
+            'opportunity_score': data.get('opportunity_score'),
+            'analysis_summary': data.get('analysis_summary'),
+            'human_review_status': data.get('human_review_status'),
+            'human_review_notes': data.get('human_review_notes')
+        }
+        
+        # Build UPDATE query
+        set_clauses = []
+        values = []
+        for field, value in update_fields.items():
+            if value is not None:
+                set_clauses.append(f"{field} = %s")
+                values.append(value)
+        
+        if not set_clauses:
+            return jsonify({'status': 'error', 'error': 'No fields to update'}), 400
+        
+        values.append(school_id)
+        update_query = f"UPDATE school_enriched_data SET {', '.join(set_clauses)}, updated_at = CURRENT_TIMESTAMP WHERE school_enrichment_id = %s"
+        
+        db.execute_non_query(update_query, tuple(values))
+        
+        logger.info(f"School {school_id} ({school.get('school_name')}) updated by human reviewer")
+        
+        return jsonify({
+            'status': 'success',
+            'message': 'School enrichment data updated',
+            'school_id': school_id
+        })
+        
+    except Exception as e:
+        logger.error(f"Error updating school {school_id}: {e}")
         return jsonify({'status': 'error', 'error': str(e)}), 500
 
 
