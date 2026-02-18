@@ -239,6 +239,86 @@
     {% set aurora = aurora_evaluation.formattedevaluation %}
 {% endif %}
 
+{# ===== SCHOOL CONTEXT FOR EVALUATION (TRAINING DATA) ===== #}
+{% if school_context %}
+<div class="card" style="background: linear-gradient(135deg, #e0f2fe 0%, #f0f9ff 100%); border: 2px solid #0284c7; margin: 1.5rem 0;">
+    <h2 style="color: #0369a1; display: flex; align-items: center; gap: 0.5rem;">
+        🏫 School Context (Training Data)
+        <span style="font-size: 0.8rem; background: #0284c7; color: white; padding: 0.25rem 0.75rem; border-radius: 20px; margin-left: auto;">
+            Part of Scoring
+        </span>
+    </h2>
+    
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 1.5rem; margin-bottom: 1.5rem;">
+        <div style="background: white; padding: 1rem; border-radius: 6px; border-left: 4px solid #0284c7;">
+            <div style="font-size: 0.85rem; text-transform: uppercase; letter-spacing: 0.08em; color: #0c4a6e; margin-bottom: 0.5rem; font-weight: 600;">School Name</div>
+            <div style="font-size: 1.1rem; color: #075985; font-weight: 600;">{{ school_context.school_name }}</div>
+            {% if school_context.state_code %}
+            <div style="font-size: 0.9rem; color: #0369a1; margin-top: 0.25rem;">{{ school_context.state_code }}</div>
+            {% endif %}
+        </div>
+        
+        <div style="background: white; padding: 1rem; border-radius: 6px; border-left: 4px solid #06b6d4;">
+            <div style="font-size: 0.85rem; text-transform: uppercase; letter-spacing: 0.08em; color: #0c4a6e; margin-bottom: 0.5rem; font-weight: 600;">Opportunity Score</div>
+            <div style="font-size: 1.4rem; color: #0891b2; font-weight: 700;">
+                {{ school_context.opportunity_score|default('—') }}
+                <span style="font-size: 0.8rem; color: #0c4a6e;">/100</span>
+            </div>
+            <div style="font-size: 0.8rem; color: #0369a1; margin-top: 0.5rem;">
+                {% if school_context.opportunity_score >= 75 %}
+                    ✅ High opportunity environment
+                {% elif school_context.opportunity_score >= 50 %}
+                    ⚠️ Moderate opportunity
+                {% else %}
+                    ⚠️ Limited opportunities
+                {% endif %}
+            </div>
+        </div>
+        
+        {% if school_context.enrollment_size %}
+        <div style="background: white; padding: 1rem; border-radius: 6px; border-left: 4px solid #0284c7;">
+            <div style="font-size: 0.85rem; text-transform: uppercase; letter-spacing: 0.08em; color: #0c4a6e; margin-bottom: 0.5rem; font-weight: 600;">Enrollment</div>
+            <div style="font-size: 1.1rem; color: #075985; font-weight: 600;">{{ school_context.enrollment_size }}</div>
+        </div>
+        {% endif %}
+        
+        {% if school_context.socioeconomic_level %}
+        <div style="background: white; padding: 1rem; border-radius: 6px; border-left: 4px solid #0284c7;">
+            <div style="font-size: 0.85rem; text-transform: uppercase; letter-spacing: 0.08em; color: #0c4a6e; margin-bottom: 0.5rem; font-weight: 600;">SES Level</div>
+            <div style="font-size: 1.1rem; color: #075985; font-weight: 600;">{{ school_context.socioeconomic_level }}</div>
+        </div>
+        {% endif %}
+        
+        {% if school_context.graduation_rate %}
+        <div style="background: white; padding: 1rem; border-radius: 6px; border-left: 4px solid #0284c7;">
+            <div style="font-size: 0.85rem; text-transform: uppercase; letter-spacing: 0.08em; color: #0c4a6e; margin-bottom: 0.5rem; font-weight: 600;">Graduation Rate</div>
+            <div style="font-size: 1.1rem; color: #075985; font-weight: 600;">{{ school_context.graduation_rate }}%</div>
+        </div>
+        {% endif %}
+        
+        {% if school_context.college_placement_rate %}
+        <div style="background: white; padding: 1rem; border-radius: 6px; border-left: 4px solid #0284c7;">
+            <div style="font-size: 0.85rem; text-transform: uppercase; letter-spacing: 0.08em; color: #0c4a6e; margin-bottom: 0.5rem; font-weight: 600;">College Placement</div>
+            <div style="font-size: 1.1rem; color: #075985; font-weight: 600;">{{ school_context.college_placement_rate }}%</div>
+        </div>
+        {% endif %}
+    </div>
+    
+    {% if school_context.academic_programs %}
+    <div style="background: white; padding: 1rem; border-radius: 6px; margin-bottom: 1rem;">
+        <div style="font-weight: 600; color: #0c4a6e; margin-bottom: 0.5rem;">Academic Programs</div>
+        <div style="color: #164e63;">{{ school_context.academic_programs }}</div>
+    </div>
+    {% endif %}
+    
+    <div style="font-size: 0.85rem; color: #0c4a6e; border-top: 1px solid #cffafe; padding-top: 1rem;">
+        <strong>📌 Training Data Note:</strong> This student's evaluation was contextualized using school enrichment data from 
+        {% if school_context.analysis_date %}{{ school_context.analysis_date }}{% else %}Naveen's analysis{% endif %}. 
+        Similar applicants from this school should show similar patterns in scoring.
+    </div>
+</div>
+{% endif %}
+
 {% if aurora and aurora.agents %}
 <div class="card" style="margin-top: 1.5rem;">
     <h2>Agent Summaries</h2>

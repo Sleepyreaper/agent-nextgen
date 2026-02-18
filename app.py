@@ -1979,6 +1979,37 @@ def student_detail(application_id):
         
         logger.debug(f"Application found: {application.get('applicant_name')}")
         
+        # ===== FETCH SCHOOL ENRICHMENT DATA (PART OF TRAINING DATA CONTEXT) =====
+        school_context = None
+        school_name = application.get('school_name') or application.get('SchoolName')
+        state_code = application.get('state_code') or application.get('StateCode')
+        
+        if school_name:
+            try:
+                # Get enriched school data that informed this evaluation
+                school_data = db.get_school_enriched_data(
+                    school_name=school_name,
+                    state_code=state_code
+                )
+                if school_data:
+                    school_context = {
+                        'school_name': school_data.get('school_name'),
+                        'state_code': school_data.get('state_code'),
+                        'school_district': school_data.get('school_district'),
+                        'enrollment_size': school_data.get('enrollment_size'),
+                        'diversity_index': school_data.get('diversity_index'),
+                        'socioeconomic_level': school_data.get('socioeconomic_level'),
+                        'academic_programs': school_data.get('academic_programs'),
+                        'graduation_rate': school_data.get('graduation_rate'),
+                        'college_placement_rate': school_data.get('college_placement_rate'),
+                        'opportunity_score': school_data.get('opportunity_score'),
+                        'analysis_date': school_data.get('updated_at') or school_data.get('analysis_date'),
+                        'web_sources': school_data.get('web_sources')
+                    }
+                    logger.debug(f"School context loaded for {school_name}: opportunity_score={school_context.get('opportunity_score')}")
+            except Exception as e:
+                logger.debug(f"Could not load school context: {e}")
+        
         # Fetch all agent evaluations
         agent_results = {}
         logger.debug(f"Application found: {application.get('applicant_name')}")
@@ -2169,7 +2200,8 @@ def student_detail(application_id):
                              aurora_evaluation=aurora_evaluation,  # For backward compatibility
                              merlin_evaluation=merlin_evaluation,  # For backward compatibility
                              is_training=application.get('is_training_example', False),
-                             reprocess_notice=reprocess_notice)
+                             reprocess_notice=reprocess_notice,
+                             school_context=school_context)  # School data for training context
         
     except Exception as e:
         logger.error(f"Error in student_detail: {str(e)}", exc_info=True)
