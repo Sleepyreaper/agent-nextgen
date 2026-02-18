@@ -134,7 +134,7 @@ def _create_chat_completion(self, operation: str, model: str, messages: list, **
 opentelemetry-api>=1.20.0
 opentelemetry-sdk>=1.20.0
 opentelemetry-semantic-conventions>=0.41b0
-opentelemetry-semantic-conventions-ai>=0.6.0
+opentelemetry-semantic-conventions-ai>=0.4.13
 
 # Azure Integration
 azure-monitor-opentelemetry>=1.0.0

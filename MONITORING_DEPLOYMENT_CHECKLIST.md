@@ -31,7 +31,7 @@ pip install -r requirements.txt
 - `azure-monitor-opentelemetry>=1.0.0`
 - `opentelemetry-api>=1.20.0`
 - `opentelemetry-sdk>=1.20.0`
-- `opentelemetry-semantic-conventions-ai>=0.6.0`
+- `opentelemetry-semantic-conventions-ai>=0.4.13`
 - `opentelemetry-exporter-otlp-proto-grpc>=0.41b0`
 - `opentelemetry-instrumentation-*` (Flask, requests, SQLAlchemy, etc.)
 
