@@ -135,6 +135,47 @@
         background: #10b981;
         color: white;
     }
+
+    .reprocess-notice {
+        background: linear-gradient(135deg, #e0f2fe 0%, #f0f9ff 100%);
+        border-left: 4px solid #0ea5e9;
+        border-radius: 8px;
+        padding: 1.25rem;
+        margin-bottom: 1.5rem;
+        display: flex;
+        align-items: flex-start;
+        gap: 1rem;
+    }
+
+    .reprocess-notice-icon {
+        font-size: 1.5rem;
+        flex-shrink: 0;
+        margin-top: 0.125rem;
+    }
+
+    .reprocess-notice-content {
+        flex-grow: 1;
+    }
+
+    .reprocess-notice-title {
+        font-weight: 600;
+        color: #0369a1;
+        margin-bottom: 0.25rem;
+        font-size: 1.05rem;
+    }
+
+    .reprocess-notice-message {
+        color: #0c4a6e;
+        font-size: 0.95rem;
+        line-height: 1.5;
+    }
+
+    .reprocess-notice-timestamp {
+        color: #64748b;
+        font-size: 0.85rem;
+        margin-top: 0.5rem;
+        font-style: italic;
+    }
 </style>
 {% endblock %}
 
@@ -176,6 +217,23 @@
         <div class="summary-body">Summary will appear once the evaluation completes.</div>
     {% endif %}
 </div>
+
+{% if reprocess_notice %}
+<div class="reprocess-notice">
+    <div class="reprocess-notice-icon">🔄</div>
+    <div class="reprocess-notice-content">
+        <div class="reprocess-notice-title">Application Updated</div>
+        <div class="reprocess-notice-message">
+            {{ reprocess_notice.message }}
+        </div>
+        {% if reprocess_notice.created_at %}
+        <div class="reprocess-notice-timestamp">
+            Updated {{ reprocess_notice.created_at }}
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endif %}
 
 {% if aurora_evaluation and aurora_evaluation.formattedevaluation %}
     {% set aurora = aurora_evaluation.formattedevaluation %}

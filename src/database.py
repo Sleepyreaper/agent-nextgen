@@ -1077,7 +1077,8 @@ class Database:
             'transcript_text',
             'recommendation_text',
             'original_file_name',
-            'file_type'
+            'file_type',
+            'student_id'
         }
 
         updates = []

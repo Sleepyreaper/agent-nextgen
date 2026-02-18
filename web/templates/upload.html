@@ -15,13 +15,13 @@
         <!-- File Upload -->
         <div id="applicationTypeSection" style="margin-bottom: 2rem;">
             <label style="display: block; font-weight: 600; margin-bottom: 0.75rem; color: #1f2937;">
-                📄 Application File *
+                📄 Application Files *
             </label>
             <div style="border: 2px dashed #667eea; border-radius: 8px; padding: 2rem; text-align: center; cursor: pointer; transition: all 0.2s;" 
                  onmouseover="this.style.background='#f0f9ff'; this.style.borderColor='#3b82f6'"
                  onmouseout="this.style.background=''; this.style.borderColor='#667eea'"
                  onclick="document.getElementById('fileInput').click()">
-                <input type="file" id="fileInput" name="file" required accept=".pdf,.docx,.doc,.txt,.text"
+                  <input type="file" id="fileInput" name="file" required multiple accept=".pdf,.docx,.doc,.txt,.text"
                        style="display: none;" onchange="updateFileName(this)">
                 <svg style="width: 48px; height: 48px; margin-bottom: 1rem;" viewBox="0 0 24 24" fill="none" stroke="#667eea" stroke-width="2">
                     <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
@@ -29,10 +29,10 @@
                     <line x1="12" y1="3" x2="12" y2="15"></line>
                 </svg>
                 <p style="font-weight: 600; color: #667eea; margin-bottom: 0.5rem;">
-                    Drag & drop or click to select file
+                    Drag & drop or click to select files
                 </p>
                 <p style="color: #6b7280; font-size: 0.9rem;">
-                    Supported: PDF, DOCX, DOC, TXT (Max 16MB)
+                    Supported: PDF, DOCX, DOC, TXT (Max 16MB each)
                 </p>
                 <p id="fileName" style="color: #10b981; font-weight: 600; margin-top: 1rem; display: none;"></p>
             </div>
@@ -109,7 +109,7 @@
     <div style="color: #1e40af; line-height: 1.8;">
         <ol style="margin-left: 1.5rem;">
             <li style="margin-bottom: 0.75rem;">
-                <strong>File Upload:</strong> Your document is uploaded to Azure Storage
+                <strong>File Upload:</strong> Your documents are uploaded to Azure Storage
             </li>
             <li style="margin-bottom: 0.75rem;">
                 <strong>Student ID Created:</strong> Smee generates a unique ID for this student
@@ -137,8 +137,14 @@
 <script>
 function updateFileName(input) {
     const fileName = document.getElementById('fileName');
-    if (input.files && input.files[0]) {
-        fileName.textContent = '✓ ' + input.files[0].name;
+    if (input.files && input.files.length > 0) {
+        if (input.files.length === 1) {
+            fileName.textContent = '✓ ' + input.files[0].name;
+        } else {
+            const names = Array.from(input.files).slice(0, 3).map(file => file.name).join(', ');
+            const moreCount = input.files.length > 3 ? ` (+${input.files.length - 3} more)` : '';
+            fileName.textContent = `✓ ${input.files.length} files: ${names}${moreCount}`;
+        }
         fileName.style.display = 'block';
     }
 }
