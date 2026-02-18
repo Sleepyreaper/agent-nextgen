@@ -20,33 +20,27 @@ class StorageManager:
     }
     
     def __init__(self):
-        """Initialize Azure Storage connection using storage account key or Azure AD authentication."""
+        """Initialize Azure Storage connection using Azure AD authentication.
+        
+        Note: Key-based authentication is disabled on the storage account.
+        Uses Entra ID (Azure AD) via DefaultAzureCredential.
+        """
         self.account_name = getattr(config, 'storage_account_name', None)
-        self.account_key = getattr(config, 'storage_account_key', None)
         
         # Initialize blob service client
         if self.account_name:
             try:
                 from azure.storage.blob import BlobServiceClient
+                from azure.identity import DefaultAzureCredential
                 
-                # Prefer storage account key if available
-                if self.account_key:
-                    # Use storage account key (shared key authentication)
-                    self.client = BlobServiceClient(
-                        account_url=f"https://{self.account_name}.blob.core.windows.net",
-                        credential=self.account_key
-                    )
-                    logger.info("✅ Azure Storage initialized with account key authentication")
-                else:
-                    # Fall back to Azure AD (Entra ID) authentication
-                    from azure.identity import DefaultAzureCredential
-                    
-                    credential = DefaultAzureCredential()
-                    self.client = BlobServiceClient(
-                        account_url=f"https://{self.account_name}.blob.core.windows.net",
-                        credential=credential
-                    )
-                    logger.info("✅ Azure Storage initialized with Azure AD authentication")
+                # Use Azure AD (Entra ID) authentication exclusively
+                # Storage account has "Shared Key access not permitted" enabled
+                credential = DefaultAzureCredential()
+                self.client = BlobServiceClient(
+                    account_url=f"https://{self.account_name}.blob.core.windows.net",
+                    credential=credential
+                )
+                logger.info("✅ Azure Storage initialized with Azure AD authentication")
                 
                 # Ensure containers exist
                 self._ensure_containers()

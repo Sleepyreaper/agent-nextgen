@@ -282,13 +282,34 @@ class SmeeOrchestrator(BaseAgent):
                         merlin_run = True
                     elif hasattr(agent, 'analyze_student_school_context'):
                         # For MoanaSchoolContext
+                        # School name must be extracted by Tiana first
+                        school_name = application.get('school_name') or application.get('SchoolName')
+                        
+                        # If not in application, try to get from Tiana's results
+                        if not school_name:
+                            tiana_results = self.evaluation_results['results'].get('application_reader')
+                            if tiana_results and isinstance(tiana_results, dict):
+                                school_name = tiana_results.get('school_name') or tiana_results.get('SchoolName')
+                        
+                        # Moana requires school_name to do analysis
+                        if not school_name:
+                            logger.warning("Skipping Moana - school name not extracted by Tiana yet")
+                            self._report_progress({
+                                'type': 'agent_progress',
+                                'agent': agent.name,
+                                'agent_id': agent_id,
+                                'status': 'skipped',
+                                'applicant': applicant_name,
+                                'message': 'Cannot analyze school context without school name'
+                            })
+                            continue
+                        
                         # Step 1: Ensure school data is enriched and cached
                         from src.school_workflow import ensure_school_context_in_pipeline
                         
-                        school_name = application.get('school_name') or application.get('SchoolName')
                         state_code = application.get('state_code') or application.get('StateCode')
                         
-                        # Get or enrich school data (checks cache first, calls Aurora if needed)
+                        # Get or enrich school data (checks cache first, calls Naveen if needed)
                         naveen_agent = self.agents.get('naveen')
                         school_enrichment = ensure_school_context_in_pipeline(
                             school_name=school_name,
