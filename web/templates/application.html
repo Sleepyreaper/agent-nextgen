@@ -232,24 +232,34 @@
         {{ agent_results.rapunzel.summary or 'Summary pending.' }}
         {% if agent_results.rapunzel.grade_table_headers and agent_results.rapunzel.grade_table_rows %}
         <div style="margin-top: 0.75rem;">
-            <table class="grade-table">
-                <thead>
-                    <tr>
-                        {% for header in agent_results.rapunzel.grade_table_headers %}
-                        <th>{{ header }}</th>
+            {% set headers = agent_results.rapunzel.grade_table_headers %}
+            <div class="grade-table-wrap">
+                <table class="grade-table">
+                    <thead>
+                        <tr>
+                            {% for header in headers %}
+                            <th>{{ header }}</th>
+                            {% endfor %}
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for row in agent_results.rapunzel.grade_table_rows %}
+                        <tr>
+                            {% for cell in row %}
+                                {% set header = headers[loop.index0]|lower %}
+                                {% if 'grade' in header %}
+                                <td class="grade-cell"><span class="grade-badge">{{ cell }}</span></td>
+                                {% elif 'level' in header %}
+                                <td><span class="level-badge">{{ cell }}</span></td>
+                                {% else %}
+                                <td>{{ cell }}</td>
+                                {% endif %}
+                            {% endfor %}
+                        </tr>
                         {% endfor %}
-                    </tr>
-                </thead>
-                <tbody>
-                    {% for row in agent_results.rapunzel.grade_table_rows %}
-                    <tr>
-                        {% for cell in row %}
-                        <td>{{ cell }}</td>
-                        {% endfor %}
-                    </tr>
-                    {% endfor %}
-                </tbody>
-            </table>
+                    </tbody>
+                </table>
+            </div>
         </div>
         {% endif %}
     </div>
@@ -526,24 +536,34 @@
             {% endif %}
             {% if aurora.agents.rapunzel.grade_table_headers and aurora.agents.rapunzel.grade_table_rows %}
             <div style="margin-top: 0.75rem;">
-                <table class="grade-table">
-                    <thead>
-                        <tr>
-                            {% for header in aurora.agents.rapunzel.grade_table_headers %}
-                            <th>{{ header }}</th>
+                {% set headers = aurora.agents.rapunzel.grade_table_headers %}
+                <div class="grade-table-wrap">
+                    <table class="grade-table">
+                        <thead>
+                            <tr>
+                                {% for header in headers %}
+                                <th>{{ header }}</th>
+                                {% endfor %}
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for row in aurora.agents.rapunzel.grade_table_rows %}
+                            <tr>
+                                {% for cell in row %}
+                                    {% set header = headers[loop.index0]|lower %}
+                                    {% if 'grade' in header %}
+                                    <td class="grade-cell"><span class="grade-badge">{{ cell }}</span></td>
+                                    {% elif 'level' in header %}
+                                    <td><span class="level-badge">{{ cell }}</span></td>
+                                    {% else %}
+                                    <td>{{ cell }}</td>
+                                    {% endif %}
+                                {% endfor %}
+                            </tr>
                             {% endfor %}
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {% for row in aurora.agents.rapunzel.grade_table_rows %}
-                        <tr>
-                            {% for cell in row %}
-                            <td>{{ cell }}</td>
-                            {% endfor %}
-                        </tr>
-                        {% endfor %}
-                    </tbody>
-                </table>
+                        </tbody>
+                    </table>
+                </div>
             </div>
             {% elif aurora.agents.rapunzel.grade_table_markdown %}
             <div style="margin-top: 0.75rem; white-space: pre-wrap; font-family: 'IBM Plex Sans', 'Segoe UI', Arial, sans-serif;">

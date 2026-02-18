@@ -168,7 +168,7 @@ class Config:
         self.flask_secret_key: str = self._get_secret("flask-secret-key", "FLASK_SECRET_KEY")
 
         # App metadata
-        self.app_version: str = os.getenv("APP_VERSION", "0.1")
+        self.app_version: str = self._read_version_file() or os.getenv("APP_VERSION") or "0.1"
 
         # GitHub feedback tracking (Key Vault first, then env)
         self.github_repo: str = (
