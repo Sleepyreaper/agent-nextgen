@@ -584,10 +584,22 @@ Document excerpt:
                 if cand and cand not in candidates:
                     candidates.append(cand)
 
-        # Keep only unique, reasonable-length candidates
+        # Keep only unique, reasonable-length candidates and filter noisy hits
+        neg_pattern = re.compile(r'\b(interns?hip|interns?|resume|experience|position|intern)\b', re.IGNORECASE)
+        year_pattern = re.compile(r'\b20\d{2}\b')
+
         final = []
         for c in candidates:
-            if 3 < len(c) < 200 and c not in final:
+            if not (3 < len(c) < 200):
+                continue
+            # Reject explicit internship / experience lines and year-only noisy candidates
+            if neg_pattern.search(c) or year_pattern.search(c):
+                continue
+            # Reject candidates with too little alphabetic content
+            alpha_only = re.sub(r'[^A-Za-z]', '', c)
+            if len(alpha_only) < 3:
+                continue
+            if c not in final:
                 final.append(c)
 
         return final
@@ -646,12 +658,19 @@ Document excerpt:
 
             # If returned exact candidate text
             if choice in candidates:
-                return choice
+                # Validate candidate before trusting the model
+                if self._is_valid_school_name(choice):
+                    return choice
+                else:
+                    return None
 
             # Sometimes model returns a cleaned variant; pick best fuzzy match by substring
             for c in candidates:
                 if c.lower() in choice.lower() or choice.lower() in c.lower():
-                    return c
+                    if self._is_valid_school_name(c):
+                        return c
+                    else:
+                        return None
 
         except Exception:
             return None
@@ -666,16 +685,28 @@ Document excerpt:
         if len(s) < 3 or len(s) > 200:
             return False
 
-        keywords = ['high school', 'hs', 'school', 'academy', 'charter', 'magnet', 'institute', 'secondary']
         lowered = s.lower()
+
+        # Reject obvious non-school tokens and years
+        if re.search(r'\b20\d{2}\b', s):
+            return False
+        negative_keywords = ['internship', 'intern', 'resume', 'experience', 'position', 'interns', 'internships']
+        if any(k in lowered for k in negative_keywords):
+            return False
+
+        # Strong positive signals
+        keywords = ['high school', ' hs', 'school', 'academy', 'charter', 'magnet', 'institute', 'secondary']
         if any(k in lowered for k in keywords):
             return True
 
         # Accept multi-word names that look like proper nouns (e.g., "Central Catholic")
-        parts = [p for p in s.split() if p]
-        if len(parts) >= 2 and all(p[0].isupper() for p in parts if p[0].isalpha()):
-            # But reject obvious city-only answers like single-word cities
-            return True
+        parts = [p for p in re.split(r"\s+", s) if p]
+        # Count alphabetic words (ignore tokens that are purely numeric)
+        alpha_parts = [p for p in parts if re.search(r'[A-Za-z]', p)]
+        if len(alpha_parts) >= 2 and all(p[0].isupper() for p in alpha_parts if p[0].isalpha()):
+            # also ensure not dominated by numbers or short tokens
+            if all(len(re.sub(r'[^A-Za-z]', '', p)) >= 2 for p in alpha_parts):
+                return True
 
         return False
     def _extract_data_by_type(self, text: str, doc_type: str) -> Dict[str, Any]:
