@@ -103,6 +103,27 @@ class Config:
         self.api_version: str = self._get_secret("azure-api-version", "AZURE_API_VERSION") or "2025-04-14"
         self.api_version_mini: str = self._get_secret("azure-api-version-mini", "AZURE_API_VERSION_MINI") or "2025-04-16"
         self.azure_openai_api_key: Optional[str] = self._get_secret("azure-openai-api-key", "AZURE_OPENAI_API_KEY")
+
+        # Prefer explicit environment variables over Key Vault values when present.
+        env_endpoint = os.getenv("AZURE_OPENAI_ENDPOINT")
+        env_deployment = os.getenv("AZURE_DEPLOYMENT_NAME")
+        env_deployment_mini = os.getenv("AZURE_DEPLOYMENT_NAME_MINI")
+        env_api_version = os.getenv("AZURE_API_VERSION")
+        env_api_version_mini = os.getenv("AZURE_API_VERSION_MINI")
+        env_api_key = os.getenv("AZURE_OPENAI_API_KEY")
+
+        if env_endpoint:
+            self.azure_openai_endpoint = env_endpoint
+        if env_deployment:
+            self.deployment_name = env_deployment
+        if env_deployment_mini:
+            self.deployment_name_mini = env_deployment_mini
+        if env_api_version:
+            self.api_version = env_api_version
+        if env_api_version_mini:
+            self.api_version_mini = env_api_version_mini
+        if env_api_key:
+            self.azure_openai_api_key = env_api_key
         self.subscription_id: str = self._get_secret("azure-subscription-id", "AZURE_SUBSCRIPTION_ID")
         self.resource_group: str = self._get_secret("azure-resource-group", "AZURE_RESOURCE_GROUP")
 
