@@ -1867,7 +1867,7 @@ class Database:
         training_col = self.get_training_example_column()
         test_col = self.get_test_data_column()
         test_filter = ""
-        if self.has_applications_column(test_col):
+        if test_col and self.has_applications_column(test_col):
             test_filter = f" AND (a.{test_col} = FALSE OR a.{test_col} IS NULL)"
 
         merlin_score_col = None
