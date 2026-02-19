@@ -158,16 +158,23 @@ class SmeeOrchestrator(BaseAgent):
         available_fields = list(application.keys()) if isinstance(application, dict) else []
         logger.debug(f"Available fields in application: {available_fields}")
         
-        missing_fields, agent_questions = self._compute_missing_fields(application, evaluation_steps)
+        application_snapshot = self._get_application_snapshot(application)
+        missing_fields, agent_questions = self._compute_missing_fields(application_snapshot, evaluation_steps)
         
         # ===== CHECK MISSING INFORMATION =====
         # Determine what information is required for the evaluation pipeline
         if missing_fields:
             # Ask Belle to fill missing details before pausing
             if self._attempt_belle_fill(application, missing_fields):
-                missing_fields, agent_questions = self._compute_missing_fields(application, evaluation_steps)
+                application_snapshot = self._get_application_snapshot(application)
+                missing_fields, agent_questions = self._compute_missing_fields(application_snapshot, evaluation_steps)
 
         if missing_fields:
+            missing_prompts = self._build_missing_field_prompts(
+                application_snapshot,
+                missing_fields,
+                agent_questions
+            )
             logger.info(f"Evaluation paused for {applicant_name}: Agents need {len(missing_fields)} items: {missing_fields}")
             
             # Save missing fields to database for UI to display
@@ -187,6 +194,7 @@ class SmeeOrchestrator(BaseAgent):
                 'student_id': student_id,
                 'missing_fields': missing_fields,
                 'agent_questions': agent_questions,
+                'missing_prompts': missing_prompts,
                 'message': f'❓ Agents need {len(missing_fields)} items to proceed'
             })
 
@@ -194,8 +202,9 @@ class SmeeOrchestrator(BaseAgent):
                 field_name = agent_info.get('field_name')
                 if field_name not in missing_fields:
                     continue
+                prompt = self._get_prompt_for_field(missing_prompts, field_name)
                 questions = agent_info.get('questions') or []
-                waiting_message = questions[0] if questions else f"Waiting for {field_name}"
+                waiting_message = prompt or (questions[0] if questions else f"Waiting for {field_name}")
                 self._report_progress({
                     'type': 'agent_progress',
                     'agent': agent_info.get('agent_name'),
@@ -214,6 +223,7 @@ class SmeeOrchestrator(BaseAgent):
                 'student_id': student_id,
                 'missing_fields': missing_fields,
                 'agent_questions': agent_questions,
+                'missing_prompts': missing_prompts,
                 'message': 'Information needed before evaluation can proceed',
                 'detailed_message': 'The following agents need information:'
             }
@@ -590,15 +600,7 @@ class SmeeOrchestrator(BaseAgent):
         application: Dict[str, Any],
         evaluation_steps: List[str]
     ) -> (List[str], List[Dict[str, Any]]):
-        lower_keys = {str(key).lower(): key for key in (application or {}).keys()}
-
-        def field_has_value(field_name: str) -> bool:
-            variants = [field_name, field_name.replace('_', '')]
-            for variant in variants:
-                key = lower_keys.get(variant.lower())
-                if key is not None and application.get(key):
-                    return True
-            return False
+        lower_keys = self._build_field_index(application)
 
         agent_questions = AgentRequirements.get_all_questions(evaluation_steps)
         consolidated_missing = []
@@ -616,7 +618,7 @@ class SmeeOrchestrator(BaseAgent):
             for field in required_fields:
                 lowercase_val = bool(application.get(field))
                 titlecase_val = bool(application.get(field.title()))
-                variant_val = field_has_value(field)
+                variant_val = self._field_has_value(application, field, lower_keys)
                 field_status[field] = {
                     'lowercase': lowercase_val,
                     'titlecase': titlecase_val,
@@ -632,6 +634,93 @@ class SmeeOrchestrator(BaseAgent):
                 logger.debug(f"     Field status: {field_status}")
 
         return consolidated_missing, agent_questions
+
+    def _get_application_snapshot(self, application: Dict[str, Any]) -> Dict[str, Any]:
+        """Merge in-database application data with in-memory application data."""
+        snapshot = dict(application or {})
+
+        if not self.db:
+            return snapshot
+
+        application_id = (
+            application.get('application_id')
+            or application.get('ApplicationID')
+            or getattr(self, '_current_application_id', None)
+        )
+        if not application_id:
+            return snapshot
+
+        try:
+            db_record = self.db.get_application(application_id)
+            if db_record:
+                merged = dict(db_record)
+                merged.update(snapshot)
+                return merged
+        except Exception as e:
+            logger.debug(f"Could not load application record for missing field checks: {e}")
+
+        return snapshot
+
+    def _build_field_index(self, application: Dict[str, Any]) -> Dict[str, Any]:
+        return {str(key).lower(): key for key in (application or {}).keys()}
+
+    def _field_has_value(
+        self,
+        application: Dict[str, Any],
+        field_name: str,
+        lower_keys: Optional[Dict[str, Any]] = None
+    ) -> bool:
+        if not lower_keys:
+            lower_keys = self._build_field_index(application)
+        variants = [field_name, field_name.replace('_', ''), field_name.title()]
+        for variant in variants:
+            key = lower_keys.get(variant.lower())
+            if key is not None and application.get(key):
+                return True
+        return False
+
+    def _build_missing_field_prompts(
+        self,
+        application: Dict[str, Any],
+        missing_fields: List[str],
+        agent_questions: List[Dict[str, Any]]
+    ) -> List[Dict[str, Any]]:
+        prompts = []
+        lower_keys = self._build_field_index(application)
+
+        for agent_info in agent_questions:
+            field_name = agent_info.get('field_name')
+            if field_name not in missing_fields:
+                continue
+
+            requirements = AgentRequirements.get_agent_requirements(agent_info.get('agent_id'))
+            required_fields = requirements.get('required_fields', [])
+            missing_required = [
+                field for field in required_fields
+                if not self._field_has_value(application, field, lower_keys)
+            ]
+            prompt = requirements.get('missing_prompt')
+            if not prompt:
+                questions = requirements.get('questions', [])
+                prompt = questions[0] if questions else f"Please provide {field_name}"
+
+            prompts.append({
+                'field_name': field_name,
+                'agent_id': agent_info.get('agent_id'),
+                'agent_name': agent_info.get('agent_name'),
+                'prompt': prompt,
+                'accepts_formats': requirements.get('accepts_formats', []),
+                'required_fields': required_fields,
+                'missing_required_fields': missing_required,
+            })
+
+        return prompts
+
+    def _get_prompt_for_field(self, prompts: List[Dict[str, Any]], field_name: str) -> Optional[str]:
+        for prompt in prompts:
+            if prompt.get('field_name') == field_name:
+                return prompt.get('prompt')
+        return None
 
     def _attempt_belle_fill(self, application: Dict[str, Any], missing_fields: List[str]) -> bool:
         if application.get('_belle_attempted'):
