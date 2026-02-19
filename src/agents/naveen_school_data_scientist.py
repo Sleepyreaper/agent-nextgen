@@ -75,12 +75,30 @@ class NaveenSchoolDataScientist(BaseAgent):
         }
 
         try:
+            inferred_state = self._infer_state_code(state_code, existing_data)
+            result["state_code"] = inferred_state
+
+            search_query = self._build_search_query(
+                school_name=school_name,
+                school_district=school_district,
+                state_code=inferred_state,
+                existing_data=existing_data
+            )
+            result["search_query"] = search_query
+
+            enriched_sources = self._build_web_sources(
+                web_sources=web_sources,
+                state_code=inferred_state,
+                search_query=search_query
+            )
+            result["web_sources"] = enriched_sources
+
             # Build comprehensive school research prompt for AI
             research_prompt = self._build_research_prompt(
                 school_name, 
                 school_district,
-                state_code,
-                web_sources,
+                inferred_state,
+                enriched_sources,
                 existing_data
             )
             
@@ -155,6 +173,35 @@ Provide structured analysis in JSON format."""
         result["model_display"] = self.model_display
 
         return result
+
+    def _build_web_sources(
+        self,
+        web_sources: Optional[List[str]],
+        state_code: Optional[str],
+        search_query: Optional[str]
+    ) -> List[str]:
+        """Build a focused list of sources for the model to reason over."""
+        sources = list(web_sources or [])
+
+        if search_query:
+            sources.append(f"search:{search_query}")
+
+        # State-specific sources
+        if state_code == "GA":
+            sources.append("https://gosa.georgia.gov/dashboards-data-report-card/data-dashboards")
+
+        # Federal references
+        sources.append("https://nces.ed.gov/fastfacts/")
+
+        # De-duplicate while preserving order
+        seen = set()
+        unique_sources = []
+        for source in sources:
+            if source and source not in seen:
+                seen.add(source)
+                unique_sources.append(source)
+
+        return unique_sources
 
     def _analyze_web_sources(self, urls: List[str]) -> Dict[str, Any]:
         """Analyze web sources and extract relevant data."""
@@ -457,7 +504,7 @@ Based on available sources and data, provide a comprehensive JSON analysis inclu
 6. Confidence Score
    - How confident you are in this analysis (0-100) based on data availability
 
-Available web sources to analyze: {json.dumps(web_sources) if web_sources else 'None provided'}
+Available web sources to analyze (including a search query hint if provided): {json.dumps(web_sources) if web_sources else 'None provided'}
 
 Existing data from other agents: {json.dumps(existing_data) if existing_data else 'None provided'}
 
@@ -466,6 +513,74 @@ college_acceptance_rate, graduation_rate, test_scores, funding_level, facility_q
 total_enrollment, free_lunch_percentage, diversity_indicators, community_sentiment, opportunity_score, confidence_score, key_insights."""
         
         return prompt
+
+    def _infer_state_code(
+        self,
+        state_code: Optional[str],
+        existing_data: Optional[Dict[str, Any]]
+    ) -> Optional[str]:
+        """Infer a two-letter state code from existing data if missing."""
+        if state_code:
+            return state_code.strip().upper()
+
+        if not existing_data:
+            return None
+
+        candidates = [
+            existing_data.get("state_code"),
+            existing_data.get("state"),
+            existing_data.get("school_state"),
+            existing_data.get("student_state"),
+            existing_data.get("address_state"),
+            existing_data.get("region_state"),
+        ]
+
+        for value in candidates:
+            if isinstance(value, str) and len(value.strip()) == 2:
+                return value.strip().upper()
+
+        return None
+
+    def _build_search_query(
+        self,
+        school_name: str,
+        school_district: Optional[str],
+        state_code: Optional[str],
+        existing_data: Optional[Dict[str, Any]]
+    ) -> str:
+        """Use the model to generate a focused search query for school data."""
+        district_hint = f", {school_district}" if school_district else ""
+        state_hint = f", {state_code}" if state_code else ""
+        base_query = f"{school_name}{district_hint}{state_hint} high school profile graduation rate enrollment AP IB"
+
+        try:
+            query_prompt = f"""Create a concise web search query (max 18 words) to find official data for a high school.
+
+School name: {school_name}
+District: {school_district or 'Unknown'}
+State: {state_code or 'Unknown'}
+Existing data: {json.dumps(existing_data) if existing_data else 'None'}
+
+Return only the search query text."""
+
+            response = self._create_chat_completion(
+                operation="school_search_query",
+                model=self.model,
+                messages=[
+                    {"role": "system", "content": "You generate concise search queries for school data."},
+                    {"role": "user", "content": query_prompt}
+                ],
+                temperature=0.2,
+                max_completion_tokens=40
+            )
+
+            if response and "content" in response.choices[0].message:
+                query_text = response.choices[0].message.content.strip()
+                return query_text.strip("\"' ") or base_query
+        except Exception as e:
+            logger.warning(f"Search query generation failed: {e}")
+
+        return base_query
 
     def _refine_analysis(
         self,
