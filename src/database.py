@@ -1719,8 +1719,8 @@ class Database:
                 free_lunch_percentage, ap_course_count, ap_exam_pass_rate, stem_program_available,
                 ib_program_available, dual_enrollment_available, analysis_status, 
                 human_review_status, web_sources_analyzed, data_confidence_score, created_by,
-                school_investment_level
-            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                school_investment_level, is_active
+            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             RETURNING school_enrichment_id
         """
         
@@ -1749,7 +1749,8 @@ class Database:
                     json.dumps(school_data.get('web_sources', [])) if school_data.get('web_sources') else None,
                     school_data.get('confidence_score', 0) or school_data.get('data_confidence_score', 0),
                     school_data.get('created_by', 'naveen'),
-                    school_data.get('school_investment_level', 'medium')
+                    school_data.get('school_investment_level', 'medium'),
+                    school_data.get('is_active', True)  # New column for active status
                 )
             )
             
