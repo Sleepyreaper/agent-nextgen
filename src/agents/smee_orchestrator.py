@@ -683,16 +683,24 @@ class SmeeOrchestrator(BaseAgent):
         )
         
         # Extract student info from BELLE extraction
-        first_name = (belle_data.get('first_name') or 
+        # BELLE returns nested structure: student_info, agent_fields, etc.
+        belle_student_info = belle_data.get('student_info', {})
+        belle_agent_fields = belle_data.get('agent_fields', {})
+        
+        first_name = (belle_student_info.get('first_name') or 
+                     belle_agent_fields.get('first_name') or
                      application.get('first_name') or 
                      application.get('FirsName', '')).strip()
-        last_name = (belle_data.get('last_name') or 
+        last_name = (belle_student_info.get('last_name') or 
+                    belle_agent_fields.get('last_name') or
                     application.get('last_name') or 
                     application.get('LastName', '')).strip()
-        high_school = (belle_data.get('high_school') or 
+        high_school = (belle_student_info.get('school_name') or 
+                      belle_agent_fields.get('school_name') or
                       application.get('high_school') or 
                       application.get('HighSchool', '')).strip()
-        state_code = (belle_data.get('state_code') or 
+        state_code = (belle_student_info.get('state_code') or 
+                     belle_agent_fields.get('state_code') or
                      application.get('state_code') or 
                      application.get('StateCode', '')).strip()
         
