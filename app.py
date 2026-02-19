@@ -1625,16 +1625,8 @@ def generate_process_updates(application_id: int):
                 'recommendation_reader',
                 'school_context',
                 'data_scientist',
-                'student_evaluator'
-            ]
-
-            result = asyncio.run(orchestrator.coordinate_evaluation(
-                application=application,
-                evaluation_steps=evaluation_steps,
-                progress_callback=progress_callback
-            ))
-
-            update_queue.put({'_orchestration_complete': True, 'result': result})
+                        'student_evaluator',
+                        'aurora'
         except Exception as exc:
             logger.error(
                 f"Orchestration error for application {application_id}: {str(exc)}",
@@ -2786,7 +2778,8 @@ def _process_session(session_id):
                         'recommendation_reader',
                         'school_context',
                         'data_scientist',
-                        'student_evaluator'
+                        'student_evaluator',
+                        'aurora'
                     ]
 
                     logger.debug(f"Evaluation steps: {evaluation_steps}")
