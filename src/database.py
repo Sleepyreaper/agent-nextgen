@@ -261,12 +261,15 @@ class Database:
             self.connection = None
     
     def _run_migrations(self) -> None:
-        """Run pending database migrations on connection."""
+        """
+        Run comprehensive database migrations once during startup.
+        Ensures all agent tables have required columns for data persistence.
+        """
         try:
             conn = self.connect()
             cursor = conn.cursor()
             
-            # Check if student matching columns exist, add them if not
+            # ===== APPLICATIONS TABLE MIGRATIONS =====
             cursor.execute("""
                 SELECT column_name
                 FROM information_schema.columns
@@ -274,7 +277,6 @@ class Database:
             """)
             existing_columns = set(row[0] for row in cursor.fetchall())
             
-            # Add missing columns
             if 'first_name' not in existing_columns:
                 cursor.execute("ALTER TABLE applications ADD COLUMN first_name VARCHAR(255)")
                 logger.info("✓ Added first_name column to applications")
@@ -295,7 +297,112 @@ class Database:
                 cursor.execute("ALTER TABLE applications ADD COLUMN is_test_data BOOLEAN DEFAULT FALSE")
                 logger.info("✓ Added is_test_data column to applications")
             
-            # Create indexes for matching queries if they don't exist
+            # ===== RAPUNZEL GRADES TABLE MIGRATIONS =====
+            cursor.execute("""
+                SELECT column_name
+                FROM information_schema.columns
+                WHERE table_name = 'rapunzel_grades'
+            """)
+            rapunzel_columns = set(row[0] for row in cursor.fetchall())
+            
+            # Required columns for Rapunzel to save grade data
+            rapunzel_required = {
+                'contextual_rigor_index': 'NUMERIC(5,2)',
+                'school_context_used': 'BOOLEAN DEFAULT FALSE'
+            }
+            
+            for col_name, col_type in rapunzel_required.items():
+                if col_name not in rapunzel_columns:
+                    cursor.execute(f"ALTER TABLE rapunzel_grades ADD COLUMN {col_name} {col_type}")
+                    logger.info(f"✓ Added {col_name} column to rapunzel_grades")
+            
+            # Create index on contextual_rigor_index for query performance
+            try:
+                cursor.execute("CREATE INDEX IF NOT EXISTS idx_rapunzel_rigor ON rapunzel_grades(contextual_rigor_index)")
+                logger.info("✓ Created index on rapunzel_grades.contextual_rigor_index")
+            except Exception as idx_err:
+                logger.warning(f"Could not create rapunzel rigor index: {idx_err}")
+            
+            # ===== TIANA APPLICATIONS TABLE MIGRATIONS =====
+            cursor.execute("""
+                SELECT column_name
+                FROM information_schema.columns
+                WHERE table_name = 'tiana_applications'
+            """)
+            tiana_columns = set(row[0] for row in cursor.fetchall())
+            
+            # Tiana uses: essay_summary, recommendation_texts, readiness_score, confidence, parsed_json
+            # These should already exist in schema, but we ensure they do
+            if 'parsed_json' not in tiana_columns:
+                cursor.execute("ALTER TABLE tiana_applications ADD COLUMN parsed_json JSONB DEFAULT '{}'::jsonb")
+                logger.info("✓ Added parsed_json column to tiana_applications")
+            
+            # ===== MULAN RECOMMENDATIONS TABLE MIGRATIONS =====
+            cursor.execute("""
+                SELECT column_name
+                FROM information_schema.columns
+                WHERE table_name = 'mulan_recommendations'
+            """)
+            mulan_columns = set(row[0] for row in cursor.fetchall())
+            
+            # Mulan uses: recommender_name, recommender_role, endorsement_strength, specificity_score, summary, raw_text, parsed_json
+            if 'parsed_json' not in mulan_columns:
+                cursor.execute("ALTER TABLE mulan_recommendations ADD COLUMN parsed_json JSONB DEFAULT '{}'::jsonb")
+                logger.info("✓ Added parsed_json column to mulan_recommendations")
+            
+            if 'raw_text' not in mulan_columns:
+                cursor.execute("ALTER TABLE mulan_recommendations ADD COLUMN raw_text TEXT")
+                logger.info("✓ Added raw_text column to mulan_recommendations")
+            
+            # ===== MERLIN EVALUATIONS TABLE MIGRATIONS =====
+            cursor.execute("""
+                SELECT column_name
+                FROM information_schema.columns
+                WHERE table_name = 'merlin_evaluations'
+            """)
+            merlin_columns = set(row[0] for row in cursor.fetchall())
+            
+            if 'parsed_json' not in merlin_columns:
+                cursor.execute("ALTER TABLE merlin_evaluations ADD COLUMN parsed_json JSONB DEFAULT '{}'::jsonb")
+                logger.info("✓ Added parsed_json column to merlin_evaluations")
+            
+            # ===== AURORA EVALUATIONS TABLE MIGRATIONS =====
+            cursor.execute("""
+                SELECT column_name
+                FROM information_schema.columns
+                WHERE table_name = 'aurora_evaluations'
+            """)
+            aurora_columns = set(row[0] for row in cursor.fetchall())
+            
+            if 'parsed_json' not in aurora_columns:
+                cursor.execute("ALTER TABLE aurora_evaluations ADD COLUMN parsed_json JSONB DEFAULT '{}'::jsonb")
+                logger.info("✓ Added parsed_json column to aurora_evaluations")
+            
+            if 'agents_completed' not in aurora_columns:
+                cursor.execute("ALTER TABLE aurora_evaluations ADD COLUMN agents_completed VARCHAR(500)")
+                logger.info("✓ Added agents_completed column to aurora_evaluations")
+            
+            # ===== STUDENT SCHOOL CONTEXT TABLE MIGRATIONS =====
+            cursor.execute("""
+                SELECT column_name
+                FROM information_schema.columns
+                WHERE table_name = 'student_school_context'
+            """)
+            context_columns = set(row[0] for row in cursor.fetchall())
+            
+            # Moana uses student_school_context for school enrichment
+            context_required = {
+                'agent_name': "VARCHAR(255) DEFAULT 'Moana'",
+                'parsed_json': "JSONB DEFAULT '{}'::jsonb",
+                'updated_at': "TIMESTAMP DEFAULT CURRENT_TIMESTAMP"
+            }
+            
+            for col_name, col_type in context_required.items():
+                if col_name not in context_columns:
+                    cursor.execute(f"ALTER TABLE student_school_context ADD COLUMN {col_name} {col_type}")
+                    logger.info(f"✓ Added {col_name} column to student_school_context")
+            
+            # ===== CREATE MISSING INDEXES =====
             try:
                 cursor.execute("""
                     CREATE INDEX IF NOT EXISTS idx_student_match 
@@ -310,14 +417,12 @@ class Database:
             except Exception as idx_err:
                 logger.warning(f"Could not create index (may already exist): {idx_err}")
             
-            # Create index on state_code
             try:
                 cursor.execute("CREATE INDEX IF NOT EXISTS idx_state_code ON applications(state_code)")
                 logger.info("✓ Created state_code index")
             except Exception as idx_err:
                 logger.warning(f"Could not create state_code index: {idx_err}")
             
-            # Create index on is_test_data for fast filtering
             try:
                 cursor.execute("CREATE INDEX IF NOT EXISTS idx_is_test_data ON applications(is_test_data)")
                 logger.info("✓ Created is_test_data index")
@@ -326,10 +431,10 @@ class Database:
             
             conn.commit()
             cursor.close()
-            logger.info("✓ Database migrations completed")
+            logger.info("⭐ COMPREHENSIVE DATABASE MIGRATIONS COMPLETED")
             
         except Exception as e:
-            logger.error(f"Migration error: {e}")
+            logger.error(f"❌ Migration error: {e}")
             # Don't fail if migrations have issues - the app will continue
             if self.connection:
                 self.connection.rollback()
