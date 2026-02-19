@@ -1437,7 +1437,7 @@ def test_data():
         email_col = db.get_applications_column("email")
         status_col = db.get_applications_column("status")
         uploaded_col = db.get_applications_column("uploaded_date")
-        training_col = db.get_training_column()
+        training_col = db.get_training_example_column()
 
         test_students = []
         if db.has_applications_column(test_col):
