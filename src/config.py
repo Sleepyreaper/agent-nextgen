@@ -99,9 +99,9 @@ class Config:
         # Load configuration
         self.azure_openai_endpoint: str = self._get_secret("azure-openai-endpoint", "AZURE_OPENAI_ENDPOINT")
         self.deployment_name: str = self._get_secret("azure-deployment-name", "AZURE_DEPLOYMENT_NAME")
-        self.deployment_name_mini: str = self._get_secret("azure-deployment-name-mini", "AZURE_DEPLOYMENT_NAME_MINI") or "o4miniagent"
-        self.api_version: str = self._get_secret("azure-api-version", "AZURE_API_VERSION") or "2024-12-01-preview"
-        self.api_version_mini: str = self._get_secret("azure-api-version-mini", "AZURE_API_VERSION_MINI") or "2024-12-01-preview"
+        self.deployment_name_mini: str = self._get_secret("azure-deployment-name-mini", "AZURE_DEPLOYMENT_NAME_MINI") or "o4MiniAgent"
+        self.api_version: str = self._get_secret("azure-api-version", "AZURE_API_VERSION") or "2025-04-14"
+        self.api_version_mini: str = self._get_secret("azure-api-version-mini", "AZURE_API_VERSION_MINI") or "2025-04-16"
         self.azure_openai_api_key: Optional[str] = self._get_secret("azure-openai-api-key", "AZURE_OPENAI_API_KEY")
         self.subscription_id: str = self._get_secret("azure-subscription-id", "AZURE_SUBSCRIPTION_ID")
         self.resource_group: str = self._get_secret("azure-resource-group", "AZURE_RESOURCE_GROUP")
