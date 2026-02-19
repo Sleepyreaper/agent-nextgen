@@ -170,63 +170,14 @@ class SmeeOrchestrator(BaseAgent):
                 missing_fields, agent_questions = self._compute_missing_fields(application_snapshot, evaluation_steps)
 
         if missing_fields:
-            missing_prompts = self._build_missing_field_prompts(
-                application_snapshot,
-                missing_fields,
-                agent_questions
+            return self._pause_for_missing_fields(
+                applicant_name=applicant_name,
+                application_id=application_id,
+                student_id=student_id,
+                missing_fields=missing_fields,
+                agent_questions=agent_questions,
+                application_snapshot=application_snapshot
             )
-            logger.info(f"Evaluation paused for {applicant_name}: Agents need {len(missing_fields)} items: {missing_fields}")
-            
-            # Save missing fields to database for UI to display
-            if self.db and application_id:
-                try:
-                    self.db.set_missing_fields(application_id, missing_fields)
-                except Exception as e:
-                    logger.warning(f"Could not save missing fields: {e}")
-            
-            # Report pause status with agent questions
-            self._report_progress({
-                'type': 'evaluation_paused',
-                'agent': 'Smee Orchestrator',
-                'agent_id': 'smee',
-                'status': 'asking_for_info',
-                'applicant': applicant_name,
-                'student_id': student_id,
-                'missing_fields': missing_fields,
-                'agent_questions': agent_questions,
-                'missing_prompts': missing_prompts,
-                'message': f'❓ Agents need {len(missing_fields)} items to proceed'
-            })
-
-            for agent_info in agent_questions:
-                field_name = agent_info.get('field_name')
-                if field_name not in missing_fields:
-                    continue
-                prompt = self._get_prompt_for_field(missing_prompts, field_name)
-                questions = agent_info.get('questions') or []
-                waiting_message = prompt or (questions[0] if questions else f"Waiting for {field_name}")
-                self._report_progress({
-                    'type': 'agent_progress',
-                    'agent': agent_info.get('agent_name'),
-                    'agent_id': agent_info.get('agent_id'),
-                    'status': 'blocked',
-                    'applicant': applicant_name,
-                    'student_id': student_id,
-                    'waiting_for': field_name,
-                    'message': waiting_message
-                })
-            
-            return {
-                'status': 'paused',
-                'applicant_name': applicant_name,
-                'application_id': application_id,
-                'student_id': student_id,
-                'missing_fields': missing_fields,
-                'agent_questions': agent_questions,
-                'missing_prompts': missing_prompts,
-                'message': 'Information needed before evaluation can proceed',
-                'detailed_message': 'The following agents need information:'
-            }
         
         # Report Smee starting orchestration
         self._report_progress({
@@ -286,6 +237,23 @@ class SmeeOrchestrator(BaseAgent):
             if agent_id not in self.agents:
                 logger.warning(f"Agent '{agent_id}' not found. Skipping.")
                 continue
+
+            if agent_id in required_agents:
+                missing_for_agent = self._get_missing_fields_for_agent(agent_id, application_snapshot)
+                if missing_for_agent:
+                    if self._attempt_belle_fill(application, missing_for_agent):
+                        application_snapshot = self._get_application_snapshot(application)
+                        missing_for_agent = self._get_missing_fields_for_agent(agent_id, application_snapshot)
+
+                if missing_for_agent:
+                    return self._pause_for_missing_fields(
+                        applicant_name=applicant_name,
+                        application_id=application_id,
+                        student_id=student_id,
+                        missing_fields=missing_for_agent,
+                        agent_questions=agent_questions,
+                        application_snapshot=application_snapshot
+                    )
             
             # Check if required agents are complete before proceeding to optional/Merlin
             if agent_id in optional_agents:
@@ -645,6 +613,88 @@ class SmeeOrchestrator(BaseAgent):
 
         return consolidated_missing, agent_questions
 
+    def _pause_for_missing_fields(
+        self,
+        applicant_name: str,
+        application_id: Optional[Any],
+        student_id: Optional[Any],
+        missing_fields: List[str],
+        agent_questions: List[Dict[str, Any]],
+        application_snapshot: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        missing_prompts = self._build_missing_field_prompts(
+            application_snapshot,
+            missing_fields,
+            agent_questions
+        )
+        logger.info(f"Evaluation paused for {applicant_name}: Agents need {len(missing_fields)} items: {missing_fields}")
+
+        if self.db and application_id:
+            try:
+                self.db.set_missing_fields(application_id, missing_fields)
+            except Exception as e:
+                logger.warning(f"Could not save missing fields: {e}")
+
+        self._report_progress({
+            'type': 'evaluation_paused',
+            'agent': 'Smee Orchestrator',
+            'agent_id': 'smee',
+            'status': 'asking_for_info',
+            'applicant': applicant_name,
+            'student_id': student_id,
+            'missing_fields': missing_fields,
+            'agent_questions': agent_questions,
+            'missing_prompts': missing_prompts,
+            'message': f'❓ Agents need {len(missing_fields)} items to proceed'
+        })
+
+        for agent_info in agent_questions:
+            field_name = agent_info.get('field_name')
+            if field_name not in missing_fields:
+                continue
+            prompt = self._get_prompt_for_field(missing_prompts, field_name)
+            questions = agent_info.get('questions') or []
+            waiting_message = prompt or (questions[0] if questions else f"Waiting for {field_name}")
+            self._report_progress({
+                'type': 'agent_progress',
+                'agent': agent_info.get('agent_name'),
+                'agent_id': agent_info.get('agent_id'),
+                'status': 'blocked',
+                'applicant': applicant_name,
+                'student_id': student_id,
+                'waiting_for': field_name,
+                'message': waiting_message
+            })
+
+        return {
+            'status': 'paused',
+            'applicant_name': applicant_name,
+            'application_id': application_id,
+            'student_id': student_id,
+            'missing_fields': missing_fields,
+            'agent_questions': agent_questions,
+            'missing_prompts': missing_prompts,
+            'message': 'Information needed before evaluation can proceed',
+            'detailed_message': 'The following agents need information:'
+        }
+
+    def _get_missing_fields_for_agent(
+        self,
+        agent_id: str,
+        application: Dict[str, Any]
+    ) -> List[str]:
+        requirements = AgentRequirements.get_agent_requirements(agent_id)
+        required_fields = requirements.get('required_fields', [])
+        field_name = requirements.get('field_name', agent_id)
+        lower_keys = self._build_field_index(application)
+
+        missing_required = [
+            field for field in required_fields
+            if not self._field_has_value(application, field, lower_keys)
+        ]
+
+        return [field_name] if missing_required else []
+
     def _get_application_snapshot(self, application: Dict[str, Any]) -> Dict[str, Any]:
         """Merge in-database application data with in-memory application data."""
         snapshot = dict(application or {})
@@ -714,6 +764,13 @@ class SmeeOrchestrator(BaseAgent):
                 questions = requirements.get('questions', [])
                 prompt = questions[0] if questions else f"Please provide {field_name}"
 
+            prompt = self._generate_missing_prompt_with_ai(
+                field_name=field_name,
+                missing_required=missing_required,
+                application=application,
+                fallback_prompt=prompt
+            )
+
             prompts.append({
                 'field_name': field_name,
                 'agent_id': agent_info.get('agent_id'),
@@ -725,6 +782,45 @@ class SmeeOrchestrator(BaseAgent):
             })
 
         return prompts
+
+    def _generate_missing_prompt_with_ai(
+        self,
+        field_name: str,
+        missing_required: List[str],
+        application: Dict[str, Any],
+        fallback_prompt: str
+    ) -> str:
+        """Use AI to generate a concise, specific prompt for missing evidence."""
+        try:
+            applicant_name = application.get('applicant_name') or application.get('ApplicantName')
+            summary = {
+                'applicant_name': applicant_name,
+                'missing_required_fields': missing_required,
+                'available_fields': list(application.keys())[:30]
+            }
+            prompt = f"""You are Smee. Write a single, concise request (1 sentence) asking the user to provide missing evidence for {field_name}.
+Be specific about the document and acceptable formats if relevant. Avoid redundant questions.
+
+Context: {json.dumps(summary)}
+
+Return only the request sentence."""
+
+            response = self._create_chat_completion(
+                operation="missing_evidence_prompt",
+                model=self.model,
+                messages=[
+                    {"role": "system", "content": "You create precise document requests for missing evidence."},
+                    {"role": "user", "content": prompt}
+                ],
+                temperature=0.2,
+                max_completion_tokens=60
+            )
+            if response and "content" in response.choices[0].message:
+                return response.choices[0].message.content.strip()
+        except Exception as e:
+            logger.debug(f"Missing prompt generation failed: {e}")
+
+        return fallback_prompt
 
     def _get_prompt_for_field(self, prompts: List[Dict[str, Any]], field_name: str) -> Optional[str]:
         for prompt in prompts:
