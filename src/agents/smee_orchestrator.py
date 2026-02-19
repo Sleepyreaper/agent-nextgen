@@ -916,31 +916,27 @@ class SmeeOrchestrator(BaseAgent):
                 )
                 
                 if not readiness.get('ready'):
-                    logger.warning(f"⚠️ Still not ready after BELLE retry. Pausing for user input.")
+                    logger.warning(f"⚠️ {agent_id} still not ready after BELLE retry. SKIPPING for now and continuing with other agents.")
                     
-                    # PHASE 5: Log pause for missing fields
+                    # PHASE 5: Log skipping agent due to missing fields
                     self._log_interaction(
                         application_id=application_id,
                         agent_name=agent_id.title(),
-                        interaction_type='pause_for_documents',
-                        question_text=f"Agent {agent_id} requires additional documents",
+                        interaction_type='skip_insufficient_data',
+                        question_text=f"Agent {agent_id} skipped - insufficient data",
                         extracted_data={
                             'agent_id': agent_id,
                             'reason': 'missing_required_documents',
-                            'validation_status': 'failed_gate_2',
+                            'validation_status': 'failed_gate_2_skipping',
                             'missing_fields': readiness.get('missing', []),
-                            'gate_number': 2
+                            'gate_number': 2,
+                            'action': 'skipped_continue_workflow'
                         }
                     )
                     
-                    return self._pause_for_missing_fields(
-                        applicant_name=applicant_name,
-                        application_id=application_id,
-                        student_id=student_id,
-                        missing_fields=readiness.get('missing', []),
-                        agent_questions=[readiness.get('prompt', '')],
-                        application_snapshot=application
-                    )
+                    # CHANGE: Instead of pausing, log the skip and continue to next agent
+                    logger.info(f"⏭️  Skipping {agent_id}, continuing with remaining agents...")
+                    continue  # Continue to next agent instead of returning
             
             logger.info(f"✅ Agent {agent_id} validation passed")
             
