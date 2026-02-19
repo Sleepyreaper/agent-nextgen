@@ -30,21 +30,21 @@ aiohttp>=3.9.0
 
 # OpenTelemetry & Application Insights (Observability)
 # Core OpenTelemetry packages
-opentelemetry-api>=1.26.0
-opentelemetry-sdk>=1.26.0
-opentelemetry-semantic-conventions>=0.41b0
-opentelemetry-semantic-conventions-ai>=0.4.13
+opentelemetry-api==1.26.0
+opentelemetry-sdk==1.26.0
+opentelemetry-semantic-conventions==0.47b0
+opentelemetry-semantic-conventions-ai==0.4.13
 
 # Exporters
-azure-monitor-opentelemetry>=1.0.0
-opentelemetry-exporter-otlp-proto-grpc>=0.41b0
-opentelemetry-exporter-otlp-proto-http>=0.41b0
-opentelemetry-exporter-prometheus>=0.41b0
+azure-monitor-opentelemetry>=1.6.0
+opentelemetry-exporter-otlp-proto-grpc==1.26.0
+opentelemetry-exporter-otlp-proto-http==1.26.0
+opentelemetry-exporter-prometheus==0.47b0
 
 # Instrumentation (automatic span generation)
-opentelemetry-instrumentation>=0.41b0
-opentelemetry-instrumentation-flask>=0.41b0
-opentelemetry-instrumentation-requests>=0.41b0
-opentelemetry-instrumentation-sqlalchemy>=0.41b0
-opentelemetry-instrumentation-httpx>=0.41b0
-opentelemetry-instrumentation-aiohttp-client>=0.41b0
+opentelemetry-instrumentation==0.47b0
+opentelemetry-instrumentation-flask==0.47b0
+opentelemetry-instrumentation-requests==0.47b0
+opentelemetry-instrumentation-sqlalchemy==0.47b0
+opentelemetry-instrumentation-httpx==0.47b0
+opentelemetry-instrumentation-aiohttp-client==0.47b0
