@@ -722,6 +722,8 @@ class SmeeOrchestrator(BaseAgent):
             if student_app_id:
                 application_id = student_app_id
                 self._current_application_id = student_app_id
+                # CRITICAL: Update application dict so agents can access application_id
+                application['application_id'] = student_app_id
                 logger.info(f"✅ Student record ready: application_id={student_app_id}")
                 
                 # PHASE 5: Log STEP 2 student matching
