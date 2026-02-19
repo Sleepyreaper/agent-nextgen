@@ -23,6 +23,7 @@ class Database:
         self._test_data_column = None
         self._schema_probe_failed_at = None
         self._schema_probe_cooldown_seconds = 30
+        self._migrations_run = False
 
     def _schema_probe_allowed(self) -> bool:
         if self._schema_probe_failed_at is None:
@@ -243,6 +244,12 @@ class Database:
                     self.connection = psycopg.connect(params['conninfo'])
                 else:
                     self.connection = psycopg.connect(**params)
+                
+                # Run migrations on first successful connection
+                if not self._migrations_run:
+                    self._run_migrations()
+                    self._migrations_run = True
+                    
             except Exception as e:
                 raise ConnectionError(f"Failed to connect to PostgreSQL: {e}")
         return self.connection
@@ -252,6 +259,69 @@ class Database:
         if self.connection and not self.connection.closed:
             self.connection.close()
             self.connection = None
+    
+    def _run_migrations(self) -> None:
+        """Run pending database migrations on connection."""
+        try:
+            conn = self.connect()
+            cursor = conn.cursor()
+            
+            # Check if student matching columns exist, add them if not
+            cursor.execute("""
+                SELECT column_name
+                FROM information_schema.columns
+                WHERE table_name = 'applications' AND column_name IN ('first_name', 'last_name', 'high_school', 'state_code')
+            """)
+            existing_columns = set(row[0] for row in cursor.fetchall())
+            
+            # Add missing columns
+            if 'first_name' not in existing_columns:
+                cursor.execute("ALTER TABLE applications ADD COLUMN first_name VARCHAR(255)")
+                logger.info("✓ Added first_name column to applications")
+            
+            if 'last_name' not in existing_columns:
+                cursor.execute("ALTER TABLE applications ADD COLUMN last_name VARCHAR(255)")
+                logger.info("✓ Added last_name column to applications")
+            
+            if 'high_school' not in existing_columns:
+                cursor.execute("ALTER TABLE applications ADD COLUMN high_school VARCHAR(500)")
+                logger.info("✓ Added high_school column to applications")
+            
+            if 'state_code' not in existing_columns:
+                cursor.execute("ALTER TABLE applications ADD COLUMN state_code VARCHAR(10)")
+                logger.info("✓ Added state_code column to applications")
+            
+            # Create indexes for matching queries if they don't exist
+            try:
+                cursor.execute("""
+                    CREATE INDEX IF NOT EXISTS idx_student_match 
+                    ON applications(
+                        LOWER(COALESCE(first_name, '')),
+                        LOWER(COALESCE(last_name, '')),
+                        LOWER(COALESCE(high_school, '')),
+                        UPPER(COALESCE(state_code, ''))
+                    )
+                """)
+                logger.info("✓ Created student matching index")
+            except Exception as idx_err:
+                logger.warning(f"Could not create index (may already exist): {idx_err}")
+            
+            # Create index on state_code
+            try:
+                cursor.execute("CREATE INDEX IF NOT EXISTS idx_state_code ON applications(state_code)")
+                logger.info("✓ Created state_code index")
+            except Exception as idx_err:
+                logger.warning(f"Could not create state_code index: {idx_err}")
+            
+            conn.commit()
+            cursor.close()
+            logger.info("✓ Database migrations completed")
+            
+        except Exception as e:
+            logger.error(f"Migration error: {e}")
+            # Don't fail if migrations have issues - the app will continue
+            if self.connection:
+                self.connection.rollback()
     
     def execute_query(self, query: str, params: tuple = None) -> List[Dict[str, Any]]:
         """Execute a SELECT query and return results."""

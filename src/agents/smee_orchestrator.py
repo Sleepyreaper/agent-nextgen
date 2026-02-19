@@ -921,7 +921,12 @@ class SmeeOrchestrator(BaseAgent):
                     student_id=student_id,
                     missing_fields=validation_log.get('final_missing_fields', []),
                     agent_questions=[
-                        f"Please provide school documents showing: {', '.join(validation_log.get('final_missing_fields', []))}"
+                        {
+                            'field_name': field,
+                            'agent_id': 'naveen',
+                            'agent_name': 'Naveen'
+                        }
+                        for field in validation_log.get('final_missing_fields', [])
                     ],
                     application_snapshot=application
                 )
@@ -1446,6 +1451,11 @@ class SmeeOrchestrator(BaseAgent):
         lower_keys = self._build_field_index(application)
 
         for agent_info in agent_questions:
+            # Defensive: handle if agent_info is a string instead of dict
+            if isinstance(agent_info, str):
+                logger.warning(f"agent_info is string instead of dict: {agent_info}")
+                continue
+            
             field_name = agent_info.get('field_name')
             if field_name not in missing_fields:
                 continue
