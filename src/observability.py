@@ -33,6 +33,7 @@ _tracer: Optional[object] = None
 _meter: Optional[object] = None
 _is_configured = False
 _capture_sensitive_data = False
+_last_error: Optional[str] = None
 
 
 def configure_observability(
@@ -55,10 +56,12 @@ def configure_observability(
         enable_console_exporters: Enable console output for debugging
         capture_sensitive_data: Include prompts and responses in telemetry (dev only)
     """
-    global _tracer, _meter, _is_configured, _capture_sensitive_data
+    global _tracer, _meter, _is_configured, _capture_sensitive_data, _last_error
     
     if _is_configured:
         return
+
+    _last_error = None
     
     _capture_sensitive_data = capture_sensitive_data
     
@@ -85,11 +88,15 @@ def configure_observability(
             
             if connection_string:
                 # Configure Azure Monitor with Application Insights
-                configure_azure_monitor(
-                    connection_string=connection_string,
-                    resource=create_resource() if create_resource else None,
-                    enable_live_metrics=True,
-                )
+                try:
+                    configure_azure_monitor(
+                        connection_string=connection_string,
+                        resource=create_resource() if create_resource else None,
+                        enable_live_metrics=True,
+                    )
+                except Exception as e:
+                    _last_error = f"Azure Monitor configuration failed: {e}"
+                    raise
                 
                 # Activate Agent Framework instrumentation
                 if enable_instrumentation:
@@ -100,6 +107,8 @@ def configure_observability(
                 _is_configured = True
                 print(f"✓ Azure Monitor observability configured for '{service_name}'")
                 return
+            else:
+                _last_error = "APPLICATIONINSIGHTS_CONNECTION_STRING not set"
         
         # Fallback: Use standard OpenTelemetry with OTLP exporter
         otlp_endpoint = os.getenv("OTEL_EXPORTER_OTLP_ENDPOINT")
@@ -129,9 +138,12 @@ def configure_observability(
             return
         
         # No configuration available
+        if _last_error is None:
+            _last_error = "No telemetry exporter configured"
         print("⚠ Observability not configured - set APPLICATIONINSIGHTS_CONNECTION_STRING or OTEL_EXPORTER_OTLP_ENDPOINT")
     
     except Exception as e:
+        _last_error = str(e)
         print(f"⚠ Observability configuration failed: {e}")
 
 
@@ -157,3 +169,15 @@ def should_capture_sensitive_data() -> bool:
 def is_observability_enabled() -> bool:
     """Check if observability is fully configured."""
     return _is_configured
+
+
+def get_observability_status() -> dict:
+    """Return detailed observability status for debugging."""
+    return {
+        "configured": _is_configured,
+        "azure_monitor_available": configure_azure_monitor is not None,
+        "agent_framework_available": enable_instrumentation is not None,
+        "connection_string_set": bool(os.getenv("APPLICATIONINSIGHTS_CONNECTION_STRING")),
+        "otlp_endpoint_set": bool(os.getenv("OTEL_EXPORTER_OTLP_ENDPOINT")),
+        "last_error": _last_error,
+    }

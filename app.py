@@ -25,7 +25,7 @@ from src.storage import storage
 from src.test_data_generator import test_data_generator
 from src.logger import app_logger as logger, audit_logger
 from src.telemetry import init_telemetry
-from src.observability import is_observability_enabled
+from src.observability import is_observability_enabled, get_observability_status
 from src.agents import (
     GastonEvaluator,
     SmeeOrchestrator,
@@ -4158,15 +4158,26 @@ def get_agent_history(agent_name):
 @app.route('/api/debug/telemetry-status')
 def get_telemetry_status():
     """Report whether observability is configured and where it would export."""
-    connection_string_set = bool(os.getenv("APPLICATIONINSIGHTS_CONNECTION_STRING"))
     otlp_endpoint = os.getenv("OTEL_EXPORTER_OTLP_ENDPOINT")
     telemetry_enabled = is_observability_enabled()
+    observability_status = get_observability_status()
+
+    endpoint = config.azure_openai_endpoint or ""
+    endpoint_hint = endpoint.replace("https://", "").split("/")[0] if endpoint else None
 
     return jsonify({
         'telemetry_enabled': telemetry_enabled,
-        'app_insights_configured': connection_string_set,
+        'app_insights_configured': observability_status.get("connection_string_set"),
         'otlp_endpoint_configured': bool(otlp_endpoint),
         'otlp_endpoint': otlp_endpoint if otlp_endpoint else None,
+        'observability': observability_status,
+        'ai_config': {
+            'deployment_name': config.deployment_name,
+            'deployment_name_mini': config.deployment_name_mini,
+            'api_version': config.api_version,
+            'api_version_mini': config.api_version_mini,
+            'endpoint_host': endpoint_hint,
+        }
     })
 
 
