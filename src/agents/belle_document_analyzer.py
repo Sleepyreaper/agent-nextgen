@@ -460,9 +460,9 @@ Document:
                         return school
         
         return None
-    
+    def _extract_data_by_type(self, text: str, doc_type: str) -> Dict[str, Any]:
         """Extract type-specific data from the document."""
-        
+
         extractors = {
             "transcript": self._extract_transcript_data,
             "letter_of_recommendation": self._extract_recommendation_data,

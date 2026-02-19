@@ -10,6 +10,7 @@ Builds comprehensive school enrichment profiles for student opportunity assessme
 
 import logging
 import json
+import re
 import time
 from typing import Dict, Any, Optional, List
 from datetime import datetime

@@ -1,6 +1,7 @@
 """Mulan Recommendation Reader - Parses recommendation letters into structured insights."""
 
 import json
+import re
 from typing import Dict, Any, Optional
 from openai import AzureOpenAI
 from src.agents.base_agent import BaseAgent

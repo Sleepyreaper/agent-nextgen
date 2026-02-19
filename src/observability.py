@@ -14,8 +14,18 @@ from opentelemetry.sdk.trace.export import BatchSpanProcessor
 from opentelemetry.sdk.metrics import MeterProvider
 from opentelemetry.sdk.metrics.export import PeriodicExportingMetricReader
 from opentelemetry.sdk.resources import Resource
-from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
-from opentelemetry.exporter.otlp.proto.grpc.metric_exporter import OTLPMetricExporter
+# OTLP exporters can have runtime version conflicts on some hosting platforms
+# (App Service may provide its own opentelemetry packages). Import defensively
+# to avoid crashing the application during startup when the host environment
+# bundles incompatible opentelemetry versions.
+try:
+    from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
+    from opentelemetry.exporter.otlp.proto.grpc.metric_exporter import OTLPMetricExporter
+    OTLP_AVAILABLE = True
+except Exception:
+    OTLPSpanExporter = None
+    OTLPMetricExporter = None
+    OTLP_AVAILABLE = False
 
 try:
     from azure.monitor.opentelemetry import configure_azure_monitor
@@ -120,6 +130,12 @@ def configure_observability(
         otlp_endpoint = os.getenv("OTEL_EXPORTER_OTLP_ENDPOINT")
         
         if otlp_endpoint:
+            if not OTLP_AVAILABLE:
+                _last_error = "OTLP exporters not available (import failed)"
+                print(f"⚠ Skipping OTLP configuration: {_last_error}")
+                # Do not raise here; leave observability unconfigured
+                return
+
             # Configure OTLP exporters
             trace_exporter = OTLPSpanExporter(endpoint=otlp_endpoint)
             metric_exporter = OTLPMetricExporter(endpoint=otlp_endpoint)
