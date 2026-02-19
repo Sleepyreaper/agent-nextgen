@@ -404,6 +404,11 @@ Document excerpt:
             school = self._extract_school_name_pattern(text)
             if school and school not in ['High School', 'School', 'High school']:
                 return school
+
+            # Quick keyword-based extraction: look for explicit 'High School' mentions
+            simple = self._extract_school_name_simple_keyword(text)
+            if simple:
+                return simple
             
             # Fallback to AI if pattern matching fails or returns generic result
             # First attempt: short precise extraction (single value)
@@ -603,6 +608,57 @@ Document excerpt:
                 final.append(c)
 
         return final
+
+    def _extract_school_name_simple_keyword(self, text: str) -> Optional[str]:
+        """Very simple high-priority extractor: find lines/phrases that contain 'High School' and return the nearest sensible name.
+
+        This is intended as a fast, deterministic fallback to avoid LLM/heuristic confusion (e.g. returning a city or 'Internship 2024').
+        """
+        if not text:
+            return None
+
+        lines = text.split('\n')
+        cand_list = []
+        bad_re = re.compile(r'\b(interns?hip|resume|experience|position|intern)\b', re.IGNORECASE)
+        year_re = re.compile(r'\b20\d{2}\b')
+
+        # Look for explicit 'High School' occurrences in the document
+        for i, line in enumerate(lines[:200]):
+            if 'high school' in line.lower() or 'hs' in re.findall(r'\bHS\b', line):
+                # extract up to 8 words before 'High School'
+                m = re.search(r'([A-Za-z0-9&\-\'\.]{{2,120}})\s+(?:High School|high school|HS|Hs|Highschool|Secondary School)', line, re.IGNORECASE)
+                if m:
+                    name = m.group(1).strip()
+                    # clean trailing punctuation
+                    name = re.sub(r'[\.,;:\|\-]+$', '', name).strip()
+                    if not name:
+                        continue
+                    # reject noise
+                    if bad_re.search(name) or year_re.search(name):
+                        continue
+                    # compose full candidate
+                    full = f"{name} High School" if 'high school' not in name.lower() else name
+                    if self._is_valid_school_name(full):
+                        return full
+                    cand_list.append(full)
+
+        # If no single-line hits, attempt multi-line context search: look for 'High School' and take preceding tokens from previous line
+        for i, line in enumerate(lines[:200]):
+            if 'high school' in line.lower():
+                prev = lines[i-1].strip() if i > 0 else ''
+                candidate = prev.split('  ')[0].strip() if prev else ''
+                if candidate and not bad_re.search(candidate) and not year_re.search(candidate):
+                    full = f"{candidate} High School"
+                    if self._is_valid_school_name(full):
+                        return full
+                    cand_list.append(full)
+
+        # Fallback: return first reasonable candidate
+        for c in cand_list:
+            if self._is_valid_school_name(c):
+                return c
+
+        return None
 
     def _rank_school_candidates(self, text: str, candidates: List[str]) -> Optional[str]:
         """Ask the model to pick the best candidate from a short candidate list.
