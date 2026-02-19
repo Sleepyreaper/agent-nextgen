@@ -1,9 +1,10 @@
 """Smee - The orchestrator agent that coordinates all other agents."""
 
 import asyncio
+import json
 import logging
 import os
-from typing import Dict, List, Any, Optional
+from typing import Dict, List, Any, Optional, Tuple
 from openai import AzureOpenAI
 from src.agents.base_agent import BaseAgent
 from src.agents.system_prompts import SMEE_ORCHESTRATOR_PROMPT
@@ -116,6 +117,445 @@ class SmeeOrchestrator(BaseAgent):
         """Get list of registered agents."""
         return {agent_id: agent.name for agent_id, agent in self.agents.items()}
     
+    # =====================================================================
+    # PHASE 5: Audit Trail Logging
+    # =====================================================================
+    
+    def _log_interaction(
+        self,
+        application_id: Optional[int],
+        agent_name: str,
+        interaction_type: str,
+        question_text: str = "",
+        user_response: str = "",
+        file_name: str = "",
+        file_size: int = 0,
+        file_type: str = "",
+        extracted_data: Optional[Dict[str, Any]] = None
+    ) -> None:
+        """
+        Log a detailed interaction to the audit trail.
+        
+        PHASE 5: Comprehensive audit logging for every step and interaction.
+        
+        Args:
+            application_id: Student application ID
+            agent_name: Which agent/step (Belle, TIANA, RAPUNZEL, MOANA, MULAN, MERLIN, AURORA, etc)
+            interaction_type: Type of interaction:
+                - step_1_extraction: BELLE extraction
+                - step_2_student_match: Student record matching
+                - step_2_5_school_check: High school lookup/enrichment
+                - step_3_naveen_enrichment: NAVEEN school enrichment
+                - step_3_5_validation_attempt: School validation attempt
+                - step_3_5_validation_passed: School validation passed
+                - step_3_5_remediation: Remediation loop attempt
+                - step_4_agent_execution: Agent (TIANA/RAPUNZEL/MOANA/MULAN) execution
+                - step_4_5_validation: Per-agent pre-execution validation
+                - step_5_milo_analysis: MILO analysis
+                - step_6_merlin_synthesis: MERLIN synthesis
+                - step_7_aurora_report: AURORA report generation
+                - pause_for_documents: SMEE asking for more documents
+                - resume_from_pause: Resume after user provides documents
+                - file_upload: New file uploaded
+            question_text: For pauses, the question asked
+            user_response: User's text response
+            file_name: Name of uploaded/processed file
+            file_size: Size of file
+            file_type: Type of file (pdf, text, image, etc)
+            extracted_data: Structured data extracted/analyzed (JSONB)
+        """
+        if not self.db or not application_id:
+            return
+        
+        try:
+            self.db.log_agent_interaction(
+                application_id=application_id,
+                agent_name=agent_name,
+                interaction_type=interaction_type,
+                question_text=question_text,
+                user_response=user_response,
+                file_name=file_name,
+                file_size=file_size,
+                file_type=file_type,
+                extracted_data=extracted_data
+            )
+        except Exception as e:
+            logger.warning(f"Could not log interaction: {e}")
+    
+    # =====================================================================
+    # PHASE 2: Workflow Helper Methods
+    # =====================================================================
+    
+    def _match_or_create_student_record(
+        self, 
+        first_name: str, 
+        last_name: str, 
+        high_school: str, 
+        state_code: str,
+        application: Dict[str, Any]
+    ) -> Optional[int]:
+        """
+        Match student to existing record OR create new one.
+        Uses: first_name + last_name + high_school + state_code
+        Returns: application_id (existing or newly created)
+        
+        This ensures we never create duplicate student records.
+        """
+        if not self.db:
+            logger.warning("No database connection - cannot match student records")
+            return None
+        
+        # 1. Normalize inputs for matching
+        first_name_norm = first_name.strip() if first_name else ""
+        last_name_norm = last_name.strip() if last_name else ""
+        school_norm = high_school.strip() if high_school else ""
+        state_norm = state_code.strip().upper() if state_code else ""
+        
+        # 2. Query database for exact match
+        existing_app = self.db.find_student_by_match(
+            first_name_norm, last_name_norm, school_norm, state_norm
+        )
+        
+        if existing_app:
+            app_id = existing_app['application_id']
+            logger.info(
+                f"🎯 Found existing student record: {app_id} "
+                f"for {first_name} {last_name} from {high_school}, {state_code}"
+            )
+            return app_id
+        
+        # 3. Create new record
+        new_app_id = self.db.create_student_record(
+            first_name=first_name_norm,
+            last_name=last_name_norm,
+            high_school=school_norm,
+            state_code=state_norm,
+            application_text=application.get('application_text', '')
+        )
+        
+        if new_app_id:
+            logger.info(
+                f"✨ Created new student record: {new_app_id} "
+                f"for {first_name} {last_name} from {high_school}, {state_code}"
+            )
+        
+        return new_app_id
+    
+    async def _extract_data_with_belle(
+        self, 
+        document_text: str, 
+        document_name: str = "", 
+        context: str = ""
+    ) -> Dict[str, Any]:
+        """
+        REUSABLE: Extract data from document via BELLE.
+        
+        Can be called:
+        - Initially to extract from uploaded document
+        - Reactively when agents need more data from document
+        - When user uploads new/additional files
+        - With context hint (e.g., "extract grades" vs "extract recommendations")
+        
+        Returns extracted fields that SMEE can use for matching, validation, etc.
+        """
+        belle = BelleDocumentAnalyzer(client=self.client, model=self.model)
+        
+        # Log BELLE invocation
+        if context:
+            logger.info(f"📖 BELLE extracting {context} from document...")
+        else:
+            logger.info(f"📖 BELLE extracting data from {document_name or 'document'}...")
+        
+        try:
+            analysis = await asyncio.to_thread(
+                belle.analyze_document, document_text, document_name
+            )
+            
+            # Log this extraction interaction if we have application context
+            if hasattr(self, '_current_application_id') and self._current_application_id:
+                self.db.log_agent_interaction(
+                    application_id=self._current_application_id,
+                    agent_name='Belle',
+                    interaction_type='data_extraction',
+                    file_name=document_name,
+                    extracted_data=analysis
+                )
+            
+            logger.info(f"✅ BELLE extraction complete: {len(analysis)} fields extracted")
+            return analysis
+        except Exception as e:
+            logger.error(f"❌ BELLE extraction failed: {e}")
+            return {}
+    
+    async def _run_naveen_enrichment(
+        self, 
+        high_school: str, 
+        state_code: str, 
+        application_id: int
+    ) -> Dict[str, Any]:
+        """
+        STEP 3: Enrich school data via NAVEEN.
+        Check if school already enriched (cached), else call NAVEEN.
+        """
+        from src.school_workflow import ensure_school_context_in_pipeline
+        
+        logger.info(f"🏫 NAVEEN enriching school: {high_school}, {state_code}...")
+        
+        naveen_agent = self.agents.get('naveen')
+        
+        try:
+            school_enrichment = await asyncio.to_thread(
+                ensure_school_context_in_pipeline,
+                school_name=high_school,
+                state_code=state_code,
+                db_connection=self.db,
+                aurora_agent=naveen_agent
+            )
+            
+            logger.info(f"✅ School enrichment complete for {high_school}")
+            return school_enrichment
+        except Exception as e:
+            logger.error(f"❌ NAVEEN enrichment failed: {e}")
+            return {}
+    
+    async def _validate_school_context(
+        self, 
+        school_enrichment: Dict[str, Any], 
+        school_name: str, 
+        state_code: str
+    ) -> Dict[str, Any]:
+        """
+        STEP 3.5: Validate NAVEEN provided all MOANA needs.
+        Returns readiness status and any missing fields.
+        """
+        moana = self.agents.get('school_context')
+        if not moana:
+            logger.warning("MOANA not registered - cannot validate school context")
+            return {'ready': True, 'missing': []}
+        
+        # Get MOANA's required school fields
+        required_fields = [
+            'school_name', 'state_code', 'opportunity_score',
+            'ap_courses_available', 'honors_course_count',
+            'free_lunch_percentage', 'graduation_rate'
+        ]
+        
+        missing = []
+        for field in required_fields:
+            if field not in school_enrichment or school_enrichment.get(field) is None:
+                missing.append(field)
+        
+        if missing:
+            logger.warning(
+                f"⚠️ School context incomplete. Missing: {', '.join(missing)}"
+            )
+            return {
+                'ready': False,
+                'missing': missing,
+                'prompts': f"Please provide school documents showing: {', '.join(missing)}"
+            }
+        
+        logger.info(f"✅ School context validation passed for {school_name}")
+        return {'ready': True, 'missing': []}
+    
+    async def _check_or_enrich_high_school(
+        self,
+        high_school: str,
+        state_code: str,
+        school_district: Optional[str] = None,
+        application_id: Optional[int] = None
+    ) -> Dict[str, Any]:
+        """
+        STEP 2.5: Check if high school exists, enrich if needed.
+        
+        Before proceeding to full validation loop (Step 3-3.5), ensure that
+        the high school has at least basic enrichment data. This prevents
+        MOANA validation from failing due to missing school data.
+        
+        Workflow:
+        1. Query database for school_enriched_data
+        2. If found: return cached data (ready for MOANA)
+        3. If NOT found: call NAVEEN to create enrichment record
+        4. Return enriched school data
+        
+        Args:
+            high_school: High school name
+            state_code: State code
+            school_district: School district (optional)
+            application_id: Application ID for tracking
+            
+        Returns:
+            School enrichment dict or error dict
+        """
+        logger.info(f"📚 STEP 2.5: Checking/enriching high school: {high_school}, {state_code}")
+        
+        from src.school_workflow import SchoolDataWorkflow
+        
+        if not self.db:
+            logger.warning("No database connection - cannot check high school")
+            return {'error': 'No database connection', 'school_name': high_school}
+        
+        workflow = SchoolDataWorkflow(self.db)
+        
+        # Look up school in database
+        cached_school = workflow._lookup_school_in_database(
+            school_name=high_school,
+            state_code=state_code
+        )
+        
+        if cached_school and cached_school != {}:
+            logger.info(
+                f"✅ STEP 2.5 PASSED: Found cached high school data",
+                extra={'school': high_school, 'state': state_code}
+            )
+            return cached_school
+        
+        # School not in database - call NAVEEN to enrich it
+        logger.info(
+            f"🔄 STEP 2.5: High school not cached, calling NAVEEN for enrichment...",
+            extra={'school': high_school, 'state': state_code}
+        )
+        
+        naveen_agent = self.agents.get('naveen')
+        if not naveen_agent:
+            logger.warning("NAVEEN agent not available for Step 2.5 enrichment")
+            return {
+                'error': 'NAVEEN agent not available',
+                'school_name': high_school,
+                'state_code': state_code
+            }
+        
+        try:
+            # Call NAVEEN to enrich the school
+            enriched = await asyncio.to_thread(
+                naveen_agent.analyze_school,
+                school_name=high_school,
+                school_district=school_district,
+                state_code=state_code
+            )
+            
+            if enriched.get('status') == 'success':
+                # Store in database for caching
+                school_id = workflow._store_school_enrichment(
+                    school_data=enriched,
+                    school_name=high_school,
+                    school_district=school_district,
+                    state_code=state_code
+                )
+                
+                enriched['school_enrichment_id'] = school_id
+                logger.info(
+                    f"✅ STEP 2.5 COMPLETE: Enriched high school and stored in DB",
+                    extra={'school': high_school, 'id': school_id}
+                )
+                
+                return enriched
+            else:
+                logger.warning(
+                    f"⚠️ STEP 2.5: NAVEEN enrichment returned non-success status",
+                    extra={'school': high_school, 'status': enriched.get('status')}
+                )
+                return enriched
+                
+        except Exception as e:
+            logger.error(
+                f"❌ STEP 2.5: Error enriching high school: {e}",
+                exc_info=True,
+                extra={'school': high_school}
+            )
+            return {'error': str(e), 'school_name': high_school}
+    
+    async def _validate_agent_readiness(
+        self, 
+        agent_id: str, 
+        application: Dict[str, Any], 
+        application_id: int, 
+        belle_data: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """
+        STEP 4.5: Validate individual agent has its required fields.
+        """
+        agent = self.agents.get(agent_id)
+        if not agent:
+            return {'ready': False, 'missing': ['agent_not_found']}
+        
+        req = AgentRequirements.get_agent_requirements(agent_id)
+        required_fields = req.get('required_fields', [])
+        
+        missing = []
+        for field in required_fields:
+            # Check application dict first, then belle_data
+            if not application.get(field) and not belle_data.get(field):
+                missing.append(field)
+        
+        if missing:
+            logger.warning(
+                f"⚠️ Agent {agent_id} missing required fields: {missing}"
+            )
+            return {
+                'ready': False,
+                'missing': missing,
+                'prompt': req.get('missing_prompt', f"Please provide {', '.join(missing)}")
+            }
+        
+        logger.info(f"✅ Agent {agent_id} validation passed")
+        return {'ready': True}
+    
+    async def _run_agent(
+        self, 
+        agent_id: str, 
+        application: Dict[str, Any],
+        school_enrichment: Dict[str, Any], 
+        prior_results: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """
+        Run individual agent with appropriate context.
+        Each agent is called with its specific required inputs.
+        """
+        agent = self.agents.get(agent_id)
+        if not agent:
+            logger.error(f"Agent {agent_id} not found")
+            return {}
+        
+        logger.info(f"🤖 Running {agent.name} ({agent_id})...")
+        
+        try:
+            # Route to correct agent method based on agent type
+            if agent_id == 'application_reader':
+                result = await agent.parse_application(application)
+            elif agent_id == 'grade_reader':
+                # Pass school context for rigor weighting
+                transcript = application.get('transcript_text', '')
+                result = await agent.parse_grades(
+                    transcript,
+                    application.get('applicant_name', ''),
+                    school_context=school_enrichment
+                )
+            elif agent_id == 'school_context':
+                result = await agent.analyze_student_school_context(
+                    application=application,
+                    rapunzel_grades_data=prior_results.get('grade_reader'),
+                    school_enrichment=school_enrichment
+                )
+            elif agent_id == 'recommendation_reader':
+                recommendation = application.get('recommendation_text', '')
+                result = await agent.parse_recommendation(
+                    recommendation,
+                    application.get('applicant_name', ''),
+                    application.get('application_id')
+                )
+            else:
+                # Generic process
+                result = await agent.process(
+                    f"Evaluate: {application.get('applicant_name', '')}"
+                )
+            
+            logger.info(f"✅ {agent.name} completed")
+            return result
+        except Exception as e:
+            logger.error(f"❌ {agent.name} failed: {e}")
+            return {'error': str(e), 'status': 'failed'}
+    
     async def coordinate_evaluation(
         self,
         application: Dict[str, Any],
@@ -123,12 +563,23 @@ class SmeeOrchestrator(BaseAgent):
         progress_callback: Optional[callable] = None
     ) -> Dict[str, Any]:
         """
-        Coordinate the evaluation of an application through multiple agents.
+        PHASE 2: 8-Step Workflow Orchestration (+ Step 2.5)
+        
+        Step 1: Extract data from document using BELLE (reusable)
+        Step 2: Match or create student record (prevent duplicates)
+        Step 2.5: Check or enrich high school data (NEW)
+        Step 3: Enrich school data using NAVEEN (proactive)
+        Step 3.5: Validate school context (NAVEEN ↔ MOANA validation loop)
+        Step 4: Run core agents (TIANA, RAPUNZEL, MOANA, MULAN) with validation gates
+        Step 4.5: Per-agent validation before each agent runs
+        Step 5: Run synthesis agents (MILO)
+        Step 6: Run synthesis agent (MERLIN)
+        Step 7: Run report generation (AURORA)
         
         Args:
             application: The application data to evaluate
             evaluation_steps: List of agent_ids to use in order
-            progress_callback: Optional callback function to report progress (called with dict updates)
+            progress_callback: Optional callback function to report progress
             
         Returns:
             Dictionary with results from all agents
@@ -149,62 +600,21 @@ class SmeeOrchestrator(BaseAgent):
         self._current_student_id = student_id
         self._current_applicant_name = applicant_name
         
-        logger.info(f"Starting evaluation for {applicant_name} (ID: {student_id})", extra={'application_id': application_id, 'student_id': student_id})
+        logger.info(
+            f"🎯 SMEE starting 8-step workflow for {applicant_name}",
+            extra={'application_id': application_id, 'student_id': student_id}
+        )
         
-        # ===== ASK AGENTS WHAT THEY NEED =====
-        # Before determining missing fields, ask each agent in the pipeline what they need
-        logger.info(f"🎩 Smee asking agents what they need for {applicant_name}...")
-        
-        # Debug: Log all available fields in application
-        available_fields = list(application.keys()) if isinstance(application, dict) else []
-        logger.debug(f"Available fields in application: {available_fields}")
-        
-        application_snapshot = self._get_application_snapshot(application)
-        missing_fields, agent_questions = self._compute_missing_fields(application_snapshot, evaluation_steps)
-        
-        # ===== CHECK MISSING INFORMATION =====
-        # Determine what information is required for the evaluation pipeline
-        if missing_fields:
-            # Ask Belle to fill missing details before pausing
-            if self._attempt_belle_fill(application, missing_fields):
-                application_snapshot = self._get_application_snapshot(application)
-                missing_fields, agent_questions = self._compute_missing_fields(application_snapshot, evaluation_steps)
-
-        if missing_fields:
-            return self._pause_for_missing_fields(
-                applicant_name=applicant_name,
-                application_id=application_id,
-                student_id=student_id,
-                missing_fields=missing_fields,
-                agent_questions=agent_questions,
-                application_snapshot=application_snapshot
-            )
-        
-        # Report Smee starting orchestration
         self._report_progress({
             'type': 'agent_progress',
             'agent': 'Smee Orchestrator',
             'agent_id': 'smee',
-            'status': 'starting',
+            'status': 'starting_8_step_workflow',
             'applicant': applicant_name,
-            'student_id': student_id,
-            'message': '🎩 Smee is coordinating the evaluation process...'
+            'message': '🎩 Smee is orchestrating the 8-step evaluation workflow...'
         })
         
-        pre_core_agents = ['naveen']
-        core_agents = ['application_reader', 'grade_reader', 'school_context', 'recommendation_reader']
-        optional_agents = ['data_scientist']
-        student_evaluator = 'student_evaluator'  # Merlin - runs last after all others
-
-        evaluation_steps = self._order_evaluation_steps(
-            evaluation_steps,
-            pre_core_agents=pre_core_agents,
-            core_agents=core_agents,
-            optional_agents=optional_agents,
-            merlin_agent=student_evaluator
-        )
-        evaluation_steps = self._ensure_merlin_last(evaluation_steps)
-
+        # Initialize workflow results
         self.evaluation_results = {
             'applicant_name': applicant_name,
             'application_id': application_id,
@@ -212,331 +622,507 @@ class SmeeOrchestrator(BaseAgent):
             'agents_used': evaluation_steps,
             'results': {}
         }
-
-        # Create shared context for all agents
-        agent_context = {
-            'applicant_name': applicant_name,
-            'application_id': application_id,
-            'student_id': student_id,
-            'application_data': application,
-            'completed_agents': {}  # Will accumulate results from completed agents
-        }
-
-        merlin_run = False
-        failed_agents = []
-        # Separate required agents (must complete before optional) from optional
-        required_agents = pre_core_agents + core_agents
-
-        def is_success(result: Optional[Dict[str, Any]]) -> bool:
-            if not isinstance(result, dict):
-                return False
-            if 'status' not in result:
-                return True
-            return result.get('status') in {'success', 'completed'}
-
-        for step_idx, agent_id in enumerate(evaluation_steps, 1):
+        
+        # ===== STEP 1: BELLE - Extract data from document =====
+        logger.info("📋 STEP 1: Extracting data from document with BELLE...")
+        document_text = (application.get('application_text') or 
+                        application.get('ApplicationText') or 
+                        application.get('transcript_text') or 
+                        application.get('TranscriptText') or '')
+        
+        document_name = application.get('file_name', 'application_document')
+        belle_data = await self._extract_data_with_belle(document_text, document_name)
+        self.evaluation_results['results']['belle_extraction'] = belle_data
+        
+        # PHASE 5: Log STEP 1 extraction to audit trail
+        self._log_interaction(
+            application_id=application_id,
+            agent_name='Belle',
+            interaction_type='step_1_extraction',
+            question_text=f"Extract structured data from document: {document_name}",
+            file_name=document_name,
+            file_size=len(document_text),
+            file_type=application.get('file_type', 'text/unknown'),
+            extracted_data=belle_data
+        )
+        
+        # Extract student info from BELLE extraction
+        first_name = (belle_data.get('first_name') or 
+                     application.get('first_name') or 
+                     application.get('FirsName', '')).strip()
+        last_name = (belle_data.get('last_name') or 
+                    application.get('last_name') or 
+                    application.get('LastName', '')).strip()
+        high_school = (belle_data.get('high_school') or 
+                      application.get('high_school') or 
+                      application.get('HighSchool', '')).strip()
+        state_code = (belle_data.get('state_code') or 
+                     application.get('state_code') or 
+                     application.get('StateCode', '')).strip()
+        
+        # ===== STEP 2: Match or create student record =====
+        logger.info("🎓 STEP 2: Matching/creating student record...")
+        
+        if first_name and last_name and high_school and state_code:
+            student_app_id = self._match_or_create_student_record(
+                first_name, last_name, high_school, state_code, application
+            )
+            if student_app_id:
+                application_id = student_app_id
+                self._current_application_id = student_app_id
+                logger.info(f"✅ Student record ready: application_id={student_app_id}")
+                
+                # PHASE 5: Log STEP 2 student matching
+                self._log_interaction(
+                    application_id=application_id,
+                    agent_name='Smee',
+                    interaction_type='step_2_student_match',
+                    question_text=f"Match or create student: {first_name} {last_name} from {high_school}, {state_code}",
+                    extracted_data={
+                        'first_name': first_name,
+                        'last_name': last_name,
+                        'high_school': high_school,
+                        'state_code': state_code,
+                        'action': 'created' if student_app_id else 'matched'
+                    }
+                )
+        else:
+            logger.warning(
+                f"⚠️ Incomplete student info for matching: "
+                f"first={first_name}, last={last_name}, school={high_school}, state={state_code}"
+            )
+        
+        # ===== STEP 2.5: Check or enrich high school =====
+        logger.info("📚 STEP 2.5: Checking/enriching high school data...")
+        
+        high_school_data = {}
+        if high_school and state_code:
+            high_school_data = await self._check_or_enrich_high_school(
+                high_school, 
+                state_code,
+                school_district=application.get('school_district', ''),
+                application_id=application_id
+            )
+            
+            if 'error' in high_school_data:
+                logger.warning(
+                    f"⚠️ Step 2.5 could not enrich high school: {high_school_data.get('error')}",
+                    extra={'school': high_school}
+                )
+                # PHASE 5: Log Step 2.5 enrollment failure
+                self._log_interaction(
+                    application_id=application_id,
+                    agent_name='Smee',
+                    interaction_type='step_2_5_school_check',
+                    question_text=f"Check/enrich high school: {high_school}, {state_code}",
+                    extracted_data={
+                        'school_name': high_school,
+                        'state_code': state_code,
+                        'status': 'error',
+                        'error': high_school_data.get('error')
+                    }
+                )
+                # Continue anyway - Step 3 validation loop will handle enrichment
+            else:
+                # PHASE 5: Log Step 2.5 success
+                self._log_interaction(
+                    application_id=application_id,
+                    agent_name='Smee',
+                    interaction_type='step_2_5_school_check',
+                    question_text=f"Check/enrich high school: {high_school}, {state_code}",
+                    extracted_data={
+                        'school_name': high_school,
+                        'state_code': state_code,
+                        'status': 'success',
+                        'school_enrichment_id': high_school_data.get('school_enrichment_id'),
+                        'opportunity_score': high_school_data.get('opportunity_score')
+                    }
+                )
+                logger.info(f"✅ Step 2.5 complete: High school enrichment ready")
+                self.evaluation_results['results']['high_school_check'] = high_school_data
+        
+        # ===== STEP 3 & 3.5: NAVEEN enrichment + School validation loop =====
+        logger.info("🏫 STEP 3-3.5: NAVEEN enrichment & MOANA validation loop...")
+        
+        school_enrichment = {}
+        if high_school and state_code and application_id:
+            # Import the school workflow for Phase 3 validation/remediation
+            from src.school_workflow import SchoolDataWorkflow
+            
+            workflow = SchoolDataWorkflow(self.db)
+            naveen_agent = self.agents.get('naveen')
+            
+            # Run integrated NAVEEN ↔ MOANA validation loop with remediation
+            is_ready, school_data, validation_log = await asyncio.to_thread(
+                workflow.validate_and_remediate_school,
+                school_name=high_school,
+                state_code=state_code,
+                school_district=application.get('school_district', ''),
+                aurora_agent=naveen_agent,
+                max_remediation_attempts=2,  # Allow 1 remediation attempt
+                required_fields=None  # Use default MOANA requirements
+            )
+            
+            self.evaluation_results['results']['naveen_enrichment'] = school_data
+            self.evaluation_results['results']['school_validation_log'] = validation_log
+            
+            # PHASE 5: Log STEP 3 NAVEEN enrichment
+            self._log_interaction(
+                application_id=application_id,
+                agent_name='Naveen',
+                interaction_type='step_3_naveen_enrichment',
+                question_text=f"Enrich school data: {high_school}, {state_code}",
+                extracted_data={
+                    'school_name': high_school,
+                    'state_code': state_code,
+                    'enrichment_data': school_data,
+                    'opportunity_score': school_data.get('opportunity_score'),
+                    'validation_status': 'ready' if is_ready else 'pending'
+                }
+            )
+            
+            # PHASE 5: Log STEP 3.5 validation attempts
+            for attempt_num, attempt in enumerate(validation_log.get('attempts', []), 1):
+                self._log_interaction(
+                    application_id=application_id,
+                    agent_name='Moana',
+                    interaction_type='step_3_5_validation_attempt',
+                    question_text=f"Validation attempt #{attempt_num}: Verify school requirements",
+                    extracted_data={
+                        'attempt_number': attempt_num,
+                        'timestamp': attempt.get('timestamp'),
+                        'fields_checked': attempt.get('fields_checked', []),
+                        'passed': attempt.get('passed', False),
+                        'missing_fields': attempt.get('missing_fields', [])
+                    }
+                )
+                
+                # Log remediation if this was a remediation attempt
+                if attempt.get('is_remediation') and attempt_num > 1:
+                    self._log_interaction(
+                        application_id=application_id,
+                        agent_name='Naveen',
+                        interaction_type='step_3_5_remediation',
+                        question_text=f"Remediation #{attempt_num-1}: Enrich missing fields",
+                        extracted_data={
+                            'remediation_number': attempt_num - 1,
+                            'missing_fields_targeted': attempt.get('missing_fields', []),
+                            'remediation_context': f"Re-enriching: {', '.join(attempt.get('missing_fields', []))}",
+                            'result': 'passed' if attempt.get('passed') else 'incomplete'
+                        }
+                    )
+            
+            if is_ready:
+                school_enrichment = school_data
+                logger.info(
+                    f"✅ School validation PASSED and ready for MOANA",
+                    extra={'school': high_school, 'validation_attempts': len(validation_log.get('attempts', []))}
+                )
+                # Log final validation success
+                self._log_interaction(
+                    application_id=application_id,
+                    agent_name='Moana',
+                    interaction_type='step_3_5_validation_passed',
+                    question_text='Final school context validation',
+                    extracted_data={
+                        'validation_result': 'passed',
+                        'total_attempts': len(validation_log.get('attempts', [])),
+                        'school_name': high_school,
+                        'state_code': state_code
+                    }
+                )
+            else:
+                logger.error(
+                    f"❌ School validation FAILED after remediation attempts",
+                    extra={
+                        'school': high_school,
+                        'missing_fields': validation_log.get('final_missing_fields', []),
+                        'attempts': len(validation_log.get('attempts', []))
+                    }
+                )
+                # PHASE 5: Log pause for school validation failure
+                self._log_interaction(
+                    application_id=application_id,
+                    agent_name='Moana',
+                    interaction_type='pause_for_documents',
+                    question_text='School validation failed - additional documentation required',
+                    extracted_data={
+                        'reason': 'school_validation_failed',
+                        'missing_fields': validation_log.get('final_missing_fields', []),
+                        'validation_attempts': len(validation_log.get('attempts', [])),
+                        'remediation_attempts': sum(1 for a in validation_log.get('attempts', []) if a.get('is_remediation'))
+                    }
+                )
+                # Pause and ask for more documentation
+                return self._pause_for_missing_fields(
+                    applicant_name=applicant_name,
+                    application_id=application_id,
+                    student_id=student_id,
+                    missing_fields=validation_log.get('final_missing_fields', []),
+                    agent_questions=[
+                        f"Please provide school documents showing: {', '.join(validation_log.get('final_missing_fields', []))}"
+                    ],
+                    application_snapshot=application
+                )
+        else:
+            logger.warning("⚠️ Cannot run school validation - missing school info or application_id")
+        
+        # ===== STEP 4: Core agents with per-agent validation =====
+        logger.info("🤖 STEP 4: Running core agents with validation gates...")
+        
+        core_agents = ['application_reader', 'grade_reader', 'school_context', 'recommendation_reader']
+        prior_results = {}
+        
+        for agent_idx, agent_id in enumerate(core_agents, 1):
             if agent_id not in self.agents:
-                logger.warning(f"Agent '{agent_id}' not found. Skipping.")
+                logger.warning(f"Agent {agent_id} not registered - skipping")
                 continue
-
-            if agent_id in required_agents:
-                missing_for_agent = self._get_missing_fields_for_agent(agent_id, application_snapshot)
-                if missing_for_agent:
-                    if self._attempt_belle_fill(application, missing_for_agent):
-                        application_snapshot = self._get_application_snapshot(application)
-                        missing_for_agent = self._get_missing_fields_for_agent(agent_id, application_snapshot)
-
-                if missing_for_agent:
+            
+            # ===== STEP 4.5: Per-agent validation =====
+            logger.info(f"⚙️ STEP 4.5: Validating {agent_id} readiness...")
+            
+            readiness = await self._validate_agent_readiness(
+                agent_id, application, application_id, belle_data
+            )
+            
+            if not readiness.get('ready'):
+                logger.warning(f"⚠️ Agent {agent_id} not ready: {readiness.get('missing')}")
+                
+                # PHASE 5: Log initial validation failure
+                self._log_interaction(
+                    application_id=application_id,
+                    agent_name=agent_id.title(),
+                    interaction_type='step_4_5_validation',
+                    question_text=f"Validation gate for {agent_id}",
+                    extracted_data={
+                        'agent_id': agent_id,
+                        'validation_status': 'failed_gate_1',
+                        'missing_fields': readiness.get('missing', []),
+                        'gate_number': 1
+                    }
+                )
+                
+                # Reactive BELLE call for validation gap
+                logger.info(f"📖 Reactively calling BELLE to fill {agent_id} gap...")
+                belle_retry = await self._extract_data_with_belle(
+                    document_text, document_name, 
+                    context=f"Focus on {', '.join(readiness.get('missing', []))}"
+                )
+                belle_data.update(belle_retry)
+                
+                # Re-validate
+                readiness = await self._validate_agent_readiness(
+                    agent_id, application, application_id, belle_data
+                )
+                
+                if not readiness.get('ready'):
+                    logger.warning(f"⚠️ Still not ready after BELLE retry. Pausing for user input.")
+                    
+                    # PHASE 5: Log pause for missing fields
+                    self._log_interaction(
+                        application_id=application_id,
+                        agent_name=agent_id.title(),
+                        interaction_type='pause_for_documents',
+                        question_text=f"Agent {agent_id} requires additional documents",
+                        extracted_data={
+                            'agent_id': agent_id,
+                            'reason': 'missing_required_documents',
+                            'validation_status': 'failed_gate_2',
+                            'missing_fields': readiness.get('missing', []),
+                            'gate_number': 2
+                        }
+                    )
+                    
                     return self._pause_for_missing_fields(
                         applicant_name=applicant_name,
                         application_id=application_id,
                         student_id=student_id,
-                        missing_fields=missing_for_agent,
-                        agent_questions=agent_questions,
-                        application_snapshot=application_snapshot
+                        missing_fields=readiness.get('missing', []),
+                        agent_questions=[readiness.get('prompt', '')],
+                        application_snapshot=application
                     )
             
-            # Check if required agents are complete before proceeding to optional/Merlin
-            if agent_id in optional_agents:
-                incomplete_required = [a for a in required_agents if a not in agent_context['completed_agents']]
-                if incomplete_required:
-                    logger.warning(f"Skipping {agent_id}: required agents not complete: {incomplete_required}")
-                    self._report_progress({
-                        'type': 'agent_progress',
-                        'agent': agent_id,
-                        'agent_id': agent_id,
-                        'status': 'blocked',
-                        'message': f'Waiting for: {", ".join(incomplete_required)}'
-                    })
-                    continue
+            logger.info(f"✅ Agent {agent_id} validation passed")
             
-            if agent_id == student_evaluator:
-                # Ensure all other agents (required + optional that were attempted) are complete
-                incomplete = [a for a in evaluation_steps if a != student_evaluator and a not in agent_context['completed_agents']]
-                if incomplete:
-                    logger.info(f"Merlin will wait for incomplete agents to finish: {incomplete}")
-                    # Don't skip - Merlin should wait, but log what it's waiting for
-            
-            agent = self.agents[agent_id]
-            logger.debug(f"[Step {step_idx}] Delegating to {agent.name}...")
-            
-            # Report agent starting
-            self._report_progress({
-                'type': 'agent_progress',
-                'agent': agent.name,
-                'agent_id': agent_id,
-                'status': 'starting',
-                'step': step_idx,
-                'total_steps': len(evaluation_steps),
-                'applicant': applicant_name
-            })
-            
-            try:
-                if hasattr(agent, "set_trace_context"):
-                    agent.set_trace_context(
-                        application_id=application_id,
-                        student_id=student_id,
-                        applicant_name=applicant_name
-                    )
-                async with self._get_agent_semaphore(agent_id):
-                    # Call the agent's process or specialized method
-                    if agent_id == 'student_evaluator' and failed_agents:
-                        logger.warning(f"Skipping Merlin due to upstream failures: {failed_agents}")
-                        self._report_progress({
-                            'type': 'agent_progress',
-                            'agent': agent.name,
-                            'agent_id': agent_id,
-                            'status': 'blocked',
-                            'applicant': applicant_name,
-                            'message': 'Blocked until required agents complete'
-                        })
-                        continue
-
-                    if hasattr(agent, 'evaluate_application'):
-                        # For EvaluatorAgent
-                        result = await agent.evaluate_application(application)
-                    elif hasattr(agent, 'parse_grades'):
-                        # For RapunzelGradeReader
-                        transcript_text = application.get('transcript_text') or application.get('TranscriptText') or application.get('application_text') or application.get('ApplicationText', '')
-                        result = await agent.parse_grades(
-                            transcript_text,
-                            application.get('applicant_name') or application.get('ApplicantName', '')
-                        )
-                    elif hasattr(agent, 'parse_application'):
-                        # For TianaApplicationReader
-                        result = await agent.parse_application(application)
-                    elif hasattr(agent, 'parse_recommendation'):
-                        # For MulanRecommendationReader
-                        recommendation_text = application.get('recommendation_text') or application.get('RecommendationText') or application.get('application_text') or application.get('ApplicationText', '')
-                        result = await agent.parse_recommendation(
-                            recommendation_text,
-                            application.get('applicant_name') or application.get('ApplicantName', ''),
-                            application_id
-                        )
-                    elif hasattr(agent, 'evaluate_student'):
-                        # For MerlinStudentEvaluator
-                        result = await agent.evaluate_student(
-                            application,
-                            self.evaluation_results['results']
-                        )
-                        merlin_run = True
-                    elif hasattr(agent, 'analyze_student_school_context'):
-                        # For MoanaSchoolContext
-                        # School name must be extracted by Tiana first
-                        school_name = application.get('school_name') or application.get('SchoolName')
-                        
-                        # If not in application, try to get from Tiana's results
-                        if not school_name:
-                            tiana_results = self.evaluation_results['results'].get('application_reader')
-                            if tiana_results and isinstance(tiana_results, dict):
-                                school_name = tiana_results.get('school_name') or tiana_results.get('SchoolName')
-                        
-                        # Moana requires school_name to do analysis
-                        if not school_name:
-                            logger.warning("Skipping Moana - school name not extracted by Tiana yet")
-                            self._report_progress({
-                                'type': 'agent_progress',
-                                'agent': agent.name,
-                                'agent_id': agent_id,
-                                'status': 'skipped',
-                                'applicant': applicant_name,
-                                'message': 'Cannot analyze school context without school name'
-                            })
-                            continue
-                        
-                        # Step 1: Ensure school data is enriched and cached
-                        from src.school_workflow import ensure_school_context_in_pipeline
-                        
-                        state_code = application.get('state_code') or application.get('StateCode')
-                        
-                        # Get or enrich school data (checks cache first, calls Naveen if needed)
-                        naveen_agent = self.agents.get('naveen')
-                        school_enrichment = ensure_school_context_in_pipeline(
-                            school_name=school_name,
-                            state_code=state_code,
-                            db_connection=self.db,
-                            aurora_agent=naveen_agent
-                        )
-                        
-                        # Step 2: Pass enriched school data to Moana
-                        # Get grade data from previous results if available
-                        rapunzel_data = self.evaluation_results['results'].get('grade_reader')
-                        transcript_text = application.get('transcript_text') or application.get('TranscriptText') or application.get('application_text') or application.get('ApplicationText', '')
-                        result = await agent.analyze_student_school_context(
-                            application=application,
-                            transcript_text=transcript_text,
-                            rapunzel_grades_data=rapunzel_data,
-                            school_enrichment=school_enrichment  # Pass cached/enriched school data
-                        )
-                    elif hasattr(agent, 'analyze_training_insights'):
-                        # For MiloDataScientist
-                        result = await agent.analyze_training_insights()
-                    else:
-                        # Generic process
-                        result = await agent.process(
-                            f"Evaluate this application:\n{application.get('application_text') or application.get('ApplicationText', '')}"
-                        )
-                
-                self.evaluation_results['results'][agent_id] = result
-                
-                # Update shared agent context with this agent's results
-                if is_success(result):
-                    agent_context['completed_agents'][agent_id] = result
-                    logger.info(f"Agent {agent_id} completed successfully, added to shared context for other agents")
-                else:
-                    logger.warning(f"Agent {agent_id} did not succeed, not adding to completed context")
-                
-                self._write_audit(application, agent.name)
-
-                if agent_id in required_agents and not is_success(result):
-                    failed_agents.append(agent_id)
-                
-                # Save agent results to database
-                if self.db and application_id:
-                    try:
-                        import json
-                        if agent_id == 'grade_reader':
-                            # Save Rapunzel grades and remove from missing fields
-                            self.db.save_rapunzel_grades(
-                                application_id=application_id,
-                                agent_name=agent.name,
-                                gpa=result.get('gpa'),
-                                academic_strength=result.get('academic_strength'),
-                                course_levels=result.get('course_levels'),
-                                transcript_quality=result.get('transcript_quality'),
-                                notable_patterns=result.get('notable_patterns'),
-                                confidence_level=result.get('confidence_level'),
-                                summary=result.get('summary'),
-                                parsed_json=json.dumps(result) if result else None
-                            )
-                            self.db.remove_missing_field(application_id, 'transcript')
-                            
-                        elif agent_id == 'school_context':
-                            # Save Moana school context and remove from missing fields
-                            moana_results = result.get('opportunity_scores', {})
-                            self.db.save_moana_school_context(
-                                application_id=application_id,
-                                agent_name=agent.name,
-                                school_name=result.get('school', {}).get('name'),
-                                program_access_score=moana_results.get('program_access_score'),
-                                program_participation_score=moana_results.get('program_participation_score'),
-                                relative_advantage_score=moana_results.get('relative_advantage_score'),
-                                ap_courses_available=result.get('school_profile', {}).get('ap_courses_available'),
-                                ap_courses_taken=result.get('program_participation', {}).get('ap_courses_taken'),
-                                contextual_summary=result.get('contextual_summary'),
-                                parsed_json=json.dumps(result) if result else None
-                            )
-                            self.db.remove_missing_field(application_id, 'school_context')
-                            
-                        elif agent_id == 'recommendation_reader':
-                            # Recommendation completed
-                            self.db.remove_missing_field(application_id, 'letters_of_recommendation')
-                            
-                        elif agent_id == 'student_evaluator':
-                            # Evaluation completed - clear all remaining fields
-                            self.db.set_missing_fields(application_id, [])
-                            self.db.update_application_status(application_id, 'Completed')
-                            
-                    except Exception as save_err:
-                        logger.warning(f"Could not save {agent_id} results to database: {str(save_err)}")
-                
-                # Report agent success
-                self._report_progress({
-                    'type': 'agent_progress',
-                    'agent': agent.name,
+            # PHASE 5: Log validation gate passed
+            self._log_interaction(
+                application_id=application_id,
+                agent_name=agent_id.title(),
+                interaction_type='step_4_5_validation',
+                question_text=f"Validation gate for {agent_id}",
+                extracted_data={
                     'agent_id': agent_id,
-                    'status': 'completed',
-                    'step': step_idx,
-                    'total_steps': len(evaluation_steps),
-                    'applicant': applicant_name,
-                    'message': f'✓ {agent.name} completed successfully'
-                })
-                logger.info(f"{agent.name} completed successfully")
-                
-            except Exception as e:
-                logger.error(f"{agent.name} encountered an error: {str(e)}", exc_info=True)
-                
-                # Report agent error
-                self._report_progress({
-                    'type': 'agent_progress',
-                    'agent': agent.name,
-                    'agent_id': agent_id,
-                    'status': 'failed',
-                    'step': step_idx,
-                    'total_steps': len(evaluation_steps),
-                    'applicant': applicant_name,
-                    'error': str(e)
-                })
-                
-                self.evaluation_results['results'][agent_id] = {
-                    'error': str(e),
-                    'status': 'failed'
+                    'validation_status': 'passed',
+                    'ready_to_execute': True
                 }
-                self._write_audit(application, agent.name)
-            finally:
-                if hasattr(agent, "clear_trace_context"):
-                    agent.clear_trace_context()
-
-        if not merlin_run and 'student_evaluator' in self.agents:
-            if failed_agents:
-                self._report_progress({
-                    'type': 'evaluation_blocked',
-                    'agent': 'Smee Orchestrator',
-                    'agent_id': 'smee',
-                    'status': 'blocked',
-                    'applicant': applicant_name,
-                    'message': f"Blocked until required agents complete: {', '.join(failed_agents)}"
-                })
-                return self.evaluation_results
-            await self._run_merlin_after_agents(application)
+            )
+            
+            # Run the agent
+            logger.info(f"🚀 Running {agent_id}...")
+            agent_result = await self._run_agent(
+                agent_id, application, school_enrichment, prior_results
+            )
+            
+            self.evaluation_results['results'][agent_id] = agent_result
+            prior_results[agent_id] = agent_result
+            
+            # PHASE 5: Log STEP 4 agent execution
+            self._log_interaction(
+                application_id=application_id,
+                agent_name=agent_id.title(),
+                interaction_type='step_4_agent_execution',
+                question_text=f"Execute core agent: {agent_id}",
+                extracted_data={
+                    'agent_id': agent_id,
+                    'agent_number': agent_idx,
+                    'execution_status': 'completed',
+                    'result_keys': list(agent_result.keys()) if isinstance(agent_result, dict) else [],
+                    'execution_order': f"{agent_idx}/4"
+                }
+            )
+            
+            logger.info(f"✅ Agent {agent_id} completed")
         
-        if failed_agents:
-            return self.evaluation_results
-
-        self.workflow_state = "formatting"
-        # Let Aurora format and summarize all results
-        logger.info(f"Running Aurora to format results for {applicant_name}")
-        await self._run_aurora_after_merlin(application)
+        # ===== STEP 5: MILO - Training insights analysis =====
+        logger.info("📊 STEP 5: Analyzing training insights with MILO...")
         
-        self.workflow_state = "generating_document"
-        # Let Fairy Godmother create the final document (ALWAYS LAST)
-        logger.info(f"Running Fairy Godmother to generate final document for {applicant_name}")
-        await self._run_fairy_godmother_document_generation(application)
+        if 'data_scientist' in self.agents:
+            milo = self.agents['data_scientist']
+            try:
+                milo_result = await asyncio.to_thread(milo.analyze_training_insights)
+                self.evaluation_results['results']['data_scientist'] = milo_result
+                
+                # PHASE 5: Log STEP 5 MILO analysis
+                self._log_interaction(
+                    application_id=application_id,
+                    agent_name='Milo',
+                    interaction_type='step_5_milo_analysis',
+                    question_text='Analyze training insights and patterns',
+                    extracted_data={
+                        'analysis_status': 'completed',
+                        'result_keys': list(milo_result.keys()) if isinstance(milo_result, dict) else [],
+                        'insights_generated': 'insights' in str(milo_result).lower() or 'analysis' in str(milo_result).lower()
+                    }
+                )
+                
+                logger.info("✅ MILO analysis complete")
+            except Exception as e:
+                logger.error(f"❌ MILO analysis failed: {e}")
+                # PHASE 5: Log STEP 5 MILO failure
+                self._log_interaction(
+                    application_id=application_id,
+                    agent_name='Milo',
+                    interaction_type='step_5_milo_analysis',
+                    question_text='Analyze training insights and patterns',
+                    extracted_data={
+                        'analysis_status': 'failed',
+                        'error': str(e)
+                    }
+                )
         
-        self.workflow_state = "complete"
-        logger.info(f"✅ Complete evaluation for {applicant_name} - All agents finished")
+        # ===== STEP 6: MERLIN - Synthesis =====
+        logger.info("🧙 STEP 6: Synthesizing evaluation with MERLIN...")
         
-        # Report final completion
+        if 'student_evaluator' in self.agents:
+            merlin = self.agents['student_evaluator']
+            try:
+                merlin_result = await merlin.evaluate_student(
+                    application, self.evaluation_results['results']
+                )
+                self.evaluation_results['results']['student_evaluator'] = merlin_result
+                
+                # PHASE 5: Log STEP 6 MERLIN synthesis
+                self._log_interaction(
+                    application_id=application_id,
+                    agent_name='Merlin',
+                    interaction_type='step_6_merlin_synthesis',
+                    question_text='Synthesize all agent evaluations into comprehensive assessment',
+                    extracted_data={
+                        'synthesis_status': 'completed',
+                        'result_keys': list(merlin_result.keys()) if isinstance(merlin_result, dict) else [],
+                        'has_overall_score': 'overall_score' in str(merlin_result).lower() or 'score' in str(merlin_result).lower(),
+                        'recommendations_generated': 'recommendation' in str(merlin_result).lower()
+                    }
+                )
+                
+                logger.info("✅ MERLIN synthesis complete")
+            except Exception as e:
+                logger.error(f"❌ MERLIN synthesis failed: {e}")
+                # PHASE 5: Log STEP 6 MERLIN failure
+                self._log_interaction(
+                    application_id=application_id,
+                    agent_name='Merlin',
+                    interaction_type='step_6_merlin_synthesis',
+                    question_text='Synthesize all agent evaluations into comprehensive assessment',
+                    extracted_data={
+                        'synthesis_status': 'failed',
+                        'error': str(e)
+                    }
+                )
+        
+        # ===== STEP 7: AURORA - Report generation =====
+        logger.info("📄 STEP 7: Generating report with AURORA...")
+        
+        if 'report_generator' in self.agents:
+            aurora = self.agents['report_generator']
+            try:
+                aurora_result = await asyncio.to_thread(
+                    aurora.format_evaluation_report,
+                    self.evaluation_results['results']
+                )
+                self.evaluation_results['results']['report_generator'] = aurora_result
+                
+                # PHASE 5: Log STEP 7 AURORA report generation
+                self._log_interaction(
+                    application_id=application_id,
+                    agent_name='Aurora',
+                    interaction_type='step_7_aurora_report',
+                    question_text='Generate formatted evaluation report',
+                    extracted_data={
+                        'report_status': 'generated',
+                        'report_length': len(str(aurora_result)) if aurora_result else 0,
+                        'sections_included': list(aurora_result.keys()) if isinstance(aurora_result, dict) else [],
+                        'report_generated': True
+                    }
+                )
+                
+                logger.info("✅ AURORA report generation complete")
+            except Exception as e:
+                logger.error(f"❌ AURORA report generation failed: {e}")
+                # PHASE 5: Log STEP 7 AURORA failure
+                self._log_interaction(
+                    application_id=application_id,
+                    agent_name='Aurora',
+                    interaction_type='step_7_aurora_report',
+                    question_text='Generate formatted evaluation report',
+                    extracted_data={
+                        'report_status': 'failed',
+                        'error': str(e)
+                    }
+                )
+        
+        # ===== Workflow complete =====
+        logger.info("✅ 8-step workflow completed successfully")
+        
         self._report_progress({
-            'type': 'evaluation_complete',
+            'type': 'workflow_complete',
+            'agent': 'Smee Orchestrator',
+            'agent_id': 'smee',
+            'status': 'completed',
             'applicant': applicant_name,
-            'message': f'✅ All agents completed for {applicant_name}',
-            'agents_completed': list(self.evaluation_results['results'].keys()),
-            'document_generated': 'fairy_godmother' in self.evaluation_results['results']
+            'message': '✅ 8-step evaluation workflow completed'
         })
         
+        # Mark application as complete in database
+        if self.db and application_id:
+            try:
+                self.db.update_application_status(application_id, 'Completed')
+            except Exception as e:
+                logger.warning(f"Could not mark application as complete: {e}")
+        
+        self.workflow_state = "complete"
         return self.evaluation_results
-
+    
     async def _determine_missing_fields(
         self,
         application: Dict[str, Any],
@@ -578,7 +1164,7 @@ class SmeeOrchestrator(BaseAgent):
         self,
         application: Dict[str, Any],
         evaluation_steps: List[str]
-    ) -> (List[str], List[Dict[str, Any]]):
+    ) -> Tuple[List[str], List[Dict[str, Any]]]:
         lower_keys = self._build_field_index(application)
 
         agent_questions = AgentRequirements.get_all_questions(evaluation_steps)

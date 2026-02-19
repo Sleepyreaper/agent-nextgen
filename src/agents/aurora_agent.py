@@ -271,6 +271,147 @@ class AuroraAgent(BaseAgent):
             'key_endorsements': mulan_data.get('key_endorsements', []) if isinstance(mulan_data, dict) else []
         }
     
+    def format_evaluation_report(self, evaluation_results: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        PHASE 4: Format all evaluation results into a polished final report.
+        
+        This method is called by SMEE STEP 7 to generate the final report that combines:
+        - Step 1 BELLE extractions
+        - Step 2 Student record
+        - Step 3/3.5 School enrichment & validation
+        - Step 4 Core agent analyses (TIANA, RAPUNZEL, MOANA, MULAN)
+        - Step 5 MILO training analysis
+        - Step 6 MERLIN synthesis
+        - Step 7 AURORA formatting
+        
+        Args:
+            evaluation_results: Dict with results from all 8 steps of workflow
+                Keys: {
+                    'applicant_name', 'application_id', 'student_id',
+                    'agents_used', 'results': {
+                        'belle_extraction', 'naveen_enrichment', 'school_validation_log',
+                        'application_reader', 'grade_reader', 'school_context',
+                        'recommendation_reader', 'data_scientist', 'student_evaluator'
+                    }
+                }
+        
+        Returns:
+            Formatted report dict ready for dashboard/export
+        """
+        try:
+            # Extract key data from evaluation results
+            results = evaluation_results.get('results', {})
+            applicant_name = evaluation_results.get('applicant_name', 'Unknown')
+            application_id = evaluation_results.get('application_id')
+            student_id = evaluation_results.get('student_id')
+            
+            # Build report sections
+            report = {
+                'status': 'success',
+                'applicant': applicant_name,
+                'application_id': application_id,
+                'student_id': student_id,
+                'report_type': 'comprehensive_evaluation',
+                'generated_by': 'Aurora',
+                'timestamp': __import__('datetime').datetime.now().isoformat(),
+                
+                # Applicant identification
+                'applicant_info': {
+                    'name': applicant_name,
+                    'id': application_id
+                },
+                
+                # Step 1: BELLE extraction summary
+                'document_analysis': {
+                    'extraction_complete': 'belle_extraction' in results,
+                    'extracted_fields': len(results.get('belle_extraction', {}))
+                },
+                
+                # Steps 3-3.5: School context
+                'school_context': {
+                    'school': results.get('naveen_enrichment', {}).get('school_name'),
+                    'state': results.get('naveen_enrichment', {}).get('state_code'),
+                    'validation_passed': results.get('school_validation_log', {}).get('ready_for_moana'),
+                    'opportunity_score': results.get('naveen_enrichment', {}).get('opportunity_score'),
+                    'enrichment_summary': results.get('naveen_enrichment', {}).get('analysis_summary')
+                },
+                
+                # Step 4: Core analyses
+                'candidate_profile': {
+                    # TIANA: Application analysis
+                    'application_review': {
+                        'complete': 'application_reader' in results,
+                        'extracted_schools': results.get('application_reader', {}).get('schools', []),
+                        'extracted_interests': results.get('application_reader', {}).get('interests', []),
+                        'summary': results.get('application_reader', {}).get('summary')
+                    },
+                    
+                    # RAPUNZEL: Grade analysis with school context
+                    'academic_performance': {
+                        'complete': 'grade_reader' in results,
+                        'gpa': results.get('grade_reader', {}).get('gpa'),
+                        'academic_strength': results.get('grade_reader', {}).get('academic_strength'),
+                        'course_rigor_index': results.get('grade_reader', {}).get('course_rigor_index'),
+                        'contextual_rigor_index': results.get('grade_reader', {}).get('contextual_rigor_index'),
+                        'school_context_used': results.get('grade_reader', {}).get('school_context_used'),
+                        'transcript_quality': results.get('grade_reader', {}).get('transcript_quality'),
+                        'notable_patterns': results.get('grade_reader', {}).get('notable_patterns', []),
+                        'confidence_level': results.get('grade_reader', {}).get('confidence_level')
+                    },
+                    
+                    # MOANA: School context analysis
+                    'school_analysis': {
+                        'complete': 'school_context' in results,
+                        'school_name': results.get('school_context', {}).get('school_name'),
+                        'opportunity_score': results.get('school_context', {}).get('opportunity_scores', {}).get('overall_opportunity_score'),
+                        'contextual_summary': results.get('school_context', {}).get('contextual_summary'),
+                        'program_access_score': results.get('school_context', {}).get('opportunity_scores', {}).get('program_access_score'),
+                        'relative_advantage_score': results.get('school_context', {}).get('opportunity_scores', {}).get('relative_advantage_score')
+                    },
+                    
+                    # MULAN: Recommendations analysis
+                    'recommendations_analysis': {
+                        'complete': 'recommendation_reader' in results,
+                        'author_count': len(results.get('recommendation_reader', {}).get('recommenders', [])) if results.get('recommendation_reader') else 0,
+                        'strength_indicators': results.get('recommendation_reader', {}).get('strength_indicators', []),
+                        'summary': results.get('recommendation_reader', {}).get('summary')
+                    }
+                },
+                
+                # Step 5: MILO Analysis
+                'training_insights': {
+                    'complete': 'data_scientist' in results,
+                    'insights': results.get('data_scientist', {}).get('insights', []) if results.get('data_scientist') else []
+                },
+                
+                # Step 6: MERLIN Synthesis
+                'merlin_assessment': {
+                    'complete': 'student_evaluator' in results and 'error' not in results.get('student_evaluator', {}),
+                    'overall_evaluation': results.get('student_evaluator', {}).get('overall_evaluation'),
+                    'recommendation': results.get('student_evaluator', {}).get('recommendation'),
+                    'key_strengths': results.get('student_evaluator', {}).get('key_strengths', []),
+                    'areas_for_growth': results.get('student_evaluator', {}).get('areas_for_growth', []),
+                    'context_considerations': results.get('student_evaluator', {}).get('context_factors', [])
+                },
+                
+                # Workflow metadata
+                'workflow_status': {
+                    'steps_completed': len([k for k in results.keys() if 'error' not in results.get(k, {})]),
+                    'total_steps': len(evaluation_results.get('agents_used', [])),
+                    'all_complete': all('error' not in results.get(k, {}) for k in results.keys() if k not in ['belle_extraction', 'naveen_enrichment', 'school_validation_log'])
+                }
+            }
+            
+            return report
+            
+        except Exception as e:
+            return {
+                'status': 'error',
+                'error': str(e),
+                'generated_by': 'Aurora',
+                'message': 'Error formatting evaluation report'
+            }
+    
     async def validate_result_structure(self, result: Dict[str, Any]) -> Dict[str, Any]:
         """Validate that result meets all formatting requirements."""
         issues = []

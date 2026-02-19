@@ -45,13 +45,22 @@ CREATE TABLE IF NOT EXISTS Applications (
     updated_date TIMESTAMP,
     notes TEXT,
     recommendation_text TEXT,
-    transcript_text TEXT
+    transcript_text TEXT,
+    -- Student metadata for accurate matching and re-evaluation tracking
+    first_name VARCHAR(255),
+    last_name VARCHAR(255),
+    high_school VARCHAR(500),
+    state_code VARCHAR(2),
+    school_name VARCHAR(500)
 );
 
 CREATE INDEX IF NOT EXISTS idx_applications_is_training ON Applications(is_training_example);
 CREATE INDEX IF NOT EXISTS idx_applications_status ON Applications(status);
 CREATE INDEX IF NOT EXISTS idx_applications_uploaded_date ON Applications(uploaded_date);
 CREATE INDEX IF NOT EXISTS idx_applications_email ON Applications(email);
+-- Index for accurate student record matching
+CREATE INDEX IF NOT EXISTS idx_app_student_match 
+ON Applications(first_name, last_name, high_school, state_code);
 
 -- =====================================================================
 -- Schools and Context Tables
@@ -228,6 +237,69 @@ CREATE INDEX IF NOT EXISTS idx_aurora_evaluations_app_id ON aurora_evaluations(a
 CREATE INDEX IF NOT EXISTS idx_aurora_evaluations_created_at ON aurora_evaluations(created_at);
 
 -- =====================================================================
+-- Specialized Agent Results Tables
+-- =====================================================================
+
+-- Rapunzel Grades - Grade parsing and academic analysis with school context
+CREATE TABLE IF NOT EXISTS rapunzel_grades (
+    rapunzel_grade_id SERIAL PRIMARY KEY,
+    application_id INTEGER REFERENCES Applications(application_id) ON DELETE CASCADE,
+    agent_name VARCHAR(255) DEFAULT 'Rapunzel',
+    gpa NUMERIC(4,3),
+    academic_strength VARCHAR(100),
+    course_levels JSONB,
+    transcript_quality VARCHAR(100),
+    notable_patterns TEXT,
+    contextual_rigor_index NUMERIC(5,2),
+    confidence_level VARCHAR(50),
+    summary TEXT,
+    parsed_json JSONB,
+    school_context_used BOOLEAN DEFAULT FALSE,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_rapunzel_app_id ON rapunzel_grades(application_id);
+CREATE INDEX IF NOT EXISTS idx_rapunzel_rigor ON rapunzel_grades(contextual_rigor_index);
+
+-- Agent Interactions - Full audit trail of all agent interactions
+CREATE TABLE IF NOT EXISTS agent_interactions (
+    interaction_id SERIAL PRIMARY KEY,
+    application_id INTEGER REFERENCES Applications(application_id) ON DELETE CASCADE,
+    agent_name VARCHAR(255),
+    interaction_type VARCHAR(100),
+    question_text TEXT,
+    user_response TEXT,
+    file_name VARCHAR(500),
+    file_size INTEGER,
+    file_type VARCHAR(50),
+    extracted_data JSONB,
+    timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    sequence_number INTEGER
+);
+
+CREATE INDEX IF NOT EXISTS idx_interactions_app_id ON agent_interactions(application_id);
+CREATE INDEX IF NOT EXISTS idx_interactions_agent ON agent_interactions(agent_name);
+CREATE INDEX IF NOT EXISTS idx_interactions_type ON agent_interactions(interaction_type);
+CREATE INDEX IF NOT EXISTS idx_interactions_timestamp ON agent_interactions(timestamp);
+
+-- Naveen Enrichment Log - Track school enrichments for caching and reuse
+CREATE TABLE IF NOT EXISTS naveen_enrichment_log (
+    enrichment_id SERIAL PRIMARY KEY,
+    school_name VARCHAR(500),
+    state_code VARCHAR(2),
+    school_enrichment_id INTEGER REFERENCES school_enriched_data(school_enrichment_id) ON DELETE SET NULL,
+    naveen_performed BOOLEAN DEFAULT FALSE,
+    enrichment_timestamp TIMESTAMP,
+    data_confidence NUMERIC(3,2),
+    data_sources JSONB,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_naveen_school_match 
+ON naveen_enrichment_log(school_name, state_code);
+CREATE INDEX IF NOT EXISTS idx_naveen_performed ON naveen_enrichment_log(naveen_performed);
+
+-- =====================================================================
 -- Audit and Logging
 -- =====================================================================
 
@@ -292,6 +364,55 @@ CREATE TABLE IF NOT EXISTS user_feedback (
 
 CREATE INDEX IF NOT EXISTS idx_user_feedback_status ON user_feedback(status);
 CREATE INDEX IF NOT EXISTS idx_user_feedback_created_at ON user_feedback(created_at);
+
+-- =====================================================================
+-- PHASE 5: File Upload Audit & Matching Tracking
+-- =====================================================================
+
+-- File Upload Audit Table - Tracks all uploaded files and their student matching
+CREATE TABLE IF NOT EXISTS file_upload_audit (
+    audit_id SERIAL PRIMARY KEY,
+    
+    -- Upload metadata
+    upload_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    file_name VARCHAR(500) NOT NULL,
+    file_type VARCHAR(50),
+    file_size INTEGER,
+    
+    -- AI-extracted student information from file
+    extracted_first_name VARCHAR(255),
+    extracted_last_name VARCHAR(255),
+    extracted_high_school VARCHAR(255),
+    extracted_state_code VARCHAR(2),
+    extraction_confidence NUMERIC(3,2),
+    extraction_method VARCHAR(50), -- 'AI', 'manual', etc
+    
+    -- Matching results
+    matched_application_id INTEGER NOT NULL REFERENCES applications(application_id) ON DELETE CASCADE,
+    ai_match_confidence NUMERIC(3,2) NOT NULL,  -- 0.0 to 1.0
+    match_status VARCHAR(50), -- 'new_student', 'matched_existing', 'low_confidence'
+    match_reasoning TEXT,
+    
+    -- Human review fields
+    human_reviewed BOOLEAN DEFAULT FALSE,
+    human_review_date TIMESTAMP,
+    human_review_notes TEXT,
+    human_review_approved BOOLEAN,
+    reviewed_by VARCHAR(255),
+    
+    -- Related files for same student (for context)
+    related_file_ids TEXT, -- comma-separated audit_ids of other files for same student
+    
+    -- Workflow tracking
+    workflow_triggered BOOLEAN DEFAULT FALSE,
+    workflow_trigger_date TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_file_upload_audit_app_id ON file_upload_audit(matched_application_id);
+CREATE INDEX IF NOT EXISTS idx_file_upload_audit_upload_date ON file_upload_audit(upload_date);
+CREATE INDEX IF NOT EXISTS idx_file_upload_audit_match_confidence ON file_upload_audit(ai_match_confidence);
+CREATE INDEX IF NOT EXISTS idx_file_upload_audit_human_reviewed ON file_upload_audit(human_reviewed);
+CREATE INDEX IF NOT EXISTS idx_file_upload_audit_match_status ON file_upload_audit(match_status);
 
 -- =====================================================================
 -- Views for Common Queries

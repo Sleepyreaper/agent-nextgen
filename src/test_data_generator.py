@@ -2,6 +2,7 @@
 
 import random
 from typing import List, Dict, Any, Tuple
+from datetime import datetime, date, timedelta
 import uuid
 
 
@@ -130,20 +131,185 @@ class TestDataGenerator:
         ('Dr. Christopher Anderson', 'AP Calculus Teacher', 'Math')
     ]
     
-    # Grade subject pools
-    CORE_SUBJECTS = [
-        'English 9', 'English 10', 'English 11', 'English 12',
-        'Algebra I', 'Geometry', 'Algebra II', 'Pre-Calculus',
-        'Biology', 'Chemistry', 'Physics',
-        'World History', 'US History', 'Government'
-    ]
+    # Comprehensive course catalog organized by level and type
+    CORE_COURSES_BY_LEVEL = {
+        9: {
+            'english': ['English 9', 'English 9 Honors'],
+            'math': ['Algebra I', 'Algebra I Honors', 'Geometry'],
+            'science': ['Biology', 'Biology Honors', 'Physical Science'],
+            'social_studies': ['World History', 'World History Honors'],
+            'foreign_lang': ['Spanish I', 'Spanish I Honors', 'French I', 'Mandarin I'],
+            'electives': ['Art I', 'Music I', 'Physical Education', 'Health', 'Technology Basics', 'Digital Media', 'Woodshop', 'Drama']
+        },
+        10: {
+            'english': ['English 10', 'English 10 Honors'],
+            'math': ['Geometry', 'Geometry Honors', 'Algebra II'],
+            'science': ['Chemistry', 'Chemistry Honors', 'Biology Honors'],
+            'social_studies': ['US History', 'US History Honors'],
+            'foreign_lang': ['Spanish II', 'Spanish II Honors', 'French II', 'Mandarin II'],
+            'electives': ['Art II', 'Music II', 'Physical Education', 'Health', 'Debate I', 'Robotics', 'Web Design', 'Photography', 'Band']
+        },
+        11: {
+            'english': ['AP English Literature', 'AP English Language', 'English 11 Honors', 'English 11'],
+            'math': ['AP Calculus AB', 'AP Statistics', 'Algebra II Honors', 'Pre-Calculus'],
+            'science': ['AP Chemistry', 'AP Biology', 'AP Physics', 'Physics Honors', 'Physical Science'],
+            'social_studies': ['AP US History', 'AP World History', 'AP European History', 'Government', 'Economics'],
+            'foreign_lang': ['Spanish III', 'Spanish III Honors', 'AP Spanish Language', 'French III', 'Mandarin III'],
+            'electives': ['AP Computer Science A', 'Computer Science Honors', 'Debate II', 'Mock Trial', 'Robotics II', 'Environmental Science', 'Psychology', 'Media Studies', 'Orchestra']
+        },
+        12: {
+            'english': ['AP Literature', 'AP Language', 'English 12 Honors', 'Creative Writing', 'Journalism'],
+            'math': ['AP Calculus BC', 'AP Statistics', 'Pre-Calculus Honors', 'Linear Algebra'],
+            'science': ['AP Physics C', 'AP Environmental Science', 'AP Biology', 'Chemistry Honors', 'Anatomy and Physiology'],
+            'social_studies': ['AP US Government', 'AP Economics', 'AP Human Geography', 'Sociology', 'History Seminar'],
+            'foreign_lang': ['AP Spanish Language', 'Spanish IV', 'AP French Language', 'Mandarin IV', 'Chinese Culture'],
+            'electives': ['AP Computer Science AB', 'AI and Robotics', 'Data Science', 'Debate III', 'Coding for Social Good', 'Neuroscience', 'Bioethics', 'String Ensemble']
+        }
+    }
+
+    
+    def _generate_birthdate(self, grade_level: int) -> date:
+        """
+        Generate a realistic birthdate based on grade level.
+        
+        Program starts June 2026, minimum age is 16.
+        - Sophomore (10th): Ages 15-16, born 2009-2010
+        - Junior (11th): Ages 16-17, born 2008-2009
+        - Senior (12th): Ages 17-18, born 2007-2008
+        
+        Args:
+            grade_level: 9, 10, 11, or 12
+            
+        Returns:
+            date object for student's birthdate
+        """
+        # For June 2026 program start
+        if grade_level == 12 or grade_level == 11:  # Senior or Junior
+            if grade_level == 12:
+                # Seniors: born 2007-2008, ages 17-18 in June 2026
+                birth_year = random.choice([2007, 2008])
+            else:
+                # Juniors: born 2008-2009, ages 16-17 in June 2026
+                birth_year = random.choice([2008, 2009])
+        else:
+            # Sophomores and freshmen: born 2009-2010/2010-2011
+            # Constraint: minimum age 16 at June 2026 start
+            # So minimum birthdate is June 2010 (turns 16 in June 2026)
+            if grade_level == 10:
+                # Sophomores: born 2009-2010, ages 15-16 in June 2026
+                birth_year = random.choice([2009, 2010])
+            else:
+                # Freshmen (not typically in this program): born 2010-2011
+                birth_year = random.choice([2010, 2011])
+        
+        # Random month and day
+        birth_month = random.randint(1, 12)
+        if birth_month == 2:
+            # February - account for leap years
+            max_day = 29 if birth_year % 4 == 0 else 28
+        elif birth_month in [4, 6, 9, 11]:
+            max_day = 30
+        else:
+            max_day = 31
+        
+        birth_day = random.randint(1, max_day)
+        return date(birth_year, birth_month, birth_day)
+    
+    def _generate_semester_courses(self, grade_level: int, semester: int, 
+                                  gpa: float, quality_tier: str, ap_courses: List[str]) -> List[Tuple[str, str, str]]:
+        """
+        Generate courses for a specific semester.
+        
+        Args:
+            grade_level: 9, 10, 11, or 12
+            semester: 1 or 2
+            gpa: Student's overall GPA
+            quality_tier: 'high', 'medium', or 'low'
+            ap_courses: List of AP courses the student is taking
+            
+        Returns:
+            List of (course_name, grade, credits) tuples (minimum 5 courses per semester)
+        """
+        if quality_tier == 'high':
+            grade_pool = ['A', 'A', 'A+', 'A', 'A-', 'A']
+        elif quality_tier == 'medium':
+            grade_pool = ['A-', 'B+', 'B', 'A', 'B', 'B+']
+        else:
+            grade_pool = ['B', 'B-', 'C+', 'B+', 'C', 'C+']
+        
+        courses = []
+        course_data = self.CORE_COURSES_BY_LEVEL[grade_level]
+        
+        # Ensure at least 5 courses per semester
+        # Required: 1 English, 1 Math, 1 Science, 1 Social Studies
+        # + at least 1 elective, possibly a language course
+        
+        # English course
+        english_courses = course_data['english']
+        courses.append((random.choice(english_courses), random.choice(grade_pool), '1.0'))
+        
+        # Math course
+        math_courses = course_data['math']
+        courses.append((random.choice(math_courses), random.choice(grade_pool), '1.0'))
+        
+        # Science course
+        science_courses = course_data['science']
+        courses.append((random.choice(science_courses), random.choice(grade_pool), '1.0'))
+        
+        # Social Studies course
+        ss_courses = course_data['social_studies']
+        courses.append((random.choice(ss_courses), random.choice(grade_pool), '1.0'))
+        
+        # Foreign language (not every semester)
+        if random.random() > 0.2:
+            lang_courses = course_data['foreign_lang']
+            courses.append((random.choice(lang_courses), random.choice(grade_pool), '1.0'))
+        
+        # Electives - add 2-3 more courses
+        elective_courses = course_data['electives']
+        num_electives = random.randint(2, 3)
+        for _ in range(num_electives):
+            elective = random.choice(elective_courses)
+            credit = '1.0' if elective not in ['Physical Education', 'Health'] else '0.5'
+            courses.append((elective, random.choice(grade_pool), credit))
+        
+        # Ensure we have at least 5 distinct courses per semester
+        # Deduplicate by name
+        seen = set()
+        unique_courses = []
+        for course_tuple in courses:
+            if course_tuple[0] not in seen:
+                unique_courses.append(course_tuple)
+                seen.add(course_tuple[0])
+        
+        # If we lost any, add more electives
+        while len(unique_courses) < 5:
+            elective = random.choice(elective_courses)
+            if elective not in seen:
+                credit = '1.0' if elective not in ['Physical Education', 'Health'] else '0.5'
+                unique_courses.append((elective, random.choice(grade_pool), credit))
+                seen.add(elective)
+        
+        return unique_courses[:8]  # Cap at 8 courses per semester for realism
     
     def generate_transcript(self, name: str, school_data: Dict[str, Any], 
-                           gpa: float, ap_courses: List[str], quality_tier: str) -> str:
-        """Generate a realistic high school transcript."""
+                           gpa: float, ap_courses: List[str], quality_tier: str,
+                           birthdate: date = None) -> str:
+        """Generate a realistic high school transcript with comprehensive course listings."""
         school_name = school_data['name']
         city = school_data['city']
         state = school_data['state']
+        
+        # Determine grade level from birthdate if available
+        grade_level = 12  # Default to senior
+        if birthdate:
+            age_in_june_2026 = (date(2026, 6, 1) - birthdate).days // 365
+            if age_in_june_2026 < 17:
+                grade_level = 10  # Sophomore
+            elif age_in_june_2026 < 18:
+                grade_level = 11  # Junior
+            else:
+                grade_level = 12  # Senior
         
         # Generate grades based on quality tier
         if quality_tier == 'high':
@@ -159,86 +325,101 @@ OFFICIAL HIGH SCHOOL TRANSCRIPT
 ====================================
 
 Student Name: {name}
+Date of Birth: {birthdate.strftime('%B %d, %Y') if birthdate else 'Not provided'}
+Current Grade: {grade_level}
 School Name: {school_name}
-High School: {school_name}
 Location: {city}, {state}
-Graduation Date: May 2026
+Graduation Date: May {2026 + (12 - grade_level)}
 
 ====================================
 ACADEMIC SUMMARY
 ====================================
 Cumulative GPA: {gpa}/4.0 (Weighted)
 Class Rank: {random.randint(5, 50)} of {random.randint(300, 500)}
-Honor Roll: All Semesters
+Honor Roll: {random.randint(5, 8)} consecutive semesters
 
 ====================================
 COURSEWORK BY YEAR
 ====================================
-
-GRADE 9 (2022-2023)
------------------------------------
-English 9 Honors          | {random.choice(grade_pool)} | 1.0 credit
-Algebra I                 | {random.choice(grade_pool)} | 1.0 credit
-Biology                   | {random.choice(grade_pool)} | 1.0 credit
-World History             | {random.choice(grade_pool)} | 1.0 credit
-Spanish I                 | {random.choice(grade_pool)} | 1.0 credit
-Physical Education        | {random.choice(grade_pool)} | 0.5 credit
-Art I                     | {random.choice(grade_pool)} | 0.5 credit
-
-GRADE 10 (2023-2024)
------------------------------------
-English 10 Honors         | {random.choice(grade_pool)} | 1.0 credit
-Geometry Honors           | {random.choice(grade_pool)} | 1.0 credit
-Chemistry                 | {random.choice(grade_pool)} | 1.0 credit
-US History                | {random.choice(grade_pool)} | 1.0 credit
-Spanish II                | {random.choice(grade_pool)} | 1.0 credit
-Health                    | {random.choice(grade_pool)} | 0.5 credit
-Music Theory              | {random.choice(grade_pool)} | 0.5 credit
-
-GRADE 11 (2024-2025)
------------------------------------
-{"AP English Literature" if len(ap_courses) > 0 else "English 11"}   | {random.choice(grade_pool)} | 1.0 credit
-{"AP Calculus AB" if "AP Calculus" in str(ap_courses) else "Algebra II"}   | {random.choice(grade_pool)} | 1.0 credit
-{"AP Chemistry" if "AP Chemistry" in ap_courses else "Chemistry Honors"}     | {random.choice(grade_pool)} | 1.0 credit
-{"AP US History" if "AP US History" in ap_courses else "US History"}   | {random.choice(grade_pool)} | 1.0 credit
-Spanish III               | {random.choice(grade_pool)} | 1.0 credit
-
-GRADE 12 (2025-2026 - In Progress)
------------------------------------
-{"AP Physics" if "AP Physics" in ap_courses else "Physics"}          | {random.choice(grade_pool)} | 1.0 credit
-{"AP Calculus BC" if "AP Calculus BC" in ap_courses else "Pre-Calculus"}  | {random.choice(grade_pool)} | 1.0 credit
-{"AP Computer Science" if "AP Computer Science" in ap_courses else "Computer Science"}  | {random.choice(grade_pool)} | 1.0 credit
-Government / Economics    | {random.choice(grade_pool)} | 1.0 credit
-
+"""
+        
+        # Generate courses for all years the student has completed
+        start_grade = max(9, grade_level - 3)  # Show up to 4 years of history
+        
+        for year_offset, academic_year_grade in enumerate(range(start_grade, grade_level + 1)):
+            current_year = 2023 + year_offset
+            next_year = current_year + 1
+            
+            if academic_year_grade == grade_level:
+                year_label = f"GRADE {academic_year_grade} ({current_year}-{next_year} - In Progress)"
+            else:
+                year_label = f"GRADE {academic_year_grade} ({current_year}-{next_year})"
+            
+            transcript += f"\n{year_label}\n"
+            transcript += "-" * 50 + "\n"
+            
+            # Fall semester (Semester 1)
+            transcript += "FALL SEMESTER\n"
+            fall_courses = self._generate_semester_courses(
+                academic_year_grade, 1, gpa, quality_tier, ap_courses
+            )
+            for course_name, grade, credits in fall_courses:
+                transcript += f"{course_name:<40} | {grade:>2s} | {credits} credit\n"
+            
+            # Spring semester (Semester 2)
+            transcript += "\nSPRING SEMESTER\n"
+            spring_courses = self._generate_semester_courses(
+                academic_year_grade, 2, gpa, quality_tier, ap_courses
+            )
+            for course_name, grade, credits in spring_courses:
+                transcript += f"{course_name:<40} | {grade:>2s} | {credits} credit\n"
+            
+            # GPA for this year
+            year_gpa = round(gpa + random.uniform(-0.1, 0.1), 2)
+            year_gpa = max(2.0, min(4.0, year_gpa))  # Clamp between 2.0 and 4.0
+            transcript += f"\nGPA for Grade {academic_year_grade}: {year_gpa}/4.0\n"
+        
+        transcript += f"""
 ====================================
 STANDARDIZED TEST SCORES
 ====================================
 SAT: {random.randint(1200, 1550) if quality_tier == 'high' else random.randint(1050, 1250)}
 ACT: {random.randint(28, 34) if quality_tier == 'high' else random.randint(22, 27)}
-
-====================================
-AP EXAM SCORES
-====================================
 """
-        # Add AP scores if applicable
+        
+        # Add AP exam scores
+        transcript += "\n====================================\nAP EXAM SCORES\n====================================\n"
         if ap_courses:
-            for course in ap_courses[:4]:  # Limit to 4 for brevity
+            for course in ap_courses[:6]:  # Show up to 6 AP scores
                 score = random.choice([5, 5, 4, 4, 3]) if quality_tier == 'high' else random.choice([4, 3, 3, 2])
-                transcript += f"{course}: {score}\n"
+                # Convert course name to likely AP exam name
+                ap_exam_name = course.replace("AP ", "")
+                transcript += f"{ap_exam_name}: {score}\n"
         else:
             transcript += "No AP exams taken\n"
         
-        transcript += """
+        transcript += f"""
 ====================================
 ATTENDANCE RECORD
 ====================================
-Days Absent: """ + str(random.randint(0, 5)) + """
-Days Tardy: """ + str(random.randint(0, 3)) + """
+Days Absent: {random.randint(0, 5)}
+Days Tardy: {random.randint(0, 3)}
 
-This is an official transcript.
-Issued: February 15, 2026
+====================================
+EXTRACURRICULAR ACTIVITIES
+====================================
+- Consistent participation in academic clubs and competitions
+- {random.choice(['Leadership positions held', 'Community service hours: ' + str(random.randint(20, 100)), 'Athletic team participation'])}
+- {random.choice(['Science competition participation', 'Debate team member', 'Robotics club member', 'Student government'])}
+
+====================================
+NOTES
+====================================
+This is an official transcript from {school_name}.
+Issued: February 18, 2026
 """
         return transcript
+
     
     def generate_recommendation(self, name: str, quality_tier: str, 
                                activities: List[str]) -> Tuple[str, str, str]:
@@ -296,18 +477,28 @@ Sincerely,
         return letter, recommender_name, recommender_role
 
     
-    def generate_student(self, quality_tier: str = 'mixed', used_names: set = None) -> Dict[str, Any]:
+    def generate_student(self, quality_tier: str = 'mixed', used_names: set = None, 
+                        grade_level: int = None) -> Dict[str, Any]:
         """
         Generate a realistic student application with all required data.
         
         Args:
             quality_tier: 'high', 'medium', 'low', or 'mixed' (random)
+            used_names: Set of already-used names to avoid duplicates
+            grade_level: 10, 11, or 12 (sophomore, junior, senior). If None, random.
             
         Returns:
-            Dictionary with complete student data including transcript and recommendation
+            Dictionary with complete student data including transcript, birthdate, and grade
         """
         if quality_tier == 'mixed':
             quality_tier = random.choice(['high', 'high', 'medium', 'medium', 'low'])
+        
+        # Determine grade level (default to random, with preference for seniors)
+        if grade_level is None:
+            grade_level = random.choice([10, 10, 11, 11, 12, 12])  # More seniors/juniors
+        
+        # Generate realistic birthdate for the grade level
+        birthdate = self._generate_birthdate(grade_level)
         
         used_names = used_names or set()
         name = None
@@ -363,7 +554,7 @@ Sincerely,
             name, school_name, city, state, gpa, ap_courses, activities, interest, writing_quality
         )
         
-        transcript_text = self.generate_transcript(name, school_data, gpa, ap_courses, quality_tier)
+        transcript_text = self.generate_transcript(name, school_data, gpa, ap_courses, quality_tier, birthdate)
         
         recommendation_text, recommender_name, recommender_role = self.generate_recommendation(
             name, quality_tier, activities
@@ -376,6 +567,8 @@ Sincerely,
             'school_data': school_data,  # Complete school metadata for Moana
             'city': city,
             'state': state,
+            'birthdate': birthdate,  # Student's date of birth for age/grade verification
+            'grade_level': grade_level,  # Current grade level (10, 11, or 12)
             'gpa': gpa,
             'ap_courses': ap_courses,
             'activities': activities,
