@@ -649,14 +649,22 @@ class SmeeOrchestrator(BaseAgent):
         }
         
         # ===== STEP 1: BELLE - Extract data from document =====
+        print(f"\n{'='*80}")
+        print(f"DEBUG: STARTING STEP 1 - BELLE extraction")
+        print(f"DEBUG: application keys: {list(application.keys())}")
+        print(f"DEBUG: application_id={application_id}, student_id={student_id}")
         logger.info("📋 STEP 1: Extracting data from document with BELLE...")
+        print("📋 STEP 1: Extracting data from document with BELLE...")
+        
         document_text = (application.get('application_text') or 
                         application.get('ApplicationText') or 
                         application.get('transcript_text') or 
                         application.get('TranscriptText') or '')
         
         document_name = application.get('file_name', 'application_document')
+        print(f"DEBUG: document_name={document_name}, doc_length={len(document_text)}")
         belle_data = await self._extract_data_with_belle(document_text, document_name)
+        print(f"DEBUG: BELLE returned: {list(belle_data.keys()) if isinstance(belle_data, dict) else 'NOT A DICT'}")
         self.evaluation_results['results']['belle_extraction'] = belle_data
         
         # PHASE 5: Log STEP 1 extraction to audit trail
@@ -686,7 +694,10 @@ class SmeeOrchestrator(BaseAgent):
                      application.get('StateCode', '')).strip()
         
         # ===== STEP 2: Match or create student record =====
+        print(f"\nDEBUG: STEP 2 - Student matching")
+        print(f"DEBUG: first_name={first_name}, last_name={last_name}, school={high_school}, state={state_code}")
         logger.info("🎓 STEP 2: Matching/creating student record...")
+        print("🎓 STEP 2: Matching/creating student record...")
         
         if first_name and last_name and high_school and state_code:
             student_app_id = self._match_or_create_student_record(
@@ -718,7 +729,10 @@ class SmeeOrchestrator(BaseAgent):
             )
         
         # ===== STEP 2.5: Check or enrich high school =====
+        print(f"\nDEBUG: STEP 2.5 - High school enrichment")
+        print(f"DEBUG: high_school={high_school}, state_code={state_code}")
         logger.info("📚 STEP 2.5: Checking/enriching high school data...")
+        print("📚 STEP 2.5: Checking/enriching high school data...")
         
         high_school_data = {}
         if high_school and state_code:
@@ -767,7 +781,11 @@ class SmeeOrchestrator(BaseAgent):
                 self.evaluation_results['results']['high_school_check'] = high_school_data
         
         # ===== STEP 3 & 3.5: NAVEEN enrichment + School validation loop =====
+        print(f"\nDEBUG: STEP 3/3.5 - NAVEEN enrichment & validation")
+        print(f"DEBUG: high_school={high_school}, state_code={state_code}, application_id={application_id}")
+        print(f"DEBUG: 'naveen' in self.agents? {'naveen' in self.agents}")
         logger.info("🏫 STEP 3-3.5: NAVEEN enrichment & MOANA validation loop...")
+        print("🏫 STEP 3-3.5: NAVEEN enrichment & MOANA validation loop...")
         
         school_enrichment = {}
         if high_school and state_code and application_id:
@@ -893,9 +911,15 @@ class SmeeOrchestrator(BaseAgent):
             logger.warning("⚠️ Cannot run school validation - missing school info or application_id")
         
         # ===== STEP 4: Core agents with per-agent validation =====
+        print(f"\n{'='*80}")
+        print(f"DEBUG: STEP 4 - Core agents")
+        print(f"DEBUG: evaluation_steps={evaluation_steps}")
+        print(f"DEBUG: Registered agents: {list(self.agents.keys())}")
         logger.info("🤖 STEP 4: Running core agents with validation gates...")
+        print("🤖 STEP 4: Running core agents with validation gates...")
         
         core_agents = ['application_reader', 'grade_reader', 'school_context', 'recommendation_reader']
+        print(f"DEBUG: core_agents list={core_agents}")
         prior_results = {}
         
         for agent_idx, agent_id in enumerate(core_agents, 1):
