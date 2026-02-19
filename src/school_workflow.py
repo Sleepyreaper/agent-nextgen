@@ -121,7 +121,7 @@ class SchoolDataWorkflow:
             raise
         
         # Step 3: Store results in database
-        if enriched_result.get('status') == 'success':
+        if enriched_result.get('analysis_status') == 'complete':
             school_id = self._store_school_enrichment(
                 school_data=enriched_result,
                 school_name=school_name,

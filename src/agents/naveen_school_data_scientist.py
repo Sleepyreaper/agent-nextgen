@@ -158,6 +158,7 @@ Provide structured analysis in JSON format."""
                 result.update(refinement_result)
             
             result["analysis_status"] = "complete"
+            result["status"] = "success"  # For compatibility with school_workflow
             result["analysis_summary"] = self._generate_analysis_summary(result)
             
             logger.info(f"Naveen enrichment complete for {school_name}: score={result['opportunity_score']}, confidence={result['confidence_score']}")
@@ -165,6 +166,7 @@ Provide structured analysis in JSON format."""
         except Exception as e:
             logger.error(f"Error analyzing school {school_name}: {str(e)}", exc_info=True)
             result["analysis_status"] = "error"
+            result["status"] = "error"
             result["error"] = str(e)
 
         # Add model information to result
