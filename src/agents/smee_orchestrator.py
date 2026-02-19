@@ -893,42 +893,19 @@ class SmeeOrchestrator(BaseAgent):
                     }
                 )
             else:
-                logger.error(
-                    f"❌ School validation FAILED after remediation attempts",
+                logger.warning(
+                    f"⚠️ School validation incomplete - continuing with partial school data",
                     extra={
                         'school': high_school,
                         'missing_fields': validation_log.get('final_missing_fields', []),
                         'attempts': len(validation_log.get('attempts', []))
                     }
                 )
-                # PHASE 5: Log pause for school validation failure
-                self._log_interaction(
-                    application_id=application_id,
-                    agent_name='Moana',
-                    interaction_type='pause_for_documents',
-                    question_text='School validation failed - additional documentation required',
-                    extracted_data={
-                        'reason': 'school_validation_failed',
-                        'missing_fields': validation_log.get('final_missing_fields', []),
-                        'validation_attempts': len(validation_log.get('attempts', [])),
-                        'remediation_attempts': sum(1 for a in validation_log.get('attempts', []) if a.get('is_remediation'))
-                    }
-                )
-                # Pause and ask for more documentation
-                return self._pause_for_missing_fields(
-                    applicant_name=applicant_name,
-                    application_id=application_id,
-                    student_id=student_id,
-                    missing_fields=validation_log.get('final_missing_fields', []),
-                    agent_questions=[
-                        {
-                            'field_name': field,
-                            'agent_id': 'naveen',
-                            'agent_name': 'Naveen'
-                        }
-                        for field in validation_log.get('final_missing_fields', [])
-                    ],
-                    application_snapshot=application
+                # Use partial school data rather than blocking the workflow
+                school_enrichment = school_data or {}
+                logger.info(
+                    f"📋 Continuing with core agents using partial school enrichment",
+                    extra={'school': high_school, 'has_enrichment': bool(school_enrichment)}
                 )
         else:
             logger.warning("⚠️ Cannot run school validation - missing school info or application_id")
