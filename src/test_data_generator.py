@@ -23,20 +23,46 @@ class TestDataGenerator:
         'Lee', 'Perez', 'Thompson', 'White', 'Harris', 'Sanchez', 'Clark'
     ]
     
-    # Enhanced school data with metadata for Moana
+    # Enhanced school data with metadata for comprehensive testing
     SCHOOLS = [
+        # Metro Atlanta - High Resource Schools
         {
-            'name': 'Lincoln High School',
+            'name': 'North Springs Charter High School',
+            'city': 'Sandy Springs',
+            'state': 'Georgia',
+            'type': 'Public Charter',
+            'ap_courses': 28,
+            'ib_available': True,
+            'stem_programs': 5,
+            'median_income': 102000,
+            'free_lunch_pct': 12.5,
+            'total_enrollment': 1650
+        },
+        {
+            'name': 'Gwinnett School of Mathematics, Science and Technology',
+            'city': 'Lawrenceville',
+            'state': 'Georgia',
+            'type': 'Public Magnet',
+            'ap_courses': 32,
+            'ib_available': False,
+            'stem_programs': 8,
+            'median_income': 95000,
+            'free_lunch_pct': 8.2,
+            'total_enrollment': 950
+        },
+        {
+            'name': 'Westminster Schools',
             'city': 'Atlanta',
             'state': 'Georgia',
-            'type': 'Public',
-            'ap_courses': 18,
-            'ib_available': False,
-            'stem_programs': 3,
-            'median_income': 65000,
-            'free_lunch_pct': 35.5,
-            'total_enrollment': 1800
+            'type': 'Private',
+            'ap_courses': 26,
+            'ib_available': True,
+            'stem_programs': 6,
+            'median_income': 185000,
+            'free_lunch_pct': 3.0,
+            'total_enrollment': 1900
         },
+        # Suburban Georgia
         {
             'name': 'Roosevelt STEM Academy',
             'city': 'Marietta',
@@ -50,6 +76,44 @@ class TestDataGenerator:
             'total_enrollment': 1200
         },
         {
+            'name': 'Walton High School',
+            'city': 'Marietta',
+            'state': 'Georgia',
+            'type': 'Public',
+            'ap_courses': 22,
+            'ib_available': False,
+            'stem_programs': 4,
+            'median_income': 92000,
+            'free_lunch_pct': 15.8,
+            'total_enrollment': 3200
+        },
+        # Urban Georgia - Diverse Resources
+        {
+            'name': 'Lincoln High School',
+            'city': 'Atlanta',
+            'state': 'Georgia',
+            'type': 'Public',
+            'ap_courses': 18,
+            'ib_available': False,
+            'stem_programs': 3,
+            'median_income': 65000,
+            'free_lunch_pct': 35.5,
+            'total_enrollment': 1800
+        },
+        {
+            'name': 'Grady High School',
+            'city': 'Atlanta',
+            'state': 'Georgia',
+            'type': 'Public',
+            'ap_courses': 20,
+            'ib_available': True,
+            'stem_programs': 4,
+            'median_income': 72000,
+            'free_lunch_pct': 28.4,
+            'total_enrollment': 1950
+        },
+        # Coastal Georgia
+        {
             'name': 'Washington Preparatory School',
             'city': 'Savannah',
             'state': 'Georgia',
@@ -61,6 +125,19 @@ class TestDataGenerator:
             'free_lunch_pct': 5.0,
             'total_enrollment': 800
         },
+        {
+            'name': 'Savannah Arts Academy',
+            'city': 'Savannah',
+            'state': 'Georgia',
+            'type': 'Public Magnet',
+            'ap_courses': 16,
+            'ib_available': False,
+            'stem_programs': 2,
+            'median_income': 62000,
+            'free_lunch_pct': 32.0,
+            'total_enrollment': 750
+        },
+        # Central/Southwest Georgia
         {
             'name': 'Jefferson High School',
             'city': 'Columbus',
@@ -74,6 +151,19 @@ class TestDataGenerator:
             'total_enrollment': 2100
         },
         {
+            'name': 'Columbus High School',
+            'city': 'Columbus',
+            'state': 'Georgia',
+            'type': 'Public',
+            'ap_courses': 14,
+            'ib_available': False,
+            'stem_programs': 3,
+            'median_income': 55000,
+            'free_lunch_pct': 42.0,
+            'total_enrollment': 1650
+        },
+        # Northeast Georgia
+        {
             'name': 'Kennedy Technical Institute',
             'city': 'Augusta',
             'state': 'Georgia',
@@ -84,6 +174,43 @@ class TestDataGenerator:
             'median_income': 58000,
             'free_lunch_pct': 42.0,
             'total_enrollment': 950
+        },
+        {
+            'name': 'Lakeside High School',
+            'city': 'Evans',
+            'state': 'Georgia',
+            'type': 'Public',
+            'ap_courses': 16,
+            'ib_available': False,
+            'stem_programs': 3,
+            'median_income': 68000,
+            'free_lunch_pct': 25.5,
+            'total_enrollment': 2250
+        },
+        # Athens Area
+        {
+            'name': 'Clarke Central High School',
+            'city': 'Athens',
+            'state': 'Georgia',
+            'type': 'Public',
+            'ap_courses': 15,
+            'ib_available': False,
+            'stem_programs': 3,
+            'median_income': 60000,
+            'free_lunch_pct': 38.0,
+            'total_enrollment': 1400
+        },
+        {
+            'name': 'Athens Academy',
+            'city': 'Athens',
+            'state': 'Georgia',
+            'type': 'Private',
+            'ap_courses': 20,
+            'ib_available': False,
+            'stem_programs': 4,
+            'median_income': 112000,
+            'free_lunch_pct': 2.0,
+            'total_enrollment': 1050
         }
     ]
 
@@ -170,12 +297,14 @@ class TestDataGenerator:
     
     def _generate_birthdate(self, grade_level: int) -> date:
         """
-        Generate a realistic birthdate based on grade level.
+        Generate a realistic birthdate based on grade level for 2025-2026 school year.
         
-        Program starts June 2026, minimum age is 16.
-        - Sophomore (10th): Ages 15-16, born 2009-2010
-        - Junior (11th): Ages 16-17, born 2008-2009
-        - Senior (12th): Ages 17-18, born 2007-2008
+        Current date: February 2026 (middle of 2025-2026 school year)
+        High school enrollment for 2025-2026:
+        - Freshman (9th): Born 2010-2011, Ages 14-15
+        - Sophomore (10th): Born 2009-2010, Ages 15-16
+        - Junior (11th): Born 2008-2009, Ages 16-17
+        - Senior (12th): Born 2007-2008, Ages 17-18
         
         Args:
             grade_level: 9, 10, 11, or 12
@@ -183,24 +312,15 @@ class TestDataGenerator:
         Returns:
             date object for student's birthdate
         """
-        # For June 2026 program start
-        if grade_level == 12 or grade_level == 11:  # Senior or Junior
-            if grade_level == 12:
-                # Seniors: born 2007-2008, ages 17-18 in June 2026
-                birth_year = random.choice([2007, 2008])
-            else:
-                # Juniors: born 2008-2009, ages 16-17 in June 2026
-                birth_year = random.choice([2008, 2009])
-        else:
-            # Sophomores and freshmen: born 2009-2010/2010-2011
-            # Constraint: minimum age 16 at June 2026 start
-            # So minimum birthdate is June 2010 (turns 16 in June 2026)
-            if grade_level == 10:
-                # Sophomores: born 2009-2010, ages 15-16 in June 2026
-                birth_year = random.choice([2009, 2010])
-            else:
-                # Freshmen (not typically in this program): born 2010-2011
-                birth_year = random.choice([2010, 2011])
+        # Map grade level to birth year based on 2025-2026 school year
+        birth_year_map = {
+            9: [2010, 2011],   # Freshman: Ages 14-15
+            10: [2009, 2010],  # Sophomore: Ages 15-16
+            11: [2008, 2009],  # Junior: Ages 16-17
+            12: [2007, 2008]   # Senior: Ages 17-18
+        }
+        
+        birth_year = random.choice(birth_year_map.get(grade_level, [2009, 2010]))
         
         # Random month and day
         birth_month = random.randint(1, 12)
@@ -423,7 +543,7 @@ Issued: February 18, 2026
     
     def generate_recommendation(self, name: str, quality_tier: str, 
                                activities: List[str]) -> Tuple[str, str, str]:
-        """Generate a realistic recommendation letter. Returns (letter, recommender_name, recommender_role)."""
+        """Generate a single realistic recommendation letter. Returns (letter, recommender_name, recommender_role)."""
         recommender_name, recommender_role, subject = random.choice(self.RECOMMENDERS)
         
         activity = activities[0] if activities else 'participated actively in class'
@@ -475,27 +595,72 @@ Sincerely,
 """
         
         return letter, recommender_name, recommender_role
+    
+    def generate_multiple_recommendations(self, name: str, quality_tier: str, 
+                                         activities: List[str], count: int = 3) -> List[Dict[str, str]]:
+        """
+        Generate multiple recommendation letters (3-5) from different recommenders.
+        
+        Args:
+            name: Student name
+            quality_tier: 'high', 'medium', or 'low'
+            activities: List of student activities
+            count: Number of recommendations to generate (default 3, max 5)
+            
+        Returns:
+            List of dicts with keys: 'text', 'recommender_name', 'recommender_role'
+        """
+        recommendations = []
+        used_recommenders = set()
+        count = min(count, 5)  # Cap at 5 recommendations
+        
+        for _ in range(count):
+            # Ensure we don't reuse the same recommender
+            attempts = 0
+            while attempts < 20:
+                letter, rec_name, rec_role = self.generate_recommendation(name, quality_tier, activities)
+                if rec_name not in used_recommenders:
+                    used_recommenders.add(rec_name)
+                    recommendations.append({
+                        'text': letter,
+                        'recommender_name': rec_name,
+                        'recommender_role': rec_role
+                    })
+                    break
+                attempts += 1
+        
+        return recommendations
 
     
     def generate_student(self, quality_tier: str = 'mixed', used_names: set = None, 
                         grade_level: int = None) -> Dict[str, Any]:
         """
-        Generate a realistic student application with all required data.
+        Generate a realistic student application with comprehensive data.
+        
+        Now generates 3-5 recommendations per student (more for higher quality).
+        Based on 2025-2026 school year enrollment (February 2026).
         
         Args:
             quality_tier: 'high', 'medium', 'low', or 'mixed' (random)
             used_names: Set of already-used names to avoid duplicates
-            grade_level: 10, 11, or 12 (sophomore, junior, senior). If None, random.
+            grade_level: 9, 10, 11, or 12 (freshman, sophomore, junior, senior). 
+                        If None, defaults to 10-12 (typical college applicants).
             
         Returns:
-            Dictionary with complete student data including transcript, birthdate, and grade
+            Dictionary with complete student data:
+            - birthdate (based on 2025-2026 enrollment)
+            - grade_level (9-12)
+            - transcript_text (full 4-year transcript)
+            - recommendations (list of 3-5 recommendation dicts)
+            - school_data (comprehensive school metadata)
+            - All other application materials
         """
         if quality_tier == 'mixed':
             quality_tier = random.choice(['high', 'high', 'medium', 'medium', 'low'])
         
-        # Determine grade level (default to random, with preference for seniors)
+        # Determine grade level (default to 10-12 for typical college applicants)
         if grade_level is None:
-            grade_level = random.choice([10, 10, 11, 11, 12, 12])  # More seniors/juniors
+            grade_level = random.choice([10, 10, 11, 11, 12, 12])  # Weighted toward juniors/seniors
         
         # Generate realistic birthdate for the grade level
         birthdate = self._generate_birthdate(grade_level)
@@ -556,9 +721,14 @@ Sincerely,
         
         transcript_text = self.generate_transcript(name, school_data, gpa, ap_courses, quality_tier, birthdate)
         
-        recommendation_text, recommender_name, recommender_role = self.generate_recommendation(
-            name, quality_tier, activities
-        )
+        # Generate 3-5 recommendations based on quality tier
+        num_recommendations = 5 if quality_tier == 'high' else 4 if quality_tier == 'medium' else 3
+        recommendations = self.generate_multiple_recommendations(name, quality_tier, activities, num_recommendations)
+        
+        # Keep backward compatibility with single recommendation
+        primary_rec = recommendations[0] if recommendations else {
+            'text': '', 'recommender_name': '', 'recommender_role': ''
+        }
         
         return {
             'name': name,
@@ -568,16 +738,17 @@ Sincerely,
             'city': city,
             'state': state,
             'birthdate': birthdate,  # Student's date of birth for age/grade verification
-            'grade_level': grade_level,  # Current grade level (10, 11, or 12)
+            'grade_level': grade_level,  # Current grade level (9, 10, 11, or 12)
             'gpa': gpa,
             'ap_courses': ap_courses,
             'activities': activities,
             'interest': interest,
             'application_text': application_text,
             'transcript_text': transcript_text,  # For Rapunzel
-            'recommendation_text': recommendation_text,  # For Mulan
-            'recommender_name': recommender_name,
-            'recommender_role': recommender_role,
+            'recommendations': recommendations,  # MAIN: List of 3-5 recommendation dicts
+            'recommendation_text': primary_rec['text'],  # DEPRECATED: For backward compat
+            'recommender_name': primary_rec['recommender_name'],  # DEPRECATED
+            'recommender_role': primary_rec['recommender_role'],  # DEPRECATED
             'quality_tier': quality_tier
         }
     
