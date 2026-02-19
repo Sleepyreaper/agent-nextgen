@@ -412,12 +412,6 @@ Demographics:
 
         return summary
 
-    async def _create_chat_completion(self, system_prompt: str, user_message: str) -> str:
-        """Create chat completion via OpenAI API."""
-        # This would be implemented with actual OpenAI API calls in production
-        # For now, returning structured data
-        return "Analysis complete"
-
     def _build_research_prompt(
         self,
         school_name: str,
