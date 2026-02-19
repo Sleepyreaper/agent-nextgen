@@ -2079,6 +2079,13 @@ def student_detail(application_id):
             flash('Student not found', 'error')
             return redirect(url_for('students'))
         
+        # CRITICAL: Sanitize application dict to prevent circular references during template rendering
+        # Convert to plain dict to break any DB row object references
+        try:
+            application = dict(application)
+        except:
+            pass  # Already a plain dict
+        
         logger.debug(f"Application found: {application.get('applicant_name')}")
         
         # ===== FETCH SCHOOL ENRICHMENT DATA (PART OF TRAINING DATA CONTEXT) =====
