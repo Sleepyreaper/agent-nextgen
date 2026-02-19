@@ -2114,10 +2114,6 @@ def student_detail(application_id):
         
         # Fetch all agent evaluations
         agent_results = {}
-        logger.debug(f"Application found: {application.get('applicant_name')}")
-        
-        # Fetch all agent evaluations
-        agent_results = {}
         
         # Tiana - Application Reader
         try:
@@ -2126,7 +2122,7 @@ def student_detail(application_id):
                 (application_id,)
             )
             if tiana_results:
-                agent_results['tiana'] = tiana_results[0]
+                agent_results['tiana'] = dict(tiana_results[0])  # Create explicit copy
         except Exception as e:
             logger.debug(f"No Tiana data: {e}")
         
@@ -2137,19 +2133,21 @@ def student_detail(application_id):
                 (application_id,)
             )
             if rapunzel_results:
-                agent_results['rapunzel'] = rapunzel_results[0]
+                agent_results['rapunzel'] = dict(rapunzel_results[0])  # Create explicit copy
                 # Parse JSON fields if present
                 if agent_results['rapunzel'].get('parsed_json'):
                     try:
                         import json
                         parsed = json.loads(agent_results['rapunzel']['parsed_json'])
                         if isinstance(parsed, dict):
-                            # Merge parsed data
+                            # Merge parsed data into a safe copy
                             for key, value in parsed.items():
                                 if key not in agent_results['rapunzel'] or not agent_results['rapunzel'].get(key):
-                                    agent_results['rapunzel'][key] = value
-                    except:
-                        pass
+                                    # Ensure we're not creating circular references
+                                    if key != 'rapunzel' and key != 'agent_results':
+                                        agent_results['rapunzel'][key] = value
+                    except Exception as parse_err:
+                        logger.debug(f"Error parsing rapunzel JSON: {parse_err}")
         except Exception as e:
             logger.debug(f"No Rapunzel data: {e}")
         
@@ -2160,19 +2158,21 @@ def student_detail(application_id):
                 (application_id,)
             )
             if moana_results:
-                agent_results['moana'] = moana_results[0]
+                agent_results['moana'] = dict(moana_results[0])  # Create explicit copy
                 # Parse JSON fields if present
                 if agent_results['moana'].get('parsed_json'):
                     try:
                         import json
                         parsed = json.loads(agent_results['moana']['parsed_json'])
                         if isinstance(parsed, dict):
-                            # Merge parsed data
+                            # Merge parsed data into a safe copy
                             for key, value in parsed.items():
                                 if key not in agent_results['moana'] or not agent_results['moana'].get(key):
-                                    agent_results['moana'][key] = value
-                    except:
-                        pass
+                                    # Ensure we're not creating circular references
+                                    if key != 'moana' and key != 'agent_results':
+                                        agent_results['moana'][key] = value
+                    except Exception as parse_err:
+                        logger.debug(f"Error parsing moana JSON: {parse_err}")
         except Exception as e:
             logger.debug(f"No Moana data: {e}")
         
@@ -2183,7 +2183,7 @@ def student_detail(application_id):
                 (application_id,)
             )
             if mulan_results:
-                agent_results['mulan'] = mulan_results[0]
+                agent_results['mulan'] = dict(mulan_results[0])  # Create explicit copy
         except Exception as e:
             logger.debug(f"No Mulan data: {e}")
         
@@ -2194,15 +2194,15 @@ def student_detail(application_id):
                 (application_id,)
             )
             if merlin_results:
-                agent_results['merlin'] = merlin_results[0]
+                agent_results['merlin'] = dict(merlin_results[0])  # Create explicit copy
                 # Parse JSON for additional fields
                 if agent_results['merlin'].get('parsed_json'):
                     try:
                         import json
                         parsed = json.loads(agent_results['merlin']['parsed_json'])
                         agent_results['merlin']['parsed_data'] = parsed
-                    except:
-                        pass
+                    except Exception as parse_err:
+                        logger.debug(f"Error parsing merlin JSON: {parse_err}")
         except Exception as e:
             logger.debug(f"No Merlin data: {e}")
         
@@ -2213,7 +2213,7 @@ def student_detail(application_id):
                 (application_id,)
             )
             if aurora_results:
-                agent_results['aurora'] = aurora_results[0]
+                agent_results['aurora'] = dict(aurora_results[0])  # Create explicit copy
         except Exception as e:
             logger.debug(f"No Aurora data: {e}")
         

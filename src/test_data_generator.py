@@ -732,8 +732,9 @@ Sincerely,
         
         return {
             'name': name,
-            'email': email,
+'email': email,
             'school': school_name,
+            'school_name': school_name,  # For agent requirements validation
             'school_data': school_data,  # Complete school metadata for Moana
             'city': city,
             'state': state,
