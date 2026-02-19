@@ -1,13 +1,17 @@
 """Base agent class for Azure AI Foundry agents."""
 
 import json
+import logging
 import time
+from urllib.parse import urlparse
 from abc import ABC, abstractmethod
 from typing import Any, Optional
 
 from src.telemetry import telemetry
 from src.observability import get_tracer, should_capture_sensitive_data
 from opentelemetry.trace import SpanKind
+
+logger = logging.getLogger(__name__)
 
 
 class BaseAgent(ABC):
@@ -160,6 +164,38 @@ class BaseAgent(ABC):
             return response
         
         except Exception as e:
+            endpoint = getattr(self.client, "azure_endpoint", None) or getattr(self.client, "base_url", None)
+            endpoint_host = None
+            if isinstance(endpoint, str) and endpoint:
+                try:
+                    endpoint_host = urlparse(endpoint).netloc or endpoint
+                except Exception:
+                    endpoint_host = endpoint
+
+            api_version = getattr(self.client, "api_version", None)
+            telemetry.track_event(
+                "model_call_error",
+                properties={
+                    "agent_name": self.name,
+                    "model": model or "",
+                    "operation": operation,
+                    "api_version": str(api_version) if api_version else "",
+                    "endpoint_host": endpoint_host or "",
+                    "error_type": type(e).__name__,
+                    "error": str(e),
+                }
+            )
+            logger.warning(
+                "Model call failed",
+                extra={
+                    "agent_name": self.name,
+                    "model": model,
+                    "operation": operation,
+                    "api_version": api_version,
+                    "endpoint_host": endpoint_host,
+                    "error": str(e),
+                }
+            )
             # Log error to telemetry
             if tracer:
                 try:
