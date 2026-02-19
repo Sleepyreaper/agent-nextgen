@@ -437,8 +437,32 @@ Document excerpt:
             if candidates:
                 try:
                     ranked = self._rank_school_candidates(text, candidates)
-                    if ranked:
+                    if ranked and self._is_valid_school_name(ranked):
                         return ranked
+                    # If ranked result isn't a clear school name (e.g., the model returned a city), ask the model to clarify
+                    if ranked and not self._is_valid_school_name(ranked):
+                        try:
+                            clarify_prompt = (
+                                f"The value '{ranked}' looks like it may be a city or incomplete.\n"
+                                "Using the document below, identify the student's full HIGH SCHOOL name (full official name).\n"
+                                "Return ONLY the school name or NONE.\n\nDocument excerpt:\n" + text[:1200]
+                            )
+                            clarify_messages = [
+                                {"role": "system", "content": "You are an expert at extracting and validating school names. Return only the final school name or NONE."},
+                                {"role": "user", "content": clarify_prompt}
+                            ]
+                            clar_resp = self._create_chat_completion(
+                                operation="belle.clarify_school",
+                                model=self.model,
+                                messages=clarify_messages,
+                                max_completion_tokens=120,
+                                temperature=0
+                            )
+                            clar_choice = clar_resp.choices[0].message.content.strip() if clar_resp else None
+                            if clar_choice and self._is_valid_school_name(clar_choice):
+                                return clar_choice
+                        except Exception:
+                            pass
                 except Exception:
                     # If ranking fails, continue to deep pass
                     pass
@@ -584,7 +608,8 @@ Document excerpt:
         choices_text = '\n'.join([f"{i+1}. {c}" for i, c in enumerate(candidates)])
         prompt = (
             "Below are candidate school names found in a student document.\n"
-            "Choose the single best candidate that is the student's HIGH SCHOOL.\n"
+            "Choose the single best candidate that is the student's HIGH SCHOOL (prefer candidates that include 'High School', 'HS', 'School', 'Academy', 'Charter', 'Magnet', or 'Institute').\n"
+            "Do NOT return a city or state name — return NONE if the choices are cities or ambiguous.\n"
             "Return ONLY the chosen candidate text exactly as it appears in the list, or return 'NONE' if none match.\n\n"
             "Candidates:\n" + choices_text + "\n\n"
             "Document excerpt:\n" + text[:800]
@@ -632,6 +657,27 @@ Document excerpt:
             return None
 
         return None
+
+    def _is_valid_school_name(self, name: Optional[str]) -> bool:
+        """Return True if the extracted name looks like a real school name (not a city)."""
+        if not name or not isinstance(name, str):
+            return False
+        s = name.strip()
+        if len(s) < 3 or len(s) > 200:
+            return False
+
+        keywords = ['high school', 'hs', 'school', 'academy', 'charter', 'magnet', 'institute', 'secondary']
+        lowered = s.lower()
+        if any(k in lowered for k in keywords):
+            return True
+
+        # Accept multi-word names that look like proper nouns (e.g., "Central Catholic")
+        parts = [p for p in s.split() if p]
+        if len(parts) >= 2 and all(p[0].isupper() for p in parts if p[0].isalpha()):
+            # But reject obvious city-only answers like single-word cities
+            return True
+
+        return False
     def _extract_data_by_type(self, text: str, doc_type: str) -> Dict[str, Any]:
         """Extract type-specific data from the document."""
 
