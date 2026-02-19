@@ -876,10 +876,12 @@ class SmeeOrchestrator(BaseAgent):
         for agent_idx, agent_id in enumerate(core_agents, 1):
             if agent_id not in self.agents:
                 logger.warning(f"Agent {agent_id} not registered - skipping")
+                print(f"⚠️  {agent_id.upper()}: NOT REGISTERED")
                 continue
             
             # ===== STEP 4.5: Per-agent validation =====
-            logger.info(f"⚙️ STEP 4.5: Validating {agent_id} readiness...")
+            logger.info(f"⚙️ STEP 4.5 ({agent_idx}/4): Validating {agent_id} readiness...")
+            print(f"🔍 VALIDATING ({agent_idx}/4): {agent_id.upper()}")
             
             readiness = await self._validate_agent_readiness(
                 agent_id, application, application_id, belle_data
@@ -887,6 +889,7 @@ class SmeeOrchestrator(BaseAgent):
             
             if not readiness.get('ready'):
                 logger.warning(f"⚠️ Agent {agent_id} not ready: {readiness.get('missing')}")
+                print(f"❌ {agent_id.upper()}: VALIDATION FAILED - Missing {readiness.get('missing', [])}")
                 
                 # PHASE 5: Log initial validation failure
                 self._log_interaction(
@@ -904,6 +907,7 @@ class SmeeOrchestrator(BaseAgent):
                 
                 # Reactive BELLE call for validation gap
                 logger.info(f"📖 Reactively calling BELLE to fill {agent_id} gap...")
+                print(f"📖 BELLE RETRY for {agent_id.upper()}: Extracting {readiness.get('missing', [])}")
                 belle_retry = await self._extract_data_with_belle(
                     document_text, document_name, 
                     context=f"Focus on {', '.join(readiness.get('missing', []))}"
@@ -914,6 +918,7 @@ class SmeeOrchestrator(BaseAgent):
                 readiness = await self._validate_agent_readiness(
                     agent_id, application, application_id, belle_data
                 )
+                print(f"🔄 {agent_id.upper()}: RE-VALIDATION RESULT - {'PASS ✓' if readiness.get('ready') else 'STILL MISSING: ' + str(readiness.get('missing', []))}")
                 
                 if not readiness.get('ready'):
                     logger.warning(f"⚠️ {agent_id} still not ready after BELLE retry. SKIPPING for now and continuing with other agents.")
@@ -936,6 +941,7 @@ class SmeeOrchestrator(BaseAgent):
                     
                     # CHANGE: Instead of pausing, log the skip and continue to next agent
                     logger.info(f"⏭️  Skipping {agent_id}, continuing with remaining agents...")
+                    print(f"❌ {agent_id.upper()}: SKIPPED - Missing {readiness.get('missing', [])}")
                     continue  # Continue to next agent instead of returning
             
             logger.info(f"✅ Agent {agent_id} validation passed")
@@ -955,29 +961,36 @@ class SmeeOrchestrator(BaseAgent):
             
             # Run the agent
             logger.info(f"🚀 Running {agent_id}...")
-            agent_result = await self._run_agent(
-                agent_id, application, school_enrichment, prior_results
-            )
-            
-            self.evaluation_results['results'][agent_id] = agent_result
-            prior_results[agent_id] = agent_result
-            
-            # PHASE 5: Log STEP 4 agent execution
-            self._log_interaction(
-                application_id=application_id,
-                agent_name=agent_id.title(),
-                interaction_type='step_4_agent_execution',
-                question_text=f"Execute core agent: {agent_id}",
-                extracted_data={
-                    'agent_id': agent_id,
-                    'agent_number': agent_idx,
-                    'execution_status': 'completed',
-                    'result_keys': list(agent_result.keys()) if isinstance(agent_result, dict) else [],
-                    'execution_order': f"{agent_idx}/4"
-                }
-            )
-            
-            logger.info(f"✅ Agent {agent_id} completed")
+            print(f"▶️  RUNNING {agent_id.upper()}: {self.agents[agent_id].name}")
+            try:
+                agent_result = await self._run_agent(
+                    agent_id, application, school_enrichment, prior_results
+                )
+                
+                self.evaluation_results['results'][agent_id] = agent_result
+                prior_results[agent_id] = agent_result
+                
+                # PHASE 5: Log STEP 4 agent execution
+                self._log_interaction(
+                    application_id=application_id,
+                    agent_name=agent_id.title(),
+                    interaction_type='step_4_agent_execution',
+                    question_text=f"Execute core agent: {agent_id}",
+                    extracted_data={
+                        'agent_id': agent_id,
+                        'agent_number': agent_idx,
+                        'execution_status': 'completed',
+                        'result_keys': list(agent_result.keys()) if isinstance(agent_result, dict) else [],
+                        'execution_order': f"{agent_idx}/4"
+                    }
+                )
+                
+                logger.info(f"✅ Agent {agent_id} completed")
+                print(f"✅ {agent_id.upper()}: COMPLETED")
+            except Exception as agent_exec_error:
+                logger.error(f"❌ {agent_id} execution error: {agent_exec_error}")
+                print(f"❌ {agent_id.upper()}: FAILED - {str(agent_exec_error)[:100]}")
+                self.evaluation_results['results'][agent_id] = {'error': str(agent_exec_error)}
         
         # ===== STEP 5: MILO - Training insights analysis =====
         logger.info("📊 STEP 5: Analyzing training insights with MILO...")
