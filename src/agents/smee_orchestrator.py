@@ -484,8 +484,13 @@ class SmeeOrchestrator(BaseAgent):
         
         missing = []
         for field in required_fields:
-            # Check application dict first, then belle_data
-            if not application.get(field) and not belle_data.get(field):
+            # Check application dict first, then belle_data (including nested structures)
+            has_in_app = bool(application.get(field))
+            has_in_belle = bool(belle_data.get(field) or 
+                               belle_data.get('student_info', {}).get(field) or
+                               belle_data.get('agent_fields', {}).get(field) or
+                               belle_data.get('extracted_data', {}).get(field))
+            if not has_in_app and not has_in_belle:
                 missing.append(field)
         
         if missing:
