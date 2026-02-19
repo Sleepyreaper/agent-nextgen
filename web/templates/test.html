@@ -474,28 +474,27 @@
     <div class="test-header">
         <h1>🧪 Real-Time Test System</h1>
         <p style="color: #6b7280; margin-top: 0.5rem;">
-            Test the full evaluation pipeline: Create fake applications → Store in database → Orchestrate agents to analyze
+            Test the full 9-step evaluation pipeline: Extract → Match → Enrich → Validate → Evaluate → Synthesize → Report
         </p>
     </div>
 
     <!-- Info Box -->
     <div class="info-box">
-        📋 <strong>What we're testing:</strong>
-        <br/>1️⃣ Generate synthetic student application data (simulates file uploads)
-        <br/>2️⃣ Store applications in database with unique student IDs
-        <br/>3️⃣ 📖 Belle classifies documents and extracts key fields
-        <br/>4️⃣ 🎩 Smee Orchestrator retrieves data and coordinates the evaluation pipeline
-        <br/>5️⃣ Evaluation pipeline processes in sequence:
-        <br/>&nbsp;&nbsp;&nbsp;&nbsp;👸 Application review (essay + intent)
-        <br/>&nbsp;&nbsp;&nbsp;&nbsp;👑 Transcript analysis (grades + rigor)
-        <br/>&nbsp;&nbsp;&nbsp;&nbsp;🌊 School context (resources + demographics)
-        <br/>&nbsp;&nbsp;&nbsp;&nbsp;🥋 Recommendation analysis (supports multiple letters per student)
-        <br/>&nbsp;&nbsp;&nbsp;&nbsp;🧪 Training pattern context (if available)
-        <br/>&nbsp;&nbsp;&nbsp;&nbsp;🧙 Comprehensive evaluation (score + recommendation)
-        <br/>&nbsp;&nbsp;&nbsp;&nbsp;✨ Executive summary
-        <br/>&nbsp;&nbsp;&nbsp;&nbsp;🪄 Evaluation documents
-        <br/>6️⃣ All documents and evaluations stored in Azure Storage with student ID
-        <br/><strong>Result:</strong> Complete multi-agent evaluation with documents ready for admissions review
+        📋 <strong>9-Step Workflow - What we're testing:</strong>
+        <br/>1️⃣ 📖 <strong>BELLE</strong> - Extract student info from documents (name, school, grades, test scores)
+        <br/>2️⃣ 🔍 <strong>Student Matching</strong> - Find existing student or create new record (composite key: name + school + state)
+        <br/>2️⃣➕ 🏫 <strong>High School Pre-Enrichment Check</strong> - Validate/enrich school data before validation loop
+        <br/>3️⃣ 🧑‍🔬 <strong>NAVEEN</strong> - Enrich school record with demographic + resource data (AP counts, free lunch %)
+        <br/>3️⃣➕ 🔄 <strong>School Validation Loop (NAVEEN ↔ MOANA)</strong> - Bidirectional validation with up to 2 remediation attempts
+        <br/>&nbsp;&nbsp;&nbsp;&nbsp;└─ 👸 <strong>TIANA</strong> - Application essay analysis
+        <br/>&nbsp;&nbsp;&nbsp;&nbsp;└─ 👑 <strong>RAPUNZEL</strong> - Grade/transcript analysis with contextual rigor weighting (0-5 scale based on school's AP/Honors availability)
+        <br/>&nbsp;&nbsp;&nbsp;&nbsp;└─ 🌊 <strong>MOANA</strong> - School context & fairness weighting
+        <br/>&nbsp;&nbsp;&nbsp;&nbsp;└─ 🥋 <strong>MULAN</strong> - Recommendation letter synthesis
+        <br/>5️⃣ 📊 <strong>MILO</strong> - Pattern analysis across student profile
+        <br/>6️⃣ 🧙 <strong>MERLIN</strong> - Comprehensive evaluation (score + recommendation)
+        <br/>7️⃣ ✨ <strong>AURORA</strong> - Executive summary & formatted evaluation report
+        <br/><br/><strong>Result:</strong> Complete multi-agent evaluation with academic context, audit trail logging, and fairness weighting
+        <br/><strong>Audit Trail:</strong> 14 interaction types logged to database for compliance verification
     </div>
 
     <!-- Start Test Section -->
@@ -610,25 +609,27 @@
 const agentNames = {
     'smee': 'Orchestration',
     'belle': 'Document intake',
-    'application_reader': 'Application review',
-    'grade_reader': 'Transcript analysis',
-    'school_context': 'School context',
-    'recommendation_reader': 'Recommendation analysis',
-    'student_evaluator': 'Comprehensive evaluation',
-    'aurora': 'Executive summary',
-    'fairy_godmother': 'Evaluation documents'
+    'tiana': 'Application review',
+    'rapunzel': 'Transcript with contextual rigor',
+    'naveen': 'School enrichment',
+    'moana': 'School validation & fairness weighting',
+    'mulan': 'Recommendation analysis',
+    'milo': 'Pattern analysis',
+    'merlin': 'Comprehensive evaluation',
+    'aurora': 'Executive summary'
 };
 
 const agentEmojis = {
     'smee': '🎩',
     'belle': '📖',
-    'application_reader': '👸',
-    'grade_reader': '👑',
-    'school_context': '🌊',
-    'recommendation_reader': '🥋',
-    'student_evaluator': '🧙',
-    'aurora': '✨',
-    'fairy_godmother': '🪄'
+    'tiana': '👸',
+    'rapunzel': '👑',
+    'naveen': '🧑‍🔬',
+    'moana': '🌊',
+    'mulan': '🥋',
+    'milo': '📊',
+    'merlin': '🧙',
+    'aurora': '✨'
 };
 
 let students = {};
