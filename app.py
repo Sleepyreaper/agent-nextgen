@@ -218,8 +218,8 @@ def get_orchestrator():
             "data_scientist",
             MiloDataScientist(
                 name="Milo Data Scientist",
-                client=client_mini,
-                model=config.deployment_name_mini,
+                client=client,
+                model=config.deployment_name,
                 db_connection=db
             )
         )
@@ -227,8 +227,8 @@ def get_orchestrator():
             "naveen",
             NaveenSchoolDataScientist(
                 name="Naveen School Data Scientist",
-                client=client_mini,
-                model=config.deployment_name_mini
+                client=client,
+                model=config.deployment_name
             )
         )
         orchestrator_agent.register_agent(

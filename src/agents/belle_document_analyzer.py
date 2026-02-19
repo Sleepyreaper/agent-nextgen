@@ -406,39 +406,104 @@ Document excerpt:
                 return school
             
             # Fallback to AI if pattern matching fails or returns generic result
-            prompt = f"""You are an expert at extracting information from student documents.
+            # First attempt: short precise extraction (single value)
+            short_prompt = (
+                "You are an expert at extracting information from student documents.\n"
+                "Extract ONLY the name of the student's HIGH SCHOOL or secondary school.\n"
+                "Return just the school name, nothing else. If no clear school name found, return 'NONE'.\n\n"
+                "Document excerpt:\n" + text[:800]
+            )
 
-Read this document and extract ONLY the name of the student's HIGH SCHOOL or secondary school.
-Return just the school name, nothing else. Be precise - if no clear school name found, return 'NONE'.
-
-Document:
-{text[:1000]}"""
-            
             messages = [
                 {"role": "system", "content": "You extract precise school names from student documents. Return only the school name, no explanations."},
-                {"role": "user", "content": prompt}
+                {"role": "user", "content": short_prompt}
             ]
-            
+
             response = self._create_chat_completion(
                 operation="belle.extract_school",
                 model=self.model,
                 messages=messages,
-                max_completion_tokens=100,
+                max_completion_tokens=120,
                 temperature=0
             )
-            
-            school = response.choices[0].message.content.strip()
-            
-            # Filter out invalid responses
-            if school and school != "NONE" and len(school) > 3 and len(school) < 200:
-                # Remove common noise patterns
-                if not any(x in school.lower() for x in ['sorry', 'i don\'t', 'unclear', 'not found', 'unable', 'cannot']):
-                    return school
-            
+
+            school = response.choices[0].message.content.strip() if response else None
+
+            if school and school != "NONE" and len(school) > 3 and len(school) < 200 and not any(x in school.lower() for x in ['sorry', "i don't", 'unclear', 'not found', 'unable', 'cannot']):
+                return school
+
+            # Deep reasoning pass: ask the model to return JSON with school name, city and state to improve accuracy
+            deep_prompt = (
+                "You are a careful document analyst.\n"
+                "Using the document below, identify the student's HIGH SCHOOL (full name), the city it is located in (if present), and the state (full name or 2-letter code).\n"
+                "Return a JSON object with the fields: {\"school_name\": string or null, \"city\": string or null, \"state\": string or null, \"confidence\": 0-100}.\n"
+                "If you are not sure, set fields to null and confidence to a low number.\n\nDocument:\n" + text[:1800]
+            )
+
+            deep_messages = [
+                {"role": "system", "content": "You are an expert annotator. Return ONLY JSON with the requested fields."},
+                {"role": "user", "content": deep_prompt}
+            ]
+
+            deep_resp = self._create_chat_completion(
+                operation="belle.extract_school_deep",
+                model=self.model,
+                messages=deep_messages,
+                max_completion_tokens=400,
+                temperature=0
+            )
+
+            try:
+                deep_text = deep_resp.choices[0].message.content if deep_resp else ""
+                # Try to extract JSON block
+                json_match = re.search(r'\{[\s\S]*\}', deep_text)
+                if json_match:
+                    payload = json.loads(json_match.group())
+                else:
+                    payload = json.loads(deep_text)
+
+                school_name = payload.get("school_name")
+                city = payload.get("city")
+                state = payload.get("state")
+
+                # If state provided as full name, try to map to code
+                if state and isinstance(state, str) and len(state) > 2:
+                    code = self._map_state_name_to_code(state)
+                    if code:
+                        # store state code on self for downstream use via _extract_state_code fallback
+                        # We can't mutate caller context here, but return the school name which is primary
+                        # Downstream agents will perform their own state inference if needed
+                        pass
+
+                if school_name and school_name != "NONE":
+                    return school_name
+            except Exception:
+                # Fall through to return None
+                pass
+
             return None
         except Exception as e:
             # If AI fails, fall back to pattern matching
             return self._extract_school_name_pattern(text)
+
+    def _map_state_name_to_code(self, state_name: str) -> Optional[str]:
+        """Map full state name to 2-letter code (best-effort)."""
+        mapping = {
+            'alabama': 'AL', 'alaska': 'AK', 'arizona': 'AZ', 'arkansas': 'AR', 'california': 'CA',
+            'colorado': 'CO', 'connecticut': 'CT', 'delaware': 'DE', 'florida': 'FL', 'georgia': 'GA',
+            'hawaii': 'HI', 'idaho': 'ID', 'illinois': 'IL', 'indiana': 'IN', 'iowa': 'IA',
+            'kansas': 'KS', 'kentucky': 'KY', 'louisiana': 'LA', 'maine': 'ME', 'maryland': 'MD',
+            'massachusetts': 'MA', 'michigan': 'MI', 'minnesota': 'MN', 'mississippi': 'MS', 'missouri': 'MO',
+            'montana': 'MT', 'nebraska': 'NE', 'nevada': 'NV', 'new hampshire': 'NH', 'new jersey': 'NJ',
+            'new mexico': 'NM', 'new york': 'NY', 'north carolina': 'NC', 'north dakota': 'ND', 'ohio': 'OH',
+            'oklahoma': 'OK', 'oregon': 'OR', 'pennsylvania': 'PA', 'rhode island': 'RI', 'south carolina': 'SC',
+            'south dakota': 'SD', 'tennessee': 'TN', 'texas': 'TX', 'utah': 'UT', 'vermont': 'VT',
+            'virginia': 'VA', 'washington': 'WA', 'west virginia': 'WV', 'wisconsin': 'WI', 'wyoming': 'WY'
+        }
+        if not state_name:
+            return None
+        key = state_name.strip().lower()
+        return mapping.get(key)
     
     def _extract_school_name_pattern(self, text: str) -> Optional[str]:
         """Extract school name using pattern matching."""
