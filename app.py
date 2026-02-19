@@ -72,7 +72,7 @@ logger.info("Flask app initialized", extra={'upload_folder': app.config['UPLOAD_
 init_telemetry(service_name="nextgen-agents-web")
 
 # Initialize Azure OpenAI client
-def get_ai_client(api_version: str = None):
+def get_ai_client(api_version: str = None, azure_deployment: str = None):
     """
     Get Azure OpenAI client with specified API version.
     
@@ -81,12 +81,17 @@ def get_ai_client(api_version: str = None):
     """
     if api_version is None:
         api_version = config.api_version
+
+    # If caller didn't provide an explicit azure_deployment, prefer the configured deployment name
+    if azure_deployment is None:
+        azure_deployment = config.deployment_name
         
     if config.azure_openai_api_key:
         return AzureOpenAI(
             api_key=config.azure_openai_api_key,
             api_version=api_version,
-            azure_endpoint=config.azure_openai_endpoint
+            azure_endpoint=config.azure_openai_endpoint,
+            azure_deployment=azure_deployment,
         )
 
     token_provider = get_bearer_token_provider(
@@ -96,12 +101,13 @@ def get_ai_client(api_version: str = None):
     return AzureOpenAI(
         azure_ad_token_provider=token_provider,
         api_version=api_version,
-        azure_endpoint=config.azure_openai_endpoint
+        azure_endpoint=config.azure_openai_endpoint,
+        azure_deployment=azure_deployment,
     )
 
 def get_ai_client_mini():
     """Get Azure OpenAI client for o4-mini deployment with correct API version."""
-    return get_ai_client(api_version=config.api_version_mini)
+    return get_ai_client(api_version=config.api_version_mini, azure_deployment=config.deployment_name_mini)
 
 # Initialize evaluator agent
 evaluator_agent = None
