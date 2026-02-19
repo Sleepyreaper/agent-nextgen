@@ -1,3 +1,4 @@
 [config]
 SCM_DO_BUILD_DURING_DEPLOYMENT=true
 # Trigger deployment with GitHub Actions
+# Refresh deployment
