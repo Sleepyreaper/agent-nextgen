@@ -652,8 +652,8 @@ class Database:
             cursor.execute("""
                 INSERT INTO applications 
                 (applicant_name, first_name, last_name, high_school, 
-                 state_code, school_name, application_text, uploaded_date, status)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                 state_code, application_text, uploaded_date, status)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
                 RETURNING application_id
             """, (
                 applicant_name,
@@ -661,7 +661,6 @@ class Database:
                 last_name.strip(),
                 high_school.strip(),
                 state_code.strip().upper(),
-                high_school.strip(),  # school_name same as high_school initially
                 kwargs.get('application_text', ''),
                 datetime.now(),
                 'Pending'
