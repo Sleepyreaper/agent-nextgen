@@ -42,6 +42,7 @@ from src.agents import (
     BashfulAgent,
     ScuttleFeedbackTriageAgent
 )
+from src.agents.ariel_qa_agent import ArielQAAgent
 from src.agents.agent_requirements import AgentRequirements
 from src.agents.fairy_godmother_document_generator import FairyGodmotherDocumentGenerator
 from src.agents.agent_monitor import get_agent_monitor
@@ -4179,6 +4180,78 @@ def get_telemetry_status():
             'endpoint_host': endpoint_hint,
         }
     })
+
+
+@app.route('/api/ask-question/<int:application_id>', methods=['POST'])
+def ask_question(application_id):
+    """
+    Q&A endpoint for asking questions about a student.
+    
+    Request body:
+    {
+        "question": "What is the student's GPA and how does it compare to their school?",
+        "conversation_history": [
+            {"question": "...", "answer": "..."},
+            ...
+        ]
+    }
+    
+    Response:
+    {
+        "success": bool,
+        "answer": str,
+        "reference_data": {
+            "name": str,
+            "school": str,
+            "gpa": float,
+            "data_sources": [str]
+        },
+        "error": str (if failed)
+    }
+    """
+    try:
+        data = request.get_json()
+        question = data.get('question', '').strip()
+        conversation_history = data.get('conversation_history', [])
+        
+        if not question:
+            return jsonify({
+                'success': False,
+                'error': 'Question cannot be empty',
+                'answer': None,
+                'reference_data': {}
+            }), 400
+        
+        # Initialize ARIEL Q&A agent
+        ariel = ArielQAAgent()
+        
+        # Process question
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        try:
+            result = loop.run_until_complete(
+                ariel.answer_question(
+                    application_id=application_id,
+                    question=question,
+                    conversation_history=conversation_history
+                )
+            )
+        finally:
+            loop.close()
+        
+        if result['success']:
+            return jsonify(result), 200
+        else:
+            return jsonify(result), 400
+    
+    except Exception as e:
+        logger.error(f"Error in ask_question endpoint: {str(e)}")
+        return jsonify({
+            'success': False,
+            'error': f'Error processing question: {str(e)}',
+            'answer': None,
+            'reference_data': {}
+        }), 500
 
 
 if __name__ == '__main__':

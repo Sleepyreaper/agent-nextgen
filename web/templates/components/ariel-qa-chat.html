@@ -1,0 +1,474 @@
+<!--
+ARIEL Q&A Chat Widget
+Allows asking questions about a student in natural language.
+Uses GPT-4 to provide insightful responses based on student evaluation data.
+
+Usage in Jinja template:
+{% include 'components/ariel-qa-chat.html' %}
+
+Requires context:
+- application_id: The student's application ID
+-->
+
+<div id="ariel-qa-chat" class="chat-widget">
+    <style>
+        .chat-widget {
+            display: flex;
+            flex-direction: column;
+            height: 600px;
+            border: 1px solid #e5e7eb;
+            border-radius: 8px;
+            background: white;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+        }
+        
+        .chat-header {
+            padding: 16px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border-radius: 8px 8px 0 0;
+            border-bottom: 1px solid #e5e7eb;
+        }
+        
+        .chat-header h3 {
+            margin: 0;
+            font-size: 18px;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        
+        .chat-header p {
+            margin: 4px 0 0 0;
+            font-size: 13px;
+            opacity: 0.9;
+        }
+        
+        .chat-messages {
+            flex: 1;
+            overflow-y: auto;
+            padding: 16px;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+        
+        .message {
+            display: flex;
+            gap: 10px;
+            animation: slideIn 0.3s ease-out;
+        }
+        
+        @keyframes slideIn {
+            from {
+                opacity: 0;
+                transform: translateY(10px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+        
+        .message.user {
+            justify-content: flex-end;
+        }
+        
+        .message-content {
+            max-width: 80%;
+            padding: 12px 14px;
+            border-radius: 8px;
+            font-size: 14px;
+            line-height: 1.4;
+            word-wrap: break-word;
+        }
+        
+        .message.assistant .message-content {
+            background: #f3f4f6;
+            color: #1f2937;
+            border-left: 3px solid #667eea;
+        }
+        
+        .message.user .message-content {
+            background: #667eea;
+            color: white;
+            border-radius: 8px 8px 0 8px;
+        }
+        
+        .message.system .message-content {
+            background: #fef3c7;
+            color: #92400e;
+            text-align: center;
+            font-size: 13px;
+            width: 100%;
+            max-width: none;
+        }
+        
+        .message.error .message-content {
+            background: #fee2e2;
+            color: #991b1b;
+            border-left: 3px solid #dc2626;
+        }
+        
+        .message-loading {
+            display: flex;
+            gap: 4px;
+            padding: 12px 14px;
+        }
+        
+        .message-loading span {
+            display: inline-block;
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: #667eea;
+            animation: pulse 1.4s infinite;
+        }
+        
+        .message-loading span:nth-child(2) {
+            animation-delay: 0.2s;
+        }
+        
+        .message-loading span:nth-child(3) {
+            animation-delay: 0.4s;
+        }
+        
+        @keyframes pulse {
+            0%, 60%, 100% {
+                opacity: 0.3;
+                transform: translateY(0);
+            }
+            30% {
+                opacity: 1;
+                transform: translateY(-10px);
+            }
+        }
+        
+        .reference-data {
+            font-size: 12px;
+            color: #6b7280;
+            margin-top: 6px;
+            padding-top: 6px;
+            border-top: 1px solid #e5e7eb;
+        }
+        
+        .reference-data strong {
+            color: #4b5563;
+        }
+        
+        .reference-tag {
+            display: inline-block;
+            background: #e0e7ff;
+            color: #4c1d95;
+            padding: 2px 6px;
+            border-radius: 4px;
+            margin-right: 4px;
+            font-size: 11px;
+        }
+        
+        .chat-input-area {
+            display: flex;
+            padding: 12px;
+            gap: 8px;
+            border-top: 1px solid #e5e7eb;
+            background: #fafbfc;
+        }
+        
+        #question-input {
+            flex: 1;
+            padding: 10px 12px;
+            border: 1px solid #d1d5db;
+            border-radius: 6px;
+            font-size: 14px;
+            font-family: inherit;
+            resize: none;
+            max-height: 100px;
+        }
+        
+        #question-input:focus {
+            outline: none;
+            border-color: #667eea;
+            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+        }
+        
+        #send-button {
+            padding: 10px 16px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            border-radius: 6px;
+            font-weight: 500;
+            cursor: pointer;
+            font-size: 14px;
+            transition: transform 0.2s, box-shadow 0.2s;
+            white-space: nowrap;
+        }
+        
+        #send-button:hover:not(:disabled) {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+        }
+        
+        #send-button:active:not(:disabled) {
+            transform: translateY(0);
+        }
+        
+        #send-button:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+        
+        .empty-state {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100%;
+            color: #9ca3af;
+            text-align: center;
+            padding: 32px;
+        }
+        
+        .empty-state-icon {
+            font-size: 48px;
+            margin-bottom: 12px;
+            opacity: 0.5;
+        }
+        
+        .empty-state h4 {
+            margin: 0 0 8px 0;
+            color: #6b7280;
+            font-size: 16px;
+        }
+        
+        .empty-state p {
+            margin: 0;
+            font-size: 14px;
+            line-height: 1.5;
+        }
+        
+        .suggestion {
+            display: inline-block;
+            background: #ede9fe;
+            color: #6d28d9;
+            padding: 6px 10px;
+            border-radius: 4px;
+            font-size: 13px;
+            margin-top: 6px;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+        
+        .suggestion:hover {
+            background: #ddd6fe;
+        }
+        
+        .chat-messages::-webkit-scrollbar {
+            width: 6px;
+        }
+        
+        .chat-messages::-webkit-scrollbar-track {
+            background: transparent;
+        }
+        
+        .chat-messages::-webkit-scrollbar-thumb {
+            background: #d1d5db;
+            border-radius: 3px;
+        }
+        
+        .chat-messages::-webkit-scrollbar-thumb:hover {
+            background: #9ca3af;
+        }
+    </style>
+
+    <!-- Chat Header -->
+    <div class="chat-header">
+        <h3>🧜‍♀️ ARIEL - Student Q&A</h3>
+        <p>Ask questions about this student's qualifications, school, and evaluation</p>
+    </div>
+
+    <!-- Messages Container -->
+    <div class="chat-messages" id="chat-messages">
+        <!-- Initial empty state -->
+        <div class="empty-state">
+            <div class="empty-state-icon">💬</div>
+            <h4>Ask about this student</h4>
+            <p>Questions about grades, school capabilities, qualifications, and more</p>
+            <div style="margin-top: 12px; display: flex; flex-wrap: wrap; gap: 6px; justify-content: center;">
+                <div class="suggestion" onclick="suggestQuestion('What is this student\'s GPA and how does it compare to their school\'s average?')">
+                    GPA Context
+                </div>
+                <div class="suggestion" onclick="suggestQuestion('What AP/Honors courses are available at this student\'s school?')">
+                    School Capabilities
+                </div>
+                <div class="suggestion" onclick="suggestQuestion('What factors affect this student\'s contextual rigor score?')">
+                    Rigor Analysis
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Input Area -->
+    <div class="chat-input-area">
+        <textarea
+            id="question-input"
+            placeholder="Ask a question about this student..."
+            rows="1"
+            style="height: 40px;"
+        ></textarea>
+        <button id="send-button" onclick="sendQuestion()">Send</button>
+    </div>
+</div>
+
+<script>
+    // Application ID injected from Jinja template
+    const APPLICATION_ID = {{ application_id or application.application_id or application.ApplicationID }};
+    let conversationHistory = [];
+    let isLoading = false;
+
+    // Auto-resize textarea
+    document.getElementById('question-input').addEventListener('input', function() {
+        this.style.height = '40px';
+        this.style.height = Math.min(this.scrollHeight, 100) + 'px';
+    });
+
+    // Handle Enter key
+    document.getElementById('question-input').addEventListener('keypress', function(e) {
+        if (e.key === 'Enter' && !e.shiftKey && !isLoading) {
+            e.preventDefault();
+            sendQuestion();
+        }
+    });
+
+    function suggestQuestion(question) {
+        document.getElementById('question-input').value = question;
+        document.getElementById('question-input').focus();
+    }
+
+    async function sendQuestion() {
+        const input = document.getElementById('question-input');
+        const question = input.value.trim();
+        const messagesContainer = document.getElementById('chat-messages');
+
+        if (!question) {
+            return;
+        }
+
+        if (isLoading) {
+            return;
+        }
+
+        // Remove empty state if present
+        const emptyState = messagesContainer.querySelector('.empty-state');
+        if (emptyState) {
+            emptyState.remove();
+        }
+
+        // Add user message
+        addMessage(question, 'user');
+        input.value = '';
+        input.style.height = '40px';
+        isLoading = true;
+        document.getElementById('send-button').disabled = true;
+
+        // Add loading indicator
+        const loadingDiv = document.createElement('div');
+        loadingDiv.className = 'message-loading';
+        loadingDiv.innerHTML = '<span></span><span></span><span></span>';
+        messagesContainer.appendChild(loadingDiv);
+        messagesContainer.scrollTop = messagesContainer.scrollHeight;
+
+        try {
+            const response = await fetch(`/api/ask-question/${APPLICATION_ID}`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    question: question,
+                    conversation_history: conversationHistory
+                })
+            });
+
+            // Remove loading indicator
+            loadingDiv.remove();
+
+            if (!response.ok) {
+                const error = await response.json();
+                addMessage(`Error: ${error.error || 'Failed to get response'}`, 'error');
+                return;
+            }
+
+            const data = await response.json();
+
+            if (data.success) {
+                // Add assistant message
+                addMessage(data.answer, 'assistant', data.reference_data);
+
+                // Add to conversation history
+                conversationHistory.push({
+                    question: question,
+                    answer: data.answer
+                });
+            } else {
+                addMessage(`Error: ${data.error}`, 'error');
+            }
+        } catch (error) {
+            loadingDiv.remove();
+            addMessage(`Connection error: ${error.message}`, 'error');
+        } finally {
+            isLoading = false;
+            document.getElementById('send-button').disabled = false;
+            document.getElementById('question-input').focus();
+        }
+    }
+
+    function addMessage(text, role, referenceData = null) {
+        const messagesContainer = document.getElementById('chat-messages');
+        const messageDiv = document.createElement('div');
+        messageDiv.className = `message ${role}`;
+
+        const contentDiv = document.createElement('div');
+        contentDiv.className = 'message-content';
+        contentDiv.textContent = text;
+
+        // Add reference data if provided
+        if (role === 'assistant' && referenceData) {
+            const refDiv = document.createElement('div');
+            refDiv.className = 'reference-data';
+            
+            let refText = '';
+            if (referenceData.name) {
+                refText += `<strong>Student:</strong> ${escapeHtml(referenceData.name)} `;
+            }
+            if (referenceData.school) {
+                refText += `<strong>School:</strong> ${escapeHtml(referenceData.school)} `;
+            }
+            if (referenceData.gpa) {
+                refText += `<strong>GPA:</strong> ${referenceData.gpa.toFixed(2)} `;
+            }
+            if (referenceData.data_sources && referenceData.data_sources.length > 0) {
+                refText += '<br/><strong>Sources:</strong> ' + referenceData.data_sources.map(s => 
+                    `<span class="reference-tag">${escapeHtml(s)}</span>`
+                ).join('');
+            }
+            
+            if (refText) {
+                refDiv.innerHTML = refText;
+                contentDiv.appendChild(refDiv);
+            }
+        }
+
+        messageDiv.appendChild(contentDiv);
+        messagesContainer.appendChild(messageDiv);
+        messagesContainer.scrollTop = messagesContainer.scrollHeight;
+    }
+
+    function escapeHtml(text) {
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
+    }
+</script>

@@ -1180,6 +1180,12 @@ async function evaluateApplication() {
     {% endif %}
 </div>
 
+<!-- ARIEL Q&A Chat Widget -->
+<div class="card" style="margin-top: 2rem;">
+    <h2 style="margin-bottom: 1.5rem;">🧜‍♀️ ARIEL Q&A - Ask Questions About This Student</h2>
+    {% include 'components/ariel-qa-chat.html' %}
+</div>
+
 <script>
 async function evaluateApplication() {
     if (!confirm('Evaluate this application with AI?')) return;
