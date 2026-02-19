@@ -113,6 +113,7 @@ class MoanaSchoolContext(BaseAgent):
                     transcript_text=transcript_text,
                     rapunzel_grades_data=rapunzel_grades_data,
                     school_enrichment=school_enrichment
+                    ,application_id=application_id
                 )
             
             # FALLBACK: Legacy path for backwards compatibility
@@ -222,7 +223,8 @@ class MoanaSchoolContext(BaseAgent):
         application: Dict[str, Any],
         transcript_text: str,
         rapunzel_grades_data: Optional[Dict[str, Any]],
-        school_enrichment: Dict[str, Any]
+        school_enrichment: Dict[str, Any],
+        application_id: Optional[int] = None
     ) -> Dict[str, Any]:
         """
         Fast path: Use pre-enriched school data from Aurora (via school_workflow).
