@@ -1018,7 +1018,10 @@ class SmeeOrchestrator(BaseAgent):
                 self.evaluation_results['results'][agent_id] = {'error': str(agent_exec_error)}
         
         # ===== STEP 5: MILO - Training insights analysis =====
+        print(f"DEBUG: About to start STEP 5. Agents registered: {list(self.agents.keys())}")
+        print(f"DEBUG: data_scientist in agents? {'data_scientist' in self.agents}")
         logger.info("📊 STEP 5: Analyzing training insights with MILO...")
+        print("📊 STEP 5: Analyzing training insights with MILO...")
         
         if 'data_scientist' in self.agents:
             milo = self.agents['data_scientist']
@@ -1055,7 +1058,11 @@ class SmeeOrchestrator(BaseAgent):
                 )
         
         # ===== STEP 6: MERLIN - Synthesis =====
+        print(f"DEBUG: About to start STEP 6. evaluation_steps={evaluation_steps}")
+        print(f"DEBUG: student_evaluator in evaluation_steps? {'student_evaluator' in evaluation_steps}")
+        print(f"DEBUG: student_evaluator in agents? {'student_evaluator' in self.agents}")
         logger.info("🧙 STEP 6: Synthesizing evaluation with MERLIN...")
+        print("🧙 STEP 6: Synthesizing evaluation with MERLIN...")
         
         if 'student_evaluator' in evaluation_steps and 'student_evaluator' in self.agents:
             merlin = self.agents['student_evaluator']
@@ -1095,7 +1102,11 @@ class SmeeOrchestrator(BaseAgent):
                 )
         
         # ===== STEP 7: AURORA - Report generation =====
+        print(f"DEBUG: About to start STEP 7. evaluation_steps={evaluation_steps}")
+        print(f"DEBUG: aurora in evaluation_steps? {'aurora' in evaluation_steps}")
+        print(f"DEBUG: aurora in agents? {'aurora' in self.agents}")
         logger.info("📄 STEP 7: Generating report with AURORA...")
+        print("📄 STEP 7: Generating report with AURORA...")
         
         if 'aurora' in evaluation_steps and 'aurora' in self.agents:
             aurora = self.agents['aurora']
