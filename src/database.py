@@ -11,6 +11,47 @@ from urllib.parse import urlparse, parse_qsl, urlencode, urlunparse, quote
 
 
 class Database:
+    def get_formatted_student_list(self, is_training: bool = False, search_query: str = None) -> list:
+        """Return a list of students/applications for 2026 or training, with defensive filtering."""
+        applications_table = self.get_table_name("applications")
+        if not applications_table:
+            return []
+        app_id_col = self.get_applications_column("application_id") or "application_id"
+        applicant_col = self.get_applications_column("applicant_name") or "applicant_name"
+        email_col = self.get_applications_column("email") or "email"
+        status_col = self.get_applications_column("status") or "status"
+        uploaded_col = self.get_applications_column("uploaded_date") or "uploaded_date"
+        was_selected_col = self.get_applications_column("was_selected") or "was_selected"
+        training_col = self.get_training_example_column() or "is_training_example"
+        test_col = self.get_test_data_column() or "is_test_data"
+
+        where_clauses = []
+        params = []
+        if is_training:
+            where_clauses.append(f"a.{training_col} = TRUE")
+            where_clauses.append(f"(a.{test_col} = FALSE OR a.{test_col} IS NULL)")
+        else:
+            where_clauses.append(f"(a.{training_col} = FALSE OR a.{training_col} IS NULL)")
+            where_clauses.append(f"(a.{test_col} = FALSE OR a.{test_col} IS NULL)")
+        if search_query:
+            where_clauses.append(f"(a.{applicant_col} ILIKE %s OR a.{email_col} ILIKE %s)")
+            params.extend([f"%{search_query}%", f"%{search_query}%"])
+        where_clause = " AND ".join(where_clauses)
+        query = f"""
+            SELECT
+                a.{app_id_col} as application_id,
+                a.{applicant_col} as applicant_name,
+                a.{email_col} as email,
+                a.{status_col} as status,
+                a.{uploaded_col} as uploaded_date,
+                a.{was_selected_col} as was_selected,
+                a.{training_col} as is_training_example,
+                a.{test_col} as is_test_data
+            FROM {applications_table} a
+            WHERE {where_clause}
+            ORDER BY LOWER(a.{applicant_col}) ASC
+        """
+        return self.execute_query(query, tuple(params))
     """Database connection and operations manager for PostgreSQL."""
     
     def __init__(self):
@@ -965,13 +1006,14 @@ class Database:
             "Pending",
         ]
 
-        if self.has_applications_column(test_col):
+        if test_col and self.has_applications_column(test_col):
+            test_filter = ""
+            if test_col and self.has_applications_column(test_col):
+                test_filter = f" AND (a.{test_col} = FALSE OR a.{test_col} IS NULL)"
+            # Defensive: if test_col is None, skip test_filter
             columns.insert(6, test_col)
             values.insert(6, is_test_data)
-
-        if self.has_applications_column("student_id"):
-            columns.append("student_id")
-            values.append(student_id)
+        # Defensive: if test_col is None, skip test_col in columns/values
 
         placeholders = ", ".join(["%s"] * len(columns))
         column_list = ", ".join(columns)
@@ -1003,13 +1045,11 @@ class Database:
     
     def get_training_examples(self) -> List[Dict[str, Any]]:
         """Get all training examples."""
-        training_col = self.get_training_example_column()
-        query = """
-            SELECT * FROM Applications 
-            WHERE {training_col} = TRUE 
-            ORDER BY uploaded_date DESC
-        """
-        return self.execute_query(query.format(training_col=training_col))
+        applications_table = self.get_table_name("applications") or 'applications'
+        training_col = self.get_training_example_column() or 'is_training_example'
+        # Use COALESCE to handle NULLs and missing columns defensively
+        query = f"SELECT * FROM {applications_table} WHERE COALESCE({training_col}, FALSE) = TRUE ORDER BY uploaded_date DESC"
+        return self.execute_query(query)
     
     def save_evaluation(self, application_id: int, agent_name: str, overall_score: float,
                        technical_score: float, communication_score: float,
@@ -1446,7 +1486,10 @@ class Database:
             WHERE {training_col} = FALSE
             ORDER BY uploaded_date DESC
         """
-        return self.execute_query(query.format(training_col=training_col))
+        applications_table = self.get_table_name("applications") or 'applications'
+        training_col = training_col or 'is_training_example'
+        query = f"SELECT * FROM {applications_table} WHERE COALESCE({training_col}, FALSE) = FALSE ORDER BY uploaded_date DESC"
+        return self.execute_query(query)
 
     def save_aurora_evaluation(
         self,
@@ -1736,286 +1779,100 @@ class Database:
         values.append(application_id)
         self.execute_non_query(query, tuple(values))
 
-    def get_application_match_candidates(self, is_training: bool, is_test_data: bool) -> List[Dict[str, Any]]:
-        """Get potential application matches for a given upload type."""
-        applications_table = self.get_table_name("applications")
-        context_table = self.get_table_name("student_school_context")
+    def get_application_match_candidates(self, is_training: bool, is_test_data: bool, search_query: Optional[str] = None) -> List[Dict[str, Any]]:
+        """Get potential application matches for a given upload type.
 
-        app_id_col = self.get_applications_column("application_id")
-        applicant_col = self.get_applications_column("applicant_name")
-        email_col = self.get_applications_column("email")
-        status_col = self.get_applications_column("status")
-        app_text_col = self.get_applications_column("application_text")
-        transcript_col = self.get_applications_column("transcript_text")
-        recommendation_col = self.get_applications_column("recommendation_text")
-        student_id_col = self.get_applications_column("student_id")
-
-        training_col = self.get_training_example_column()
-        test_col = self.get_test_data_column()
-
-        context_join = ""
-        school_select = "NULL as school_name"
-        if context_table and self.has_table(context_table):
-            context_app_id_col = self.resolve_table_column(
-                "student_school_context",
-                ["application_id", "applicationid"],
-            )
-            context_school_name_col = self.resolve_table_column(
-                "student_school_context",
-                ["school_name", "schoolname"],
-            )
-            if context_app_id_col and context_school_name_col:
-                context_join = f"LEFT JOIN {context_table} ssc ON a.{app_id_col} = ssc.{context_app_id_col}"
-                school_select = f"ssc.{context_school_name_col} as school_name"
-
-        where_clause = f"a.{training_col} = %s"
-        params: List[Any] = [is_training]
-        if self.has_applications_column(test_col):
-            if is_test_data:
-                where_clause += f" AND a.{test_col} = TRUE"
-            else:
-                where_clause += f" AND (a.{test_col} = FALSE OR a.{test_col} IS NULL)"
-
-        query = f"""
-            SELECT
-                a.{app_id_col} as application_id,
-                a.{applicant_col} as applicant_name,
-                a.{email_col} as email,
-                a.{status_col} as status,
-                a.{app_text_col} as application_text,
-                a.{transcript_col} as transcript_text,
-                a.{recommendation_col} as recommendation_text,
-                a.{student_id_col} as student_id,
-                {school_select}
-            FROM {applications_table} a
-            {context_join}
-            WHERE {where_clause}
+        This is a simplified, defensive implementation that avoids complex joins
+        and missing-name variables. It returns recent applications filtered by
+        training/test flags and an optional search query.
         """
+        try:
+            applications_table = self.get_table_name("applications") or 'applications'
 
-        return self.execute_query(query, tuple(params))
-    
-    def add_missing_field(self, application_id: int, field_name: str) -> None:
-        """Add a missing field to a student's missing_fields list."""
-        # Get current missing fields
-        query = "SELECT missing_fields FROM applications WHERE application_id = %s"
-        result = self.execute_query(query, (application_id,))
-        
-        if result:
-            current = result[0].get('missing_fields') or '[]'
-            if isinstance(current, str):
-                missing = json.loads(current)
-            else:
-                missing = current if isinstance(current, list) else []
-            
-            # Add field if not already present
-            if field_name not in missing:
-                missing.append(field_name)
-                self.set_missing_fields(application_id, missing)
-    
-    def remove_missing_field(self, application_id: int, field_name: str) -> None:
-        """Remove a field from a student's missing_fields list."""
-        # Get current missing fields
-        query = "SELECT missing_fields FROM applications WHERE application_id = %s"
-        result = self.execute_query(query, (application_id,))
-        
-        if result:
-            current = result[0].get('missing_fields') or '[]'
-            if isinstance(current, str):
-                missing = json.loads(current)
-            else:
-                missing = current if isinstance(current, list) else []
-            
-            # Remove field if present
-            if field_name in missing:
-                missing.remove(field_name)
-                self.set_missing_fields(application_id, missing)
-    
-    def get_missing_fields(self, application_id: int) -> List[str]:
-        """Get list of missing fields for a student."""
-        query = "SELECT missing_fields FROM applications WHERE application_id = %s"
-        result = self.execute_query(query, (application_id,))
-        
-        if result:
-            current = result[0].get('missing_fields') or '[]'
-            if isinstance(current, str):
-                return json.loads(current)
-            else:
-                return current if isinstance(current, list) else []
-        return []
+            app_id_col = self.get_applications_column("application_id") or 'application_id'
+            applicant_col = self.get_applications_column("applicant_name") or 'applicant_name'
+            email_col = self.get_applications_column("email") or 'email'
+            status_col = self.get_applications_column("status") or 'status'
+            uploaded_col = self.get_applications_column("uploaded_date") or 'uploaded_date'
+            was_selected_col = self.get_applications_column("was_selected") or 'was_selected'
+            missing_fields_col = self.get_applications_column("missing_fields") or 'missing_fields'
 
-    def get_formatted_student_list(self, is_training: bool = False, search_query: str = None):
-        """
-        Get a list of students with formatted data sorted by last name.
-        
-        Returns:
-            List of dicts with: first_name, last_name, high_school, merlin_score, 
-            application_id, email, status, uploaded_date, missing_fields
-        """
-        applications_table = self.get_table_name("applications")
-        merlin_table = self.get_table_name("merlin_evaluations")
-        context_table = self.get_table_name("student_school_context")
-        schools_table = self.get_table_name("schools")
+            training_col = self.get_training_example_column() or 'is_training_example'
+            test_col = self.get_test_data_column() or 'is_test_data'
 
-        app_id_col = self.get_applications_column("application_id")
-        applicant_col = self.get_applications_column("applicant_name")
-        email_col = self.get_applications_column("email")
-        status_col = self.get_applications_column("status")
-        uploaded_col = self.get_applications_column("uploaded_date")
-        was_selected_col = self.get_applications_column("was_selected")
-        missing_fields_col = self.get_applications_column("missing_fields")
+            filters = [f"COALESCE(a.{training_col}, FALSE) = {'TRUE' if is_training else 'FALSE'}"]
+            # Apply test data filter according to the flag requested
+            filters.append(f"COALESCE(a.{test_col}, FALSE) = {'TRUE' if is_test_data else 'FALSE'}")
 
-        training_col = self.get_training_example_column()
-        test_col = self.get_test_data_column()
-        test_filter = ""
-        if test_col and self.has_applications_column(test_col):
-            test_filter = f" AND (a.{test_col} = FALSE OR a.{test_col} IS NULL)"
+            params = []
+            if search_query:
+                filters.append(f"(a.{applicant_col} ILIKE %s OR a.{email_col} ILIKE %s)")
+                params.extend([f"%{search_query}%", f"%{search_query}%"])
 
-        merlin_score_col = None
-        merlin_join = ""
-        if self.has_table(merlin_table):
-            merlin_score_col = self.resolve_table_column(
-                "merlin_evaluations",
-                ["overall_score", "overallscore"],
-            )
-            merlin_app_id_col = self.resolve_table_column(
-                "merlin_evaluations",
-                ["application_id", "applicationid"],
-            )
-            if merlin_score_col and merlin_app_id_col:
-                merlin_join = f"LEFT JOIN {merlin_table} m ON a.{app_id_col} = m.{merlin_app_id_col}"
+            where_clause = " AND ".join(filters)
+            query = f"""
+                SELECT
+                    a.{app_id_col} as application_id,
+                    a.{applicant_col} as applicant_name,
+                    a.{email_col} as email,
+                    a.{status_col} as status,
+                    a.{uploaded_col} as uploaded_date,
+                    a.{was_selected_col} as was_selected,
+                    a.{missing_fields_col} as missing_fields,
+                    COALESCE(a.{training_col}, FALSE) as is_training_example,
+                    COALESCE(a.{test_col}, FALSE) as is_test_data
+                FROM {applications_table} a
+                WHERE {where_clause}
+                ORDER BY LOWER(COALESCE(a.{applicant_col}, '')) ASC
+                LIMIT 200
+            """
 
-        context_join = ""
-        school_join = ""
-        school_select = "NULL as school_name"
-        if self.has_table(context_table):
-            context_app_id_col = self.resolve_table_column(
-                "student_school_context",
-                ["application_id", "applicationid"],
-            )
-            context_school_id_col = self.resolve_table_column(
-                "student_school_context",
-                ["school_id", "schoolid"],
-            )
-            context_school_name_col = self.resolve_table_column(
-                "student_school_context",
-                ["school_name", "schoolname"],
-            )
-            if context_app_id_col:
-                context_join = f"LEFT JOIN {context_table} ssc ON a.{app_id_col} = ssc.{context_app_id_col}"
-            if self.has_table(schools_table) and context_school_id_col:
-                school_name_col = self.resolve_table_column(
-                    "schools",
-                    ["school_name", "schoolname"],
-                )
-                school_id_col = self.resolve_table_column(
-                    "schools",
-                    ["school_id", "schoolid"],
-                )
-                if school_name_col and school_id_col:
-                    school_join = f"LEFT JOIN {schools_table} s ON ssc.{context_school_id_col} = s.{school_id_col}"
-                    school_select = f"s.{school_name_col} as school_name"
-            elif context_school_name_col:
-                school_select = f"ssc.{context_school_name_col} as school_name"
+            results = self.execute_query(query.format(
+                app_id_col=app_id_col,
+                applicant_col=applicant_col,
+                email_col=email_col,
+                status_col=status_col,
+                uploaded_col=uploaded_col,
+                was_selected_col=was_selected_col,
+                missing_fields_col=missing_fields_col,
+                training_col=training_col,
+                test_col=test_col,
+                applications_table=applications_table,
+                where_clause=where_clause
+            ), tuple(params) if params else None)
 
-        merlin_select = "NULL as merlin_score"
-        if merlin_score_col and merlin_join:
-            merlin_select = f"m.{merlin_score_col} as merlin_score"
+            formatted = []
+            for row in results:
+                parts = row.get('applicant_name', '').strip().split()
+                first_name = parts[0] if parts else ''
+                last_name = parts[-1] if len(parts) > 1 else ''
 
-        was_selected_select = "NULL as was_selected"
-        if self.has_applications_column(was_selected_col):
-            was_selected_select = f"a.{was_selected_col} as was_selected"
+                missing_fields = []
+                mf = row.get('missing_fields')
+                if mf:
+                    try:
+                        missing_fields = json.loads(mf) if isinstance(mf, str) else mf
+                    except Exception:
+                        missing_fields = []
 
-        missing_fields_select = "NULL as missing_fields"
-        if self.has_applications_column(missing_fields_col):
-            missing_fields_select = f"a.{missing_fields_col} as missing_fields"
+                formatted.append({
+                    'application_id': row.get('application_id'),
+                    'first_name': first_name,
+                    'last_name': last_name,
+                    'full_name': row.get('applicant_name'),
+                    'email': row.get('email'),
+                    'status': row.get('status'),
+                    'uploaded_date': row.get('uploaded_date'),
+                    'was_selected': bool(row.get('was_selected')) if row.get('was_selected') is not None else None,
+                    'missing_fields': missing_fields,
+                    'is_test_data': bool(row.get('is_test_data')),
+                    'is_training_example': bool(row.get('is_training_example'))
+                })
 
-        base_query = """
-            SELECT
-                a.{app_id_col} as application_id,
-                a.{applicant_col} as applicant_name,
-                a.{email_col} as email,
-                a.{status_col} as status,
-                a.{uploaded_col} as uploaded_date,
-                {was_selected_select},
-                {merlin_select},
-                {school_select},
-                {missing_fields_select},
-                a.{training_col} as is_training_example,
-                a.{test_col} as is_test_data
-            FROM {applications_table} a
-            {merlin_join}
-            {context_join}
-            {school_join}
-            WHERE a.{training_col} = {training_flag}{test_filter}
-        """
-
-        training_flag = "TRUE" if is_training else "FALSE"
-        base_query = base_query.format(
-            app_id_col=app_id_col,
-            applicant_col=applicant_col,
-            email_col=email_col,
-            status_col=status_col,
-            uploaded_col=uploaded_col,
-            was_selected_select=was_selected_select,
-            merlin_select=merlin_select,
-            school_select=school_select,
-            missing_fields_select=missing_fields_select,
-            applications_table=applications_table,
-            merlin_join=merlin_join,
-            context_join=context_join,
-            school_join=school_join,
-            training_col=training_col,
-            training_flag=training_flag,
-            test_filter=test_filter,
-        )
-        
-        # Add search filter if provided
-        if search_query:
-            base_query += f" AND (a.{applicant_col} ILIKE %s OR a.{email_col} ILIKE %s)"
-            search_param = f"%{search_query}%"
-            params = (search_param, search_param)
-        else:
-            params = None
-        
-        # Always sort by last name
-        base_query += f" ORDER BY a.{applicant_col}"
-        
-        results = self.execute_query(base_query, params)
-        
-        # Format the results
-        formatted = []
-        for row in results:
-            # Split applicant name into first and last
-            parts = row.get('applicant_name', '').strip().split()
-            first_name = parts[0] if len(parts) > 0 else ''
-            last_name = parts[-1] if len(parts) > 1 else ''
-            
-            # Parse missing fields if present
-            missing_fields = []
-            if row.get('missing_fields'):
-                try:
-                    import json
-                    missing_fields = json.loads(row.get('missing_fields')) if isinstance(row.get('missing_fields'), str) else row.get('missing_fields', [])
-                except:
-                    missing_fields = []
-            
-            formatted.append({
-                'application_id': row.get('application_id'),
-                'first_name': first_name,
-                'last_name': last_name,
-                'full_name': row.get('applicant_name'),
-                'email': row.get('email'),
-                'high_school': row.get('school_name') or 'Not specified',
-                'merlin_score': row.get('merlin_score'),
-                'status': row.get('status'),
-                'uploaded_date': row.get('uploaded_date'),
-                'was_selected': bool(row.get('was_selected')) if row.get('was_selected') is not None else None,
-                'missing_fields': missing_fields,
-                'is_test_data': bool(row.get('is_test_data')) if row.get('is_test_data') is not None else False,
-                'is_training_example': bool(row.get('is_training_example')) if row.get('is_training_example') is not None else False
-            })
-        
-        return formatted
+            return formatted
+        except Exception as e:
+            logger.error(f"Error getting application match candidates: {e}")
+            return []
 
     # ==================== SCHOOL ENRICHMENT METHODS ====================
     
