@@ -4,6 +4,8 @@ Follows Microsoft Agent Framework best practices.
 """
 
 import os
+import importlib
+from importlib import metadata
 from typing import Optional
 
 from opentelemetry import trace, metrics
@@ -173,6 +175,16 @@ def is_observability_enabled() -> bool:
 
 def get_observability_status() -> dict:
     """Return detailed observability status for debugging."""
+    azure_monitor_error = None
+    azure_monitor_version = None
+    try:
+        module = importlib.import_module("azure.monitor.opentelemetry")
+        azure_monitor_version = metadata.version("azure-monitor-opentelemetry")
+        if module is None:
+            azure_monitor_error = "azure.monitor.opentelemetry import returned None"
+    except Exception as e:
+        azure_monitor_error = str(e)
+
     return {
         "configured": _is_configured,
         "azure_monitor_available": configure_azure_monitor is not None,
@@ -180,4 +192,6 @@ def get_observability_status() -> dict:
         "connection_string_set": bool(os.getenv("APPLICATIONINSIGHTS_CONNECTION_STRING")),
         "otlp_endpoint_set": bool(os.getenv("OTEL_EXPORTER_OTLP_ENDPOINT")),
         "last_error": _last_error,
+        "azure_monitor_version": azure_monitor_version,
+        "azure_monitor_import_error": azure_monitor_error,
     }
