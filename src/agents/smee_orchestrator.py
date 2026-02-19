@@ -529,13 +529,16 @@ class SmeeOrchestrator(BaseAgent):
                 result = await agent.parse_grades(
                     transcript,
                     application.get('applicant_name', ''),
-                    school_context=school_enrichment
+                    school_context=school_enrichment,
+                    application_id=application.get('application_id')
                 )
             elif agent_id == 'school_context':
                 result = await agent.analyze_student_school_context(
                     application=application,
+                    transcript_text=application.get('transcript_text', ''),
                     rapunzel_grades_data=prior_results.get('grade_reader'),
-                    school_enrichment=school_enrichment
+                    school_enrichment=school_enrichment,
+                    application_id=application.get('application_id')
                 )
             elif agent_id == 'recommendation_reader':
                 recommendation = application.get('recommendation_text', '')

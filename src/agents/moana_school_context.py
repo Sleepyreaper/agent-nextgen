@@ -76,9 +76,10 @@ class MoanaSchoolContext(BaseAgent):
     async def analyze_student_school_context(
         self,
         application: Dict[str, Any],
-        transcript_text: str,
+        transcript_text: Optional[str] = None,
         rapunzel_grades_data: Optional[Dict[str, Any]] = None,
-        school_enrichment: Optional[Dict[str, Any]] = None
+        school_enrichment: Optional[Dict[str, Any]] = None,
+        application_id: Optional[int] = None
     ) -> Dict[str, Any]:
         """
         Analyze student's school context using cached/enriched school data.
@@ -89,10 +90,11 @@ class MoanaSchoolContext(BaseAgent):
         
         Args:
             application: Application data
-            transcript_text: Grade report text
+            transcript_text: Grade report text (optional if using enriched school data)
             rapunzel_grades_data: Data from Rapunzel Grade Reader (contains school hints)
             school_enrichment: Pre-enriched school data from Aurora (via school_workflow)
                               If provided, skips school analysis and uses cached results
+            application_id: Application ID for storing results in database (optional)
             
         Returns:
             Comprehensive school context analysis
@@ -320,6 +322,25 @@ class MoanaSchoolContext(BaseAgent):
             }
             
             self.add_to_history("assistant", json.dumps(analysis, default=str)[:1000])
+            
+            # Save to database if connection available and application_id provided
+            if self.db and application_id:
+                try:
+                    self.db.save_moana_school_context(
+                        application_id=application_id,
+                        agent_name=self.name,
+                        school_name=analysis.get('school', {}).get('name'),
+                        program_access_score=analysis.get('opportunity_scores', {}).get('program_access_score'),
+                        program_participation_score=analysis.get('opportunity_scores', {}).get('program_participation_score'),
+                        relative_advantage_score=analysis.get('opportunity_scores', {}).get('relative_advantage_score'),
+                        ap_courses_available=school_profile.get('ap_count'),
+                        ap_courses_taken=program_participation.get('ap_courses_taken'),
+                        contextual_summary=analysis.get('contextual_summary'),
+                        parsed_json=json.dumps(analysis, ensure_ascii=True, default=str)
+                    )
+                except Exception as db_error:
+                    print(f"⚠️  {self.name}: Could not save to database: {db_error}")
+            
             return analysis
             
         except Exception as e:

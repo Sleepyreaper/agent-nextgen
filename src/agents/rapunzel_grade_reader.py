@@ -23,7 +23,8 @@ class RapunzelGradeReader(BaseAgent):
         self,
         name: str,
         client: AzureOpenAI,
-        model: str
+        model: str,
+        db_connection=None
     ):
         """
         Initialize the Grade Report Reader agent.
@@ -32,9 +33,11 @@ class RapunzelGradeReader(BaseAgent):
             name: Agent name (typically "Grade Report Reader")
             client: Azure OpenAI client
             model: Model deployment name
+            db_connection: Database connection for saving results
         """
         super().__init__(name, client)
         self.model = model
+        self.db = db_connection
         self.extraction_focus = [
             "GPA/Grade Point Average",
             "Letter Grades by Subject",
@@ -50,7 +53,8 @@ class RapunzelGradeReader(BaseAgent):
         self,
         transcript_text: str,
         student_name: Optional[str] = None,
-        school_context: Optional[Dict[str, Any]] = None
+        school_context: Optional[Dict[str, Any]] = None,
+        application_id: Optional[int] = None
     ) -> Dict[str, Any]:
         """
         Parse grade report and extract structured academic data using deep reasoning.
@@ -61,6 +65,7 @@ class RapunzelGradeReader(BaseAgent):
             transcript_text: The raw transcript text (should be detailed with course listings)
             student_name: Name of the student (optional)
             school_context: School enrichment data including AP/Honors availability for rigor weighting
+            application_id: Application ID for storing results in database (optional)
             
         Returns:
             Dictionary with extracted grade data and analysis, including contextual_rigor_index
@@ -164,6 +169,26 @@ class RapunzelGradeReader(BaseAgent):
                 )
             except:
                 pass
+            
+            # Save to database if connection available and application_id provided
+            if self.db and application_id:
+                try:
+                    self.db.save_rapunzel_grades(
+                        application_id=application_id,
+                        agent_name=self.name,
+                        gpa=result.get('gpa'),
+                        academic_strength=result.get('academic_strength'),
+                        course_levels=result.get('course_levels'),
+                        transcript_quality=result.get('transcript_quality'),
+                        notable_patterns=result.get('notable_patterns'),
+                        confidence_level=result.get('confidence_level'),
+                        summary=result.get('summary'),
+                        contextual_rigor_index=result.get('contextual_rigor_index'),
+                        school_context_used=bool(school_context),
+                        parsed_json=json.dumps(result, ensure_ascii=True, default=str)
+                    )
+                except Exception as db_error:
+                    print(f"⚠️  {self.name}: Could not save to database: {db_error}")
             
             return result
             
