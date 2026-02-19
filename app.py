@@ -4229,6 +4229,86 @@ def get_telemetry_status():
     })
 
 
+@app.route('/admin/cleanup-test-data', methods=['POST'])
+def admin_cleanup_test_data():
+    """Clean up contaminated test data records."""
+    try:
+        conn = db.connect()
+        cursor = conn.cursor()
+        
+        # Find contaminated records
+        cursor.execute("""
+            SELECT 
+                application_id,
+                applicant_name
+            FROM applications
+            WHERE (is_test_data IS NULL OR is_test_data = FALSE)
+            AND (is_training_example IS NULL OR is_training_example = FALSE)
+            AND (
+                LOWER(applicant_name) LIKE '%test%'
+                OR LOWER(applicant_name) LIKE '%demo%'
+                OR LOWER(applicant_name) LIKE '%sample%'
+            )
+        """)
+        
+        contaminated = cursor.fetchall()
+        
+        if not contaminated:
+            # Fix NULL flags
+            cursor.execute("UPDATE applications SET is_test_data = FALSE WHERE is_test_data IS NULL")
+            test_fixed = cursor.rowcount
+            cursor.execute("UPDATE applications SET is_training_example = FALSE WHERE is_training_example IS NULL")
+            training_fixed = cursor.rowcount
+            conn.commit()
+            
+            return jsonify({
+                'status': 'success',
+                'contaminated_found': 0,
+                'null_flags_fixed': test_fixed + training_fixed,
+                'message': 'No contaminated records found. NULL flags fixed.'
+            })
+        
+        # Flag contaminated records as test data
+        record_ids = [row[0] for row in contaminated]
+        record_names = [row[1] for row in contaminated]
+        
+        placeholders = ','.join(['%s'] * len(record_ids))
+        cursor.execute(f"""
+            UPDATE applications
+            SET is_test_data = TRUE, is_training_example = FALSE
+            WHERE application_id IN ({placeholders})
+        """, record_ids)
+        
+        updated_count = cursor.rowcount
+        
+        # Fix NULL flags
+        cursor.execute("UPDATE applications SET is_test_data = FALSE WHERE is_test_data IS NULL")
+        test_fixed = cursor.rowcount
+        cursor.execute("UPDATE applications SET is_training_example = FALSE WHERE is_training_example IS NULL")
+        training_fixed = cursor.rowcount
+        
+        conn.commit()
+        cursor.close()
+        
+        logger.info(f"✓ Cleaned up {updated_count} contaminated test records: {', '.join(record_names)}")
+        
+        return jsonify({
+            'status': 'success',
+            'contaminated_found': len(contaminated),
+            'records_flagged': updated_count,
+            'null_flags_fixed': test_fixed + training_fixed,
+            'cleaned_records': record_names,
+            'message': f'Successfully flagged {updated_count} contaminated records as test data.'
+        })
+        
+    except Exception as e:
+        logger.error(f"❌ Cleanup failed: {e}", exc_info=True)
+        return jsonify({
+            'status': 'error',
+            'message': str(e)
+        }), 500
+
+
 @app.route('/api/ask-question/<int:application_id>', methods=['POST'])
 def ask_question(application_id):
     """
