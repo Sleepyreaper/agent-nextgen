@@ -432,7 +432,18 @@ Document excerpt:
             if school and school != "NONE" and len(school) > 3 and len(school) < 200 and not any(x in school.lower() for x in ['sorry', "i don't", 'unclear', 'not found', 'unable', 'cannot']):
                 return school
 
-            # Deep reasoning pass: ask the model to return JSON with school name, city and state to improve accuracy
+            # Candidate generation: collect possible school name mentions from the document
+            candidates = self._gather_school_name_candidates(text)
+            if candidates:
+                try:
+                    ranked = self._rank_school_candidates(text, candidates)
+                    if ranked:
+                        return ranked
+                except Exception:
+                    # If ranking fails, continue to deep pass
+                    pass
+
+            # Deep reasoning pass (JSON) as a last resort
             deep_prompt = (
                 "You are a careful document analyst.\n"
                 "Using the document below, identify the student's HIGH SCHOOL (full name), the city it is located in (if present), and the state (full name or 2-letter code).\n"
@@ -463,18 +474,6 @@ Document excerpt:
                     payload = json.loads(deep_text)
 
                 school_name = payload.get("school_name")
-                city = payload.get("city")
-                state = payload.get("state")
-
-                # If state provided as full name, try to map to code
-                if state and isinstance(state, str) and len(state) > 2:
-                    code = self._map_state_name_to_code(state)
-                    if code:
-                        # store state code on self for downstream use via _extract_state_code fallback
-                        # We can't mutate caller context here, but return the school name which is primary
-                        # Downstream agents will perform their own state inference if needed
-                        pass
-
                 if school_name and school_name != "NONE":
                     return school_name
             except Exception:
@@ -524,6 +523,114 @@ Document excerpt:
                     if not any(x in school.lower() for x in ['activities', 'i think', 'i would', 'want', 'continue', 'well at']):
                         return school
         
+        return None
+
+    def _gather_school_name_candidates(self, text: str) -> List[str]:
+        """Gather candidate school names using heuristics and pattern matches."""
+        candidates = []
+
+        # Include the pattern-based primary candidate if present
+        primary = self._extract_school_name_pattern(text)
+        if primary:
+            candidates.append(primary)
+
+        # Regex patterns to catch 'X High School' and variations
+        patterns = [
+            r'([A-Z][A-Za-z0-9&\-\'\.]{{3,80}})\s+High School',
+            r'([A-Z][A-Za-z0-9&\-\'\.]{{3,80}})\s+HS\b',
+            r'Attended\s+([A-Z][A-Za-z0-9&\-\'\.]{{3,80}}(?:\s+High School)?)',
+            r'Graduated from\s+([A-Z][A-Za-z0-9&\-\'\.]{{3,80}}(?:\s+High School)?)',
+            r'([A-Z][A-Za-z0-9&\-\'\.]{{3,80}})\s+Secondary School'
+        ]
+
+        for pat in patterns:
+            for m in re.finditer(pat, text, re.IGNORECASE):
+                cand = m.group(1).strip()
+                if cand and cand not in candidates and len(cand) > 3:
+                    # Clean trailing punctuation
+                    cand = cand.rstrip('.,;:')
+                    candidates.append(cand)
+
+        # Also inspect capitalized lines that end with 'High School' within first 60 lines
+        for line in text.split('\n')[:60]:
+            line = line.strip()
+            if line.lower().endswith('high school') or ' high school ' in line.lower():
+                # trim descriptors
+                cand = re.sub(r'\s+High School.*$', ' High School', line, flags=re.IGNORECASE).strip()
+                if cand and cand not in candidates:
+                    candidates.append(cand)
+
+        # Keep only unique, reasonable-length candidates
+        final = []
+        for c in candidates:
+            if 3 < len(c) < 200 and c not in final:
+                final.append(c)
+
+        return final
+
+    def _rank_school_candidates(self, text: str, candidates: List[str]) -> Optional[str]:
+        """Ask the model to pick the best candidate from a short candidate list.
+
+        Returns the selected candidate string or None.
+        """
+        if not candidates:
+            return None
+
+        # If only one candidate, trust it
+        if len(candidates) == 1:
+            return candidates[0]
+
+        # Build a compact prompt listing candidates for the model to choose
+        choices_text = '\n'.join([f"{i+1}. {c}" for i, c in enumerate(candidates)])
+        prompt = (
+            "Below are candidate school names found in a student document.\n"
+            "Choose the single best candidate that is the student's HIGH SCHOOL.\n"
+            "Return ONLY the chosen candidate text exactly as it appears in the list, or return 'NONE' if none match.\n\n"
+            "Candidates:\n" + choices_text + "\n\n"
+            "Document excerpt:\n" + text[:800]
+        )
+
+        messages = [
+            {"role": "system", "content": "You are an expert at precise extraction and selection. Return only the selected candidate text or NONE."},
+            {"role": "user", "content": prompt}
+        ]
+
+        resp = self._create_chat_completion(
+            operation="belle.rank_school_candidates",
+            model=self.model,
+            messages=messages,
+            max_completion_tokens=80,
+            temperature=0
+        )
+
+        try:
+            choice = resp.choices[0].message.content.strip() if resp else None
+            if not choice:
+                return None
+            # If model returned a numbered choice (e.g., '1' or '1. School Name'), normalize
+            m = re.match(r'^(\d+)\.?\s*(.*)$', choice)
+            if m:
+                idx = int(m.group(1)) - 1
+                if 0 <= idx < len(candidates):
+                    return candidates[idx]
+                else:
+                    # fallback to text portion
+                    text_choice = m.group(2).strip()
+                    if text_choice in candidates:
+                        return text_choice
+
+            # If returned exact candidate text
+            if choice in candidates:
+                return choice
+
+            # Sometimes model returns a cleaned variant; pick best fuzzy match by substring
+            for c in candidates:
+                if c.lower() in choice.lower() or choice.lower() in c.lower():
+                    return c
+
+        except Exception:
+            return None
+
         return None
     def _extract_data_by_type(self, text: str, doc_type: str) -> Dict[str, Any]:
         """Extract type-specific data from the document."""
