@@ -142,7 +142,7 @@ with open('database/schema_postgresql.sql', 'r') as f:
 |-----------|--------|---------|
 | PostgreSQL | ✅ Ready | 17.7 on Azure, responsive |
 | Web App | ✅ Ready | nextgen-agents-web online |
-| Database Credentials | ✅ Ready | Configured in env vars |
+| Database Credentials | ✅ Ready | Stored in Azure Key Vault |
 | App Code | ✅ Ready | Deployed, no syntax errors |
 | Agents | ✅ Ready | All 9 agents present |
 | Schema | ⚠️ Partial | Core tables OK, audit tables missing |
