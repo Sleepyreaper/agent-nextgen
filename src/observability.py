@@ -91,9 +91,13 @@ def configure_observability(
             if connection_string:
                 # Configure Azure Monitor with Application Insights
                 try:
+                    resource = Resource.create({
+                        "service.name": service_name,
+                        "service.version": service_version,
+                    })
                     configure_azure_monitor(
                         connection_string=connection_string,
-                        resource=create_resource() if create_resource else None,
+                        resource=resource,
                         enable_live_metrics=True,
                     )
                 except Exception as e:
