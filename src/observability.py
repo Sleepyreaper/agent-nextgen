@@ -17,13 +17,16 @@ from opentelemetry.exporter.otlp.proto.grpc.metric_exporter import OTLPMetricExp
 
 try:
     from azure.monitor.opentelemetry import configure_azure_monitor
-    from agent_framework.observability import create_resource, enable_instrumentation
-    AZURE_MONITOR_AVAILABLE = True
 except ImportError:
-    AZURE_MONITOR_AVAILABLE = False
     configure_azure_monitor = None
+
+try:
+    from agent_framework.observability import create_resource, enable_instrumentation
+except ImportError:
     create_resource = None
     enable_instrumentation = None
+
+AZURE_MONITOR_AVAILABLE = configure_azure_monitor is not None
 
 # Global references
 _tracer: Optional[object] = None
@@ -77,7 +80,7 @@ def configure_observability(
     
     try:
         # Pattern 3 from Microsoft docs: Azure Monitor + Agent Framework
-        if enable_azure_monitor and AZURE_MONITOR_AVAILABLE and configure_azure_monitor:
+        if enable_azure_monitor and configure_azure_monitor:
             connection_string = os.getenv("APPLICATIONINSIGHTS_CONNECTION_STRING")
             
             if connection_string:
