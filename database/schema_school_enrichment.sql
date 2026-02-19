@@ -77,6 +77,12 @@ CREATE INDEX IF NOT EXISTS idx_school_enriched_opportunity ON school_enriched_da
 CREATE INDEX IF NOT EXISTS idx_school_enriched_review_status ON school_enriched_data(human_review_status);
 CREATE INDEX IF NOT EXISTS idx_school_enriched_active ON school_enriched_data(is_active);
 
+-- Add columns for MOANA validation tracking (if not exists)
+ALTER TABLE school_enriched_data ADD COLUMN IF NOT EXISTS 
+  moana_requirements_met BOOLEAN DEFAULT FALSE;
+ALTER TABLE school_enriched_data ADD COLUMN IF NOT EXISTS 
+  last_moana_validation TIMESTAMP;
+
 -- Web sources and links for each school
 CREATE TABLE IF NOT EXISTS school_web_sources (
     source_id SERIAL PRIMARY KEY,

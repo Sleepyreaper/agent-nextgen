@@ -1,15 +1,22 @@
 """
-School Data Workflow Manager - Handles school data lookup, enrichment, and caching.
+School Data Workflow Manager - Handles school data lookup, enrichment, caching, and validation.
 
+Phase 2: Basic enrichment workflow
 Ensures schools are analyzed once and reused:
 1. Check if school exists in database
 2. If not, call Naveen (school_data_scientist) for deep analysis
 3. Store results persistently
 4. Pass to Moana (moana_school_context) for contextual analysis with grades
+
+Phase 3: Bidirectional NAVEEN ↔ MOANA validation loop
+- Validate school enrichment against MOANA requirements
+- Remediate missing fields by calling NAVEEN again with specific context
+- Track validation attempts and remediation history
 """
 
 import logging
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List, Tuple
+from datetime import datetime
 from src.agents.agent_monitor import get_agent_monitor, AgentStatus
 
 logger = logging.getLogger(__name__)
@@ -250,6 +257,328 @@ class SchoolDataWorkflow:
                 extra={'school': school_name, 'error': str(e)}
             )
             return None
+    
+    def validate_school_requirements(
+        self,
+        school_data: Dict[str, Any],
+        required_fields: Optional[List[str]] = None
+    ) -> Tuple[bool, List[str], Dict[str, Any]]:
+        """
+        PHASE 3 STEP 1: Validate school data against MOANA requirements.
+        
+        Default MOANA requirements:
+        - school_name, state_code (identifiers)
+        - opportunity_score (overall opportunity assessment)
+        - ap_courses_available, honors_course_count (academic rigor indicators)
+        - free_lunch_percentage (socioeconomic context)
+        - graduation_rate (school performance)
+        
+        Args:
+            school_data: School enrichment data dict to validate
+            required_fields: Override default list of required fields
+            
+        Returns:
+            Tuple of (is_valid, missing_fields_list, validation_details_dict)
+        """
+        # Default MOANA requirements if not specified
+        if required_fields is None:
+            required_fields = [
+                'school_name',
+                'state_code',
+                'opportunity_score',
+                'ap_courses_available',
+                'honors_course_count',
+                'free_lunch_percentage',
+                'graduation_rate'
+            ]
+        
+        missing = []
+        field_status = {}
+        
+        for field in required_fields:
+            value = school_data.get(field)
+            # Field is present if it exists and is not None or empty string
+            is_present = value is not None and value != ''
+            field_status[field] = {
+                'required': True,
+                'present': is_present,
+                'value': value
+            }
+            
+            if not is_present:
+                missing.append(field)
+        
+        is_valid = len(missing) == 0
+        
+        validation_details = {
+            'is_valid': is_valid,
+            'missing_count': len(missing),
+            'total_required': len(required_fields),
+            'field_status': field_status,
+            'validated_at': datetime.now().isoformat()
+        }
+        
+        logger.info(
+            f"School validation result for {school_data.get('school_name')}",
+            extra={
+                'is_valid': is_valid,
+                'missing_fields': missing,
+                'missing_count': len(missing)
+            }
+        )
+        
+        return is_valid, missing, validation_details
+    
+    def remediate_school_enrichment(
+        self,
+        school_name: str,
+        state_code: Optional[str],
+        school_district: Optional[str],
+        missing_fields: List[str],
+        aurora_agent = None,
+        remediation_attempt: int = 1
+    ) -> Dict[str, Any]:
+        """
+        PHASE 3 STEP 2: Remediate missing school fields by calling NAVEEN again.
+        
+        Calls NAVEEN with specific context requesting the missing fields.
+        This is the "loop back" mechanism in the NAVEEN ↔ MOANA validation loop.
+        
+        Args:
+            school_name: School name
+            state_code: State code
+            school_district: District
+            missing_fields: List of fields that validation found missing
+            aurora_agent: Naveen agent instance for enrichment
+            remediation_attempt: Attempt number (for tracking)
+            
+        Returns:
+            Updated school enrichment data dict
+        """
+        if not aurora_agent:
+            logger.warning(
+                f"⚠️ Cannot remediate school - no NAVEEN agent available",
+                extra={'school': school_name, 'missing_fields': missing_fields}
+            )
+            return {
+                'error': 'NAVEEN agent not available for remediation',
+                'remediation_attempt': remediation_attempt
+            }
+        
+        logger.info(
+            f"🔄 REMEDIATION ATTEMPT {remediation_attempt}: Calling NAVEEN to enrich missing fields",
+            extra={
+                'school': school_name,
+                'missing_fields': missing_fields,
+                'attempt': remediation_attempt
+            }
+        )
+        
+        # Create context-specific prompt for NAVEEN pointing to missing fields
+        missing_context = f"Missing for MOANA validation: {', '.join(missing_fields)}"
+        
+        monitor = get_agent_monitor()
+        execution = monitor.start_execution(
+            agent_name=f"Naveen Remediation Attempt {remediation_attempt}",
+            model="o4miniagent"
+        )
+        
+        try:
+            # Call NAVEEN with specific focus on missing fields
+            remediated_result = aurora_agent.analyze_school(
+                school_name=school_name,
+                school_district=school_district,
+                state_code=state_code,
+                enrichment_focus=missing_context  # Hint to focus on these fields
+            )
+            
+            monitor.end_execution(
+                f"Naveen Remediation Attempt {remediation_attempt}",
+                status=AgentStatus.COMPLETED
+            )
+            
+            remediated_result['remediation_attempt'] = remediation_attempt
+            remediated_result['remediation_context'] = missing_context
+            
+            logger.info(
+                f"✓ NAVEEN remediation attempt {remediation_attempt} complete",
+                extra={'school': school_name}
+            )
+            
+            return remediated_result
+            
+        except Exception as e:
+            logger.error(
+                f"❌ NAVEEN remediation attempt {remediation_attempt} failed: {e}",
+                exc_info=True,
+                extra={'school': school_name, 'attempt': remediation_attempt}
+            )
+            
+            monitor.end_execution(
+                f"Naveen Remediation Attempt {remediation_attempt}",
+                status=AgentStatus.FAILED,
+                error_message=str(e)
+            )
+            
+            return {
+                'error': f'Remediation failed: {str(e)}',
+                'remediation_attempt': remediation_attempt
+            }
+    
+    def validate_and_remediate_school(
+        self,
+        school_name: str,
+        state_code: Optional[str],
+        school_district: Optional[str] = None,
+        aurora_agent = None,
+        max_remediation_attempts: int = 2,
+        required_fields: Optional[List[str]] = None
+    ) -> Tuple[bool, Dict[str, Any], Dict[str, Any]]:
+        """
+        PHASE 3 COMPLETE LOOP: Validate school and remediate missing fields iteratively.
+        
+        This is the bidirectional NAVEEN ↔ MOANA validation loop:
+        1. Get enriched school data (via get_or_enrich_school_data)
+        2. Validate against MOANA requirements
+        3. If missing fields: call NAVEEN again with specific context
+        4. Repeat validation (max N attempts)
+        5. Return result: (is_ready_for_MOANA, school_data, validation_log)
+        
+        Args:
+            school_name: School name
+            state_code: State code
+            school_district: School district
+            aurora_agent: NAVEEN agent for enrichment
+            max_remediation_attempts: Max times to call NAVEEN for remediation
+            required_fields: Fields MOANA requires (defaults: school_name, state_code, opportunity_score, etc)
+            
+        Returns:
+            Tuple of:
+            - is_ready: Boolean indicating if school data is ready for MOANA
+            - school_data: Final enriched school data
+            - validation_log: Dict with validation history and details
+        """
+        validation_log = {
+            'school_name': school_name,
+            'state_code': state_code,
+            'validation_started': datetime.now().isoformat(),
+            'attempts': []
+        }
+        
+        logger.info(
+            f"🏫 PHASE 3: Starting NAVEEN ↔ MOANA validation loop for {school_name}",
+            extra={'state': state_code, 'max_attempts': max_remediation_attempts}
+        )
+        
+        # Step 1: Initial enrichment
+        school_data = self.get_or_enrich_school_data(
+            school_name=school_name,
+            school_district=school_district,
+            state_code=state_code,
+            aurora_agent=aurora_agent
+        )
+        
+        if 'error' in school_data:
+            logger.error(f"❌ Cannot enrich school: {school_data.get('error')}")
+            return False, school_data, {**validation_log, 'error': school_data.get('error')}
+        
+        # Step 2: Validate against MOANA requirements
+        for attempt in range(1, max_remediation_attempts + 1):
+            is_valid, missing_fields, validation_details = self.validate_school_requirements(
+                school_data=school_data,
+                required_fields=required_fields
+            )
+            
+            attempt_log = {
+                'attempt_number': attempt,
+                'is_valid': is_valid,
+                'missing_fields': missing_fields,
+                'validation_timestamp': datetime.now().isoformat(),
+                'school_data_keys': list(school_data.keys())
+            }
+            
+            validation_log['attempts'].append(attempt_log)
+            
+            if is_valid:
+                logger.info(
+                    f"✅ VALIDATION PASSED on attempt {attempt}: {school_name} ready for MOANA",
+                    extra={'school': school_name, 'attempt': attempt}
+                )
+                validation_log['validation_complete'] = True
+                validation_log['ready_for_moana'] = True
+                validation_log['final_attempt'] = attempt
+                
+                # Update database to mark validation as complete
+                if self.db and hasattr(self.db, 'mark_school_validation_complete'):
+                    try:
+                        self.db.mark_school_validation_complete(
+                            school_name=school_name,
+                            state_code=state_code,
+                            validation_passed=True
+                        )
+                    except Exception as e:
+                        logger.warning(f"Could not mark validation complete in DB: {e}")
+                
+                return True, school_data, validation_log
+            
+            # Validation failed - check if we should remediate
+            if attempt < max_remediation_attempts:
+                logger.warning(
+                    f"⚠️ VALIDATION FAILED on attempt {attempt}: missing {len(missing_fields)} fields",
+                    extra={'school': school_name, 'missing_fields': missing_fields}
+                )
+                
+                # Step 3: Call NAVEEN to remediate missing fields
+                remediated = self.remediate_school_enrichment(
+                    school_name=school_name,
+                    state_code=state_code,
+                    school_district=school_district,
+                    missing_fields=missing_fields,
+                    aurora_agent=aurora_agent,
+                    remediation_attempt=attempt
+                )
+                
+                # Merge remediated fields into school_data
+                if 'error' not in remediated:
+                    school_data.update(remediated)
+                    attempt_log['remediation_applied'] = True
+                    attempt_log['remediated_fields'] = len(remediated)
+                else:
+                    logger.warning(
+                        f"Remediation failed on attempt {attempt}",
+                        extra={'error': remediated.get('error')}
+                    )
+                    attempt_log['remediation_error'] = remediated.get('error')
+            
+            # If this was the last attempt and validation failed
+            if attempt == max_remediation_attempts and not is_valid:
+                logger.error(
+                    f"❌ VALIDATION FAILED after {max_remediation_attempts} attempts",
+                    extra={
+                        'school': school_name,
+                        'still_missing': missing_fields
+                    }
+                )
+                validation_log['validation_complete'] = True
+                validation_log['ready_for_moana'] = False
+                validation_log['final_attempt'] = attempt
+                validation_log['final_missing_fields'] = missing_fields
+                
+                # Update database to mark validation as failed
+                if self.db and hasattr(self.db, 'mark_school_validation_complete'):
+                    try:
+                        self.db.mark_school_validation_complete(
+                            school_name=school_name,
+                            state_code=state_code,
+                            validation_passed=False
+                        )
+                    except Exception as e:
+                        logger.warning(f"Could not mark validation failed in DB: {e}")
+                
+                return False, school_data, validation_log
+        
+        # Should not reach here
+        return False, school_data, validation_log
 
 
 def ensure_school_context_in_pipeline(

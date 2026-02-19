@@ -49,17 +49,21 @@ class RapunzelGradeReader(BaseAgent):
     async def parse_grades(
         self,
         transcript_text: str,
-        student_name: Optional[str] = None
+        student_name: Optional[str] = None,
+        school_context: Optional[Dict[str, Any]] = None
     ) -> Dict[str, Any]:
         """
         Parse grade report and extract structured academic data using deep reasoning.
         
+        PHASE 4: Enhanced with school context for rigor weighting
+        
         Args:
             transcript_text: The raw transcript text (should be detailed with course listings)
             student_name: Name of the student (optional)
+            school_context: School enrichment data including AP/Honors availability for rigor weighting
             
         Returns:
-            Dictionary with extracted grade data and analysis
+            Dictionary with extracted grade data and analysis, including contextual_rigor_index
         """
         self.add_to_history("user", f"Parse comprehensive grade report for {student_name or 'candidate'}")
         
@@ -78,10 +82,12 @@ class RapunzelGradeReader(BaseAgent):
         except:
             pass  # Telemetry not available
         
-        # Build specialized parsing prompt requiring deep reasoning
-        parsing_prompt = self._build_parsing_prompt(transcript_text, student_name)
+        # Build specialized parsing prompt with optional school context for rigor weighting
+        parsing_prompt = self._build_parsing_prompt(transcript_text, student_name, school_context)
         
         print(f"🎓 {self.name}: Analyzing transcript ({len(transcript_text)} chars) - Using deep reasoning for comprehensive analysis...")
+        if school_context:
+            print(f"  📍 School context provided: {school_context.get('school_name', 'Unknown school')}")
         
         try:
             # Use extended tokens for deep analysis
@@ -126,8 +132,21 @@ class RapunzelGradeReader(BaseAgent):
                 'grade_table_markdown': parsed_data.get('grade_table_markdown'),
                 'grade_table_headers': parsed_data.get('grade_table_headers'),
                 'grade_table_rows': parsed_data.get('grade_table_rows'),
-                'full_analysis': response_text
+                'full_analysis': response_text,
+                'school_context_used': bool(school_context)
             }
+            
+            # PHASE 4: Calculate contextual rigor index if school context provided
+            if school_context:
+                contextual_rigor = self._calculate_contextual_rigor_index(
+                    parsed_data,
+                    school_context
+                )
+                result['contextual_rigor_index'] = contextual_rigor
+                result['school_name'] = school_context.get('school_name')
+            else:
+                result['contextual_rigor_index'] = None
+            
             
             # Log success to Application Insights
             try:
@@ -231,14 +250,18 @@ Return DETAILED, STRUCTURED analysis with:
     def _build_parsing_prompt(
         self,
         transcript_text: str,
-        student_name: Optional[str] = None
+        student_name: Optional[str] = None,
+        school_context: Optional[Dict[str, Any]] = None
     ) -> str:
         """
         Build the prompt for parsing a transcript with deep reasoning requirements.
         
+        PHASE 4: Enhanced with school context for rigor weighting
+        
         Args:
             transcript_text: Raw transcript text
             student_name: Student name if available
+            school_context: School enrichment data for contextual analysis
             
         Returns:
             Detailed parsing prompt
@@ -249,7 +272,28 @@ Student: {student_name or 'Unknown Student'}
 Analysis Date: {__import__('datetime').datetime.now().strftime('%B %d, %Y')}
 {'='*70}
 
-RAW TRANSCRIPT DATA:
+"""
+        # Add school context section if provided (PHASE 4)
+        if school_context:
+            school_section = f"""SCHOOL CONTEXT FOR RIGOR EVALUATION:
+School: {school_context.get('school_name', 'Unknown')}
+State: {school_context.get('state_code', 'Unknown')}
+AP Courses Available: {school_context.get('ap_courses_available', 'Unknown')}
+Honors Programs: {school_context.get('honors_programs', 'Unknown')}
+Opportunity Score: {school_context.get('opportunity_score', 'N/A')}/100
+
+RIGOR INTERPRETATION CONTEXT:
+- An AP or Honors course at this school carries specific weight
+- Heavy AP load is particularly impressive for this school
+- Standard courses at this school need context about what's available
+- Graduation rate at this school: {school_context.get('graduation_rate', 'Unknown')}%
+
+{'='*70}
+
+"""
+            prompt += school_section
+        
+        prompt += f"""RAW TRANSCRIPT DATA:
 {transcript_text}
 
 {'='*70}
@@ -257,7 +301,15 @@ RAW TRANSCRIPT DATA:
 CRITICAL ANALYSIS REQUIREMENTS:
 
 Use deep reasoning to understand the complete academic picture. Go beyond surface-level data extraction.
-
+"""
+        if school_context:
+            prompt += f"\nSTUDENT'S ACADEMIC RIGOR IN SCHOOL CONTEXT:\n"
+            prompt += f"- Assess course selection relative to school's offerings (see School Context above)\n"
+            prompt += f"- High proportion of AP/Honors is impressive given availability\n"
+            prompt += f"- Note when student takes limited AP/Honors despite high availability\n"
+            prompt += f"- Consider enrollment patterns and course difficulty progression\n\n"
+        
+        prompt += f"""
 ═══════════════════════════════════════════════════════════════════════════════
 SECTION 1: COMPREHENSIVE GRADE DATA EXTRACTION
 ═══════════════════════════════════════════════════════════════════════════════
@@ -284,6 +336,8 @@ Extract and explain:
 - Cumulative Average by Subject Area (Math avg, Science avg, etc.)
 
 If class rank appears as weighted GPA calculation, explain the weighting system.
+
+"""
 
 ═══════════════════════════════════════════════════════════════════════════════
 SECTION 3: ACADEMIC TRAJECTORY AND TREND ANALYSIS
@@ -585,6 +639,91 @@ OUTPUT STRUCTURE:
             error_message = f"Grade Reader encountered an error: {str(e)}"
             print(error_message)
             return error_message
+    
+    def _calculate_contextual_rigor_index(
+        self,
+        parsed_data: Dict[str, Any],
+        school_context: Dict[str, Any]
+    ) -> float:
+        """
+        PHASE 4: Calculate contextual rigor index based on school's AP/Honors availability.
+        
+        The rigor index accounts for what was AVAILABLE to the student.
+        High AP/Honors load is more impressive if the school has few such courses.
+        High rigor is less impressive if the student avoided abundant AP/Honors options.
+        
+        Index Range: 0.0 - 5.0 (5.0 = exceptional rigor within school's context)
+        
+        Args:
+            parsed_data: Parsed transcript data from analysis
+            school_context: School enrichment data with AP/Honors availability
+            
+        Returns:
+            Float between 0.0 and 5.0 representing contextual rigor
+        """
+        try:
+            # Get course information from parsed data
+            course_levels = parsed_data.get('course_levels', {})
+            ap_count = course_levels.get('AP', 0) or 0
+            honors_count = course_levels.get('Honors', 0) or 0
+            total_courses = sum(course_levels.values()) if course_levels else 0
+            
+            # Get school's AP/Honors availability
+            ap_available = school_context.get('ap_courses_available', 0) or 0
+            honors_available = school_context.get('honors_programs', 0) or 0
+            
+            if total_courses == 0:
+                return 0.0
+            
+            # Calculate proportion of student's load in AP/Honors
+            ap_honors_proportion = (ap_count + honors_count) / total_courses if total_courses > 0 else 0
+            
+            # Calculate relative AP/Honors availability at school
+            # If school offers many AP courses, high AP load is expected
+            # If school offers few AP courses, high AP load is impressive
+            ap_availability_factor = 1.0
+            if ap_available > 0:
+                # If student took AP courses, evaluate relative to availability
+                if ap_count > 0:
+                    ap_availability_factor = min(2.0, 0.5 + (ap_count / ap_available))
+                else:
+                    # Student didn't take AP despite availability
+                    ap_availability_factor = 0.5
+            
+            # Base rigor score from course selection
+            base_rigor = ap_honors_proportion * 4.0  # 0-4.0 scale
+            
+            # Apply school context multiplier
+            contextual_rigor = base_rigor * ap_availability_factor
+            
+            # Cap at 5.0
+            contextual_rigor = min(5.0, contextual_rigor)
+            
+            # Adjust for GPA - high rigor is more impressive with high GPA
+            gpa = parsed_data.get('gpa') or 0
+            if gpa >= 3.9:
+                contextual_rigor = min(5.0, contextual_rigor + 0.3)
+            elif gpa < 3.0:
+                contextual_rigor = max(0.0, contextual_rigor - 0.2)
+            
+            logger.info(
+                f"Contextual Rigor Index Calculated",
+                extra={
+                    'school': school_context.get('school_name'),
+                    'ap_count': ap_count,
+                    'honors_count': honors_count,
+                    'total_courses': total_courses,
+                    'ap_available': ap_available,
+                    'ap_honors_proportion': ap_honors_proportion,
+                    'contextual_rigor': round(contextual_rigor, 2)
+                }
+            )
+            
+            return round(contextual_rigor, 2)
+            
+        except Exception as e:
+            logger.warning(f"Error calculating contextual rigor index: {e}")
+            return 0.0
     
     def get_specialization_info(self) -> Dict[str, Any]:
         """Get information about this agent's specialization."""

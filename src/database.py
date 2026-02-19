@@ -351,6 +351,285 @@ class Database:
             self.connection = None
             raise e
     
+    # =====================================================================
+    # PHASE 1: Student Matching and Record Management
+    # =====================================================================
+    
+    def find_student_by_match(
+        self, 
+        first_name: str, last_name: str, high_school: str, state_code: str
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Find existing student record by exact match:
+        first_name + last_name + high_school + state_code
+        
+        Returns application record if found, else None.
+        This ensures we don't create duplicate records for same student.
+        """
+        try:
+            conn = self.connect()
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT application_id, first_name, last_name, high_school, state_code
+                FROM applications
+                WHERE LOWER(COALESCE(first_name, '')) = LOWER(%s)
+                  AND LOWER(COALESCE(last_name, '')) = LOWER(%s)
+                  AND LOWER(COALESCE(high_school, '')) = LOWER(%s)
+                  AND UPPER(COALESCE(state_code, '')) = UPPER(%s)
+                LIMIT 1
+            """, (first_name.strip(), last_name.strip(), high_school.strip(), state_code.strip()))
+            row = cursor.fetchone()
+            cursor.close()
+            
+            if row:
+                logger.info(
+                    f"Found existing student record: {row[0]} "
+                    f"for {first_name} {last_name} from {high_school}, {state_code}"
+                )
+                return {
+                    'application_id': row[0],
+                    'first_name': row[1],
+                    'last_name': row[2],
+                    'high_school': row[3],
+                    'state_code': row[4]
+                }
+            return None
+        except Exception as e:
+            logger.error(f"Error matching student: {e}")
+            return None
+    
+    def find_similar_students(
+        self,
+        first_name: str,
+        last_name: str,
+        high_school: str,
+        state_code: str,
+        limit: int = 5
+    ) -> List[Dict[str, Any]]:
+        """
+        Find similar student records for fuzzy matching (PHASE 5 file upload).
+        
+        Uses multiple strategies for similarity:
+        1. Exact name + school match
+        2. Similar name (first char match) + same school
+        3. Same school + same state
+        4. Similar name + same state
+        
+        Args:
+            first_name: First name to match
+            last_name: Last name to match
+            high_school: High school name
+            state_code: State code
+            limit: Max number of results
+            
+        Returns:
+            List of similar student records sorted by relevance
+        """
+        try:
+            conn = self.connect()
+            cursor = conn.cursor()
+            
+            # Use Levenshtein distance for fuzzy matching (if available)
+            # Falls back to substring matching
+            cursor.execute("""
+                SELECT 
+                    application_id, 
+                    first_name, 
+                    last_name, 
+                    high_school, 
+                    state_code,
+                    CASE
+                        -- Exact match (highest score)
+                        WHEN LOWER(COALESCE(first_name, '')) = LOWER(%s)
+                         AND LOWER(COALESCE(last_name, '')) = LOWER(%s)
+                         AND LOWER(COALESCE(high_school, '')) = LOWER(%s)
+                         AND UPPER(COALESCE(state_code, '')) = UPPER(%s)
+                        THEN 100
+                        
+                        -- Same school & state, similar first char of name
+                        WHEN LOWER(COALESCE(high_school, '')) = LOWER(%s)
+                         AND UPPER(COALESCE(state_code, '')) = UPPER(%s)
+                         AND LEFT(LOWER(COALESCE(first_name, '')), 1) = LEFT(LOWER(%s), 1)
+                        THEN 90
+                        
+                        -- Same school & state
+                        WHEN LOWER(COALESCE(high_school, '')) = LOWER(%s)
+                         AND UPPER(COALESCE(state_code, '')) = UPPER(%s)
+                        THEN 70
+                        
+                        -- Same school only, similar name
+                        WHEN LOWER(COALESCE(high_school, '')) = LOWER(%s)
+                         AND (LEFT(LOWER(COALESCE(first_name, '')), 3) = LEFT(LOWER(%s), 3)
+                           OR LEFT(LOWER(COALESCE(last_name, '')), 3) = LEFT(LOWER(%s), 3))
+                        THEN 60
+                        
+                        -- Similar name (starts with same letters)
+                        WHEN LEFT(LOWER(COALESCE(first_name, '')), 2) = LEFT(LOWER(%s), 2)
+                         AND LEFT(LOWER(COALESCE(last_name, '')), 2) = LEFT(LOWER(%s), 2)
+                        THEN 50
+                        
+                        -- Same school only
+                        WHEN LOWER(COALESCE(high_school, '')) = LOWER(%s)
+                        THEN 40
+                        
+                        -- Same last name & state
+                        WHEN LOWER(COALESCE(last_name, '')) = LOWER(%s)
+                         AND UPPER(COALESCE(state_code, '')) = UPPER(%s)
+                        THEN 35
+                        
+                        ELSE 0
+                    END as match_score
+                FROM applications
+                WHERE CASE
+                    -- Exact match (highest score)
+                    WHEN LOWER(COALESCE(first_name, '')) = LOWER(%s)
+                     AND LOWER(COALESCE(last_name, '')) = LOWER(%s)
+                     AND LOWER(COALESCE(high_school, '')) = LOWER(%s)
+                     AND UPPER(COALESCE(state_code, '')) = UPPER(%s)
+                    THEN 100
+                    
+                    -- Same school & state, similar first char of name
+                    WHEN LOWER(COALESCE(high_school, '')) = LOWER(%s)
+                     AND UPPER(COALESCE(state_code, '')) = UPPER(%s)
+                     AND LEFT(LOWER(COALESCE(first_name, '')), 1) = LEFT(LOWER(%s), 1)
+                    THEN 90
+                    
+                    -- Same school & state
+                    WHEN LOWER(COALESCE(high_school, '')) = LOWER(%s)
+                     AND UPPER(COALESCE(state_code, '')) = UPPER(%s)
+                    THEN 70
+                    
+                    -- Same school only, similar name
+                    WHEN LOWER(COALESCE(high_school, '')) = LOWER(%s)
+                     AND (LEFT(LOWER(COALESCE(first_name, '')), 3) = LEFT(LOWER(%s), 3)
+                       OR LEFT(LOWER(COALESCE(last_name, '')), 3) = LEFT(LOWER(%s), 3))
+                    THEN 60
+                    
+                    -- Similar name (starts with same letters)
+                    WHEN LEFT(LOWER(COALESCE(first_name, '')), 2) = LEFT(LOWER(%s), 2)
+                     AND LEFT(LOWER(COALESCE(last_name, '')), 2) = LEFT(LOWER(%s), 2)
+                    THEN 50
+                    
+                    -- Same school only
+                    WHEN LOWER(COALESCE(high_school, '')) = LOWER(%s)
+                    THEN 40
+                    
+                    -- Same last name & state
+                    WHEN LOWER(COALESCE(last_name, '')) = LOWER(%s)
+                     AND UPPER(COALESCE(state_code, '')) = UPPER(%s)
+                    THEN 35
+                    
+                    ELSE 0
+                END > 0
+                ORDER BY match_score DESC
+                LIMIT %s
+            """, (
+                first_name.strip(), last_name.strip(), high_school.strip(), state_code.strip(),  # Exact
+                high_school.strip(), state_code.strip(), first_name.strip(),  # Same school & state
+                high_school.strip(), state_code.strip(),  # Same school & state (score 70)
+                high_school.strip(), first_name.strip(), last_name.strip(),  # Similar name
+                first_name.strip(), last_name.strip(),  # Similar name (50)
+                high_school.strip(),  # Same school (40)
+                last_name.strip(), state_code.strip(),  # Same last name & state
+                # Repeat all for WHERE clause
+                first_name.strip(), last_name.strip(), high_school.strip(), state_code.strip(),
+                high_school.strip(), state_code.strip(), first_name.strip(),
+                high_school.strip(), state_code.strip(),
+                high_school.strip(), first_name.strip(), last_name.strip(),
+                first_name.strip(), last_name.strip(),
+                high_school.strip(),
+                last_name.strip(), state_code.strip(),
+                limit
+            ))
+            
+            results = []
+            for row in cursor.fetchall():
+                results.append({
+                    'application_id': row[0],
+                    'first_name': row[1],
+                    'last_name': row[2],
+                    'high_school': row[3],
+                    'state_code': row[4],
+                    'match_score': row[5]
+                })
+            
+            cursor.close()
+            
+            if results:
+                logger.info(f"Found {len(results)} similar students for '{first_name} {last_name}'")
+            
+            return results
+            
+        except Exception as e:
+            logger.error(f"Error finding similar students: {e}")
+            return []
+
+    def create_student_record(
+        self, first_name: str, last_name: str, high_school: str, 
+        state_code: str, **kwargs
+    ) -> Optional[int]:
+        """
+        Create new student application record with metadata.
+        Ensures accurate student record creation with key matching fields.
+        """
+        try:
+            conn = self.connect()
+            cursor = conn.cursor()
+            
+            # Build INSERT with all available metadata
+            applicant_name = f"{first_name} {last_name}".strip()
+            
+            cursor.execute("""
+                INSERT INTO applications 
+                (applicant_name, first_name, last_name, high_school, 
+                 state_code, school_name, application_text, uploaded_date, status)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                RETURNING application_id
+            """, (
+                applicant_name,
+                first_name.strip(),
+                last_name.strip(),
+                high_school.strip(),
+                state_code.strip().upper(),
+                high_school.strip(),  # school_name same as high_school initially
+                kwargs.get('application_text', ''),
+                datetime.now(),
+                'Pending'
+            ))
+            app_id = cursor.fetchone()[0]
+            conn.commit()
+            cursor.close()
+            
+            logger.info(
+                f"Created new student record: {app_id} "
+                f"for {first_name} {last_name} from {high_school}, {state_code}"
+            )
+            return app_id
+        except Exception as e:
+            logger.error(f"Error creating student record: {e}")
+            return None
+    
+    def mark_for_re_evaluation(self, application_id: int) -> bool:
+        """
+        Mark a student record for re-evaluation.
+        Called when new files are uploaded for an existing student.
+        """
+        try:
+            conn = self.connect()
+            cursor = conn.cursor()
+            cursor.execute("""
+                UPDATE applications
+                SET status = 'Pending', updated_date = %s
+                WHERE application_id = %s
+            """, (datetime.now(), application_id))
+            conn.commit()
+            cursor.close()
+            logger.info(f"Marked application {application_id} for re-evaluation")
+            return True
+        except Exception as e:
+            logger.error(f"Error marking for re-evaluation: {e}")
+            return False
+    
     def create_application(self, applicant_name: str, email: str, application_text: str,
                           file_name: str, file_type: str, is_training: bool = False,
                           is_test_data: bool = False,
@@ -522,6 +801,51 @@ class Database:
         """
         return self.execute_scalar(query, (application_id, agent_name, source_file_name))
 
+    def log_agent_interaction(
+        self,
+        application_id: int,
+        agent_name: str,
+        interaction_type: str,
+        question_text: Optional[str] = None,
+        user_response: Optional[str] = None,
+        file_name: Optional[str] = None,
+        file_size: Optional[int] = None,
+        file_type: Optional[str] = None,
+        extracted_data: Optional[Dict[str, Any]] = None,
+        sequence_number: Optional[int] = None
+    ) -> int:
+        """
+        Log all agent interactions for full audit trail.
+        
+        Tracks:
+        - Agent questions asked
+        - User responses
+        - File uploads with metadata
+        - Data extracted from documents
+        - Interaction sequence
+        """
+        query = """
+            INSERT INTO agent_interactions
+            (application_id, agent_name, interaction_type, question_text,
+             user_response, file_name, file_size, file_type, extracted_data,
+             timestamp, sequence_number)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            RETURNING interaction_id
+        """
+        return self.execute_scalar(query, (
+            application_id,
+            agent_name,
+            interaction_type,
+            question_text,
+            user_response,
+            file_name,
+            file_size,
+            file_type,
+            json.dumps(extracted_data) if extracted_data else None,
+            datetime.now(),
+            sequence_number
+        ))
+
     def save_tiana_application(
         self,
         application_id: int,
@@ -592,9 +916,14 @@ class Database:
         notable_patterns: Optional[List[str]] = None,
         confidence_level: Optional[str] = None,
         summary: Optional[str] = None,
+        contextual_rigor_index: Optional[float] = None,
+        school_context_used: bool = False,
         parsed_json: Optional[str] = None
     ) -> int:
-        """Save Rapunzel grade analysis output."""
+        """
+        Save Rapunzel grade analysis output.
+        Now includes contextual_rigor_index (weighted by school data) and school_context_used flag.
+        """
         def _truncate(value: Optional[str], max_len: int) -> Optional[str]:
             if value is None:
                 return None
@@ -603,8 +932,9 @@ class Database:
         query = """
             INSERT INTO rapunzel_grades
             (application_id, agent_name, gpa, academic_strength, course_levels,
-             transcript_quality, notable_patterns, confidence_level, summary, parsed_json)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+             transcript_quality, notable_patterns, confidence_level, summary, 
+             contextual_rigor_index, school_context_used, parsed_json)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             RETURNING rapunzel_grade_id
         """
         return self.execute_scalar(query, (
@@ -617,6 +947,8 @@ class Database:
             json.dumps(notable_patterns) if notable_patterns else None,
             _truncate(confidence_level, 50),
             summary,
+            contextual_rigor_index,
+            school_context_used,
             parsed_json or '{}'
         ))
 
@@ -1571,7 +1903,384 @@ class Database:
             )
         except Exception as e:
             logger.error(f"Error saving analysis history: {e}")
+    
+    # =====================================================================
+    # PHASE 3: School Validation Tracking
+    # =====================================================================
+    
+    def mark_school_validation_complete(
+        self,
+        school_name: str,
+        state_code: str,
+        validation_passed: bool
+    ) -> bool:
+        """
+        Mark school validation as complete in school_enriched_data table.
+        
+        Updates:
+        - moana_requirements_met: True if validation_passed, False otherwise
+        - last_moana_validation: Current timestamp
+        
+        Args:
+            school_name: School name to update
+            state_code: State code to identify school
+            validation_passed: Boolean indicating validation result
+            
+        Returns:
+            True if update successful, False otherwise
+        """
+        try:
+            query = """
+                UPDATE school_enriched_data
+                SET moana_requirements_met = %s,
+                    last_moana_validation = %s
+                WHERE school_name = %s AND state_code = %s
+            """
+            
+            current_time = datetime.now()
+            
+            self.execute_non_query(
+                query,
+                (validation_passed, current_time, school_name, state_code)
+            )
+            
+            logger.info(
+                f"✓ Marked school validation complete",
+                extra={
+                    'school': school_name,
+                    'state': state_code,
+                    'validation_passed': validation_passed
+                }
+            )
+            return True
+            
+        except Exception as e:
+            logger.error(
+                f"Error marking school validation: {e}",
+                extra={'school': school_name, 'state': state_code}
+            )
+            return False
+    
+    def get_school_validation_status(
+        self,
+        school_name: str,
+        state_code: str
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Get school validation status from database.
+        
+        Args:
+            school_name: School name
+            state_code: State code
+            
+        Returns:
+            Dict with {moana_requirements_met, last_moana_validation} or None
+        """
+        try:
+            query = """
+                SELECT moana_requirements_met, last_moana_validation
+                FROM school_enriched_data
+                WHERE school_name = %s AND state_code = %s
+                LIMIT 1
+            """
+            
+            result = self.fetch_one(query, (school_name, state_code))
+            
+            if result:
+                return {
+                    'moana_requirements_met': result.get('moana_requirements_met'),
+                    'last_moana_validation': result.get('last_moana_validation')
+                }
+            
+            return None
+            
+        except Exception as e:
+            logger.warning(
+                f"Error getting school validation status: {e}",
+                extra={'school': school_name, 'state': state_code}
+            )
+            return None
 
+    # =====================================================================
+    # PHASE 5: File Upload Audit & Matching Tracking
+    # =====================================================================
 
-# Global database instance
-db = Database()
+    def log_file_upload_audit(
+        self,
+        file_name: str,
+        file_type: str,
+        file_size: int,
+        extracted_first_name: str,
+        extracted_last_name: str,
+        extracted_high_school: str,
+        extracted_state_code: str,
+        extraction_confidence: float,
+        matched_application_id: int,
+        ai_match_confidence: float,
+        match_status: str,
+        match_reasoning: str = None,
+        extraction_method: str = 'AI'
+    ) -> Optional[int]:
+        """
+        Log file upload and AI matching details for human audit.
+        
+        Args:
+            file_name: Original uploaded file name
+            file_type: MIME type
+            file_size: File size in bytes
+            extracted_first_name: AI-extracted first name from file
+            extracted_last_name: AI-extracted last name from file
+            extracted_high_school: AI-extracted high school from file
+            extracted_state_code: AI-extracted state code from file
+            extraction_confidence: Confidence 0-1 of extraction accuracy
+            matched_application_id: Student record this file is matched to
+            ai_match_confidence: Confidence 0-1 of the student match
+            match_status: 'new_student', 'matched_existing', 'low_confidence'
+            match_reasoning: Text explanation of matching decision
+            extraction_method: 'AI', 'manual', etc
+            
+        Returns:
+            audit_id if successful, None on error
+        """
+        try:
+            conn = self.connect()
+            cursor = conn.cursor()
+            
+            cursor.execute("""
+                INSERT INTO file_upload_audit (
+                    file_name,
+                    file_type,
+                    file_size,
+                    extracted_first_name,
+                    extracted_last_name,
+                    extracted_high_school,
+                    extracted_state_code,
+                    extraction_confidence,
+                    matched_application_id,
+                    ai_match_confidence,
+                    match_status,
+                    match_reasoning,
+                    extraction_method,
+                    upload_date
+                )
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP)
+                RETURNING audit_id
+            """, (
+                file_name,
+                file_type,
+                file_size,
+                extracted_first_name,
+                extracted_last_name,
+                extracted_high_school,
+                extracted_state_code,
+                extraction_confidence,
+                matched_application_id,
+                ai_match_confidence,
+                match_status,
+                match_reasoning,
+                extraction_method
+            ))
+            
+            audit_id = cursor.fetchone()[0]
+            conn.commit()
+            cursor.close()
+            
+            logger.info(
+                f"Logged file upload audit: {file_name}",
+                extra={
+                    'audit_id': audit_id,
+                    'application_id': matched_application_id,
+                    'match_confidence': ai_match_confidence
+                }
+            )
+            
+            return audit_id
+            
+        except Exception as e:
+            logger.error(f"Error logging file upload audit: {e}")
+            return None
+
+    def get_file_matching_audit_for_student(
+        self,
+        application_id: int
+    ) -> List[Dict[str, Any]]:
+        """
+        Get all file uploads and matching decisions for a student (human review).
+        
+        Args:
+            application_id: Student application ID
+            
+        Returns:
+            List of file upload audit records with matching details
+        """
+        try:
+            conn = self.connect()
+            cursor = conn.cursor()
+            
+            cursor.execute("""
+                SELECT 
+                    audit_id,
+                    upload_date,
+                    file_name,
+                    file_type,
+                    file_size,
+                    extracted_first_name,
+                    extracted_last_name,
+                    extracted_high_school,
+                    extracted_state_code,
+                    extraction_confidence,
+                    ai_match_confidence,
+                    match_status,
+                    match_reasoning,
+                    human_reviewed,
+                    human_review_date,
+                    human_review_notes,
+                    human_review_approved,
+                    reviewed_by
+                FROM file_upload_audit
+                WHERE matched_application_id = %s
+                ORDER BY upload_date DESC
+            """, (application_id,))
+            
+            results = []
+            for row in cursor.fetchall():
+                results.append({
+                    'audit_id': row[0],
+                    'upload_date': row[1],
+                    'file_name': row[2],
+                    'file_type': row[3],
+                    'file_size': row[4],
+                    'extracted_first_name': row[5],
+                    'extracted_last_name': row[6],
+                    'extracted_high_school': row[7],
+                    'extracted_state_code': row[8],
+                    'extraction_confidence': float(row[9]) if row[9] else 0.0,
+                    'ai_match_confidence': float(row[10]) if row[10] else 0.0,
+                    'match_status': row[11],
+                    'match_reasoning': row[12],
+                    'human_reviewed': row[13],
+                    'human_review_date': row[14],
+                    'human_review_notes': row[15],
+                    'human_review_approved': row[16],
+                    'reviewed_by': row[17]
+                })
+            
+            cursor.close()
+            return results
+            
+        except Exception as e:
+            logger.error(f"Error retrieving file matching audit for student {application_id}: {e}")
+            return []
+
+    def get_all_pending_file_reviews(self) -> List[Dict[str, Any]]:
+        """
+        Get all files pending human review across all students.
+        
+        Returns:
+            List of file upload audit records with low confidence or pending review
+        """
+        try:
+            conn = self.connect()
+            cursor = conn.cursor()
+            
+            cursor.execute("""
+                SELECT 
+                    a.audit_id,
+                    a.upload_date,
+                    a.file_name,
+                    a.extracted_first_name,
+                    a.extracted_last_name,
+                    a.extracted_high_school,
+                    a.extracted_state_code,
+                    a.extraction_confidence,
+                    a.ai_match_confidence,
+                    a.match_status,
+                    a.matched_application_id,
+                    app.applicant_name,
+                    app.first_name,
+                    app.last_name,
+                    app.high_school,
+                    app.state_code
+                FROM file_upload_audit a
+                INNER JOIN applications app ON a.matched_application_id = app.application_id
+                WHERE a.human_reviewed = FALSE
+                   OR a.ai_match_confidence < 0.85
+                ORDER BY a.ai_match_confidence ASC, a.upload_date DESC
+                LIMIT 100
+            """)
+            
+            results = []
+            for row in cursor.fetchall():
+                results.append({
+                    'audit_id': row[0],
+                    'upload_date': row[1],
+                    'file_name': row[2],
+                    'extracted_student': f"{row[3]} {row[4]}",
+                    'extracted_school': row[5],
+                    'extracted_state': row[6],
+                    'extraction_confidence': float(row[7]) if row[7] else 0.0,
+                    'ai_match_confidence': float(row[8]) if row[8] else 0.0,
+                    'match_status': row[9],
+                    'matched_application_id': row[10],
+                    'student_name': row[11],
+                    'student_first_name': row[12],
+                    'student_last_name': row[13],
+                    'student_school': row[14],
+                    'student_state': row[15],
+                    'accuracy_summary': f"Extraction: {float(row[7]):.0%}, Match: {float(row[8]):.0%}"
+                })
+            
+            cursor.close()
+            return results
+            
+        except Exception as e:
+            logger.error(f"Error retrieving pending file reviews: {e}")
+            return []
+
+    def update_file_upload_review(
+        self,
+        audit_id: int,
+        human_review_approved: bool,
+        human_review_notes: str = None,
+        reviewed_by: str = 'system'
+    ) -> bool:
+        """
+        Update human review of a file upload match.
+        
+        Args:
+            audit_id: File upload audit ID
+            human_review_approved: True if match is approved, False if rejected
+            human_review_notes: Human reviewer notes
+            reviewed_by: Username of reviewer
+            
+        Returns:
+            True if successful
+        """
+        try:
+            conn = self.connect()
+            cursor = conn.cursor()
+            
+            cursor.execute("""
+                UPDATE file_upload_audit
+                SET human_reviewed = TRUE,
+                    human_review_date = CURRENT_TIMESTAMP,
+                    human_review_notes = %s,
+                    human_review_approved = %s,
+                    reviewed_by = %s
+                WHERE audit_id = %s
+            """, (human_review_notes, human_review_approved, reviewed_by, audit_id))
+            
+            conn.commit()
+            cursor.close()
+            
+            logger.info(
+                f"Updated file upload review: audit_id={audit_id}, approved={human_review_approved}",
+                extra={'reviewed_by': reviewed_by}
+            )
+            
+            return True
+            
+        except Exception as e:
+            logger.error(f"Error updating file upload review: {e}")
+            return False
+
