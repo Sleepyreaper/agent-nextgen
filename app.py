@@ -1342,8 +1342,23 @@ def students():
         # Get formatted student list sorted by last name
         students = db.get_formatted_student_list(is_training=False, search_query=search_query if search_query else None)
         
+        # CRITICAL: Defensive filtering to ensure test data NEVER appears in 2026 production view
+        filtered_students = []
+        for student in students:
+            is_test = student.get('is_test_data')
+            is_training = student.get('is_training_example')
+            
+            # Only include if BOTH test and training flags are False/None
+            if (is_test is None or is_test is False) and (is_training is None or is_training is False):
+                filtered_students.append(student)
+            else:
+                if is_test:
+                    logger.warning(f"🔴 SECURITY: Filtered out test data from /students: {student.get('id')}")
+                if is_training:
+                    logger.warning(f"🔴 SECURITY: Filtered out training data from /students: {student.get('id')}")
+        
         return render_template('students.html', 
-                             students=students,
+                             students=filtered_students,
                              search_query=search_query)
     except Exception as e:
         flash(f'Error loading students: {str(e)}', 'error')
@@ -1359,6 +1374,18 @@ def training():
         
         # Get formatted student list for training examples, sorted by last name
         training_data = db.get_formatted_student_list(is_training=True, search_query=search_query if search_query else None)
+        
+        # CRITICAL: Defensive filtering to ensure test data NEVER appears in training view
+        filtered_training = []
+        for record in training_data:
+            is_test = record.get('is_test_data')
+            # Training data should NEVER be marked as test data
+            if is_test is None or is_test is False:
+                filtered_training.append(record)
+            else:
+                logger.warning(f"🔴 SECURITY: Filtered out test data from /training: {record.get('id')}")
+        
+        training_data = filtered_training
         
         # Apply filter if specified
         if filter_selected == 'selected':
@@ -1410,18 +1437,24 @@ def test_data():
         email_col = db.get_applications_column("email")
         status_col = db.get_applications_column("status")
         uploaded_col = db.get_applications_column("uploaded_date")
+        training_col = db.get_training_column()
 
         test_students = []
         if db.has_applications_column(test_col):
+            # CRITICAL: Only return records marked with is_test_data = TRUE
+            # AND NOT marked as training data
             test_students_query = f"""
                 SELECT
                     a.{app_id_col} as application_id,
                     a.{applicant_col} as applicant_name,
                     a.{email_col} as email,
                     a.{status_col} as status,
-                    a.{uploaded_col} as uploaded_date
+                    a.{uploaded_col} as uploaded_date,
+                    a.{test_col} as is_test_data,
+                    a.{training_col} as is_training_example
                 FROM {applications_table} a
                 WHERE a.{test_col} = TRUE
+                AND (a.{training_col} = FALSE OR a.{training_col} IS NULL)
                 ORDER BY a.{uploaded_col} DESC
             """
             test_students = db.execute_query(test_students_query)
@@ -1429,13 +1462,17 @@ def test_data():
         # Format for display
         formatted_students = []
         for student in test_students:
-            formatted_students.append({
-                'application_id': student.get('application_id'),
-                'applicant_name': student.get('applicant_name'),
-                'email': student.get('email'),
-                'status': student.get('status'),
-                'uploaded_date': student.get('uploaded_date')
-            })
+            # Defensive check: ensure this is actually test data
+            if student.get('is_test_data') and not student.get('is_training_example'):
+                formatted_students.append({
+                    'application_id': student.get('application_id'),
+                    'applicant_name': student.get('applicant_name'),
+                    'email': student.get('email'),
+                    'status': student.get('status'),
+                    'uploaded_date': student.get('uploaded_date')
+                })
+            else:
+                logger.warning(f"🔴 SECURITY: Discarded invalid record from /test-data: {student.get('application_id')}")
         
         return render_template('test_data.html',
                              test_students=formatted_students,

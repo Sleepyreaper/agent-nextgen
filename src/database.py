@@ -270,7 +270,7 @@ class Database:
             cursor.execute("""
                 SELECT column_name
                 FROM information_schema.columns
-                WHERE table_name = 'applications' AND column_name IN ('first_name', 'last_name', 'high_school', 'state_code')
+                WHERE table_name = 'applications' AND column_name IN ('first_name', 'last_name', 'high_school', 'state_code', 'is_test_data')
             """)
             existing_columns = set(row[0] for row in cursor.fetchall())
             
@@ -290,6 +290,10 @@ class Database:
             if 'state_code' not in existing_columns:
                 cursor.execute("ALTER TABLE applications ADD COLUMN state_code VARCHAR(10)")
                 logger.info("✓ Added state_code column to applications")
+            
+            if 'is_test_data' not in existing_columns:
+                cursor.execute("ALTER TABLE applications ADD COLUMN is_test_data BOOLEAN DEFAULT FALSE")
+                logger.info("✓ Added is_test_data column to applications")
             
             # Create indexes for matching queries if they don't exist
             try:
@@ -312,6 +316,13 @@ class Database:
                 logger.info("✓ Created state_code index")
             except Exception as idx_err:
                 logger.warning(f"Could not create state_code index: {idx_err}")
+            
+            # Create index on is_test_data for fast filtering
+            try:
+                cursor.execute("CREATE INDEX IF NOT EXISTS idx_is_test_data ON applications(is_test_data)")
+                logger.info("✓ Created is_test_data index")
+            except Exception as idx_err:
+                logger.warning(f"Could not create is_test_data index: {idx_err}")
             
             conn.commit()
             cursor.close()
@@ -1703,7 +1714,9 @@ class Database:
                 {was_selected_select},
                 {merlin_select},
                 {school_select},
-                {missing_fields_select}
+                {missing_fields_select},
+                a.{training_col} as is_training_example,
+                a.{test_col} as is_test_data
             FROM {applications_table} a
             {merlin_join}
             {context_join}
@@ -1772,7 +1785,9 @@ class Database:
                 'status': row.get('status'),
                 'uploaded_date': row.get('uploaded_date'),
                 'was_selected': bool(row.get('was_selected')) if row.get('was_selected') is not None else None,
-                'missing_fields': missing_fields
+                'missing_fields': missing_fields,
+                'is_test_data': bool(row.get('is_test_data')) if row.get('is_test_data') is not None else False,
+                'is_training_example': bool(row.get('is_training_example')) if row.get('is_training_example') is not None else False
             })
         
         return formatted
