@@ -556,6 +556,31 @@ class SmeeOrchestrator(BaseAgent):
             logger.error(f"❌ {agent.name} failed: {e}")
             return {'error': str(e), 'status': 'failed'}
     
+    def _create_student_summary(self, aurora_result: Dict[str, Any], merlin_result: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Create a concise student summary from Aurora and Merlin outputs for database storage.
+        
+        Args:
+            aurora_result: Formatted report from Aurora agent
+            merlin_result: Evaluation from Merlin agent
+            
+        Returns:
+            Dictionary with summary information suitable for student_summary column
+        """
+        summary = {
+            'status': 'completed',
+            'overall_score': merlin_result.get('overall_score'),
+            'recommendation': merlin_result.get('recommendation'),
+            'rationale': merlin_result.get('rationale', ''),
+            'key_strengths': merlin_result.get('key_strengths', []),
+            'key_risks': merlin_result.get('key_risks', []),
+            'confidence': merlin_result.get('confidence'),
+            'agents_completed': list(self.agents.keys()) if self.agents else [],
+            'formatted_by_aurora': bool(aurora_result),
+            'aurora_sections': list(aurora_result.keys()) if isinstance(aurora_result, dict) else []
+        }
+        return summary
+    
     async def coordinate_evaluation(
         self,
         application: Dict[str, Any],
@@ -1032,7 +1057,7 @@ class SmeeOrchestrator(BaseAgent):
         # ===== STEP 6: MERLIN - Synthesis =====
         logger.info("🧙 STEP 6: Synthesizing evaluation with MERLIN...")
         
-        if 'student_evaluator' in self.agents:
+        if 'student_evaluator' in evaluation_steps and 'student_evaluator' in self.agents:
             merlin = self.agents['student_evaluator']
             try:
                 merlin_result = await merlin.evaluate_student(
@@ -1072,8 +1097,8 @@ class SmeeOrchestrator(BaseAgent):
         # ===== STEP 7: AURORA - Report generation =====
         logger.info("📄 STEP 7: Generating report with AURORA...")
         
-        if 'report_generator' in self.agents:
-            aurora = self.agents['report_generator']
+        if 'aurora' in evaluation_steps and 'aurora' in self.agents:
+            aurora = self.agents['aurora']
             try:
                 aurora_result = await asyncio.to_thread(
                     aurora.format_evaluation_report,
@@ -1094,6 +1119,29 @@ class SmeeOrchestrator(BaseAgent):
                         'report_generated': True
                     }
                 )
+                
+                # Save Aurora evaluation to database with student summary
+                if self.db and application_id:
+                    try:
+                        merlin_result = self.evaluation_results['results'].get('student_evaluator', {})
+                        aurora_eval_id = self.db.save_aurora_evaluation(
+                            application_id=application_id,
+                            formatted_evaluation=aurora_result,
+                            merlin_score=merlin_result.get('overall_score'),
+                            merlin_recommendation=merlin_result.get('recommendation'),
+                            agents_completed=','.join(evaluation_steps)
+                        )
+                        logger.info(f"✅ Aurora evaluation saved: {aurora_eval_id}")
+                        
+                        # Create student summary from Aurora output
+                        student_summary = self._create_student_summary(aurora_result, merlin_result)
+                        if student_summary and application_id:
+                            self.db.update_application(
+                                application_id=application_id,
+                                **{'student_summary': json.dumps(student_summary)} if hasattr(self.db, 'get_training_example_column') else {}
+                            )
+                    except Exception as e:
+                        logger.warning(f"Could not save Aurora evaluation: {e}")
                 
                 logger.info("✅ AURORA report generation complete")
             except Exception as e:
