@@ -177,7 +177,8 @@ def get_orchestrator():
             RapunzelGradeReader(
                 name="Rapunzel Grade Reader",
                 client=client,
-                model=config.deployment_name
+                model=config.deployment_name,
+                db_connection=db
             )
         )
         orchestrator_agent.register_agent(
