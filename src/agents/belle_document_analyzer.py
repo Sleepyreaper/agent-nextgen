@@ -130,6 +130,8 @@ class BelleDocumentAnalyzer(BaseAgent):
             agent_fields["application_text"] = text_content
         if student_info.get("school_name"):
             agent_fields["school_name"] = student_info.get("school_name")
+        if student_info.get("state_code"):
+            agent_fields["state_code"] = student_info.get("state_code")
 
         if extracted_data.get("gpa") is not None:
             agent_fields["gpa"] = extracted_data.get("gpa")
@@ -262,7 +264,67 @@ class BelleDocumentAnalyzer(BaseAgent):
         if school_match:
             student_info["school_name"] = school_match.group(1).strip()
         
+        # State code extraction - looks for state abbreviations or state names
+        state_code = self._extract_state_code(text)
+        if state_code:
+            student_info["state_code"] = state_code
+        
+        # Debug logging for school/state extraction
+        if student_info.get("school_name") or student_info.get("state_code"):
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.debug(f"BELLE extracted school context: school={student_info.get('school_name')}, state={student_info.get('state_code')}")
+        
         return {k: v for k, v in student_info.items() if v is not None}
+    
+    def _extract_state_code(self, text: str) -> Optional[str]:
+        """Extract state code from text using pattern matching and state name lookup."""
+        # List of US state codes
+        state_codes = {
+            'AL': 'Alabama', 'AK': 'Alaska', 'AZ': 'Arizona', 'AR': 'Arkansas', 'CA': 'California',
+            'CO': 'Colorado', 'CT': 'Connecticut', 'DE': 'Delaware', 'FL': 'Florida', 'GA': 'Georgia',
+            'HI': 'Hawaii', 'ID': 'Idaho', 'IL': 'Illinois', 'IN': 'Indiana', 'IA': 'Iowa',
+            'KS': 'Kansas', 'KY': 'Kentucky', 'LA': 'Louisiana', 'ME': 'Maine', 'MD': 'Maryland',
+            'MA': 'Massachusetts', 'MI': 'Michigan', 'MN': 'Minnesota', 'MS': 'Mississippi',
+            'MO': 'Missouri', 'MT': 'Montana', 'NE': 'Nebraska', 'NV': 'Nevada', 'NH': 'New Hampshire',
+            'NJ': 'New Jersey', 'NM': 'New Mexico', 'NY': 'New York', 'NC': 'North Carolina',
+            'ND': 'North Dakota', 'OH': 'Ohio', 'OK': 'Oklahoma', 'OR': 'Oregon', 'PA': 'Pennsylvania',
+            'RI': 'Rhode Island', 'SC': 'South Carolina', 'SD': 'South Dakota', 'TN': 'Tennessee',
+            'TX': 'Texas', 'UT': 'Utah', 'VT': 'Vermont', 'VA': 'Virginia', 'WA': 'Washington',
+            'WV': 'West Virginia', 'WI': 'Wisconsin', 'WY': 'Wyoming'
+        }
+        
+        text_lower = text.lower()
+        
+        # First try direct state code pattern (e.g., "GA", "CA")
+        # Look for patterns like "State: GA", "state code: NY", "Address: ..., GA 30301", etc.
+        code_pattern = r'(?:state|state\s+code|located\s+in|from)\s*[:\-]?\s*([A-Z]{2})(?:\s|,|$)'
+        code_match = re.search(code_pattern, text, re.IGNORECASE)
+        if code_match:
+            potential_code = code_match.group(1).upper()
+            if potential_code in state_codes:
+                return potential_code
+        
+        # Try zip code pattern (assumes last 5 digits of a zip code follows state)
+        zip_pattern = r'([A-Z]{2})\s+(\d{5})'
+        zip_match = re.search(zip_pattern, text)
+        if zip_match:
+            potential_code = zip_match.group(1).upper()
+            if potential_code in state_codes:
+                return potential_code
+        
+        # Then try matching state names (make sure we're matching full words)
+        for code, state_name in state_codes.items():
+            state_pattern = r'\b' + re.escape(state_name) + r'\b'
+            if re.search(state_pattern, text, re.IGNORECASE):
+                return code
+        
+        # If no state found and presence of GA-specific indicators, default to GA
+        if any(indicator in text_lower for indicator in ['georgia', 'atlanta', 'savannah', 'emory', 'gwinnett']):
+            return 'GA'
+        
+        return None
+
     
     def _extract_name_with_ai(self, text: str) -> Optional[str]:
         """Use AI to intelligently extract student name from document."""
