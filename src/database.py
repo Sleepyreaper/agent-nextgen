@@ -2284,3 +2284,6 @@ class Database:
             logger.error(f"Error updating file upload review: {e}")
             return False
 
+
+# Create a singleton instance for module-level import
+db = Database()
