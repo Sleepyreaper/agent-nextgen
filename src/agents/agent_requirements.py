@@ -13,6 +13,7 @@ class AgentRequirements:
                 "Do you have a written application or essay?",
                 "Can you provide the student's application statement?"
             ],
+            'missing_prompt': "Please upload the student's application essay or statement (pdf, docx, or txt).",
             'accepts_formats': ['txt', 'pdf', 'docx'],
             'field_name': 'application_essay'
         },
@@ -22,6 +23,7 @@ class AgentRequirements:
                 "Do you have the student's transcript or grades?",
                 "Can you provide academic records showing GPA, courses, and grades?"
             ],
+            'missing_prompt': "Please upload the official transcript or grade report (pdf, docx, or txt).",
             'accepts_formats': ['pdf', 'docx', 'txt'],
             'field_name': 'transcript'
         },
@@ -32,6 +34,7 @@ class AgentRequirements:
                 "Can you provide transcript or school documents to identify the school?",
                 "Do you know the school's demographics or location?"
             ],
+            'missing_prompt': "Please provide the high school name and a transcript or school document that confirms it.",
             'accepts_formats': ['txt', 'pdf', 'docx'],
             'field_name': 'school_context'
         },
@@ -42,6 +45,7 @@ class AgentRequirements:
                 "Can you provide recommendation letters from teachers or mentors?",
                 "How many recommendation letters do you have?"
             ],
+            'missing_prompt': "Please upload at least one recommendation letter (pdf, docx, or txt).",
             'accepts_formats': ['pdf', 'docx', 'txt'],
             'field_name': 'letters_of_recommendation'
         },
