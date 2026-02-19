@@ -298,22 +298,36 @@ class Database:
                 logger.info("✓ Added is_test_data column to applications")
             
             # ===== RAPUNZEL GRADES TABLE MIGRATIONS =====
-            # First check if table exists
+            # First check if table exists (check all schemas)
             cursor.execute("""
                 SELECT EXISTS(
                     SELECT 1 FROM information_schema.tables 
                     WHERE table_name = 'rapunzel_grades'
+                    AND table_schema NOT IN ('pg_catalog', 'information_schema')
                 )
             """)
             rapunzel_exists = cursor.fetchone()[0]
             
             if rapunzel_exists:
+                # Get the actual schema name where the table exists
                 cursor.execute("""
+                    SELECT table_schema FROM information_schema.tables 
+                    WHERE table_name = 'rapunzel_grades'
+                    AND table_schema NOT IN ('pg_catalog', 'information_schema')
+                    LIMIT 1
+                """)
+                schema_row = cursor.fetchone()
+                schema_name = schema_row[0] if schema_row else 'public'
+                logger.info(f"Found rapunzel_grades in schema: {schema_name}")
+                
+                cursor.execute(f"""
                     SELECT column_name
                     FROM information_schema.columns
                     WHERE table_name = 'rapunzel_grades'
+                    AND table_schema = '{schema_name}'
                 """)
                 rapunzel_columns = set(row[0] for row in cursor.fetchall())
+                logger.info(f"Rapunzel columns found: {rapunzel_columns}")
                 
                 # Required columns for Rapunzel to save grade data
                 rapunzel_required = {
@@ -324,16 +338,25 @@ class Database:
                 for col_name, col_type in rapunzel_required.items():
                     if col_name not in rapunzel_columns:
                         try:
-                            cursor.execute(f"ALTER TABLE rapunzel_grades ADD COLUMN {col_name} {col_type}")
-                            conn.commit()  # Commit after each column addition
+                            # Use schema-qualified name to be explicit
+                            cursor.execute(f"ALTER TABLE \"{schema_name}\".\"rapunzel_grades\" ADD COLUMN \"{col_name}\" {col_type}")
+                            conn.commit()
                             logger.info(f"✓ Added {col_name} column to rapunzel_grades")
+                            # Re-check immediately after adding
+                            cursor.execute(f"SELECT column_name FROM information_schema.columns WHERE table_name = 'rapunzel_grades' AND table_schema = '{schema_name}' AND column_name = '{col_name}'")
+                            if cursor.fetchone():
+                                logger.info(f"✓ VERIFIED: {col_name} now exists in rapunzel_grades")
+                            else:
+                                logger.error(f"❌ VERIFICATION FAILED: {col_name} was not added to rapunzel_grades")
                         except Exception as col_err:
                             logger.error(f"❌ Failed to add {col_name} to rapunzel_grades: {col_err}")
                             conn.rollback()
+                    else:
+                        logger.info(f"✓ Column {col_name} already exists in rapunzel_grades")
                 
                 # Create index on contextual_rigor_index for query performance
                 try:
-                    cursor.execute("CREATE INDEX IF NOT EXISTS idx_rapunzel_rigor ON rapunzel_grades(contextual_rigor_index)")
+                    cursor.execute(f"CREATE INDEX IF NOT EXISTS idx_rapunzel_rigor ON \"{schema_name}\".\"rapunzel_grades\"(\"contextual_rigor_index\")")
                     logger.info("✓ Created index on rapunzel_grades.contextual_rigor_index")
                 except Exception as idx_err:
                     logger.warning(f"Could not create rapunzel rigor index: {idx_err}")
