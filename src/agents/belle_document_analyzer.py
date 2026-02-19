@@ -201,8 +201,7 @@ class BelleDocumentAnalyzer(BaseAgent):
         return best_type, confidence
     
     def _extract_student_info(self, text: str) -> Dict[str, Optional[str]]:
-        """Extract common student information from any document using AI and pattern matching."""
-        
+        """Extract student info using AI for name and school, always."""
         student_info = {
             "name": None,
             "first_name": None,
@@ -214,65 +213,54 @@ class BelleDocumentAnalyzer(BaseAgent):
             "graduation_year": None,
             "school_name": None
         }
-        
-        # Email pattern
-        email_match = re.search(r'[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}', text)
-        if email_match:
-            student_info["email"] = email_match.group()
-        
-        # Student ID pattern (common formats: S12345, 123456789, A00123456)
-        student_id_match = re.search(r'(?:Student ID|ID|Student #|#)[\s:]*([A-Z]?\d{6,9})', text, re.IGNORECASE)
-        if student_id_match:
-            student_info["student_id"] = student_id_match.group(1)
-        
-        # Phone pattern
-        phone_match = re.search(r'(?:\+1[-.\s]?)?\(?([0-9]{3})\)?[-.\s]?([0-9]{3})[-.\s]?([0-9]{4})', text)
-        if phone_match:
-            student_info["phone"] = phone_match.group(0)
-        
-        # Graduation year pattern
-        grad_match = re.search(r'(?:Class of|Graduating|Expected Graduation)[\s:]*([2-9]\d{3})', text, re.IGNORECASE)
-        if grad_match:
-            student_info["graduation_year"] = grad_match.group(1)
-        
-        # Major pattern (common engineering patterns)
-        major_match = re.search(r'Major[\s:]*([A-Za-z\s&]{3,50})(?:Minor|Concentration|GPA|$)', text, re.IGNORECASE)
-        if major_match:
-            student_info["major"] = major_match.group(1).strip()
-        
-        # Name extraction using AI
-        student_info["name"] = self._extract_name_with_ai(text)
 
-        if student_info.get("name") and not student_info.get("first_name") and not student_info.get("last_name"):
+        # Always use AI for name and school extraction
+        student_info["name"] = self._extract_name_with_ai(text)
+        student_info["school_name"] = self._extract_school_name_with_ai(text)
+
+        # Optionally, parse first/last from AI name
+        if student_info["name"]:
             name_parts = [part for part in student_info["name"].split() if part]
             if len(name_parts) >= 2:
                 student_info["first_name"] = name_parts[0]
                 student_info["last_name"] = name_parts[-1]
 
-        # First/Last name explicit fields
-        first_match = re.search(r'First\s*Name\s*[:\-]?\s*([A-Za-z\'\-]+)', text, re.IGNORECASE)
-        last_match = re.search(r'Last\s*Name\s*[:\-]?\s*([A-Za-z\'\-]+)', text, re.IGNORECASE)
-        if first_match:
-            student_info["first_name"] = first_match.group(1).strip()
-        if last_match:
-            student_info["last_name"] = last_match.group(1).strip()
-        if student_info.get("first_name") and student_info.get("last_name"):
-            student_info["name"] = f"{student_info['first_name']} {student_info['last_name']}".strip()
+        # Email pattern
+        email_match = re.search(r'[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}', text)
+        if email_match:
+            student_info["email"] = email_match.group()
 
-        # School name extraction - use AI reasoning first, fall back to pattern matching
-        student_info["school_name"] = self._extract_school_name_with_ai(text)
-        
-        # State code extraction - looks for state abbreviations or state names
+        # Student ID pattern
+        student_id_match = re.search(r'(?:Student ID|ID|Student #|#)[\s:]*([A-Z]?\d{6,9})', text, re.IGNORECASE)
+        if student_id_match:
+            student_info["student_id"] = student_id_match.group(1)
+
+        # Phone pattern
+        phone_match = re.search(r'(?:\+1[-.\s]?)?\(?([0-9]{3})\)?[-.\s]?([0-9]{3})[-.\s]?([0-9]{4})', text)
+        if phone_match:
+            student_info["phone"] = phone_match.group(0)
+
+        # Graduation year pattern
+        grad_match = re.search(r'(?:Class of|Graduating|Expected Graduation)[\s:]*([2-9]\d{3})', text, re.IGNORECASE)
+        if grad_match:
+            student_info["graduation_year"] = grad_match.group(1)
+
+        # Major pattern
+        major_match = re.search(r'Major[\s:]*([A-Za-z\s&]{3,50})(?:Minor|Concentration|GPA|$)', text, re.IGNORECASE)
+        if major_match:
+            student_info["major"] = major_match.group(1).strip()
+
+        # State code extraction
         state_code = self._extract_state_code(text)
         if state_code:
             student_info["state_code"] = state_code
-        
+
         # Debug logging for school/state extraction
         if student_info.get("school_name") or student_info.get("state_code"):
             import logging
             logger = logging.getLogger(__name__)
             logger.debug(f"BELLE extracted school context: school={student_info.get('school_name')}, state={student_info.get('state_code')}")
-        
+
         return {k: v for k, v in student_info.items() if v is not None}
     
     def _extract_state_code(self, text: str) -> Optional[str]:
