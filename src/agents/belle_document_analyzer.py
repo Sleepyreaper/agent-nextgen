@@ -259,10 +259,8 @@ class BelleDocumentAnalyzer(BaseAgent):
         if student_info.get("first_name") and student_info.get("last_name"):
             student_info["name"] = f"{student_info['first_name']} {student_info['last_name']}".strip()
 
-        # School name extraction
-        school_match = re.search(r'(?:School|High School|School Name)\s*[:\-]?\s*([A-Za-z0-9\s\'\-\.]+)', text, re.IGNORECASE)
-        if school_match:
-            student_info["school_name"] = school_match.group(1).strip()
+        # School name extraction - use AI reasoning first, fall back to pattern matching
+        student_info["school_name"] = self._extract_school_name_with_ai(text)
         
         # State code extraction - looks for state abbreviations or state names
         state_code = self._extract_state_code(text)
@@ -411,7 +409,70 @@ Document excerpt:
         
         return None
     
-    def _extract_data_by_type(self, text: str, doc_type: str) -> Dict[str, Any]:
+    def _extract_school_name_with_ai(self, text: str) -> Optional[str]:
+        """Use AI reasoning to intelligently extract school name from document."""
+        try:
+            # First try pattern-based extraction for speed
+            school = self._extract_school_name_pattern(text)
+            if school and school not in ['High School', 'School', 'High school']:
+                return school
+            
+            # Fallback to AI if pattern matching fails or returns generic result
+            prompt = f"""You are an expert at extracting information from student documents.
+
+Read this document and extract ONLY the name of the student's HIGH SCHOOL or secondary school.
+Return just the school name, nothing else. Be precise - if no clear school name found, return 'NONE'.
+
+Document:
+{text[:1000]}"""
+            
+            messages = [
+                {"role": "system", "content": "You extract precise school names from student documents. Return only the school name, no explanations."},
+                {"role": "user", "content": prompt}
+            ]
+            
+            response = self._create_chat_completion(
+                operation="belle.extract_school",
+                model=self.model,
+                messages=messages,
+                max_completion_tokens=100,
+                temperature=0
+            )
+            
+            school = response.choices[0].message.content.strip()
+            
+            # Filter out invalid responses
+            if school and school != "NONE" and len(school) > 3 and len(school) < 200:
+                # Remove common noise patterns
+                if not any(x in school.lower() for x in ['sorry', 'i don\'t', 'unclear', 'not found', 'unable', 'cannot']):
+                    return school
+            
+            return None
+        except Exception as e:
+            # If AI fails, fall back to pattern matching
+            return self._extract_school_name_pattern(text)
+    
+    def _extract_school_name_pattern(self, text: str) -> Optional[str]:
+        """Extract school name using pattern matching."""
+        # Strategy 1: Explicit school name patterns
+        patterns = [
+            r'(?:High School|School Name|School)\s*[:\-]?\s*([A-Za-z0-9\s&\'\-\.]+?)(?:\n|$|,)',
+            r'(?:Graduated from|From|Attended)\s+([A-Za-z0-9\s&\'\-\.]+?)\s+(?:High School|School)',
+            r'([A-Za-z0-9\s&\'\-\.]+?)\s+(?:High School|School)',
+            r'School\s*[:\-]?\s*([A-Za-z0-9\s&\'\-\.]+?)(?:\n|,|$)'
+        ]
+        
+        for pattern in patterns:
+            match = re.search(pattern, text, re.IGNORECASE)
+            if match:
+                school = match.group(1).strip()
+                if school and len(school) > 3 and len(school) < 200:
+                    # Filter out noise
+                    if not any(x in school.lower() for x in ['activities', 'i think', 'i would', 'want', 'continue', 'well at']):
+                        return school
+        
+        return None
+    
         """Extract type-specific data from the document."""
         
         extractors = {

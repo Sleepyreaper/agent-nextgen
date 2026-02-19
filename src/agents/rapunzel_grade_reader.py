@@ -5,6 +5,9 @@ from openai import AzureOpenAI
 from src.agents.base_agent import BaseAgent
 import re
 import json
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 class RapunzelGradeReader(BaseAgent):
