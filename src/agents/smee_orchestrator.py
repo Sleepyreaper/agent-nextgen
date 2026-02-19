@@ -10,6 +10,7 @@ from src.agents.system_prompts import SMEE_ORCHESTRATOR_PROMPT
 from src.agents.agent_requirements import AgentRequirements
 from src.agents.belle_document_analyzer import BelleDocumentAnalyzer
 from src.agents.agent_monitor import AgentStatus, get_agent_monitor
+from src.telemetry import telemetry
 
 logger = logging.getLogger(__name__)
 
@@ -816,10 +817,33 @@ Return only the request sentence."""
                 max_completion_tokens=60
             )
             if response and "content" in response.choices[0].message:
-                return response.choices[0].message.content.strip()
+                generated_prompt = response.choices[0].message.content.strip()
+                telemetry.track_event(
+                    "smee_missing_evidence_prompt",
+                    properties={
+                        "field_name": field_name,
+                        "missing_required_fields": ",".join(missing_required),
+                        "prompt_source": "ai",
+                    },
+                    metrics_data={
+                        "prompt_length": float(len(generated_prompt)),
+                    },
+                )
+                return generated_prompt
         except Exception as e:
             logger.debug(f"Missing prompt generation failed: {e}")
 
+        telemetry.track_event(
+            "smee_missing_evidence_prompt",
+            properties={
+                "field_name": field_name,
+                "missing_required_fields": ",".join(missing_required),
+                "prompt_source": "fallback",
+            },
+            metrics_data={
+                "prompt_length": float(len(fallback_prompt)),
+            },
+        )
         return fallback_prompt
 
     def _get_prompt_for_field(self, prompts: List[Dict[str, Any]], field_name: str) -> Optional[str]:
