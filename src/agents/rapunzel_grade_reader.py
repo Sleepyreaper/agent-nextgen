@@ -310,9 +310,9 @@ Use deep reasoning to understand the complete academic picture. Go beyond surfac
             prompt += f"- Consider enrollment patterns and course difficulty progression\n\n"
         
         prompt += f"""
-═══════════════════════════════════════════════════════════════════════════════
+=================================================================================
 SECTION 1: COMPREHENSIVE GRADE DATA EXTRACTION
-═══════════════════════════════════════════════════════════════════════════════
+=================================================================================
 
 Please extract and detail EVERY course with this information:
 - Course Name (exact as listed)
@@ -324,9 +324,9 @@ Please extract and detail EVERY course with this information:
 
 Format as a detailed table. If percentage isn't shown, estimate from letter grade using standard scale.
 
-═══════════════════════════════════════════════════════════════════════════════
+=================================================================================
 SECTION 2: GPA AND ACADEMIC STANDING
-═══════════════════════════════════════════════════════════════════════════════
+=================================================================================
 
 Extract and explain:
 - Unweighted GPA (scale noted, e.g., 4.0)
@@ -337,11 +337,9 @@ Extract and explain:
 
 If class rank appears as weighted GPA calculation, explain the weighting system.
 
-"""
-
-═══════════════════════════════════════════════════════════════════════════════
+=================================================================================
 SECTION 3: ACADEMIC TRAJECTORY AND TREND ANALYSIS
-═══════════════════════════════════════════════════════════════════════════════
+=================================================================================
 
 Analyze grade progression year by year:
 - Grade 9: Overall average and pattern
@@ -357,9 +355,9 @@ Identify trends:
 
 For each trend, provide SPECIFIC EVIDENCE (e.g., "Grade 9: 3.8 avg→ Grade 10: 3.9 avg → Grade 11: 4.0 avg = IMPROVING")
 
-═══════════════════════════════════════════════════════════════════════════════
+=================================================================================
 SECTION 4: COURSE RIGOR ANALYSIS
-═══════════════════════════════════════════════════════════════════════════════
+=================================================================================
 
 Calculate and explain Course Rigor Index (1-5 scale):
 
@@ -384,9 +382,9 @@ IMPORTANT: Also assess COURSE SELECTION STRATEGY:
 - Does the choice suggest strength-building or strength-showcasing?
 - Any evident course avoidance patterns?
 
-═══════════════════════════════════════════════════════════════════════════════
+=================================================================================
 SECTION 5: STANDARDIZED TEST SCORES
-═══════════════════════════════════════════════════════════════════════════════
+=================================================================================
 
 If present, extract and note:
 - SAT score(s) and percentile
@@ -397,9 +395,9 @@ If present, extract and note:
 
 Compare standardized test performance to GPA (aligned or misaligned?).
 
-═══════════════════════════════════════════════════════════════════════════════
+=================================================================================
 SECTION 6: NON-ACADEMIC FACTORS
-═══════════════════════════════════════════════════════════════════════════════
+=================================================================================
 
 Extract and note:
 - Attendance: Days absent and tardy
@@ -408,9 +406,9 @@ Extract and note:
 - Honors and awards: All listed honors, awards, and special recognitions
 - Leadership: Any indicators of leadership roles or responsibilities
 
-═══════════════════════════════════════════════════════════════════════════════
+=================================================================================
 SECTION 7: OVERALL ASSESSMENT
-═══════════════════════════════════════════════════════════════════════════════
+=================================================================================
 
 Transcript Quality Rating: Exceptional | Strong | Solid | Average | Below Average
 Justification: 2-3 sentences explaining this rating with specific evidence.
@@ -423,9 +421,9 @@ Show your reasoning for each major conclusion. For example:
 - "Transcript Quality = Strong because: (1) 3.9 GPA in weighted system, (2) 50% of courses AP/Honors,
   (3) Consistent upward trend from 9-12, (4) AP scores of 4-5 on all exams"
 
-═══════════════════════════════════════════════════════════════════════════════
+=================================================================================
 SECTION 8: EXECUTIVE SUMMARY
-═══════════════════════════════════════════════════════════════════════════════
+=================================================================================
 
 Write a 6-8 sentence paragraph synthesizing this student's academic profile for a college admissions officer.
 
@@ -438,7 +436,7 @@ Include:
 
 Make this summary actionable for downstream AI agents.
 
-═══════════════════════════════════════════════════════════════════════════════
+=================================================================================
 
 CRITICAL FORMAT REQUIREMENTS:
 ✓ Use clear section headers as shown above
