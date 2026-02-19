@@ -239,6 +239,18 @@ class SmeeOrchestrator(BaseAgent):
             'message': '🎩 Smee is coordinating the evaluation process...'
         })
         
+        pre_core_agents = ['naveen']
+        core_agents = ['application_reader', 'grade_reader', 'school_context', 'recommendation_reader']
+        optional_agents = ['data_scientist']
+        student_evaluator = 'student_evaluator'  # Merlin - runs last after all others
+
+        evaluation_steps = self._order_evaluation_steps(
+            evaluation_steps,
+            pre_core_agents=pre_core_agents,
+            core_agents=core_agents,
+            optional_agents=optional_agents,
+            merlin_agent=student_evaluator
+        )
         evaluation_steps = self._ensure_merlin_last(evaluation_steps)
 
         self.evaluation_results = {
@@ -261,9 +273,7 @@ class SmeeOrchestrator(BaseAgent):
         merlin_run = False
         failed_agents = []
         # Separate required agents (must complete before optional) from optional
-        required_agents = ['application_reader', 'grade_reader', 'recommendation_reader', 'school_context']
-        optional_agents = ['data_scientist', 'naveen']  # Can skip if prerequisites fail
-        student_evaluator = 'student_evaluator'  # Merlin - runs last after all others
+        required_agents = pre_core_agents + core_agents
 
         def is_success(result: Optional[Dict[str, Any]]) -> bool:
             if not isinstance(result, dict):
@@ -783,6 +793,40 @@ class SmeeOrchestrator(BaseAgent):
         if 'student_evaluator' in evaluation_steps:
             steps.append('student_evaluator')
         return steps
+
+    def _order_evaluation_steps(
+        self,
+        evaluation_steps: List[str],
+        pre_core_agents: List[str],
+        core_agents: List[str],
+        optional_agents: List[str],
+        merlin_agent: str
+    ) -> List[str]:
+        """Order the evaluation pipeline to match the desired workflow."""
+        steps = list(evaluation_steps or [])
+        ordered = []
+
+        def append_group(group: List[str]) -> None:
+            for agent_id in group:
+                if agent_id in steps and agent_id not in ordered:
+                    ordered.append(agent_id)
+
+        append_group(pre_core_agents)
+        append_group(core_agents)
+
+        for agent_id in steps:
+            if agent_id in ordered:
+                continue
+            if agent_id in optional_agents or agent_id == merlin_agent:
+                continue
+            ordered.append(agent_id)
+
+        append_group(optional_agents)
+
+        if merlin_agent in steps and merlin_agent not in ordered:
+            ordered.append(merlin_agent)
+
+        return ordered
     
     def _report_progress(self, update: Dict[str, Any]) -> None:
         """Report progress via callback if registered."""
@@ -1028,6 +1072,7 @@ class SmeeOrchestrator(BaseAgent):
         _ = file_text
         _ = application
         return [
+            'naveen',
             'application_reader',
             'grade_reader',
             'school_context',
