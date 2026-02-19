@@ -7,12 +7,12 @@ FATAL: password authentication failed for user "sleepy"
 ```
 
 ## Root Cause
-The password contained special characters (@, $) that can have parsing issues in connection strings when handled by different layers of the application.
+The password contained special characters that can have parsing issues in connection strings when handled by different layers of the application.
 
 ## Solution
-Reset PostgreSQL admin password to a simpler alphanumeric format:
-- **Old Password**: `***REMOVED***` (with special characters)
-- **New Password**: `***REMOVED***` (alphanumeric only)
+Reset PostgreSQL admin password to numeric format without special characters.
+
+**⚠️ SECURITY NOTE**: The actual password is stored in Azure Key Vault only. Never commit credentials to git.
 
 ## Changes Made
 1. ✅ Reset PostgreSQL admin password via Azure CLI
@@ -26,7 +26,7 @@ Tested direct connection to PostgreSQL:
 Host: nextgenagentpostgres.postgres.database.azure.com:5432
 Database: nextgenagentpostgres
 User: sleepy
-Password: ***REMOVED***
+Password: [STORED IN AZURE KEY VAULT - See nextgen-agents-kv]
 Result: ✓ Connection successful
 PostgreSQL: Version 17.7
 ```

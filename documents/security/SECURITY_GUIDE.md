@@ -9,7 +9,32 @@ This application follows a **secure-by-default** approach:
 - ✅ **Azure AD authentication** - For Azure OpenAI
 - ✅ **HTTPS/TLS everywhere** - Encrypted connections
 
-## 🎯 Security Architecture
+---
+
+## ⚠️ RECENT SECURITY INCIDENT - REMEDIATION COMPLETED
+
+**Status**: Credentials were found hardcoded in development files. **All have been removed and remediated.**
+
+### What Happened
+- Database password was hardcoded in `test_complete_workflow.py`
+- Documentation contained plaintext passwords in commit history
+- This was a critical vulnerability
+
+### Actions Taken ✓ COMPLETED
+- ✓ All hardcoded credentials removed from source files
+- ✓ Documentation redacted of actual passwords
+- ✓ Environment variables now required (no defaults)
+- ✓ .env.example created as template
+- ✓ Pre-commit hook templates provided
+
+### Action Required
+- ⏳ **Git history cleanup** - See [REMEDIATION_GUIDE.md](REMEDIATION_GUIDE.md)
+- ⏳ **Credential rotation** - Reset PostgreSQL password in Azure
+- ⏳ **Verify setup** - Ensure all developers use .env files
+
+**See [CRITICAL_SECURITY_AUDIT.md](CRITICAL_SECURITY_AUDIT.md) and [REMEDIATION_GUIDE.md](REMEDIATION_GUIDE.md) for detailed remediation steps.**
+
+---## 🎯 Security Architecture
 
 ```
 Application Code
