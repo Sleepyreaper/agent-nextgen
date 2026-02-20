@@ -10,6 +10,7 @@ import re
 import time
 import requests
 import difflib
+import unicodedata
 from typing import Dict, List, Any, Optional, Tuple
 from openai import AzureOpenAI
 from src.agents.base_agent import BaseAgent
@@ -154,7 +155,12 @@ class BelleDocumentAnalyzer(BaseAgent):
         if not state_code:
             state_code = self._extract_state_code(text_content)
 
+        # Prefer simple deterministic extractor first (explicit 'High School' lines)
         matched_school = None
+        simple_candidate = self._extract_school_name_simple_keyword(text_content)
+        if simple_candidate:
+            simple_norm = self._normalize_school_candidate(simple_candidate)
+            matched_school = self._match_against_state_schools(simple_norm, state_code) if state_code else None
         if state_code:
             # Prefer an explicit school_name if AI found one; otherwise attempt match
             candidate = student_info.get('school_name') if isinstance(student_info, dict) else None
@@ -907,10 +913,27 @@ Document excerpt:
     def _normalize_for_matching(self, s: Optional[str]) -> Optional[str]:
         if not s or not isinstance(s, str):
             return None
-        s2 = s.lower()
+        # Unicode normalize, remove diacritics
+        s_norm = unicodedata.normalize('NFKD', s)
+        s_norm = ''.join(ch for ch in s_norm if not unicodedata.combining(ch))
+        s2 = s_norm.lower()
+        # Replace common punctuation with spaces and remove non-alphanum
         s2 = re.sub(r"[^a-z0-9\s]", ' ', s2)
+        s2 = re.sub(r"\b(high school|hs|highschool|school|academy|charter|magnet)\b", ' ', s2)
         s2 = re.sub(r"\s{2,}", ' ', s2).strip()
         return s2
+
+    def _token_set_ratio(self, a: str, b: str) -> float:
+        """Simple token-set ratio: intersection / union of meaningful tokens."""
+        if not a or not b:
+            return 0.0
+        ta = set([t for t in re.split(r'\s+', a) if t and len(t) > 1])
+        tb = set([t for t in re.split(r'\s+', b) if t and len(t) > 1])
+        if not ta or not tb:
+            return 0.0
+        inter = ta.intersection(tb)
+        union = ta.union(tb)
+        return len(inter) / len(union)
 
     def _match_against_state_schools(self, candidate: Optional[str], state_code: str) -> Optional[str]:
         """Try to match a candidate name to the scraped list for the state. Returns matched canonical name or None."""
@@ -919,12 +942,11 @@ Document excerpt:
         schools = self._fetch_state_school_list(state_code)
         if not schools:
             return None
-
         cand_norm = self._normalize_for_matching(candidate)
         if not cand_norm:
             return None
 
-        # Build normalized map
+        # Build normalized map and lists
         norm_map = {}
         norm_list = []
         for s in schools:
@@ -933,12 +955,27 @@ Document excerpt:
                 norm_map[n] = s
                 norm_list.append(n)
 
-        # Use difflib for fuzzy matches
-        matches = difflib.get_close_matches(cand_norm, norm_list, n=3, cutoff=0.72)
+        # 1) Exact normalized equality
+        if cand_norm in norm_map:
+            return norm_map[cand_norm]
+
+        # 2) Token-set ratio strong match
+        best_score = 0.0
+        best = None
+        for n in norm_list:
+            score = self._token_set_ratio(cand_norm, n)
+            if score > best_score:
+                best_score = score
+                best = n
+        if best_score >= 0.72:
+            return norm_map.get(best)
+
+        # 3) difflib fuzzy match as fallback
+        matches = difflib.get_close_matches(cand_norm, norm_list, n=3, cutoff=0.80)
         if matches:
             return norm_map.get(matches[0])
 
-        # Try substring matches
+        # 4) substring matches (candidate in scraped or scraped in candidate)
         for n, orig in norm_map.items():
             if cand_norm in n or n in cand_norm:
                 return orig
