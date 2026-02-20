@@ -636,11 +636,15 @@ Document excerpt:
     def _extract_school_name_pattern(self, text: str) -> Optional[str]:
         """Extract school name using pattern matching."""
         # Strategy 1: Explicit school name patterns
+        # Prioritize explicit 'School:' fields. Avoid treating 'High School' as a left-side
+        # marker that captures trailing tokens (e.g., 'High School Internship 2024').
+        # Require 'School' to appear as a field label (colon/dash) or at line start to avoid
+        # matching incidental occurrences like 'High School Internship 2024'.
         patterns = [
-            r'(?:High School|School Name|School)\s*[:\-]?\s*([A-Za-z0-9\s&\'\-\.]+?)(?:\n|$|,)',
+            r'(?:^|\n)\s*(?:School Name|School)\s*[:\-]\s*([A-Za-z0-9\s&\'\-\.]+?)(?:\n|$|,)',
+            r'(?:^|\n)\s*School\s*[:\-]\s*([A-Za-z0-9\s&\'\-\.]+?)(?:\n|,|$)',
             r'(?:Graduated from|From|Attended)\s+([A-Za-z0-9\s&\'\-\.]+?)\s+(?:High School|School)',
-            r'([A-Za-z0-9\s&\'\-\.]+?)\s+(?:High School|School)',
-            r'School\s*[:\-]?\s*([A-Za-z0-9\s&\'\-\.]+?)(?:\n|,|$)'
+            r'([A-Za-z0-9\s&\'\-\.]+?)\s+(?:High School|School)'
         ]
         
         for pattern in patterns:
