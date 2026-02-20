@@ -640,11 +640,16 @@ Document excerpt:
         # marker that captures trailing tokens (e.g., 'High School Internship 2024').
         # Require 'School' to appear as a field label (colon/dash) or at line start to avoid
         # matching incidental occurrences like 'High School Internship 2024'.
+        # Prefer explicit labeled fields and capitalized proper-noun prefixes.
+        # Avoid very permissive fallbacks that capture incidental phrases like
+        # 'High School Internship 2024'. Require a capitalized token before 'High School'.
         patterns = [
             r'(?:^|\n)\s*(?:School Name|School)\s*[:\-]\s*([A-Za-z0-9\s&\'\-\.]+?)(?:\n|$|,)',
             r'(?:^|\n)\s*School\s*[:\-]\s*([A-Za-z0-9\s&\'\-\.]+?)(?:\n|,|$)',
-            r'(?:Graduated from|From|Attended)\s+([A-Za-z0-9\s&\'\-\.]+?)\s+(?:High School|School)',
-            r'([A-Za-z0-9\s&\'\-\.]+?)\s+(?:High School|School)'
+            # e.g. 'Graduated from Central High School' -> capture 'Central'
+            r'(?:Graduated from|From|Attended)\s+([A-Z][A-Za-z0-9\s&\'\-\.]{3,120}?)\s+(?:High School|School)\b',
+            # require the preceding token to start with uppercase (proper noun) and be reasonably long
+            r'\b([A-Z][A-Za-z0-9&\'\-\.]{3,120}?(?:\s+[A-Z][A-Za-z0-9&\'\-\.]*)*)\s+(?:High School|School)\b'
         ]
         
         for pattern in patterns:
@@ -652,9 +657,19 @@ Document excerpt:
             if match:
                 school = match.group(1).strip()
                 if school and len(school) > 3 and len(school) < 200:
-                    # Filter out noise
-                    if not any(x in school.lower() for x in ['activities', 'i think', 'i would', 'want', 'continue', 'well at']):
-                        return school
+                    sl = school.strip()
+                    low = sl.lower()
+                    # Reject obvious noise or lines that begin with lower-case words like 'internship', 'competition', etc.
+                    noise_words = ['activities', 'i think', 'i would', 'want', 'continue', 'well at', 'internship', 'competition', 'position', 'resume', 'experience']
+                    if any(nw in low for nw in noise_words):
+                        continue
+                    # Reject if the captured group starts with a lowercase token (likely not a proper name)
+                    if re.match(r'^[a-z]', sl):
+                        continue
+                    # Reject if the captured group is mostly numeric or contains a year
+                    if re.search(r'\b20\d{2}\b', sl) or (re.search(r'\d', sl) and len(re.sub(r'[^A-Za-z]', '', sl)) < 3):
+                        continue
+                    return sl
         
         return None
 
@@ -1146,8 +1161,23 @@ Document excerpt:
         if not schools:
             return None
         cand_norm = self._normalize_for_matching(candidate)
+        # If normalization produced nothing (e.g., single-word like 'Wheeler'),
+        # attempt suffix variants such as 'Wheeler High School' or 'Wheeler HS' and try matching.
         if not cand_norm:
-            return None
+            # quick reject noisy raw candidate
+            if re.search(r'\b(interns?hip|interns?|resume|experience|position|intern)\b', candidate, re.IGNORECASE):
+                return None
+            suffixes = [' High School', ' HS', ' Magnet']
+            for suf in suffixes:
+                try_variant = (candidate.strip() + suf).strip()
+                vn = self._normalize_for_matching(try_variant)
+                if vn and vn in norm_map:
+                    return norm_map[vn]
+            # set cand_norm to normalized raw candidate (even if single-token normalized to '') to continue fuzzy checks
+            cand_norm = self._normalize_for_matching(candidate)
+            if not cand_norm:
+                # nothing we can reasonably match
+                return None
 
         # Build normalized map and lists
         norm_map = {}
