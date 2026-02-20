@@ -692,15 +692,27 @@ OUTPUT STRUCTURE:
             Float between 0.0 and 5.0 representing contextual rigor
         """
         try:
-            # Get course information from parsed data
-            course_levels = parsed_data.get('course_levels', {})
-            ap_count = course_levels.get('AP', 0) or 0
-            honors_count = course_levels.get('Honors', 0) or 0
-            total_courses = sum(course_levels.values()) if course_levels else 0
-            
-            # Get school's AP/Honors availability
-            ap_available = school_context.get('ap_courses_available', 0) or 0
-            honors_available = school_context.get('honors_programs', 0) or 0
+            # Get course information from parsed data and coerce numeric types
+            course_levels = parsed_data.get('course_levels', {}) or {}
+            def _to_int(val):
+                try:
+                    if val is None or val == "":
+                        return 0
+                    # Allow numeric strings and floats
+                    return int(float(val))
+                except Exception:
+                    return 0
+
+            ap_count = _to_int(course_levels.get('AP', 0))
+            honors_count = _to_int(course_levels.get('Honors', 0))
+            # Sum values safely converting each to int
+            total_courses = 0
+            for v in course_levels.values():
+                total_courses += _to_int(v)
+
+            # Get school's AP/Honors availability (coerce to int)
+            ap_available = _to_int(school_context.get('ap_courses_available', 0))
+            honors_available = _to_int(school_context.get('honors_programs', 0))
             
             if total_courses == 0:
                 return 0.0
@@ -730,7 +742,11 @@ OUTPUT STRUCTURE:
             contextual_rigor = min(5.0, contextual_rigor)
             
             # Adjust for GPA - high rigor is more impressive with high GPA
-            gpa = parsed_data.get('gpa') or 0
+            # Coerce GPA to float safely
+            try:
+                gpa = float(parsed_data.get('gpa') or 0)
+            except Exception:
+                gpa = 0.0
             if gpa >= 3.9:
                 contextual_rigor = min(5.0, contextual_rigor + 0.3)
             elif gpa < 3.0:
