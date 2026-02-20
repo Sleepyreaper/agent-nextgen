@@ -1779,6 +1779,54 @@ class Database:
         values.append(application_id)
         self.execute_non_query(query, tuple(values))
 
+    def update_application(self, application_id: int, **fields) -> None:
+        """Update application record with arbitrary fields.
+
+        If a provided field does not exist as a column in the `applications` table,
+        this method will attempt to add a TEXT column to store the value.
+        Values that are dict/list will be JSON-serialized.
+        """
+        if not fields:
+            return
+
+        applications_table = self.get_table_name('applications') or 'applications'
+        # Resolve or create columns as needed
+        updates = []
+        values = []
+        existing_cols = self._get_table_columns(applications_table)
+
+        for key, val in fields.items():
+            # normalize logical keys to column names when possible
+            col_name = self.get_applications_column(key) or key
+            # ensure column exists, otherwise attempt to add it as TEXT
+            if col_name not in existing_cols:
+                try:
+                    conn = self.connect()
+                    cur = conn.cursor()
+                    alter_sql = f'ALTER TABLE {applications_table} ADD COLUMN "{col_name}" TEXT'
+                    cur.execute(alter_sql)
+                    conn.commit()
+                    cur.close()
+                    # refresh cache
+                    self._table_columns_cache.pop(applications_table, None)
+                    existing_cols = self._get_table_columns(applications_table)
+                    logger.info(f"Added missing applications column: {col_name}")
+                except Exception as e:
+                    logger.warning(f"Could not add column {col_name} to {applications_table}: {e}")
+
+            # prepare value
+            if isinstance(val, (dict, list)):
+                val = json.dumps(val)
+            updates.append(f"\"{col_name}\" = %s")
+            values.append(val)
+
+        if not updates:
+            return
+
+        query = f"UPDATE {applications_table} SET {', '.join(updates)} WHERE application_id = %s"
+        values.append(application_id)
+        self.execute_non_query(query, tuple(values))
+
     def get_application_match_candidates(self, is_training: bool, is_test_data: bool, search_query: Optional[str] = None) -> List[Dict[str, Any]]:
         """Get potential application matches for a given upload type.
 
@@ -2097,6 +2145,30 @@ class Database:
             True if update successful, False otherwise
         """
         try:
+            # Ensure the MOANA validation columns exist (defensive for older schemas)
+            applications_table = 'school_enriched_data'
+            try:
+                cols = self._get_table_columns(applications_table)
+                if 'moana_requirements_met' not in cols:
+                    conn = self.connect()
+                    cur = conn.cursor()
+                    cur.execute("ALTER TABLE school_enriched_data ADD COLUMN IF NOT EXISTS moana_requirements_met BOOLEAN DEFAULT FALSE")
+                    conn.commit()
+                    cur.close()
+                    # refresh cache
+                    self._table_columns_cache.pop(applications_table, None)
+                    cols = self._get_table_columns(applications_table)
+                if 'last_moana_validation' not in cols:
+                    conn = self.connect()
+                    cur = conn.cursor()
+                    cur.execute("ALTER TABLE school_enriched_data ADD COLUMN IF NOT EXISTS last_moana_validation TIMESTAMP")
+                    conn.commit()
+                    cur.close()
+                    self._table_columns_cache.pop(applications_table, None)
+            except Exception:
+                # If we can't modify schema here, continue and let the normal update handle errors
+                pass
+
             query = """
                 UPDATE school_enriched_data
                 SET moana_requirements_met = %s,

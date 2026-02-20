@@ -7,6 +7,9 @@ applications, transcripts, etc.) and categorizes the information with deep under
 
 import json
 import re
+import time
+import requests
+import difflib
 from typing import Dict, List, Any, Optional, Tuple
 from openai import AzureOpenAI
 from src.agents.base_agent import BaseAgent
@@ -44,6 +47,8 @@ class BelleDocumentAnalyzer(BaseAgent):
         self.emoji = "📖"
         self.description = "Analyzes documents and extracts structured data"
         self.content_processing_client: Optional[ContentProcessingClient] = None
+        # Cache of fetched state school lists: {state_code: (timestamp, [school names])}
+        self._state_school_cache: Dict[str, Tuple[float, List[str]]] = {}
 
         if config.content_processing_enabled and config.content_processing_endpoint:
             self.content_processing_client = ContentProcessingClient(
@@ -66,7 +71,7 @@ class BelleDocumentAnalyzer(BaseAgent):
             "school_info": ["school district", "high school", "school name", "institution", "university", "college", "campus"]
         }
     
-    def analyze_document(self, text_content: str, original_filename: str) -> Dict[str, Any]:
+    def analyze_document(self, text_content: str, original_filename: str, application_id: Optional[int] = None) -> Dict[str, Any]:
         """
         Analyze a document and extract structured information.
         
@@ -141,6 +146,52 @@ class BelleDocumentAnalyzer(BaseAgent):
             agent_fields["activities"] = extracted_data.get("activities")
         if extracted_data.get("interest"):
             agent_fields["interest"] = extracted_data.get("interest")
+        # Try to match and persist school using the high-schools.com directory when possible
+        # Use provided application_id and db_connection if available
+        try:
+            student_name = student_info.get('name') if isinstance(student_info, dict) else None
+            state_code = student_info.get('state_code') if isinstance(student_info, dict) else None
+            # If no state code found, attempt to extract from text
+            if not state_code:
+                state_code = self._extract_state_code(text_content)
+
+            matched_school = None
+            if state_code:
+                # Prefer an explicit school_name if AI found one; otherwise attempt match
+                candidate = student_info.get('school_name') if isinstance(student_info, dict) else None
+                if candidate:
+                    candidate_norm = self._normalize_school_candidate(candidate)
+                    matched_school = self._match_against_state_schools(candidate_norm, state_code)
+
+                if not matched_school:
+                    # gather local candidates and try to match
+                    local_candidates = self._gather_school_name_candidates(text_content)
+                    for cand in local_candidates:
+                        cand_norm = self._normalize_school_candidate(cand)
+                        matched_school = self._match_against_state_schools(cand_norm, state_code)
+                        if matched_school:
+                            break
+
+            if matched_school and self.db_connection and application_id:
+                # Persist matched school and state; also persist name split if available
+                first_name = None
+                last_name = None
+                if student_name:
+                    parts = [p for p in student_name.split() if p]
+                    if parts:
+                        first_name = parts[0]
+                        last_name = parts[-1] if len(parts) > 1 else None
+
+                persist_fields = {'high_school': matched_school, 'state_code': state_code}
+                if first_name:
+                    persist_fields['first_name'] = first_name
+                if last_name:
+                    persist_fields['last_name'] = last_name
+
+                try:
+                    self.db_connection.update_application(application_id, **persist_fields)
+                except Exception:
+                    pass
 
         return {
             "document_type": doc_type,
@@ -433,6 +484,7 @@ Document excerpt:
             )
 
             school = response.choices[0].message.content.strip() if response else None
+            school = self._normalize_school_candidate(school)
 
             if school and school != "NONE" and len(school) > 3 and len(school) < 200 and not any(x in school.lower() for x in ['sorry', "i don't", 'unclear', 'not found', 'unable', 'cannot']):
                 return school
@@ -442,6 +494,7 @@ Document excerpt:
             if candidates:
                 try:
                     ranked = self._rank_school_candidates(text, candidates)
+                    ranked = self._normalize_school_candidate(ranked)
                     if ranked and self._is_valid_school_name(ranked):
                         return ranked
                     # If ranked result isn't a clear school name (e.g., the model returned a city), ask the model to clarify
@@ -464,6 +517,7 @@ Document excerpt:
                                 temperature=0
                             )
                             clar_choice = clar_resp.choices[0].message.content.strip() if clar_resp else None
+                            clar_choice = self._normalize_school_candidate(clar_choice)
                             if clar_choice and self._is_valid_school_name(clar_choice):
                                 return clar_choice
                         except Exception:
@@ -503,6 +557,7 @@ Document excerpt:
                     payload = json.loads(deep_text)
 
                 school_name = payload.get("school_name")
+                school_name = self._normalize_school_candidate(school_name)
                 if school_name and school_name != "NONE":
                     return school_name
             except Exception:
@@ -599,6 +654,9 @@ Document excerpt:
                 continue
             # Reject explicit internship / experience lines and year-only noisy candidates
             if neg_pattern.search(c) or year_pattern.search(c):
+                continue
+            # Reject institutes that are likely post-secondary (unless they include 'high' or 'school')
+            if 'institute' in c.lower() and 'high' not in c.lower() and 'school' not in c.lower():
                 continue
             # Reject candidates with too little alphabetic content
             alpha_only = re.sub(r'[^A-Za-z]', '', c)
@@ -750,10 +808,19 @@ Document excerpt:
         if any(k in lowered for k in negative_keywords):
             return False
 
-        # Strong positive signals
-        keywords = ['high school', ' hs', 'school', 'academy', 'charter', 'magnet', 'institute', 'secondary']
+        # Strong positive signals (prefer explicit secondary-school indicators)
+        keywords = ['high school', ' hs', 'school', 'academy', 'charter', 'magnet', 'secondary']
         if any(k in lowered for k in keywords):
             return True
+
+        # Reject common post-secondary / non-high-school tokens unless the string explicitly
+        # also contains clear high-school indicators (e.g. 'High'). This prevents returning
+        # institutes, colleges or universities as the student's high school in many cases.
+        if any(x in lowered for x in ['university', 'college', 'community college']):
+            return False
+        # If the name contains 'institute' but doesn't include 'high' or 'school', treat as non-high-school
+        if 'institute' in lowered and 'high' not in lowered and 'school' not in lowered:
+            return False
 
         # Accept multi-word names that look like proper nouns (e.g., "Central Catholic")
         parts = [p for p in re.split(r"\s+", s) if p]
@@ -765,6 +832,119 @@ Document excerpt:
                 return True
 
         return False
+
+    def _normalize_school_candidate(self, raw: Optional[str]) -> Optional[str]:
+        """Normalize AI/model candidate strings to a canonical school name candidate.
+
+        - Strip leading prepositions like 'in', 'at', 'from'.
+        - Remove surrounding quotes and trailing punctuation.
+        - Collapse multiple spaces.
+        - Return None if resulting token looks like a single-word city (no 'school' indicator and single word).
+        """
+        if not raw or not isinstance(raw, str):
+            return None
+        s = raw.strip()
+        # Remove surrounding quotes
+        s = re.sub(r'^["\']+|["\']+$', '', s)
+        # Remove leading prepositions like 'in ', 'at ', 'from '
+        s = re.sub(r'^(in|at|from|attended|attending)\b[:\s,-]*', '', s, flags=re.IGNORECASE).strip()
+        # Remove common trailing punctuation
+        s = re.sub(r'[\.,;:\-\|]+$', '', s).strip()
+        # Collapse whitespace
+        s = re.sub(r'\s{2,}', ' ', s)
+        if not s:
+            return None
+        # If it's a single word and doesn't include school indicators, treat as likely a city -> reject
+        if len(s.split()) == 1 and not any(k in s.lower() for k in ['school', 'high', 'hs', 'academy', 'charter', 'magnet']):
+            return None
+        return s
+    def _fetch_state_school_list(self, state_code: str) -> List[str]:
+        """Fetch a list of school names for a given state from high-schools.com and cache results.
+
+        Returns a list of school name strings (may be empty).
+        """
+        if not state_code:
+            return []
+        code = state_code.strip().lower()
+        now = time.time()
+        cached = self._state_school_cache.get(code)
+        if cached and now - cached[0] < 24 * 3600:
+            return cached[1]
+
+        url = f"https://high-schools.com/directory/{code}/"
+        try:
+            headers = {"User-Agent": "NextGen-Agent/1.0 (+https://example.com)"}
+            resp = requests.get(url, timeout=8, headers=headers)
+            if resp.status_code != 200:
+                self._state_school_cache[code] = (now, [])
+                return []
+
+            html = resp.text
+            # Look for anchor text that contains school-like phrases
+            pattern = re.compile(r">([^<]*?(?:High School|HS|Academy|Charter|Magnet|School|Central|Highschool)[^<]*)<", re.IGNORECASE)
+            matches = pattern.findall(html)
+            schools = []
+            for m in matches:
+                name = re.sub(r'\s+', ' ', m).strip()
+                # basic cleanup
+                name = re.sub(r'^[\-:\s]+|[\-:\s]+$', '', name)
+                if len(name) > 2 and name not in schools:
+                    schools.append(name)
+
+            # Fallback: also try to grab link text from '/directory/{state}/' anchors
+            if not schools:
+                link_pat = re.compile(rf'href=["\']([^"\']*/directory/{re.escape(code)}/[^"\']*)["\'][^>]*>([^<]+)</a>', re.IGNORECASE)
+                for href, txt in link_pat.findall(html):
+                    name = re.sub(r'\s+', ' ', txt).strip()
+                    if len(name) > 2 and name not in schools:
+                        schools.append(name)
+
+            self._state_school_cache[code] = (now, schools)
+            return schools
+        except Exception:
+            self._state_school_cache[code] = (now, [])
+            return []
+
+    def _normalize_for_matching(self, s: Optional[str]) -> Optional[str]:
+        if not s or not isinstance(s, str):
+            return None
+        s2 = s.lower()
+        s2 = re.sub(r"[^a-z0-9\s]", ' ', s2)
+        s2 = re.sub(r"\s{2,}", ' ', s2).strip()
+        return s2
+
+    def _match_against_state_schools(self, candidate: Optional[str], state_code: str) -> Optional[str]:
+        """Try to match a candidate name to the scraped list for the state. Returns matched canonical name or None."""
+        if not candidate or not state_code:
+            return None
+        schools = self._fetch_state_school_list(state_code)
+        if not schools:
+            return None
+
+        cand_norm = self._normalize_for_matching(candidate)
+        if not cand_norm:
+            return None
+
+        # Build normalized map
+        norm_map = {}
+        norm_list = []
+        for s in schools:
+            n = self._normalize_for_matching(s)
+            if n and n not in norm_map:
+                norm_map[n] = s
+                norm_list.append(n)
+
+        # Use difflib for fuzzy matches
+        matches = difflib.get_close_matches(cand_norm, norm_list, n=3, cutoff=0.72)
+        if matches:
+            return norm_map.get(matches[0])
+
+        # Try substring matches
+        for n, orig in norm_map.items():
+            if cand_norm in n or n in cand_norm:
+                return orig
+
+        return None
     def _extract_data_by_type(self, text: str, doc_type: str) -> Dict[str, Any]:
         """Extract type-specific data from the document."""
 
