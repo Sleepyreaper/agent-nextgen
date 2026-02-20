@@ -50,6 +50,8 @@ class BelleDocumentAnalyzer(BaseAgent):
         self.content_processing_client: Optional[ContentProcessingClient] = None
         # Cache of fetched state school lists: {state_code: (timestamp, [school names])}
         self._state_school_cache: Dict[str, Tuple[float, List[str]]] = {}
+        # Cache of state->city->schools: {state_code: (timestamp, {city_slug: [school names]})}
+        self._state_city_cache: Dict[str, Tuple[float, Dict[str, List[str]]]] = {}
 
         if config.content_processing_enabled and config.content_processing_endpoint:
             self.content_processing_client = ContentProcessingClient(
@@ -629,7 +631,10 @@ Document excerpt:
             r'([A-Z][A-Za-z0-9&\-\'\.]{3,80})\s+HS\b',
             r'Attended\s+([A-Z][A-Za-z0-9&\-\'\.]{3,80}(?:\s+High School)?)',
             r'Graduated from\s+([A-Z][A-Za-z0-9&\-\'\.]{3,80}(?:\s+High School)?)',
-            r'([A-Z][A-Za-z0-9&\-\'\.]{3,80})\s+Secondary School'
+            r'([A-Z][A-Za-z0-9&\-\'\.]{3,80})\s+Secondary School',
+            # Catch Magnet schools and standalone 'Magnet' mentions
+            r'([A-Z][A-Za-z0-9&\-\'\.]{3,80})\s+Magnet',
+            r'([A-Z][A-Za-z0-9&\-\'\.]{3,80})\s+Magnet\s+School'
         ]
 
         for pat in patterns:
@@ -687,9 +692,10 @@ Document excerpt:
 
         # Look for explicit 'High School' occurrences in the document
         for i, line in enumerate(lines[:200]):
-            if 'high school' in line.lower() or 'hs' in re.findall(r'\bHS\b', line):
+            if ('high school' in line.lower() or 'hs' in re.findall(r'\bHS\b', line)
+                or 'magnet' in line.lower()):
                 # extract up to 8 words before 'High School'
-                m = re.search(r'([A-Za-z0-9&\-\'\.]{2,120})\s+(?:High School|high school|HS|Hs|Highschool|Secondary School)', line, re.IGNORECASE)
+                m = re.search(r'([A-Za-z0-9&\-\'\.]{2,120})\s+(?:High School|high school|HS|Hs|Highschool|Secondary School|Magnet|Magnet School)', line, re.IGNORECASE)
                 if m:
                     name = m.group(1).strip()
                     # clean trailing punctuation
@@ -700,7 +706,11 @@ Document excerpt:
                     if bad_re.search(name) or year_re.search(name):
                         continue
                     # compose full candidate
-                    full = f"{name} High School" if 'high school' not in name.lower() else name
+                    # if magnet included in matched line, preserve 'Magnet' suffix
+                    if re.search(r'\bmagnet\b', line, re.IGNORECASE) and 'magnet' not in name.lower():
+                        full = f"{name} Magnet"
+                    else:
+                        full = f"{name} High School" if 'high school' not in name.lower() else name
                     if self._is_valid_school_name(full):
                         return full
                     cand_list.append(full)
@@ -731,12 +741,19 @@ Document excerpt:
         if not candidates:
             return None
 
-        # If only one candidate, trust it
-        if len(candidates) == 1:
-            return candidates[0]
+        # Filter out noisy candidates (internships, years) before asking the model
+        neg_pattern = re.compile(r'\b(interns?hip|interns?|resume|experience|position|intern)\b', re.IGNORECASE)
+        year_pattern = re.compile(r'\b20\d{2}\b')
+        filtered = [c for c in candidates if not (neg_pattern.search(c) or year_pattern.search(c))]
+        if not filtered:
+            return None
+
+        # If only one remaining candidate, trust it
+        if len(filtered) == 1:
+            return filtered[0]
 
         # Build a compact prompt listing candidates for the model to choose
-        choices_text = '\n'.join([f"{i+1}. {c}" for i, c in enumerate(candidates)])
+        choices_text = '\n'.join([f"{i+1}. {c}" for i, c in enumerate(filtered)])
         prompt = (
             "Below are candidate school names found in a student document.\n"
             "Choose the single best candidate that is the student's HIGH SCHOOL (prefer candidates that include 'High School', 'HS', 'School', 'Academy', 'Charter', 'Magnet', or 'Institute').\n"
@@ -767,26 +784,32 @@ Document excerpt:
             m = re.match(r'^(\d+)\.?\s*(.*)$', choice)
             if m:
                 idx = int(m.group(1)) - 1
-                if 0 <= idx < len(candidates):
-                    return candidates[idx]
+                if 0 <= idx < len(filtered):
+                    picked = filtered[idx]
+                    # final validation: reject noisy picks
+                    if neg_pattern.search(picked) or year_pattern.search(picked):
+                        return None
+                    return picked
                 else:
                     # fallback to text portion
                     text_choice = m.group(2).strip()
-                    if text_choice in candidates:
+                    if text_choice in filtered:
+                        if neg_pattern.search(text_choice) or year_pattern.search(text_choice):
+                            return None
                         return text_choice
 
             # If returned exact candidate text
-            if choice in candidates:
+            if choice in filtered:
                 # Validate candidate before trusting the model
-                if self._is_valid_school_name(choice):
+                if self._is_valid_school_name(choice) and not (neg_pattern.search(choice) or year_pattern.search(choice)):
                     return choice
                 else:
                     return None
 
             # Sometimes model returns a cleaned variant; pick best fuzzy match by substring
-            for c in candidates:
+            for c in filtered:
                 if c.lower() in choice.lower() or choice.lower() in c.lower():
-                    if self._is_valid_school_name(c):
+                    if self._is_valid_school_name(c) and not (neg_pattern.search(c) or year_pattern.search(c)):
                         return c
                     else:
                         return None
@@ -910,6 +933,95 @@ Document excerpt:
             self._state_school_cache[code] = (now, [])
             return []
 
+    def _fetch_state_city_links(self, state_code: str) -> Dict[str, str]:
+        """Return mapping of city_slug -> city_name found on the state directory page.
+
+        Caches results for 24 hours.
+        """
+        if not state_code:
+            return {}
+        code = state_code.strip().lower()
+        now = time.time()
+        cached = self._state_city_cache.get(code)
+        if cached and now - cached[0] < 24 * 3600:
+            return {k: None for k in cached[1].keys()} if cached[1] else {}
+
+        url = f"https://high-schools.com/directory/{code}/"
+        try:
+            headers = {"User-Agent": "NextGen-Agent/1.0 (+https://example.com)"}
+            resp = requests.get(url, timeout=8, headers=headers)
+            if resp.status_code != 200:
+                self._state_city_cache[code] = (now, {})
+                return {}
+
+            html = resp.text
+            # find links to city pages: href like '/directory/{state}/{slug}/' with link text as city name
+            link_pat = re.compile(r'href=["\']([^"\']*/directory/'+re.escape(code)+r'/([^"\']+)["\'])[^>]*>([^<]+)</a>', re.IGNORECASE)
+            city_map = {}
+            for href, slug, txt in link_pat.findall(html):
+                city = re.sub(r'\s+', ' ', txt).strip()
+                slug = slug.strip().lower().strip('/')
+                if slug and city and slug not in city_map:
+                    city_map[slug] = city
+
+            self._state_city_cache[code] = (now, {k: [] for k in city_map.keys()})
+            # store empty lists now; actual city pages fetched on demand
+            return {k: city_map[k] for k in city_map}
+        except Exception:
+            self._state_city_cache[code] = (now, {})
+            return {}
+
+    def _fetch_city_school_list(self, state_code: str, city_slug: str, city_href: Optional[str] = None) -> List[str]:
+        """Fetch list of schools for a given city slug within a state. Caches per state."""
+        if not state_code or not city_slug:
+            return []
+        code = state_code.strip().lower()
+        now = time.time()
+        cached = self._state_city_cache.get(code)
+        if cached and now - cached[0] < 24 * 3600 and city_slug in cached[1] and cached[1][city_slug]:
+            return cached[1][city_slug]
+
+        base_url = f"https://high-schools.com/directory/{code}/{city_slug}/"
+        try:
+            headers = {"User-Agent": "NextGen-Agent/1.0 (+https://example.com)"}
+            resp = requests.get(city_href or base_url, timeout=8, headers=headers)
+            if resp.status_code != 200:
+                # ensure city key exists in cache
+                if code not in self._state_city_cache:
+                    self._state_city_cache[code] = (now, {city_slug: []})
+                else:
+                    self._state_city_cache[code][1].setdefault(city_slug, [])
+                return []
+
+            html = resp.text
+            # extract anchor texts that look like school names
+            pattern = re.compile(r">([^<]*?(?:High School|HS|Academy|Charter|Magnet|School|Central|Highschool)[^<]*)<", re.IGNORECASE)
+            matches = pattern.findall(html)
+            schools = []
+            for m in matches:
+                name = re.sub(r'\s+', ' ', m).strip()
+                name = re.sub(r'^[\-:\s]+|[\-:\s]+$', '', name)
+                if len(name) > 2 and name not in schools:
+                    schools.append(name)
+
+            # cache
+            if code not in self._state_city_cache:
+                self._state_city_cache[code] = (now, {city_slug: schools})
+            else:
+                ts, cmap = self._state_city_cache[code]
+                cmap[city_slug] = schools
+                self._state_city_cache[code] = (ts, cmap)
+
+            return schools
+        except Exception:
+            if code not in self._state_city_cache:
+                self._state_city_cache[code] = (now, {city_slug: []})
+            else:
+                ts, cmap = self._state_city_cache[code]
+                cmap.setdefault(city_slug, [])
+                self._state_city_cache[code] = (ts, cmap)
+            return []
+
     def _normalize_for_matching(self, s: Optional[str]) -> Optional[str]:
         if not s or not isinstance(s, str):
             return None
@@ -979,6 +1091,55 @@ Document excerpt:
         for n, orig in norm_map.items():
             if cand_norm in n or n in cand_norm:
                 return orig
+
+        # 5) City-level fallback: if no state-level match, try city pages
+        try:
+            city_links = self._fetch_state_city_links(state_code)
+            if city_links:
+                logger = __import__('logging').getLogger(__name__)
+                # iterate cities but limit to reasonable number to avoid heavy scraping
+                limit = 30
+                count = 0
+                for city_slug in city_links.keys():
+                    if count >= limit:
+                        break
+                    count += 1
+                    schools = self._fetch_city_school_list(state_code, city_slug)
+                    if not schools:
+                        continue
+                    # normalize city school list
+                    city_norm_map = {}
+                    city_norm_list = []
+                    for s in schools:
+                        n = self._normalize_for_matching(s)
+                        if n and n not in city_norm_map:
+                            city_norm_map[n] = s
+                            city_norm_list.append(n)
+
+                    # exact normalized
+                    if cand_norm in city_norm_map:
+                        logger.debug(f"Matched candidate via city {city_slug} exact: {city_norm_map[cand_norm]}")
+                        return city_norm_map[cand_norm]
+
+                    # token-set
+                    best_score = 0.0
+                    best = None
+                    for n in city_norm_list:
+                        score = self._token_set_ratio(cand_norm, n)
+                        if score > best_score:
+                            best_score = score
+                            best = n
+                    if best_score >= 0.75:
+                        logger.debug(f"Matched candidate via city {city_slug} token-set {best_score}")
+                        return city_norm_map.get(best)
+
+                    # difflib
+                    matches = difflib.get_close_matches(cand_norm, city_norm_list, n=2, cutoff=0.78)
+                    if matches:
+                        logger.debug(f"Matched candidate via city {city_slug} fuzzy: {city_norm_map.get(matches[0])}")
+                        return city_norm_map.get(matches[0])
+        except Exception:
+            pass
 
         return None
     def _extract_data_by_type(self, text: str, doc_type: str) -> Dict[str, Any]:
