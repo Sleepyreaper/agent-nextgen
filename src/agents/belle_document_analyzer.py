@@ -168,7 +168,45 @@ class BelleDocumentAnalyzer(BaseAgent):
             candidate = student_info.get('school_name') if isinstance(student_info, dict) else None
             if candidate:
                 candidate_norm = self._normalize_school_candidate(candidate)
-                matched_school = self._match_against_state_schools(candidate_norm, state_code)
+                # If AI returned something that doesn't look like a school (likely a city/residence),
+                # try to find a nearby 'High School' mention in the document or use the city's school list.
+                if candidate_norm and not self._is_valid_school_name(candidate_norm):
+                    # try to locate a school in lines near the city mention
+                    school_from_context = self._find_school_near_city(text_content, candidate)
+                    if school_from_context:
+                        matched_school = self._match_against_state_schools(self._normalize_school_candidate(school_from_context), state_code) or school_from_context
+                    else:
+                        # map city name to slug and directly fetch that city's schools for a more targeted match
+                        try:
+                            city_links = self._fetch_state_city_links(state_code)
+                            # city_links: {slug: City Name}
+                            slug = None
+                            for sslug, cname in city_links.items():
+                                if cname and cname.lower() == candidate.strip().lower():
+                                    slug = sslug
+                                    break
+                            if slug:
+                                schools = self._fetch_city_school_list(state_code, slug)
+                                if schools:
+                                    # try to find a school whose name contains any proper noun tokens from the document
+                                    tokens = self._extract_proper_nouns(text_content)
+                                    picked = None
+                                    for sch in schools:
+                                        for tok in tokens:
+                                            if len(tok) > 3 and tok.lower() in sch.lower():
+                                                picked = sch
+                                                break
+                                        if picked:
+                                            break
+                                    if picked:
+                                        matched_school = picked
+                                    else:
+                                        # fallback to generic state match using the city name as context
+                                        matched_school = self._match_against_state_schools(candidate_norm, state_code)
+                        except Exception:
+                            matched_school = self._match_against_state_schools(candidate_norm, state_code)
+                else:
+                    matched_school = self._match_against_state_schools(candidate_norm, state_code)
 
             if not matched_school:
                 # gather local candidates and try to match
@@ -1034,6 +1072,55 @@ Document excerpt:
         s2 = re.sub(r"\b(high school|hs|highschool|school|academy|charter|magnet)\b", ' ', s2)
         s2 = re.sub(r"\s{2,}", ' ', s2).strip()
         return s2
+
+    def _extract_proper_nouns(self, text: str) -> List[str]:
+        """Return a list of candidate proper nouns (capitalized tokens) from the document.
+
+        Used to help match partial school names like 'Wheeler' against scraped lists.
+        """
+        tokens = []
+        for word in re.findall(r"\b[A-Z][a-zA-Z]{2,}\b", text):
+            if word and word.lower() not in ['High', 'School', 'Magnet', 'Academy', 'Charter', 'The']:
+                tokens.append(word)
+        # de-duplicate while preserving order
+        seen = set()
+        out = []
+        for t in tokens:
+            if t not in seen:
+                seen.add(t)
+                out.append(t)
+        return out
+
+    def _find_school_near_city(self, text: str, city_name: str) -> Optional[str]:
+        """Search document lines near mentions of the city for explicit school mentions.
+
+        Returns the first plausible school name found.
+        """
+        if not city_name or not text:
+            return None
+        lines = text.split('\n')
+        city_norm = city_name.strip().lower()
+        for i, line in enumerate(lines):
+            if city_norm in line.lower():
+                # check this line and +/- 3 lines for school keywords
+                start = max(0, i-3)
+                end = min(len(lines), i+4)
+                for j in range(start, end):
+                    ln = lines[j]
+                    if re.search(r'\b(High School|Magnet|HS|Academy|School|Charter|Magnet School)\b', ln, re.IGNORECASE):
+                        # try to extract a candidate from this line
+                        m = re.search(r'([A-Za-z0-9&\-\'\.\s]{3,120}?)(?:High School|Magnet School|Magnet|HS|Academy|Charter|School)', ln, re.IGNORECASE)
+                        if m:
+                            cand = m.group(1).strip()
+                            cand = re.sub(r'[\.,;:\-\|]+$', '', cand).strip()
+                            if cand:
+                                # append keyword if missing
+                                if re.search(r'\bmagnet\b', ln, re.IGNORECASE) and 'magnet' not in cand.lower():
+                                    return f"{cand} Magnet"
+                                if 'high school' in ln.lower() or 'school' in ln.lower():
+                                    return f"{cand} High School"
+                                return cand
+        return None
 
     def _token_set_ratio(self, a: str, b: str) -> float:
         """Simple token-set ratio: intersection / union of meaningful tokens."""
