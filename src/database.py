@@ -1245,15 +1245,36 @@ class Database:
             VALUES (%s, %s, %s, %s, %s, %s, %s)
             RETURNING tiana_application_id
         """
-        return self.execute_scalar(query, (
+        # Sanitize params: convert dict/list/tuple to JSON strings and coerce decimals/datetimes
+        params = [
             application_id,
             agent_name,
             essay_summary,
             recommendation_texts,
             readiness_score,
             confidence,
-            parsed_json
-        ))
+            parsed_json,
+        ]
+
+        def _prepare_param(v):
+            if v is None:
+                return None
+            if isinstance(v, (dict, list, tuple)):
+                return json.dumps(Database._sanitize_for_json(v), ensure_ascii=True)
+            if isinstance(v, Decimal):
+                try:
+                    return float(v)
+                except Exception:
+                    return str(v)
+            if isinstance(v, datetime):
+                return v.isoformat()
+            # For numeric-like strings for readiness_score, try converting to float
+            if isinstance(v, str):
+                return v
+            return v
+
+        safe_params = tuple(_prepare_param(p) for p in params)
+        return self.execute_scalar(query, safe_params)
 
     def save_mulan_recommendation(
         self,
