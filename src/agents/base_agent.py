@@ -63,50 +63,50 @@ class BaseAgent(ABC):
         """
         tracer = get_tracer()
         start_time = time.time()
-        
+
         # Always try to create completion - telemetry failure shouldn't block requests
         response = None
 
         try:
+            # If tracer is available, wrap call in a telemetry span
             if tracer:
-                # Create telemetry span for LLM call
                 with tracer.start_as_current_span(f"chat_completion_{operation}", kind=SpanKind.CLIENT) as span:
                     # GenAI semantic convention attributes
                     span.set_attribute("gen_ai.system", "azure_openai")
                     span.set_attribute("gen_ai.model", model or "")
                     span.set_attribute("gen_ai.operation.name", "chat")
                     span.set_attribute("gen_ai.request.model", model or "")
-                    
+
                     # Agent context
                     span.set_attribute("agent.name", self.name)
                     span.set_attribute("gen_ai.agent.name", self.name)
                     span.set_attribute("gen_ai.agent.id", self.name)
-                    
+
                     # Request parameters
                     max_tokens = kwargs.get("max_completion_tokens") or kwargs.get("max_tokens")
                     if max_tokens is not None:
                         span.set_attribute("gen_ai.request.max_tokens", int(max_tokens))
-                    
+
                     temperature = kwargs.get("temperature")
                     if temperature is not None:
                         span.set_attribute("gen_ai.request.temperature", float(temperature))
-                    
+
                     top_p = kwargs.get("top_p")
                     if top_p is not None:
                         span.set_attribute("gen_ai.request.top_p", float(top_p))
-                    
+
                     # Application context
                     for key, value in self._trace_context.items():
                         if value is not None:
                             span.set_attribute(f"app.{key}", str(value))
-                    
+
                     # Prompt content (if configured)
                     if should_capture_sensitive_data():
                         try:
                             span.set_attribute("gen_ai.prompt", json.dumps(messages, ensure_ascii=True)[:2000])
                         except Exception:
                             pass
-                    
+
                     # Support optional multi-pass refinement loop via `refinements` kwarg.
                     refinements = int(kwargs.pop("refinements", 1)) if kwargs.get("refinements", None) is not None else 1
                     refinement_instruction = kwargs.pop("refinement_instruction", None)
@@ -152,11 +152,11 @@ class BaseAgent(ABC):
                         except Exception:
                             # If a refinement pass fails, continue with the last successful response
                             break
-                    
+
                     # Record latency
                     duration_ms = int((time.time() - start_time) * 1000)
                     span.set_attribute("gen_ai.latency_ms", duration_ms)
-                    
+
                     # Extract and record token usage
                     usage = getattr(response, "usage", None)
                     if usage:
