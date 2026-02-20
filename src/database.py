@@ -8,6 +8,7 @@ from .logger import app_logger as logger
 import json
 import time
 from urllib.parse import urlparse, parse_qsl, urlencode, urlunparse, quote
+from decimal import Decimal
 
 
 class Database:
@@ -1177,6 +1178,18 @@ class Database:
             VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             RETURNING interaction_id
         """
+        # Ensure extracted_data is JSON serializable (convert Decimal, datetime, etc.)
+        safe_extracted = None
+        if extracted_data is not None:
+            try:
+                safe_extracted = json.dumps(self._sanitize_for_json(extracted_data))
+            except Exception:
+                # Fallback: stringify the object
+                try:
+                    safe_extracted = json.dumps(str(extracted_data))
+                except Exception:
+                    safe_extracted = None
+
         return self.execute_scalar(query, (
             application_id,
             agent_name,
@@ -1186,10 +1199,34 @@ class Database:
             file_name,
             file_size,
             file_type,
-            json.dumps(extracted_data) if extracted_data else None,
+            safe_extracted,
             datetime.now(),
             sequence_number
         ))
+
+    @staticmethod
+    def _sanitize_for_json(obj: Any) -> Any:
+        """Recursively convert non-JSON-serializable types (Decimal, datetime) into serializable types."""
+        if obj is None:
+            return None
+        if isinstance(obj, Decimal):
+            # Preserve numeric fidelity where possible
+            try:
+                return float(obj)
+            except Exception:
+                return str(obj)
+        if isinstance(obj, datetime):
+            return obj.isoformat()
+        if isinstance(obj, dict):
+            return {k: Database._sanitize_for_json(v) for k, v in obj.items()}
+        if isinstance(obj, list):
+            return [Database._sanitize_for_json(v) for v in obj]
+        if isinstance(obj, tuple):
+            return tuple(Database._sanitize_for_json(v) for v in obj)
+        if isinstance(obj, (int, float, str, bool)):
+            return obj
+        # Fallback to string for any other types
+        return str(obj)
 
     def save_tiana_application(
         self,

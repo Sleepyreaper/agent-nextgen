@@ -45,7 +45,8 @@ class NaveenSchoolDataScientist(BaseAgent):
         school_district: Optional[str] = None,
         state_code: Optional[str] = None,
         web_sources: Optional[List[str]] = None,
-        existing_data: Optional[Dict[str, Any]] = None
+        existing_data: Optional[Dict[str, Any]] = None,
+        enrichment_focus: Optional[str] = None
     ) -> Dict[str, Any]:
         """
         Analyze a school using AI and build enriched profile.
@@ -96,11 +97,12 @@ class NaveenSchoolDataScientist(BaseAgent):
 
             # Build comprehensive school research prompt for AI
             research_prompt = self._build_research_prompt(
-                school_name, 
+                school_name,
                 school_district,
                 inferred_state,
                 enriched_sources,
-                existing_data
+                existing_data,
+                enrichment_focus=enrichment_focus
             )
             
             # Use AI to analyze school comprehensively
@@ -469,6 +471,7 @@ Demographics:
         state_code: Optional[str],
         web_sources: Optional[List[str]],
         existing_data: Optional[Dict[str, Any]]
+        , enrichment_focus: Optional[str] = None
     ) -> str:
         """Build comprehensive research prompt for AI to analyze school."""
         prompt = f"""Analyze the school '{school_name}' {'in ' + school_district if school_district else ''} {'(' + state_code + ')' if state_code else ''}.
@@ -510,6 +513,8 @@ Based on available sources and data, provide a comprehensive JSON analysis inclu
 Available web sources to analyze (including a search query hint if provided): {json.dumps(web_sources) if web_sources else 'None provided'}
 
 Existing data from other agents: {json.dumps(existing_data) if existing_data else 'None provided'}
+
+Focus guidance: {enrichment_focus if enrichment_focus else 'General enrichment requested'}
 
 Return your analysis as a single JSON object with keys: academic_courses, academic_programs, stem_programs, honors_programs, 
 college_acceptance_rate, graduation_rate, test_scores, funding_level, facility_quality, teacher_quality_indicators, 
