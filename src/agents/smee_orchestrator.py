@@ -670,6 +670,23 @@ class SmeeOrchestrator(BaseAgent):
                         application.get('TranscriptText') or '')
         
         document_name = application.get('file_name', 'application_document')
+        # Ensure there is an application record so downstream agents can persist outputs
+        if not application_id and self.db:
+            try:
+                created_id = self.db.create_application(
+                    applicant_name=applicant_name,
+                    email=application.get('email', ''),
+                    application_text=document_text,
+                    file_name=document_name,
+                    file_type=application.get('file_type', 'text/plain')
+                )
+                if created_id:
+                    application_id = created_id
+                    self._current_application_id = created_id
+                    application['application_id'] = created_id
+                    logger.info(f"✨ Created placeholder application record: {created_id} for {applicant_name}")
+            except Exception as e:
+                logger.warning(f"Could not create application record before processing: {e}")
         print(f"DEBUG: document_name={document_name}, doc_length={len(document_text)}")
         belle_data = await self._extract_data_with_belle(document_text, document_name)
         print(f"DEBUG: BELLE returned: {list(belle_data.keys()) if isinstance(belle_data, dict) else 'NOT A DICT'}")
@@ -1050,7 +1067,8 @@ class SmeeOrchestrator(BaseAgent):
         if 'data_scientist' in self.agents:
             milo = self.agents['data_scientist']
             try:
-                milo_result = await asyncio.to_thread(milo.analyze_training_insights)
+                # Milo's analyze_training_insights is async; await it directly
+                milo_result = await milo.analyze_training_insights()
                 self.evaluation_results['results']['data_scientist'] = milo_result
                 
                 # PHASE 5: Log STEP 5 MILO analysis
