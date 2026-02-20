@@ -682,8 +682,8 @@ Document excerpt:
         # Look for explicit 'High School' occurrences in the document
         for i, line in enumerate(lines[:200]):
             if 'high school' in line.lower() or 'hs' in re.findall(r'\bHS\b', line):
-                    # extract up to 8 words before 'High School'
-                    m = re.search(r'([A-Za-z0-9&\-\'\.]{2,120})\s+(?:High School|high school|HS|Hs|Highschool|Secondary School)', line, re.IGNORECASE)
+                # extract up to 8 words before 'High School'
+                m = re.search(r'([A-Za-z0-9&\-\'\.]{2,120})\s+(?:High School|high school|HS|Hs|Highschool|Secondary School)', line, re.IGNORECASE)
                 if m:
                     name = m.group(1).strip()
                     # clean trailing punctuation
