@@ -66,8 +66,8 @@ class BaseAgent(ABC):
         
         # Always try to create completion - telemetry failure shouldn't block requests
         response = None
-        
-            try:
+
+        try:
             if tracer:
                 # Create telemetry span for LLM call
                 with tracer.start_as_current_span(f"chat_completion_{operation}", kind=SpanKind.CLIENT) as span:
