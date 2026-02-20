@@ -148,8 +148,7 @@ class BelleDocumentAnalyzer(BaseAgent):
             agent_fields["interest"] = extracted_data.get("interest")
         # Try to match and persist school using the high-schools.com directory when possible
         # Use provided application_id and db_connection if available
-        try:
-            student_name = student_info.get('name') if isinstance(student_info, dict) else None
+        student_name = student_info.get('name') if isinstance(student_info, dict) else None
             state_code = student_info.get('state_code') if isinstance(student_info, dict) else None
             # If no state code found, attempt to extract from text
             if not state_code:
