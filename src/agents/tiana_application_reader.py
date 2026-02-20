@@ -45,6 +45,8 @@ class TianaApplicationReader(BaseAgent):
                     ],
                     max_completion_tokens=1500,
                     temperature=1,
+                    refinements=2,
+                    refinement_instruction="Refine the JSON output for accuracy, completeness, and strict JSON validity. If any fields are ambiguous, favor explicit nulls and add a confidence field for uncertain values."
                     response_format={"type": "json_object"}
                 )
 
@@ -135,7 +137,9 @@ class TianaApplicationReader(BaseAgent):
             model=self.model,
             messages=messages,
             max_completion_tokens=1000,
-            temperature=1
+            temperature=1,
+            refinements=2,
+            refinement_instruction="Refine your previous assistant response to improve evidence-grounding and clarity. Keep the same output format."
         )
         assistant_message = response.choices[0].message.content
         self.add_to_history("assistant", assistant_message)

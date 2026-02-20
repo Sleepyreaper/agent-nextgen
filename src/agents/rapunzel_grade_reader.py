@@ -113,7 +113,9 @@ class RapunzelGradeReader(BaseAgent):
                     }
                 ],
                 max_completion_tokens=3500,  # Increased for detailed analysis
-                temperature=1  # GPT-5.2 only supports default temperature
+                temperature=1,  # GPT-5.2 only supports default temperature
+                refinements=2,
+                refinement_instruction="Refine the analysis to improve accuracy of GPA, course-level detection, and trend identification. Preserve format and tables."
             )
             
             response_text = response.choices[0].message.content
@@ -654,7 +656,9 @@ OUTPUT STRUCTURE:
                 model=self.model,
                 messages=messages,
                 max_completion_tokens=1500,
-                temperature=1  # GPT-5.2 only supports default temperature
+                temperature=1,  # GPT-5.2 only supports default temperature
+                refinements=2,
+                refinement_instruction="Refine your assistant response for clarity and evidence, focusing on academic trend statements and any numeric values."
             )
             
             assistant_message = response.choices[0].message.content

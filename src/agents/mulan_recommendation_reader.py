@@ -38,6 +38,8 @@ class MulanRecommendationReader(BaseAgent):
                 ],
                 max_completion_tokens=1200,
                 temperature=1,
+                refinements=2,
+                refinement_instruction="Refine the JSON output to ensure clear evidence mapping and consistent endorsement strength scoring. If multiple recommenders are present, separate them explicitly.",
                 response_format={"type": "json_object"}
             )
 
@@ -126,7 +128,9 @@ class MulanRecommendationReader(BaseAgent):
             model=self.model,
             messages=messages,
             max_completion_tokens=1000,
-            temperature=1
+            temperature=1,
+            refinements=2,
+            refinement_instruction="Refine your assistant response to improve extraction of recommender details and evidence snippets."
         )
         assistant_message = response.choices[0].message.content
         self.add_to_history("assistant", assistant_message)

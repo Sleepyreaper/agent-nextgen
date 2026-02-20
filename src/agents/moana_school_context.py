@@ -873,7 +873,9 @@ Provide this as a structured analysis. Be honest about data availability. If exa
                     }
                 ],
                 max_completion_tokens=2000,
-                temperature=0.7  # Lower temp for more factual output
+                temperature=0.7,  # Lower temp for more factual output
+                refinements=2,
+                refinement_instruction="Refine the factual synthesis: correct inconsistencies, cite likely data sources, and clearly label estimates."
             )
             
             analysis_text = response.choices[0].message.content

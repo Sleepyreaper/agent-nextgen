@@ -67,7 +67,7 @@ class BaseAgent(ABC):
         # Always try to create completion - telemetry failure shouldn't block requests
         response = None
         
-        try:
+            try:
             if tracer:
                 # Create telemetry span for LLM call
                 with tracer.start_as_current_span(f"chat_completion_{operation}", kind=SpanKind.CLIENT) as span:
@@ -107,12 +107,51 @@ class BaseAgent(ABC):
                         except Exception:
                             pass
                     
-                    # Make the API call
-                    response = self.client.chat.completions.create(
-                        model=model,
-                        messages=messages,
-                        **kwargs
-                    )
+                    # Support optional multi-pass refinement loop via `refinements` kwarg.
+                    refinements = int(kwargs.pop("refinements", 1)) if kwargs.get("refinements", None) is not None else 1
+                    refinement_instruction = kwargs.pop("refinement_instruction", None)
+
+                    def _single_call(msgs, call_kwargs):
+                        return self.client.chat.completions.create(
+                            model=model,
+                            messages=msgs,
+                            **call_kwargs
+                        )
+
+                    # First call
+                    response = _single_call(messages, kwargs)
+
+                    # If refinements requested, run iterative refinement passes.
+                    for r in range(1, refinements):
+                        try:
+                            prev_content = ""
+                            try:
+                                prev_content = response.choices[0].message.content if response.choices else ""
+                            except Exception:
+                                prev_content = str(response)
+
+                            # Build refinement messages: include original messages, assistant's previous reply, and a user instruction to refine.
+                            refinement_msgs = []
+                            # preserve system/user structure from original messages
+                            for m in messages:
+                                refinement_msgs.append({"role": m.get("role", "user"), "content": m.get("content", "")})
+
+                            # Append the assistant's previous content
+                            refinement_msgs.append({"role": "assistant", "content": prev_content})
+
+                            # Add a refinement instruction to the user role
+                            if refinement_instruction:
+                                instr = refinement_instruction
+                            else:
+                                instr = "Refine and improve the previous assistant response for accuracy, completeness, and clarity. Keep the same output format unless asked otherwise."
+
+                            refinement_msgs.append({"role": "user", "content": instr})
+
+                            # Call model again for the refinement pass
+                            response = _single_call(refinement_msgs, kwargs)
+                        except Exception:
+                            # If a refinement pass fails, continue with the last successful response
+                            break
                     
                     # Record latency
                     duration_ms = int((time.time() - start_time) * 1000)
@@ -155,11 +194,39 @@ class BaseAgent(ABC):
                             pass
             else:
                 # Telemetry disabled - just make the call
-                response = self.client.chat.completions.create(
-                    model=model,
-                    messages=messages,
-                    **kwargs
-                )
+                # Support refinements even when telemetry disabled
+                refinements = int(kwargs.pop("refinements", 1)) if kwargs.get("refinements", None) is not None else 1
+                refinement_instruction = kwargs.pop("refinement_instruction", None)
+
+                def _single_call(msgs, call_kwargs):
+                    return self.client.chat.completions.create(
+                        model=model,
+                        messages=msgs,
+                        **call_kwargs
+                    )
+
+                response = _single_call(messages, kwargs)
+                for r in range(1, refinements):
+                    try:
+                        prev_content = ""
+                        try:
+                            prev_content = response.choices[0].message.content if response.choices else ""
+                        except Exception:
+                            prev_content = str(response)
+
+                        refinement_msgs = []
+                        for m in messages:
+                            refinement_msgs.append({"role": m.get("role", "user"), "content": m.get("content", "")})
+                        refinement_msgs.append({"role": "assistant", "content": prev_content})
+                        if refinement_instruction:
+                            instr = refinement_instruction
+                        else:
+                            instr = "Refine and improve the previous assistant response for accuracy, completeness, and clarity. Keep the same output format unless asked otherwise."
+                        refinement_msgs.append({"role": "user", "content": instr})
+
+                        response = _single_call(refinement_msgs, kwargs)
+                    except Exception:
+                        break
             
             return response
         

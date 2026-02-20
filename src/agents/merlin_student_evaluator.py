@@ -40,6 +40,8 @@ class MerlinStudentEvaluator(BaseAgent):
                 ],
                 max_completion_tokens=1400,
                 temperature=1,
+                refinements=2,
+                refinement_instruction="Refine the JSON recommendation focusing on evidence mapping: ensure each decision_driver cites specific agent outputs and numeric values are normalized."
                 response_format={"type": "json_object"}
             )
 
@@ -133,7 +135,9 @@ class MerlinStudentEvaluator(BaseAgent):
             model=self.model,
             messages=messages,
             max_completion_tokens=1000,
-            temperature=1
+            temperature=1,
+            refinements=2,
+            refinement_instruction="Refine your assistant response to be more decisive and explicitly map evidence to any recommendations."
         )
         assistant_message = response.choices[0].message.content
         self.add_to_history("assistant", assistant_message)
