@@ -149,48 +149,48 @@ class BelleDocumentAnalyzer(BaseAgent):
         # Try to match and persist school using the high-schools.com directory when possible
         # Use provided application_id and db_connection if available
         student_name = student_info.get('name') if isinstance(student_info, dict) else None
-            state_code = student_info.get('state_code') if isinstance(student_info, dict) else None
-            # If no state code found, attempt to extract from text
-            if not state_code:
-                state_code = self._extract_state_code(text_content)
+        state_code = student_info.get('state_code') if isinstance(student_info, dict) else None
+        # If no state code found, attempt to extract from text
+        if not state_code:
+            state_code = self._extract_state_code(text_content)
 
-            matched_school = None
-            if state_code:
-                # Prefer an explicit school_name if AI found one; otherwise attempt match
-                candidate = student_info.get('school_name') if isinstance(student_info, dict) else None
-                if candidate:
-                    candidate_norm = self._normalize_school_candidate(candidate)
-                    matched_school = self._match_against_state_schools(candidate_norm, state_code)
+        matched_school = None
+        if state_code:
+            # Prefer an explicit school_name if AI found one; otherwise attempt match
+            candidate = student_info.get('school_name') if isinstance(student_info, dict) else None
+            if candidate:
+                candidate_norm = self._normalize_school_candidate(candidate)
+                matched_school = self._match_against_state_schools(candidate_norm, state_code)
 
-                if not matched_school:
-                    # gather local candidates and try to match
-                    local_candidates = self._gather_school_name_candidates(text_content)
-                    for cand in local_candidates:
-                        cand_norm = self._normalize_school_candidate(cand)
-                        matched_school = self._match_against_state_schools(cand_norm, state_code)
-                        if matched_school:
-                            break
+            if not matched_school:
+                # gather local candidates and try to match
+                local_candidates = self._gather_school_name_candidates(text_content)
+                for cand in local_candidates:
+                    cand_norm = self._normalize_school_candidate(cand)
+                    matched_school = self._match_against_state_schools(cand_norm, state_code)
+                    if matched_school:
+                        break
 
-            if matched_school and self.db_connection and application_id:
-                # Persist matched school and state; also persist name split if available
-                first_name = None
-                last_name = None
-                if student_name:
-                    parts = [p for p in student_name.split() if p]
-                    if parts:
-                        first_name = parts[0]
-                        last_name = parts[-1] if len(parts) > 1 else None
+        if matched_school and self.db_connection and application_id:
+            # Persist matched school and state; also persist name split if available
+            first_name = None
+            last_name = None
+            if student_name:
+                parts = [p for p in student_name.split() if p]
+                if parts:
+                    first_name = parts[0]
+                    last_name = parts[-1] if len(parts) > 1 else None
 
-                persist_fields = {'high_school': matched_school, 'state_code': state_code}
-                if first_name:
-                    persist_fields['first_name'] = first_name
-                if last_name:
-                    persist_fields['last_name'] = last_name
+            persist_fields = {'high_school': matched_school, 'state_code': state_code}
+            if first_name:
+                persist_fields['first_name'] = first_name
+            if last_name:
+                persist_fields['last_name'] = last_name
 
-                try:
-                    self.db_connection.update_application(application_id, **persist_fields)
-                except Exception:
-                    pass
+            try:
+                self.db_connection.update_application(application_id, **persist_fields)
+            except Exception:
+                pass
 
         return {
             "document_type": doc_type,
