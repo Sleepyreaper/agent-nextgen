@@ -47,7 +47,7 @@ class TianaApplicationReader(BaseAgent):
                     temperature=1,
                     refinements=2,
                     refinement_instruction="Refine the JSON output for accuracy, completeness, and strict JSON validity. If any fields are ambiguous, favor explicit nulls and add a confidence field for uncertain values."
-                    response_format={"type": "json_object"}
+                    ,response_format={"type": "json_object"}
                 )
 
                 payload = response.choices[0].message.content
