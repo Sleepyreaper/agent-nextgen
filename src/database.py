@@ -1246,6 +1246,26 @@ class Database:
             RETURNING tiana_application_id
         """
         # Sanitize params: convert dict/list/tuple to JSON strings and coerce decimals/datetimes
+        # Ensure confidence fits DB column (VARCHAR(50)). Prefer canonical High/Medium/Low when possible.
+        if isinstance(confidence, str):
+            conf_lower = confidence.lower()
+            if 'high' in conf_lower:
+                confidence = 'High'
+            elif 'medium' in conf_lower:
+                confidence = 'Medium'
+            elif 'low' in conf_lower:
+                confidence = 'Low'
+            else:
+                if len(confidence) > 50:
+                    confidence = confidence[:47] + '...'
+
+        # Coerce readiness_score to numeric or None
+        try:
+            if readiness_score is not None and readiness_score != "":
+                readiness_score = float(readiness_score)
+        except Exception:
+            readiness_score = None
+
         params = [
             application_id,
             agent_name,
