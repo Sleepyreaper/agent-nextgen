@@ -107,7 +107,10 @@ class NaveenSchoolDataScientist(BaseAgent):
             
             # Use AI to analyze school comprehensively
             logger.info(f"Naveen analyzing {school_name} with AI model")
-            ai_analysis = self._create_chat_completion(
+            # Wrap LLM call with telemetry helper so model usage is recorded
+            from src.agents.telemetry_helpers import lm_call
+            with lm_call(self.model, "school_analysis", system_prompt=research_prompt):
+                ai_analysis = self._create_chat_completion(
                 operation="school_analysis",
                 model=self.model,
                 messages=[
@@ -129,7 +132,7 @@ Provide structured analysis in JSON format."""
                 ],
                 temperature=0.7,
                 max_completion_tokens=2000
-            )
+                )
             
             # Parse AI response
             if ai_analysis and "content" in ai_analysis.choices[0].message:

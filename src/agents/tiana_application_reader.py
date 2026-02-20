@@ -49,9 +49,27 @@ class TianaApplicationReader(BaseAgent):
                     refinement_instruction="Refine the JSON output for accuracy, completeness, and strict JSON validity. If any fields are ambiguous, favor explicit nulls and add a confidence field for uncertain values."
                     ,response_format={"type": "json_object"}
                 )
-
-                payload = response.choices[0].message.content
-                data = json.loads(payload)
+                # Guard against empty or malformed model responses
+                payload = None
+                try:
+                    if not response or not getattr(response, "choices", None):
+                        raise ValueError("Empty model response")
+                    payload = response.choices[0].message.content
+                except Exception as resp_err:
+                    # Record the raw response fallback and return error structure
+                    raw_resp = None
+                    try:
+                        raw_resp = str(response)
+                    except Exception:
+                        raw_resp = "<unserializable response>"
+                    data = {
+                        "status": "error",
+                        "agent": self.name,
+                        "error": f"Model response invalid: {str(resp_err)}",
+                        "raw_response": raw_resp
+                    }
+                else:
+                    data = json.loads(payload)
                 data["status"] = "success"
                 data["agent"] = self.name
 
