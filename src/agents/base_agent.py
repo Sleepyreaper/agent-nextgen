@@ -108,7 +108,8 @@ class BaseAgent(ABC):
                             pass
 
                     # Support optional multi-pass refinement loop via `refinements` kwarg.
-                    refinements = int(kwargs.pop("refinements", 1)) if kwargs.get("refinements", None) is not None else 1
+                    # Default to 2 refinement passes when not explicitly provided.
+                    refinements = int(kwargs.pop("refinements", 2))
                     refinement_instruction = kwargs.pop("refinement_instruction", None)
 
                     def _single_call(msgs, call_kwargs):
@@ -194,8 +195,8 @@ class BaseAgent(ABC):
                             pass
             else:
                 # Telemetry disabled - just make the call
-                # Support refinements even when telemetry disabled
-                refinements = int(kwargs.pop("refinements", 1)) if kwargs.get("refinements", None) is not None else 1
+                # Support refinements even when telemetry disabled. Default to 2 passes.
+                refinements = int(kwargs.pop("refinements", 2))
                 refinement_instruction = kwargs.pop("refinement_instruction", None)
 
                 def _single_call(msgs, call_kwargs):
