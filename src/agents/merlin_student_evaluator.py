@@ -41,7 +41,7 @@ class MerlinStudentEvaluator(BaseAgent):
                 max_completion_tokens=1400,
                 temperature=1,
                 refinements=2,
-                refinement_instruction="Refine the JSON recommendation focusing on evidence mapping: ensure each decision_driver cites specific agent outputs and numeric values are normalized."
+                refinement_instruction="Refine the JSON recommendation focusing on evidence mapping: ensure each decision_driver cites specific agent outputs and numeric values are normalized.",
                 response_format={"type": "json_object"}
             )
 
