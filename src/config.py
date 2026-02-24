@@ -207,6 +207,11 @@ class Config:
         # NOTE: Only account name is needed — runtime auth uses Entra ID (DefaultAzureCredential).
         # Key-based access is disabled on the storage account.
         self.storage_account_name: str = self._get_secret("storage-account-name", "AZURE_STORAGE_ACCOUNT_NAME")
+        # Optional prefix for storage containers (e.g. "staging-" for the staging slot).
+        # Production leaves this blank; staging sets it to "staging-".
+        self.storage_container_prefix: str = (
+            self._get_secret("storage-container-prefix", "AZURE_STORAGE_CONTAINER_PREFIX") or ""
+        )
 
         # Content Processing Accelerator configuration
         self.content_processing_endpoint: str = self._get_secret(

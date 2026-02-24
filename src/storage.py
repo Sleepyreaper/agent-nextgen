@@ -12,8 +12,10 @@ logger = logging.getLogger(__name__)
 class StorageManager:
     """Manage file uploads to Azure Storage with organized folder structure."""
     
-    # Container names for different application types
-    CONTAINERS = {
+    # Base container names for different application types.
+    # A prefix (e.g. "staging-") is prepended at runtime via config so
+    # staging and production use fully isolated containers.
+    _BASE_CONTAINERS = {
         '2026': 'applications-2026',
         'test': 'applications-test',
         'training': 'applications-training'
@@ -26,6 +28,13 @@ class StorageManager:
         Uses Entra ID (Azure AD) via DefaultAzureCredential.
         """
         self.account_name = getattr(config, 'storage_account_name', None)
+        self._prefix = getattr(config, 'storage_container_prefix', '') or ''
+        # Build the actual container map: prefix + base name
+        self.CONTAINERS = {
+            k: f"{self._prefix}{v}" for k, v in self._BASE_CONTAINERS.items()
+        }
+        if self._prefix:
+            logger.info("📦 Storage container prefix: '%s' → %s", self._prefix, list(self.CONTAINERS.values()))
         
         # Initialize blob service client
         if self.account_name:
