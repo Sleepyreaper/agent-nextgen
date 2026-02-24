@@ -49,6 +49,51 @@ jobs:
         publish-profile: ${{ secrets.AZURE_WEBAPP_PUBLISH_PROFILE_STAGING }}
         package: '.'
 
+    - name: Azure Login
+      uses: azure/login@v2
+      with:
+        client-id: ${{ secrets.AZURE_CLIENT_ID }}
+        tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+        subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+    - name: Verify RBAC roles for staging slot
+      run: |
+        set -euo pipefail
+        SLOT_PRINCIPAL=$(az webapp identity show \
+          --resource-group NextGen_Agents \
+          --name ${{ secrets.AZURE_WEBAPP_NAME }} \
+          --slot staging \
+          --query "principalId" -o tsv)
+
+        STORAGE_ID=$(az storage account show \
+          --resource-group NextGen_Agents \
+          --name nextgendata2452 \
+          --query "id" -o tsv)
+
+        # Check if Storage Blob Data Contributor is assigned
+        ROLE=$(az role assignment list \
+          --assignee "$SLOT_PRINCIPAL" \
+          --scope "$STORAGE_ID" \
+          --query "[?roleDefinitionName=='Storage Blob Data Contributor'].roleDefinitionName" \
+          -o tsv)
+
+        if [ -z "$ROLE" ]; then
+          echo "⚠️ Missing Storage Blob Data Contributor — assigning now..."
+          az role assignment create \
+            --assignee-object-id "$SLOT_PRINCIPAL" \
+            --assignee-principal-type ServicePrincipal \
+            --role "Storage Blob Data Contributor" \
+            --scope "$STORAGE_ID" \
+            --output none
+          echo "✅ Role assigned to staging identity ($SLOT_PRINCIPAL)"
+        else
+          echo "✅ Storage Blob Data Contributor already assigned to $SLOT_PRINCIPAL"
+        fi
+
+        echo "## 🔐 RBAC Verification" >> $GITHUB_STEP_SUMMARY
+        echo "- Staging identity: \`$SLOT_PRINCIPAL\`" >> $GITHUB_STEP_SUMMARY
+        echo "- Storage Blob Data Contributor: ✅" >> $GITHUB_STEP_SUMMARY
+
     - name: Post deployment URL
       run: |
         echo "## 🚀 Deployed to Staging" >> $GITHUB_STEP_SUMMARY
