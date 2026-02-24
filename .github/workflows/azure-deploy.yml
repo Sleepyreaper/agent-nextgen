@@ -1,26 +1,87 @@
-name: Publish to NextGen Web
+name: Deploy Agent NextGen
 
 on:
   push:
     branches:
       - main
+      - 'feature/**'
+      - 'fix/**'
+      - 'dev/**'
+  pull_request:
+    branches:
+      - main
   workflow_dispatch:
+    inputs:
+      deploy_target:
+        description: 'Deploy target'
+        required: true
+        default: 'staging'
+        type: choice
+        options:
+          - staging
+          - production
 
 jobs:
-  build-and-deploy:
+  # ── Deploy to STAGING (branches + PRs) ──────────────────────────
+  deploy-staging:
+    if: >
+      (github.event_name == 'push' && github.ref != 'refs/heads/main') ||
+      (github.event_name == 'pull_request') ||
+      (github.event_name == 'workflow_dispatch' && github.event.inputs.deploy_target == 'staging')
     runs-on: ubuntu-latest
-    
+    environment:
+      name: staging
+      url: https://nextgen-agents-web-staging.azurewebsites.net
+
     steps:
     - name: Checkout code
-      uses: actions/checkout@v3
+      uses: actions/checkout@v4
+
+    - name: Stamp version
+      run: |
+        echo "${GITHUB_SHA::7}-staging" > VERSION
+
+    - name: Deploy to Staging Slot
+      uses: azure/webapps-deploy@v3
+      with:
+        app-name: ${{ secrets.AZURE_WEBAPP_NAME }}
+        slot-name: staging
+        publish-profile: ${{ secrets.AZURE_WEBAPP_PUBLISH_PROFILE_STAGING }}
+        package: '.'
+
+    - name: Post deployment URL
+      run: |
+        echo "## 🚀 Deployed to Staging" >> $GITHUB_STEP_SUMMARY
+        echo "**URL:** https://nextgen-agents-web-staging.azurewebsites.net" >> $GITHUB_STEP_SUMMARY
+        echo "**Commit:** \`${GITHUB_SHA::7}\`" >> $GITHUB_STEP_SUMMARY
+
+  # ── Deploy to PRODUCTION (main branch) ──────────────────────────
+  deploy-production:
+    if: >
+      (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
+      (github.event_name == 'workflow_dispatch' && github.event.inputs.deploy_target == 'production')
+    runs-on: ubuntu-latest
+    environment:
+      name: production
+      url: https://nextgen-agents-web.azurewebsites.net
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
 
     - name: Stamp version
       run: |
         echo "${GITHUB_SHA::7}" > VERSION
-    
-    - name: Deploy to Azure Web App
+
+    - name: Deploy to Production
       uses: azure/webapps-deploy@v3
       with:
         app-name: ${{ secrets.AZURE_WEBAPP_NAME }}
         publish-profile: ${{ secrets.AZURE_WEBAPP_PUBLISH_PROFILE }}
         package: '.'
+
+    - name: Post deployment URL
+      run: |
+        echo "## ✅ Deployed to Production" >> $GITHUB_STEP_SUMMARY
+        echo "**URL:** https://nextgen-agents-web.azurewebsites.net" >> $GITHUB_STEP_SUMMARY
+        echo "**Commit:** \`${GITHUB_SHA::7}\`" >> $GITHUB_STEP_SUMMARY
