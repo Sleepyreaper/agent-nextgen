@@ -21,13 +21,10 @@ from src.document_processor import DocumentProcessor
 from src.config import config
 from src.telemetry import init_telemetry
 
-from src.storage import StorageManager
+from src.storage import storage
 
 # database connection used across views
 from src.database import db
-
-# initialize storage manager
-storage = StorageManager()
 
 # OpenTelemetry instrumentors used later
 from opentelemetry.instrumentation.flask import FlaskInstrumentor
@@ -1056,7 +1053,7 @@ def extract_student_name(text: str) -> Optional[str]:
                         return name
         
         return None
-    except:
+    except Exception:
         return None
 
 
@@ -1663,7 +1660,7 @@ def cleanup_test_data():
                                  "student_school_context", "grade_records", "ai_evaluations", "agent_audit_logs"]:
                         try:
                             db.execute_non_query(f"DELETE FROM {table} WHERE application_id = %s", (app_id,))
-                        except:
+                        except Exception:
                             pass
             # Delete the incomplete applications themselves
             db.execute_non_query(f"DELETE FROM {applications_table} WHERE {training_col} = TRUE AND ({app_id_col} IS NULL OR {applicant_col} IS NULL)")
@@ -1680,37 +1677,37 @@ def cleanup_test_data():
             # Delete from specialized agent tables
             try:
                 db.execute_non_query("DELETE FROM tiana_applications WHERE application_id = %s", (app_id,))
-            except:
+            except Exception:
                 pass
             
             try:
                 db.execute_non_query("DELETE FROM mulan_recommendations WHERE application_id = %s", (app_id,))
-            except:
+            except Exception:
                 pass
             
             try:
                 db.execute_non_query("DELETE FROM merlin_evaluations WHERE application_id = %s", (app_id,))
-            except:
+            except Exception:
                 pass
             
             try:
                 db.execute_non_query("DELETE FROM student_school_context WHERE application_id = %s", (app_id,))
-            except:
+            except Exception:
                 pass
             
             try:
                 db.execute_non_query("DELETE FROM grade_records WHERE application_id = %s", (app_id,))
-            except:
+            except Exception:
                 pass
             
             try:
                 db.execute_non_query("DELETE FROM ai_evaluations WHERE application_id = %s", (app_id,))
-            except:
+            except Exception:
                 pass
             
             try:
                 db.execute_non_query("DELETE FROM agent_audit_logs WHERE application_id = %s", (app_id,))
-            except:
+            except Exception:
                 pass
         
         # Now delete the applications themselves
@@ -2108,7 +2105,7 @@ def api_categorize_upload(application_id):
         # Read file content
         try:
             file_content = file.read().decode('utf-8', errors='ignore')
-        except:
+        except Exception:
             file_content = ""
         
         # Use Belle to categorize the document
@@ -2368,7 +2365,7 @@ def student_detail(application_id):
         # Convert to plain dict to break any DB row object references
         try:
             application = dict(application)
-        except:
+        except Exception:
             pass  # Already a plain dict
         
         logger.debug(f"Application found: {application.get('applicant_name')}")
@@ -2768,9 +2765,9 @@ def student_detail(application_id):
                             for key, value in parsed.items():
                                 if key not in merlin_evaluation or not merlin_evaluation[key]:
                                     merlin_evaluation[key] = value
-                        except:
+                        except Exception:
                             pass
-            except:
+            except Exception:
                 pass
 
         # If the database row didn't include a precomputed student_summary we can
@@ -3911,7 +3908,7 @@ def upload_test_files():
             # Clean up temporary file
             try:
                 os.remove(temp_path)
-            except:
+            except Exception:
                 pass
 
             # Use Belle to analyze the document and extract structured data
@@ -4123,7 +4120,7 @@ def get_test_submissions():
             try:
                 import json as json_module
                 app_ids = json_module.loads(sub.get('application_ids', '[]')) if isinstance(sub.get('application_ids'), str) else sub.get('application_ids', [])
-            except:
+            except Exception:
                 app_ids = []
             
             formatted.append({
@@ -4819,7 +4816,7 @@ def get_schools_list():
         if request.args.get('score_min'):
             try:
                 filters['opportunity_score_min'] = float(request.args.get('score_min'))
-            except:
+            except Exception:
                 pass
         if request.args.get('search'):
             filters['search_text'] = request.args.get('search')

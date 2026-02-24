@@ -204,9 +204,9 @@ class Config:
         self.sql_password: str = self._get_secret("sql-password", "SQL_PASSWORD")
         
         # Azure Storage configuration
+        # NOTE: Only account name is needed — runtime auth uses Entra ID (DefaultAzureCredential).
+        # Key-based access is disabled on the storage account.
         self.storage_account_name: str = self._get_secret("storage-account-name", "AZURE_STORAGE_ACCOUNT_NAME")
-        self.storage_account_key: str = self._get_secret("storage-account-key", "AZURE_STORAGE_ACCOUNT_KEY")
-        self.storage_container_name: str = self._get_secret("storage-container-name", "AZURE_STORAGE_CONTAINER_NAME") or "student-uploads"
 
         # Content Processing Accelerator configuration
         self.content_processing_endpoint: str = self._get_secret(

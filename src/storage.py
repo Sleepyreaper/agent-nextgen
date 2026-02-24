@@ -1,7 +1,7 @@
 """Azure Storage utilities for managing student files."""
 
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional, Dict, Any
 import logging
 from src.config import config
@@ -44,7 +44,9 @@ class StorageManager:
                 logger.info("✅ Azure Storage client created, verifying access...")
                 # perform a quick check to catch RBAC/permission issues early
                 try:
-                    self.client.list_containers(tasks_per_page=1)
+                    # list_containers() returns a lazy iterator — consume one page
+                    # to force a real network call and surface auth errors immediately
+                    next(iter(self.client.list_containers(results_per_page=1)), None)
                     logger.info("✅ Azure Storage access verified")
                 except ClientAuthenticationError as auth_err:
                     logger.error("🔒 Azure Storage authorization failure: %s", auth_err)
@@ -122,12 +124,19 @@ class StorageManager:
             # Get container client
             container_client = self.client.get_container_client(container_name)
             
-            # Upload blob
+            # Infer content type from filename extension
+            import mimetypes
+            content_type = mimetypes.guess_type(filename)[0] or "application/octet-stream"
+            from azure.storage.blob import ContentSettings
+            blob_content_settings = ContentSettings(content_type=content_type)
+            
+            # Upload blob with content type
             try:
                 blob_client = container_client.upload_blob(
                     name=blob_path,
                     data=file_content,
-                    overwrite=True
+                    overwrite=True,
+                    content_settings=blob_content_settings
                 )
             except Exception as upload_err:
                 # capture authorization failures specifically
@@ -147,15 +156,15 @@ class StorageManager:
                 'container': container_name,
                 'filename': filename,
                 'application_type': application_type,
-                'uploaded_at': datetime.utcnow().isoformat()
+                'uploaded_at': datetime.now(timezone.utc).isoformat()
             }
             
         except Exception as e:
             logger.error(f"Error uploading file: {e}")
-            # If auth failure, disable client for future attempts
+            # Log auth failures but do NOT permanently disable the client —
+            # the credential may recover (e.g. token refresh, transient 403).
             if hasattr(e, 'status_code') and e.status_code in (403, 401):
-                logger.warning("Disabling Azure Storage client due to authorization failure")
-                self.client = None
+                logger.warning("Azure Storage authorization failure (status %s) — will retry on next request", e.status_code)
             return {
                 'success': False,
                 'error': str(e),
