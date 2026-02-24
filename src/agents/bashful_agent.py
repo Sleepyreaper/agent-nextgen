@@ -3,6 +3,7 @@
 from typing import Optional, Any
 from azure.ai.inference.models import SystemMessage, UserMessage
 from .base_agent import BaseAgent
+from .telemetry_helpers import agent_run
 
 
 class BashfulAgent(BaseAgent):
@@ -38,36 +39,37 @@ class BashfulAgent(BaseAgent):
         Returns:
             The agent's response
         """
-        # Add user message to history
-        self.add_to_history("user", message)
-        
-        # Build messages for the API
-        messages = [{"role": "system", "content": self.system_prompt}]
-        
-        for msg in self.conversation_history:
-            messages.append({
-                "role": msg["role"],
-                "content": msg["content"]
-            })
-        
-        try:
-            # Make the API call to Azure OpenAI
-            response = self._create_chat_completion(
-                operation="bashful.process",
-                model=self.model,
-                messages=messages,
-                max_completion_tokens=800
-            )
+        with agent_run("Bashful", "process") as span:
+            # Add user message to history
+            self.add_to_history("user", message)
             
-            # Extract the response content
-            assistant_message = response.choices[0].message.content
+            # Build messages for the API
+            messages = [{"role": "system", "content": self.system_prompt}]
             
-            # Add assistant response to history
-            self.add_to_history("assistant", assistant_message)
+            for msg in self.conversation_history:
+                messages.append({
+                    "role": msg["role"],
+                    "content": msg["content"]
+                })
             
-            return assistant_message
-            
-        except Exception as e:
-            error_message = f"Error processing message: {str(e)}"
-            print(f"[{self.name}] {error_message}")
-            return error_message
+            try:
+                # Make the API call to Azure OpenAI
+                response = self._create_chat_completion(
+                    operation="bashful.process",
+                    model=self.model,
+                    messages=messages,
+                    max_completion_tokens=800
+                )
+                
+                # Extract the response content
+                assistant_message = response.choices[0].message.content
+                
+                # Add assistant response to history
+                self.add_to_history("assistant", assistant_message)
+                
+                return assistant_message
+                
+            except Exception as e:
+                error_message = f"Error processing message: {str(e)}"
+                print(f"[{self.name}] {error_message}")
+                return error_message

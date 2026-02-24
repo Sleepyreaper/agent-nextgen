@@ -14,6 +14,7 @@ import logging
 from typing import Optional
 from datetime import datetime
 from src.agents.base_agent import BaseAgent
+from src.agents.telemetry_helpers import agent_run
 from src.database import Database
 from openai import AzureOpenAI
 from src.config import config
@@ -103,86 +104,78 @@ class ArielQAAgent(BaseAgent):
                 "error": str (if failed)
             }
         """
-        try:
-            # Fetch comprehensive student profile
-            student_profile = await self._build_student_profile(application_id)
-            
-            if not student_profile:
-                # Fallback for smoke tests: if no student record is present,
-                # proceed with a minimal anonymous profile so we can still
-                # verify model integration. In production this should return
-                # an error instead of synthesizing data.
-                student_profile = {
-                    'name': 'Unknown Student',
-                    'school': 'Unknown School',
-                    'state': 'Unknown',
-                    'gpa': None,
-                    'test_scores': None,
-                    'application_status': 'Missing',
-                    'school_context': {},
-                    'rigor_analysis': {},
-                    'agent_evaluations': {},
-                    '_data_sources': []
+        with agent_run("Ariel", "answer_question", {"application_id": str(application_id)}) as span:
+            try:
+                # Fetch comprehensive student profile
+                student_profile = await self._build_student_profile(application_id)
+                
+                if not student_profile:
+                    student_profile = {
+                        'name': 'Unknown Student',
+                        'school': 'Unknown School',
+                        'state': 'Unknown',
+                        'gpa': None,
+                        'test_scores': None,
+                        'application_status': 'Missing',
+                        'school_context': {},
+                        'rigor_analysis': {},
+                        'agent_evaluations': {},
+                        '_data_sources': []
+                    }
+                
+                # Build context for GPT-4
+                system_prompt = self._build_system_prompt(student_profile)
+                user_message = self._build_user_message(question, student_profile)
+                
+                # Build messages with conversation history
+                messages = [
+                    {"role": "system", "content": system_prompt}
+                ]
+                
+                if conversation_history:
+                    for exchange in conversation_history:
+                        messages.append({"role": "user", "content": exchange["question"]})
+                        messages.append({"role": "assistant", "content": exchange["answer"]})
+                
+                messages.append({"role": "user", "content": user_message})
+                
+                response = self._create_chat_completion(
+                    operation="ariel.answer_question",
+                    model=(config.foundry_model_name if config.model_provider == "foundry" else config.deployment_name),
+                    messages=messages,
+                    temperature=0.7,
+                    max_completion_tokens=1000,
+                    timeout=30
+                )
+                
+                answer = response.choices[0].message.content
+                
+                await self._log_qa_interaction(
+                    application_id=application_id,
+                    question=question,
+                    answer=answer,
+                    student_profile=student_profile
+                )
+                
+                return {
+                    "success": True,
+                    "answer": answer,
+                    "reference_data": {
+                        "name": student_profile.get("name"),
+                        "school": student_profile.get("school"),
+                        "gpa": student_profile.get("gpa"),
+                        "data_sources": student_profile.get("_data_sources", [])
+                    }
                 }
-            
-            # Build context for GPT-4
-            system_prompt = self._build_system_prompt(student_profile)
-            user_message = self._build_user_message(question, student_profile)
-            
-            # Build messages with conversation history
-            messages = [
-                {"role": "system", "content": system_prompt}
-            ]
-            
-            # Add conversation history if provided
-            if conversation_history:
-                for exchange in conversation_history:
-                    messages.append({"role": "user", "content": exchange["question"]})
-                    messages.append({"role": "assistant", "content": exchange["answer"]})
-            
-            # Add current question
-            messages.append({"role": "user", "content": user_message})
-            
-            # Call the provider-agnostic completion helper so it's compatible
-            # with Azure OpenAI and Foundry client shapes.
-            response = self._create_chat_completion(
-                operation="ariel.answer_question",
-                model=(config.foundry_model_name if config.model_provider == "foundry" else config.deployment_name),
-                messages=messages,
-                temperature=0.7,
-                max_completion_tokens=1000,
-                timeout=30
-            )
-            
-            answer = response.choices[0].message.content
-            
-            # Log the interaction
-            await self._log_qa_interaction(
-                application_id=application_id,
-                question=question,
-                answer=answer,
-                student_profile=student_profile
-            )
-            
-            return {
-                "success": True,
-                "answer": answer,
-                "reference_data": {
-                    "name": student_profile.get("name"),
-                    "school": student_profile.get("school"),
-                    "gpa": student_profile.get("gpa"),
-                    "data_sources": student_profile.get("_data_sources", [])
+                
+            except Exception as e:
+                logger.error(f"Error answering question for {application_id}: {str(e)}")
+                return {
+                    "success": False,
+                    "error": str(e),
+                    "answer": None,
+                    "reference_data": {}
                 }
-            }
-            
-        except Exception as e:
-            logger.error(f"Error answering question for {application_id}: {str(e)}")
-            return {
-                "success": False,
-                "error": str(e),
-                "answer": None,
-                "reference_data": {}
-            }
     
     async def _build_student_profile(self, application_id: str) -> Optional[dict]:
         """

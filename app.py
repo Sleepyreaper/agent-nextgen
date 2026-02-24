@@ -76,16 +76,20 @@ def inject_app_metadata():
         'app_version': config.app_version
     }
 
+# Initialize telemetry FIRST so the TracerProvider is set before instrumentors run.
+# When Azure Monitor is configured, configure_azure_monitor() auto-instruments
+# Flask, requests, psycopg2, and urllib — so manual instrumentors are a safe no-op.
+init_telemetry(service_name=os.getenv("OTEL_SERVICE_NAME", "agent-framework"))
+
 # Instrument Flask and outbound HTTP calls for App Insights.
+# (When azure-monitor-opentelemetry is present these are already instrumented;
+#  calling instrument_app again is harmless — OTel deduplicates.)
 FlaskInstrumentor().instrument_app(app)
 RequestsInstrumentor().instrument()
 
 # Ensure upload folder exists
 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 logger.info("Flask app initialized", extra={'upload_folder': app.config['UPLOAD_FOLDER']})
-
-# Initialize telemetry (prompt capture controlled by NEXTGEN_CAPTURE_PROMPTS)
-init_telemetry(service_name=os.getenv("OTEL_SERVICE_NAME", "agent-framework"))
 
 # Initialize Azure OpenAI client
 def get_ai_client(api_version: str = None, azure_deployment: str = None):

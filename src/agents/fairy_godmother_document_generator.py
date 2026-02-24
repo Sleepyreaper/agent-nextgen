@@ -18,6 +18,7 @@ from docx.shared import Inches, Pt, RGBColor
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 
 from src.agents.base_agent import BaseAgent
+from src.agents.telemetry_helpers import agent_run
 
 logger = logging.getLogger(__name__)
 
@@ -72,48 +73,49 @@ class FairyGodmotherDocumentGenerator(BaseAgent):
         """
         logger.info(f"🪄 Fairy Godmother creating evaluation document for {application.get('applicant_name', 'student')}")
         
-        try:
-            # Create Word document
-            doc = Document()
+        with agent_run("FairyGodmother", "generate_evaluation_document", {"student_id": student_id}) as span:
+            try:
+                # Create Word document
+                doc = Document()
 
-            # Apply a consistent theme
-            self._apply_document_theme(doc)
-            
-            # Add title and header
-            self._add_header(doc, application)
-            
-            # Add executive summary
-            self._add_executive_summary(doc, agent_results)
-            
-            # Add detailed agent results
-            self._add_agent_results(doc, agent_results)
-            
-            # Add final recommendation
-            self._add_final_recommendation(doc, agent_results)
-            
-            # Save document
-            doc_path, doc_url = await self._save_document(doc, application, student_id)
-            
-            # Update database with document path
-            if self.db and doc_path:
-                await self._update_database(application, doc_path, doc_url)
-            
-            logger.info(f"✨ Fairy Godmother completed document: {doc_path}")
-            
-            return {
-                'status': 'success',
-                'document_path': doc_path,
-                'document_url': doc_url,
-                'student_id': student_id,
-                'created_at': datetime.now().isoformat()
-            }
-            
-        except Exception as e:
-            logger.error(f"Fairy Godmother error creating document: {e}", exc_info=True)
-            return {
-                'status': 'error',
-                'error': str(e)
-            }
+                # Apply a consistent theme
+                self._apply_document_theme(doc)
+                
+                # Add title and header
+                self._add_header(doc, application)
+                
+                # Add executive summary
+                self._add_executive_summary(doc, agent_results)
+                
+                # Add detailed agent results
+                self._add_agent_results(doc, agent_results)
+                
+                # Add final recommendation
+                self._add_final_recommendation(doc, agent_results)
+                
+                # Save document
+                doc_path, doc_url = await self._save_document(doc, application, student_id)
+                
+                # Update database with document path
+                if self.db and doc_path:
+                    await self._update_database(application, doc_path, doc_url)
+                
+                logger.info(f"✨ Fairy Godmother completed document: {doc_path}")
+                
+                return {
+                    'status': 'success',
+                    'document_path': doc_path,
+                    'document_url': doc_url,
+                    'student_id': student_id,
+                    'created_at': datetime.now().isoformat()
+                }
+                
+            except Exception as e:
+                logger.error(f"Fairy Godmother error creating document: {e}", exc_info=True)
+                return {
+                    'status': 'error',
+                    'error': str(e)
+                }
     
     def _add_header(self, doc: Document, application: Dict[str, Any]):
         """Add document header with student info."""

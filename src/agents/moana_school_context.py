@@ -3,6 +3,7 @@
 from typing import Dict, List, Any, Optional, Tuple
 from openai import AzureOpenAI
 from src.agents.base_agent import BaseAgent
+from src.agents.telemetry_helpers import agent_run
 import re
 import json
 
@@ -104,119 +105,120 @@ class MoanaSchoolContext(BaseAgent):
         self.add_to_history("user", f"Analyze school context for {student_name}")
         print(f"\n🌊 {self.name}: Discovering educational context for {student_name}...")
         
-        try:
-            # CHECK: If school enrichment provided by workflow, use it directly
-            if school_enrichment and school_enrichment.get('school_name'):
-                print(f"  ✓ Using cached/enriched school data from database")
-                return await self._analyze_with_enriched_school_data(
-                    student_name=student_name,
-                    application=application,
-                    transcript_text=transcript_text,
-                    rapunzel_grades_data=rapunzel_grades_data,
-                    school_enrichment=school_enrichment
-                    ,application_id=application_id
-                )
-            
-            # FALLBACK: Legacy path for backwards compatibility
-            print(f"  → No pre-enriched school data, performing analysis...")
+        with agent_run("Moana", "analyze_student_school_context", {"student": student_name, "application_id": str(application_id or "")}) as span:
+            try:
+                # CHECK: If school enrichment provided by workflow, use it directly
+                if school_enrichment and school_enrichment.get('school_name'):
+                    print(f"  ✓ Using cached/enriched school data from database")
+                    return await self._analyze_with_enriched_school_data(
+                        student_name=student_name,
+                        application=application,
+                        transcript_text=transcript_text,
+                        rapunzel_grades_data=rapunzel_grades_data,
+                        school_enrichment=school_enrichment,
+                        application_id=application_id
+                    )
+                
+                # FALLBACK: Legacy path for backwards compatibility
+                print(f"  → No pre-enriched school data, performing analysis...")
 
-            # Step 1: Extract school name and location
-            school_info = await self._extract_school_info(transcript_text, application)
-            
-            if not school_info.get('school_name') or school_info.get('school_name') == 'High School':
-                print(f"⚠ Could not identify school from available data")
-                return {
-                    'status': 'incomplete',
-                    'student_name': student_name,
-                    'error': 'School identification failed',
-                    'confidence': 0
-                }
-            
-            print(f"  School Identified: {school_info['school_name']}")
-            
-            # Determine state and data availability
-            school_state = school_info.get('state', '').upper()
-            is_georgia_school = school_state in ['GA', 'GEORGIA']
-            
-            # Identify available data sources for this state
-            available_data_sources = await self._identify_data_sources(school_state, school_info)
-            
-            if is_georgia_school:
-                print(f"  ✓ Georgia school detected - using Georgia state data")
-                school_info['georgia_data_available'] = True
-                school_info['data_source_url'] = self.georgia_data_source
-            else:
-                print(f"  🔍 {school_state} school - searching for public data sources...")
-                school_info['data_sources'] = available_data_sources['sources']
-                school_info['data_availability'] = available_data_sources
-            
-            # Step 2: Extract programs from transcript
-            program_participation = await self._extract_program_participation(
-                transcript_text,
-                student_name
-            )
-            
-            # Step 3: Look up school in database or create profile
-            school_profile = await self._get_or_create_school_profile(school_info)
-            
-            # Step 4: Analyze SES context
-            ses_context = await self._analyze_socioeconomic_context(school_profile)
-            
-            # Step 4b: Analyze school resources and comparisons
-            school_resources = self._analyze_school_resources(
-                school_profile,
-                school_info,
-                ses_context
-            )
-            
-            # Step 5: Score student's access and participation
-            scores = self._calculate_opportunity_scores(
-                school_profile,
-                program_participation,
-                ses_context
-            )
-            
-            # Compile comprehensive analysis
-            analysis = {
-                'status': 'success',
-                'student_name': student_name,
-                'school': {
-                    'name': school_info['school_name'],
-                    'city': school_info.get('city'),
-                    'state': school_info.get('state'),
-                    'identification_confidence': school_info.get('confidence', 0.7)
-                },
-                'school_profile': school_profile,
-                'ses_context': ses_context,
-                'program_participation': program_participation,
-                'school_resources': school_resources,
-                'opportunity_scores': scores,
-                'contextual_summary': self._build_summary(
-                    student_name,
+                # Step 1: Extract school name and location
+                school_info = await self._extract_school_info(transcript_text, application)
+                
+                if not school_info.get('school_name') or school_info.get('school_name') == 'High School':
+                    print(f"⚠ Could not identify school from available data")
+                    return {
+                        'status': 'incomplete',
+                        'student_name': student_name,
+                        'error': 'School identification failed',
+                        'confidence': 0
+                    }
+                
+                print(f"  School Identified: {school_info['school_name']}")
+                
+                # Determine state and data availability
+                school_state = school_info.get('state', '').upper()
+                is_georgia_school = school_state in ['GA', 'GEORGIA']
+                
+                # Identify available data sources for this state
+                available_data_sources = await self._identify_data_sources(school_state, school_info)
+                
+                if is_georgia_school:
+                    print(f"  ✓ Georgia school detected - using Georgia state data")
+                    school_info['georgia_data_available'] = True
+                    school_info['data_source_url'] = self.georgia_data_source
+                else:
+                    print(f"  🔍 {school_state} school - searching for public data sources...")
+                    school_info['data_sources'] = available_data_sources['sources']
+                    school_info['data_availability'] = available_data_sources
+                
+                # Step 2: Extract programs from transcript
+                program_participation = await self._extract_program_participation(
+                    transcript_text,
+                    student_name
+                )
+                
+                # Step 3: Look up school in database or create profile
+                school_profile = await self._get_or_create_school_profile(school_info)
+                
+                # Step 4: Analyze SES context
+                ses_context = await self._analyze_socioeconomic_context(school_profile)
+                
+                # Step 4b: Analyze school resources and comparisons
+                school_resources = self._analyze_school_resources(
+                    school_profile,
                     school_info,
+                    ses_context
+                )
+                
+                # Step 5: Score student's access and participation
+                scores = self._calculate_opportunity_scores(
+                    school_profile,
                     program_participation,
-                    scores,
-                    ses_context,
-                    school_resources,
-                    rapunzel_grades_data
-                ),
-                'model_used': self.model
-            }
+                    ses_context
+                )
+                
+                # Compile comprehensive analysis
+                analysis = {
+                    'status': 'success',
+                    'student_name': student_name,
+                    'school': {
+                        'name': school_info['school_name'],
+                        'city': school_info.get('city'),
+                        'state': school_info.get('state'),
+                        'identification_confidence': school_info.get('confidence', 0.7)
+                    },
+                    'school_profile': school_profile,
+                    'ses_context': ses_context,
+                    'program_participation': program_participation,
+                    'school_resources': school_resources,
+                    'opportunity_scores': scores,
+                    'contextual_summary': self._build_summary(
+                        student_name,
+                        school_info,
+                        program_participation,
+                        scores,
+                        ses_context,
+                        school_resources,
+                        rapunzel_grades_data
+                    ),
+                    'model_used': self.model
+                }
+                
+                self.add_to_history("assistant", json.dumps(analysis, default=str)[:1000])
+                return analysis
             
-            self.add_to_history("assistant", json.dumps(analysis, default=str)[:1000])
-            return analysis
-        
-        except Exception as e:
-            import traceback
-            error_detail = traceback.format_exc()
-            print(f"⚠ Exception in analyze_student_school_context: {e}")
-            print(f"  Traceback: {error_detail[:200]}")
-            return {
-                'status': 'error',
-                'student_name': student_name,
-                'error': str(e),
-                'error_type': type(e).__name__
-            }
+            except Exception as e:
+                import traceback
+                error_detail = traceback.format_exc()
+                print(f"⚠ Exception in analyze_student_school_context: {e}")
+                print(f"  Traceback: {error_detail[:200]}")
+                return {
+                    'status': 'error',
+                    'student_name': student_name,
+                    'error': str(e),
+                    'error_type': type(e).__name__
+                }
     
     async def _analyze_with_enriched_school_data(
         self,

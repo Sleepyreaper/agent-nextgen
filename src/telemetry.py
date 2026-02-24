@@ -44,8 +44,18 @@ def initialize_telemetry(service_name: str = "agent-framework", capture_sensitiv
 
 class NextGenTelemetry:
     """Wrapper for application telemetry tracking using OpenTelemetry."""
-class NextGenTelemetry:
-    """Wrapper for application telemetry tracking using OpenTelemetry."""
+
+    def __init__(self):
+        # Cache counters to avoid re-creating on every call
+        self._counters = {}
+
+    def _get_counter(self, name: str):
+        """Get or create a cached counter instrument."""
+        if name not in self._counters:
+            meter = get_meter()
+            if meter:
+                self._counters[name] = meter.create_counter(name)
+        return self._counters.get(name)
     
     def track_event(self, event_name: str, properties: Dict[str, Any] = None, metrics_data: Dict[str, float] = None) -> None:
         """
@@ -60,12 +70,11 @@ class NextGenTelemetry:
             return
         
         try:
-            # Use OpenTelemetry meter to record metrics
-            meter = get_meter()
-            if meter and metrics_data:
+            if metrics_data:
                 for metric_name, value in metrics_data.items():
-                    counter = meter.create_counter(f"{event_name}.{metric_name}")
-                    counter.add(value, properties or {})
+                    counter = self._get_counter(f"{event_name}.{metric_name}")
+                    if counter:
+                        counter.add(value, properties or {})
         except Exception:
             pass
     
@@ -92,7 +101,6 @@ class NextGenTelemetry:
             result_summary: Summary of results
         """
         tracer = get_tracer()
-        meter = get_meter()
         
         # Create span for agent execution
         if tracer:
@@ -116,19 +124,21 @@ class NextGenTelemetry:
                             pass
         
         # Record metrics
-        if meter:
-            try:
-                duration_counter = meter.create_counter("agent_execution_duration_ms")
-                duration_counter.add(processing_time_ms, {"agent": agent_name, "model": model})
-                
-                if tokens_used > 0:
-                    token_counter = meter.create_counter("agent_tokens_used")
-                    token_counter.add(tokens_used, {"agent": agent_name})
-                
-                status_counter = meter.create_counter("agent_execution_status")
-                status_counter.add(1, {"agent": agent_name, "status": "success" if success else "failure"})
-            except Exception:
-                pass
+        try:
+            duration_ctr = self._get_counter("agent_execution_duration_ms")
+            if duration_ctr:
+                duration_ctr.add(processing_time_ms, {"agent": agent_name, "model": model})
+            
+            if tokens_used > 0:
+                token_ctr = self._get_counter("agent_tokens_used")
+                if token_ctr:
+                    token_ctr.add(tokens_used, {"agent": agent_name})
+            
+            status_ctr = self._get_counter("agent_execution_status")
+            if status_ctr:
+                status_ctr.add(1, {"agent": agent_name, "status": "success" if success else "failure"})
+        except Exception:
+            pass
     
     def log_model_call(
         self,
@@ -149,7 +159,6 @@ class NextGenTelemetry:
             success: Whether the call succeeded
         """
         tracer = get_tracer()
-        meter = get_meter()
         
         if tracer:
             with tracer.start_as_current_span("model_call") as span:
@@ -161,15 +170,16 @@ class NextGenTelemetry:
                 span.set_attribute("duration_ms", float(duration_ms))
                 span.set_attribute("success", success)
         
-        if meter:
-            try:
-                token_counter = meter.create_counter("model_tokens_used")
-                token_counter.add(input_tokens + output_tokens, {"model": model, "type": "total"})
-                
-                duration_counter = meter.create_counter("model_call_duration_ms")
-                duration_counter.add(duration_ms, {"model": model})
-            except Exception:
-                pass
+        try:
+            token_ctr = self._get_counter("model_tokens_used")
+            if token_ctr:
+                token_ctr.add(input_tokens + output_tokens, {"model": model, "type": "total"})
+            
+            duration_ctr = self._get_counter("model_call_duration_ms")
+            if duration_ctr:
+                duration_ctr.add(duration_ms, {"model": model})
+        except Exception:
+            pass
     
     def log_school_enrichment(
         self,

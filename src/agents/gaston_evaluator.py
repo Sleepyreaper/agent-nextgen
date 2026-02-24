@@ -6,6 +6,7 @@ from typing import Dict, List, Any, Optional
 from src.utils import safe_load_json
 from openai import AzureOpenAI
 from src.agents.base_agent import BaseAgent
+from src.agents.telemetry_helpers import agent_run
 from src.agents.system_prompts import GASTON_EVALUATOR_PROMPT
 
 
@@ -102,65 +103,68 @@ class GastonEvaluator(BaseAgent):
         """
         start_time = time.time()
         
-        prompt = self._build_evaluation_prompt(application)
-        
-        try:
-            # Two-step: extract salient evidence and quotes, then synthesize the
-            # final JSON evaluation using that extracted material.
-            query_messages = [
-                {"role": "system", "content": "You are an expert at extracting salient evidence and direct quotes from an application for an admissions evaluation."},
-                {"role": "user", "content": f"Extract the 6 most important evidence snippets and any direct quotes from this application to support scoring:\n\n{application.get('ApplicationText', '')[:2500]}"}
-            ]
+        with agent_run("Gaston", "evaluate_application", {"application_id": str(application.get("ApplicationID", ""))}) as span:
+            prompt = self._build_evaluation_prompt(application)
 
-            format_template = [
-                {"role": "system", "content": "You are an expert hiring manager. Using the extracted facts, produce the JSON evaluation exactly matching the requested schema. Respond ONLY with valid JSON."},
-                {"role": "user", "content": "Extracted facts and quotes: {found}\n\nNow return the JSON evaluation per the schema in the prompt."}
-            ]
+            try:
+                # Two-step: extract salient evidence and quotes, then synthesize the
+                # final JSON evaluation using that extracted material.
+                query_messages = [
+                    {"role": "system", "content": "You are an expert at extracting salient evidence and direct quotes from an application for an admissions evaluation."},
+                    {"role": "user", "content": f"Extract the 6 most important evidence snippets and any direct quotes from this application to support scoring:\n\n{application.get('ApplicationText', '')[:2500]}"}
+                ]
 
-            q_resp, response = self.two_step_query_format(
-                operation_base="gaston.evaluate_application",
-                model=self.model,
-                query_messages=query_messages,
-                format_messages_template=format_template,
-                query_kwargs={"max_completion_tokens": 300, "temperature": 0},
-                format_kwargs={"max_completion_tokens": 2000, "temperature": 0.8, "response_format": {"type": "json_object"}}
-            )
+                format_template = [
+                    {"role": "system", "content": "You are an expert hiring manager. Using the extracted facts, produce the JSON evaluation exactly matching the requested schema. Respond ONLY with valid JSON."},
+                    {"role": "user", "content": "Extracted facts and quotes: {found}\n\nNow return the JSON evaluation per the schema in the prompt."}
+                ]
 
-            processing_time_ms = int((time.time() - start_time) * 1000)
+                q_resp, response = self.two_step_query_format(
+                    operation_base="gaston.evaluate_application",
+                    model=self.model,
+                    query_messages=query_messages,
+                    format_messages_template=format_template,
+                    query_kwargs={"max_completion_tokens": 300, "temperature": 0},
+                    format_kwargs={"max_completion_tokens": 2000, "temperature": 0.8, "response_format": {"type": "json_object"}}
+                )
 
-            # Parse the JSON response
-            evaluation = safe_load_json(response.choices[0].message.content)
+                processing_time_ms = int((time.time() - start_time) * 1000)
+
+                # Parse the JSON response
+                evaluation = safe_load_json(response.choices[0].message.content)
+                
+                # Add metadata
+                evaluation['processing_time_ms'] = processing_time_ms
+                evaluation['model_used'] = self.model
+                evaluation['agent_name'] = self.name
+                evaluation['application_id'] = application.get('ApplicationID')
+                
+                if span:
+                    span.set_attribute("agent.result.score", str(evaluation.get("overall_score", "")))
+                return evaluation
+                
+            except json.JSONDecodeError as e:
+                print(f"[{self.name}] Failed to parse JSON response: {str(e)}")
+                # Return a default evaluation
+                return {
+                    'technical_skills_score': 0,
+                    'communication_score': 0,
+                    'experience_score': 0,
+                    'cultural_fit_score': 0,
+                    'overall_score': 0,
+                    'strengths': 'Error: Could not evaluate',
+                    'weaknesses': 'Error in evaluation process',
+                    'recommendation': 'Review Required',
+                    'detailed_analysis': f'Evaluation failed: {str(e)}',
+                    'comparison_to_excellence': 'N/A',
+                    'processing_time_ms': int((time.time() - start_time) * 1000),
+                    'model_used': self.model,
+                    'agent_name': self.name
+                }
             
-            # Add metadata
-            evaluation['processing_time_ms'] = processing_time_ms
-            evaluation['model_used'] = self.model
-            evaluation['agent_name'] = self.name
-            evaluation['application_id'] = application.get('ApplicationID')
-            
-            return evaluation
-            
-        except json.JSONDecodeError as e:
-            print(f"[{self.name}] Failed to parse JSON response: {str(e)}")
-            # Return a default evaluation
-            return {
-                'technical_skills_score': 0,
-                'communication_score': 0,
-                'experience_score': 0,
-                'cultural_fit_score': 0,
-                'overall_score': 0,
-                'strengths': 'Error: Could not evaluate',
-                'weaknesses': 'Error in evaluation process',
-                'recommendation': 'Review Required',
-                'detailed_analysis': f'Evaluation failed: {str(e)}',
-                'comparison_to_excellence': 'N/A',
-                'processing_time_ms': int((time.time() - start_time) * 1000),
-                'model_used': self.model,
-                'agent_name': self.name
-            }
-        
-        except Exception as e:
-            print(f"[{self.name}] Evaluation error: {str(e)}")
-            raise
+            except Exception as e:
+                print(f"[{self.name}] Evaluation error: {str(e)}")
+                raise
     
     async def process(self, message: str) -> str:
         """Process method for base agent compatibility."""

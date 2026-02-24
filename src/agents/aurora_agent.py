@@ -7,6 +7,7 @@ import asyncio
 import json
 from typing import Dict, Any, Optional, List
 from src.agents.base_agent import BaseAgent
+from src.agents.telemetry_helpers import agent_run
 
 
 class AuroraAgent(BaseAgent):
@@ -73,73 +74,74 @@ class AuroraAgent(BaseAgent):
         """
         result = self.result_template.copy()
         
-        # Populate student info
-        result['student_info'] = {
-            'name': application_data.get('name'),
-            'email': application_data.get('email'),
-            'status': self._determine_status(agent_outputs)
-        }
-        
-        # Populate Merlin's summary
-        overall_text = (
-            merlin_assessment.get('rationale')
-            or merlin_assessment.get('overall_narrative')
-            or ''
-        )
-        considerations = (
-            merlin_assessment.get('key_risks')
-            or merlin_assessment.get('context_factors')
-            or []
-        )
-        decision_drivers = (
-            merlin_assessment.get('decision_drivers')
-            or merlin_assessment.get('key_strengths')
-            or []
-        )
-        top_risk = (
-            merlin_assessment.get('top_risk')
-            or (considerations[0] if considerations else None)
-        )
-        result['merlin_summary'] = {
-            'score': merlin_assessment.get('overall_score', 0),
-            'recommendation': merlin_assessment.get('recommendation', 'PENDING'),
-            'overall': overall_text,
-            'key_strengths': merlin_assessment.get('key_strengths', []),
-            'considerations': considerations,
-            'decision_drivers': decision_drivers,
-            'top_risk': top_risk
-        }
-        
-        # Format each agent's output consistently
-        tiana_output = self._format_tiana_output(agent_outputs.get('tiana'))
-        rapunzel_output = self._format_rapunzel_output(agent_outputs.get('rapunzel'))
-        moana_output = self._format_moana_output(agent_outputs.get('moana'))
-        mulan_output = self._format_mulan_output(agent_outputs.get('mulan'))
+        with agent_run("Aurora", "format_results") as span:
+            # Populate student info
+            result['student_info'] = {
+                'name': application_data.get('name'),
+                'email': application_data.get('email'),
+                'status': self._determine_status(agent_outputs)
+            }
+            
+            # Populate Merlin's summary
+            overall_text = (
+                merlin_assessment.get('rationale')
+                or merlin_assessment.get('overall_narrative')
+                or ''
+            )
+            considerations = (
+                merlin_assessment.get('key_risks')
+                or merlin_assessment.get('context_factors')
+                or []
+            )
+            decision_drivers = (
+                merlin_assessment.get('decision_drivers')
+                or merlin_assessment.get('key_strengths')
+                or []
+            )
+            top_risk = (
+                merlin_assessment.get('top_risk')
+                or (considerations[0] if considerations else None)
+            )
+            result['merlin_summary'] = {
+                'score': merlin_assessment.get('overall_score', 0),
+                'recommendation': merlin_assessment.get('recommendation', 'PENDING'),
+                'overall': overall_text,
+                'key_strengths': merlin_assessment.get('key_strengths', []),
+                'considerations': considerations,
+                'decision_drivers': decision_drivers,
+                'top_risk': top_risk
+            }
+            
+            # Format each agent's output consistently
+            tiana_output = self._format_tiana_output(agent_outputs.get('tiana'))
+            rapunzel_output = self._format_rapunzel_output(agent_outputs.get('rapunzel'))
+            moana_output = self._format_moana_output(agent_outputs.get('moana'))
+            mulan_output = self._format_mulan_output(agent_outputs.get('mulan'))
 
-        rapunzel_output['contextual_comparison'] = self._build_grade_context(
-            agent_outputs.get('rapunzel'),
-            agent_outputs.get('moana')
-        )
+            rapunzel_output['contextual_comparison'] = self._build_grade_context(
+                agent_outputs.get('rapunzel'),
+                agent_outputs.get('moana')
+            )
 
-        result['agents'] = {
-            'tiana': tiana_output,
-            'rapunzel': rapunzel_output,
-            'moana': moana_output,
-            'mulan': mulan_output
-        }
-        
-        # Include application text
-        result['application_text'] = application_data.get('application_text')
-        
-        # Mark processing metadata
-        result['processing_metadata'] = {
-            'agents_completed': list(agent_outputs.keys()),
-            'smee_verified': agent_outputs.get('smee_verified', False),
-            'merlin_signed_off': merlin_assessment.get('signed_off', False),
-            'presenter_formatted': True
-        }
-        
-        return result
+            result['agents'] = {
+                'tiana': tiana_output,
+                'rapunzel': rapunzel_output,
+                'moana': moana_output,
+                'mulan': mulan_output
+            }
+            
+            # Include application text
+            result['application_text'] = application_data.get('application_text')
+            
+            # Mark processing metadata
+            result['processing_metadata'] = {
+                'agents_completed': list(agent_outputs.keys()),
+                'smee_verified': agent_outputs.get('smee_verified', False),
+                'merlin_signed_off': merlin_assessment.get('signed_off', False),
+                'presenter_formatted': True
+            }
+            
+            return result
     
     def _determine_status(self, agent_outputs: Dict[str, Any]) -> str:
         """Determine overall status based on which agents completed."""

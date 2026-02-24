@@ -60,13 +60,17 @@ typing-inspection==0.4.2
 typing_extensions==4.15.0
 urllib3==2.6.3
 
-# OpenTelemetry packages for observability
-opentelemetry-api==1.20.0
-opentelemetry-sdk==1.20.0
-opentelemetry-instrumentation==0.41b0
-opentelemetry-instrumentation-flask==0.41b0
-opentelemetry-instrumentation-requests==0.41b0
+# Azure Monitor OpenTelemetry distro — connects to Application Insights
+# (bundles Flask, requests, psycopg2, urllib3 instrumentors automatically)
+azure-monitor-opentelemetry==1.6.4
 
-# OTLP exporter required by src/observability imports
-opentelemetry-exporter-otlp-proto-grpc==1.20.0
+# OpenTelemetry core (version must satisfy azure-monitor-opentelemetry ~=1.28)
+opentelemetry-api==1.28.2
+opentelemetry-sdk==1.28.2
+opentelemetry-instrumentation==0.49b2
+opentelemetry-instrumentation-flask==0.49b2
+opentelemetry-instrumentation-requests==0.49b2
+
+# OTLP exporter required by src/observability imports (fallback when no App Insights)
+opentelemetry-exporter-otlp-proto-grpc==1.28.2
 

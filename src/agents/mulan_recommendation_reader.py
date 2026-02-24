@@ -5,6 +5,7 @@ import re
 from typing import Dict, Any, Optional
 from openai import AzureOpenAI
 from src.agents.base_agent import BaseAgent
+from src.agents.telemetry_helpers import agent_run
 from src.utils import safe_load_json
 
 
@@ -24,53 +25,56 @@ class MulanRecommendationReader(BaseAgent):
 
     async def parse_recommendation(self, recommendation_text: str, applicant_name: str = "Unknown", application_id: Optional[int] = None) -> Dict[str, Any]:
         """Parse a recommendation letter into structured data."""
-        prompt = self._build_prompt(applicant_name, recommendation_text)
+        with agent_run("Mulan", "parse_recommendation", {"applicant": applicant_name, "application_id": str(application_id or "")}) as span:
+            prompt = self._build_prompt(applicant_name, recommendation_text)
 
-        try:
-            query_messages = [
-                {"role": "system", "content": "You are an expert extractor of recommendation letters. Extract concise evidence snippets, recommender identity clues, and endorsement signals."},
-                {"role": "user", "content": f"Recommendation for {applicant_name}:\n\n{recommendation_text[:2000]}"}
-            ]
+            try:
+                query_messages = [
+                    {"role": "system", "content": "You are an expert extractor of recommendation letters. Extract concise evidence snippets, recommender identity clues, and endorsement signals."},
+                    {"role": "user", "content": f"Recommendation for {applicant_name}:\n\n{recommendation_text[:2000]}"}
+                ]
 
-            format_template = [
-                {"role": "system", "content": "You are Mulan. Use the extracted facts to produce the final JSON with the required fields and evidence mappings. Return valid JSON only."},
-                {"role": "user", "content": "Extracted facts: {found}\n\nNow produce the structured JSON with fields: applicant_name, recommender_name, recommender_role, relationship, duration_known, key_strengths, growth_areas, comparative_statements, evidence_examples, core_competencies, endorsement_strength, specificity_score, credibility_notes, consensus_view, divergent_views, summary, eligibility_signals, confidence."}
-            ]
+                format_template = [
+                    {"role": "system", "content": "You are Mulan. Use the extracted facts to produce the final JSON with the required fields and evidence mappings. Return valid JSON only."},
+                    {"role": "user", "content": "Extracted facts: {found}\n\nNow produce the structured JSON with fields: applicant_name, recommender_name, recommender_role, relationship, duration_known, key_strengths, growth_areas, comparative_statements, evidence_examples, core_competencies, endorsement_strength, specificity_score, credibility_notes, consensus_view, divergent_views, summary, eligibility_signals, confidence."}
+                ]
 
-            q_resp, response = self.two_step_query_format(
-                operation_base="mulan.parse_recommendation",
-                model=self.model,
-                query_messages=query_messages,
-                format_messages_template=format_template,
-                query_kwargs={"max_completion_tokens": 200, "temperature": 0},
-                format_kwargs={"max_completion_tokens": 1200, "temperature": 1, "refinements": 2, "refinement_instruction": "Refine the JSON output to ensure clear evidence mapping and consistent endorsement strength scoring. If multiple recommenders are present, separate them explicitly.", "response_format": {"type": "json_object"}}
-            )
-
-            payload = response.choices[0].message.content
-            data = safe_load_json(payload)
-            data["status"] = "success"
-            data["agent"] = self.name
-
-            if self.db and application_id:
-                self.db.save_mulan_recommendation(
-                    application_id=application_id,
-                    agent_name=self.name,
-                    recommender_name=data.get("recommender_name"),
-                    recommender_role=data.get("recommender_role"),
-                    endorsement_strength=data.get("endorsement_strength"),
-                    specificity_score=data.get("specificity_score"),
-                    summary=data.get("summary"),
-                    raw_text=recommendation_text,
-                    parsed_json=json.dumps(data, ensure_ascii=True)
+                q_resp, response = self.two_step_query_format(
+                    operation_base="mulan.parse_recommendation",
+                    model=self.model,
+                    query_messages=query_messages,
+                    format_messages_template=format_template,
+                    query_kwargs={"max_completion_tokens": 200, "temperature": 0},
+                    format_kwargs={"max_completion_tokens": 1200, "temperature": 1, "refinements": 2, "refinement_instruction": "Refine the JSON output to ensure clear evidence mapping and consistent endorsement strength scoring. If multiple recommenders are present, separate them explicitly.", "response_format": {"type": "json_object"}}
                 )
-            return data
 
-        except Exception as e:
-            return {
-                "status": "error",
-                "agent": self.name,
-                "error": str(e)
-            }
+                payload = response.choices[0].message.content
+                data = safe_load_json(payload)
+                data["status"] = "success"
+                data["agent"] = self.name
+
+                if self.db and application_id:
+                    self.db.save_mulan_recommendation(
+                        application_id=application_id,
+                        agent_name=self.name,
+                        recommender_name=data.get("recommender_name"),
+                        recommender_role=data.get("recommender_role"),
+                        endorsement_strength=data.get("endorsement_strength"),
+                        specificity_score=data.get("specificity_score"),
+                        summary=data.get("summary"),
+                        raw_text=recommendation_text,
+                        parsed_json=json.dumps(data, ensure_ascii=True)
+                    )
+                if span:
+                    span.set_attribute("agent.result.endorsement", str(data.get("endorsement_strength", "")))
+                return data
+
+            except Exception as e:
+                return {
+                    "status": "error",
+                    "agent": self.name,
+                    "error": str(e)
+                }
 
     def _build_prompt(self, applicant_name: str, recommendation_text: str) -> str:
         """Build the prompt for parsing recommendation letters."""

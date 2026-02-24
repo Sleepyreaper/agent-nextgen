@@ -4,6 +4,7 @@ import json
 from typing import Dict, Any, Optional
 from openai import AzureOpenAI
 from src.agents.base_agent import BaseAgent
+from src.agents.telemetry_helpers import agent_run
 from src.utils import safe_load_json
 
 
@@ -26,57 +27,62 @@ class MerlinStudentEvaluator(BaseAgent):
         """Generate an overall recommendation based on all agent outputs."""
         applicant_name = application.get("applicant_name", application.get("ApplicantName", "Unknown"))
         application_id = application.get("application_id", application.get("ApplicationID"))
-        prompt = self._build_prompt(applicant_name, application, agent_outputs)
 
-        try:
-            response = self._create_chat_completion(
-                operation="merlin.evaluate_student",
-                model=self.model,
-                messages=[
-                    {
-                        "role": "system",
-                        "content": "You are Merlin, part of an NIH Department of Genetics review panel evaluating Emory NextGen applicants. Apply the requirements: rising junior or senior in high school, must be 16 years old by June 1, 2026, and must demonstrate interest in advancing STEM education to groups from a variety of backgrounds. Produce a fair, consistent final recommendation using evidence from all agents. Explicitly map evidence to the overall score and recommendation. Be decisive and avoid hedging. Return valid JSON only."
-                    },
-                    {"role": "user", "content": prompt}
-                ],
-                max_completion_tokens=1400,
-                temperature=1,
-                refinements=2,
-                refinement_instruction="Refine the JSON recommendation focusing on evidence mapping: ensure each decision_driver cites specific agent outputs and numeric values are normalized.",
-                response_format={"type": "json_object"}
-            )
+        with agent_run("Merlin", "evaluate_student", {"applicant": applicant_name, "application_id": str(application_id or "")}) as span:
+            prompt = self._build_prompt(applicant_name, application, agent_outputs)
 
-            payload = response.choices[0].message.content
-            data = safe_load_json(payload)
-            normalized = self._normalize_score(
-                data.get("overall_score"),
-                data.get("recommendation")
-            )
-            data["overall_score"] = normalized["score"]
-            if normalized["adjusted"]:
-                data["score_adjusted"] = True
-                data["score_adjustment_reason"] = normalized["reason"]
-            data["status"] = "success"
-            data["agent"] = self.name
-
-            if self.db and application_id:
-                self.db.save_merlin_evaluation(
-                    application_id=application_id,
-                    agent_name=self.name,
-                    overall_score=data.get("overall_score"),
-                    recommendation=data.get("recommendation"),
-                    rationale=data.get("rationale"),
-                    confidence=data.get("confidence"),
-                    parsed_json=json.dumps(data, ensure_ascii=True)
+            try:
+                response = self._create_chat_completion(
+                    operation="merlin.evaluate_student",
+                    model=self.model,
+                    messages=[
+                        {
+                            "role": "system",
+                            "content": "You are Merlin, part of an NIH Department of Genetics review panel evaluating Emory NextGen applicants. Apply the requirements: rising junior or senior in high school, must be 16 years old by June 1, 2026, and must demonstrate interest in advancing STEM education to groups from a variety of backgrounds. Produce a fair, consistent final recommendation using evidence from all agents. Explicitly map evidence to the overall score and recommendation. Be decisive and avoid hedging. Return valid JSON only."
+                        },
+                        {"role": "user", "content": prompt}
+                    ],
+                    max_completion_tokens=1400,
+                    temperature=1,
+                    refinements=2,
+                    refinement_instruction="Refine the JSON recommendation focusing on evidence mapping: ensure each decision_driver cites specific agent outputs and numeric values are normalized.",
+                    response_format={"type": "json_object"}
                 )
-            return data
 
-        except Exception as e:
-            return {
-                "status": "error",
-                "agent": self.name,
-                "error": str(e)
-            }
+                payload = response.choices[0].message.content
+                data = safe_load_json(payload)
+                normalized = self._normalize_score(
+                    data.get("overall_score"),
+                    data.get("recommendation")
+                )
+                data["overall_score"] = normalized["score"]
+                if normalized["adjusted"]:
+                    data["score_adjusted"] = True
+                    data["score_adjustment_reason"] = normalized["reason"]
+                data["status"] = "success"
+                data["agent"] = self.name
+
+                if self.db and application_id:
+                    self.db.save_merlin_evaluation(
+                        application_id=application_id,
+                        agent_name=self.name,
+                        overall_score=data.get("overall_score"),
+                        recommendation=data.get("recommendation"),
+                        rationale=data.get("rationale"),
+                        confidence=data.get("confidence"),
+                        parsed_json=json.dumps(data, ensure_ascii=True)
+                    )
+                if span:
+                    span.set_attribute("agent.result.score", str(data.get("overall_score", "")))
+                    span.set_attribute("agent.result.recommendation", str(data.get("recommendation", "")))
+                return data
+
+            except Exception as e:
+                return {
+                    "status": "error",
+                    "agent": self.name,
+                    "error": str(e)
+                }
 
     def _build_prompt(
         self,
