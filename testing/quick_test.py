@@ -26,25 +26,26 @@ print("📋 TEST 1: Code Updates Verification")
 print("-" * 70)
 
 # Check database.py has student_id
-db_file = Path('/Users/sleepy/Documents/Agent NextGen/src/database.py')
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+db_file = PROJECT_ROOT / 'src' / 'database.py'
 db_content = db_file.read_text()
 all_pass &= print_test("database.py has student_id parameter", 'student_id' in db_content)
 all_pass &= print_test("create_application includes student_id", 'INSERT INTO Applications' in db_content and 'student_id' in db_content)
 
 # Check smee_orchestrator has UUID generation
-smee_file = Path('/Users/sleepy/Documents/Agent NextGen/src/agents/smee_orchestrator.py')
+smee_file = PROJECT_ROOT / 'src' / 'agents' / 'smee_orchestrator.py'
 smee_content = smee_file.read_text()
 all_pass &= print_test("Smee has UUID import", 'import uuid' in smee_content)
 all_pass &= print_test("Smee generates student_id", "student_" in smee_content and 'uuid.' in smee_content)
 
 # Check storage.py has container structure
-storage_file = Path('/Users/sleepy/Documents/Agent NextGen/src/storage.py')
+storage_file = PROJECT_ROOT / 'src' / 'storage.py'
 storage_content = storage_file.read_text()
 all_pass &= print_test("Storage has CONTAINERS dict", 'CONTAINERS' in storage_content)
 all_pass &= print_test("Storage has 3 containers", 'applications-2026' in storage_content and 'applications-test' in storage_content and 'applications-training' in storage_content)
 
 # Check app.py updated
-app_file = Path('/Users/sleepy/Documents/Agent NextGen/app.py')
+app_file = PROJECT_ROOT / 'app.py'
 app_content = app_file.read_text()
 all_pass &= print_test("app.py uses is_test_data parameter", 'is_test_data' in app_content)
 all_pass &= print_test("app.py passes student_id to create_application", 'student_id=student_id' in app_content)
@@ -116,7 +117,7 @@ docs = [
 ]
 
 for doc_file, description in docs:
-    path = Path(f'/Users/sleepy/Documents/Agent NextGen/{doc_file}')
+    path = PROJECT_ROOT / doc_file
     exists = path.exists()
     all_pass &= print_test(f"{doc_file} exists - {description}", exists)
 

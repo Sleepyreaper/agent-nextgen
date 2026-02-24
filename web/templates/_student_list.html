@@ -162,6 +162,11 @@
                     📧 {{ student.email or 'N/A' }}<br>
                     📅 {{ student.uploaded_date.strftime('%b %d, %Y') if student.uploaded_date else 'N/A' }}
                 </div>
+                {% if student.student_summary and student.student_summary.rationale %}
+                <div class="student-details" style="font-size:0.85rem; font-style:italic; color:#4b5563;">
+                    {{ student.student_summary.rationale[:80] }}{% if student.student_summary.rationale|length > 80 %}...{% endif %}
+                </div>
+                {% endif %}
             </td>
             <td>
                 <div class="high-school">{{ student.high_school }}</div>

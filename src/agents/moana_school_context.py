@@ -9,7 +9,7 @@ import json
 
 class MoanaSchoolContext(BaseAgent):
     """
-    Specialized agent (Moana) for deeply understanding a student's school context.
+    Specialized agent (Moana) for deeply understanding a student's school context. Model is determined by configuration when not explicitly provided.
     
     This agent analyzes:
     - The high school itself: type, size, location (rural/urban/suburban)
@@ -26,7 +26,7 @@ class MoanaSchoolContext(BaseAgent):
         self,
         name: str,
         client: AzureOpenAI,
-        model: str,
+        model: Optional[str] = None,
         db_connection=None
     ):
         """
@@ -35,11 +35,12 @@ class MoanaSchoolContext(BaseAgent):
         Args:
             name: Agent name (typically "Moana School Context")
             client: Azure OpenAI client
-            model: Model deployment name
+            model: Model deployment name (if None falls back to config)
             db_connection: Database connection for storing/retrieving school data
         """
         super().__init__(name, client)
-        self.model = model
+        # use configured model if none specified
+        self.model = model or config.foundry_model_name or config.deployment_name
         self.db = db_connection
         
         # Cache for school lookups to avoid redundant API calls

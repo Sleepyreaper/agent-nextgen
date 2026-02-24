@@ -333,7 +333,7 @@ class FairyGodmotherDocumentGenerator(BaseAgent):
             application_type = '2026'
         
         # Create student-specific folder (local backup)
-        base_dir = Path('/Users/sleepy/Documents/Agent NextGen/student_documents')
+        base_dir = Path(os.environ.get('STUDENT_DOCUMENTS_DIR', str(Path(__file__).resolve().parent.parent.parent / 'student_documents')))
         student_dir = base_dir / application_type / student_id
         student_dir.mkdir(parents=True, exist_ok=True)
         

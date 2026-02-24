@@ -18,6 +18,7 @@ import logging
 from typing import Dict, Any, Optional, List, Tuple
 from datetime import datetime
 from src.agents.agent_monitor import get_agent_monitor, AgentStatus
+from src.config import config
 
 logger = logging.getLogger(__name__)
 
@@ -101,7 +102,7 @@ class SchoolDataWorkflow:
         monitor = get_agent_monitor()
         execution = monitor.start_execution(
             agent_name="Naveen (School Data Scientist)",
-            model="o4miniagent"
+            model=config.deployment_name_mini
         )
         
         try:
@@ -380,7 +381,7 @@ class SchoolDataWorkflow:
         monitor = get_agent_monitor()
         execution = monitor.start_execution(
             agent_name=f"Naveen Remediation Attempt {remediation_attempt}",
-            model="o4miniagent"
+            model=config.deployment_name_mini
         )
         
         try:

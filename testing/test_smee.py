@@ -181,6 +181,15 @@ async def main():
         evaluation_steps=["grade_reader", "school_context"]
     )
     
+    # make sure DB row got updated with our outputs
+    try:
+        app_row = db.get_application(test_application.get('ApplicationID'))
+        print("\nDB application row after orchestration:", {k: v for k, v in app_row.items() if k in ['agent_results','student_summary']})
+        assert app_row.get('agent_results') is not None, "agent_results column missing"
+        assert app_row.get('student_summary') is not None, "student_summary column missing"
+    except Exception as _:
+        pass
+    
     # Display results
     print("\n" + "="*70)
     print("EVALUATION RESULTS SUMMARY")

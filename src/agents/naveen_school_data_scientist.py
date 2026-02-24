@@ -2,7 +2,7 @@
 Naveen School Data Scientist Agent
 Analyzes schools to build enriched profiles with opportunity scores.
 Character: Naveen (Disney character from "The Princess and the Frog")
-Model: o4-mini (Azure AI Foundry)
+Model: o4-mini (Azure AI Foundry) by default, but the actual deployment name is now resolved via configuration (FOUNDRY_MODEL_NAME or AZURE_DEPLOYMENT_NAME).
 
 Uses AI to analyze web data, academic programs, salary outcomes, and regional context.
 Builds comprehensive school enrichment profiles for student opportunity assessment.
@@ -12,13 +12,21 @@ import logging
 import json
 import re
 import time
+from src.utils import safe_load_json
 from typing import Dict, Any, Optional, List
 from datetime import datetime
 from urllib.parse import urlparse
 from opentelemetry.trace import SpanKind
 
-from src.agents.base_agent import BaseAgent
-from src.observability import get_tracer
+try:
+    from .base_agent import BaseAgent
+except Exception:
+    from agents.base_agent import BaseAgent
+
+try:
+    from ..observability import get_tracer
+except Exception:
+    from observability import get_tracer
 
 logger = logging.getLogger(__name__)
 
@@ -33,11 +41,12 @@ class NaveenSchoolDataScientist(BaseAgent):
     Inherits from BaseAgent to use Azure OpenAI for intelligent enrichment.
     """
 
-    def __init__(self, name: str = "Naveen School Data Scientist", client: Any = None, model: str = "o4MiniAgent"):
+    def __init__(self, name: str = "Naveen School Data Scientist", client: Any = None, model: Optional[str] = None):
         """Initialize Naveen with AI client."""
         super().__init__(name=name, client=client)
-        self.model = model
-        self.model_display = "gpt-4 mini"  # Display-friendly model name
+        # resolve default model from configuration (FOUNDRY_MODEL_NAME or deployment)
+        self.model = model or config.foundry_model_name or config.deployment_name
+        self.model_display = self.model or "unknown"  # Display-friendly name
 
     def analyze_school(
         self,
@@ -108,7 +117,10 @@ class NaveenSchoolDataScientist(BaseAgent):
             # Use AI to analyze school comprehensively
             logger.info(f"Naveen analyzing {school_name} with AI model")
             # Wrap LLM call with telemetry helper so model usage is recorded
-            from src.agents.telemetry_helpers import lm_call
+            try:
+                from .telemetry_helpers import lm_call
+            except Exception:
+                from agents.telemetry_helpers import lm_call
             with lm_call(self.model, "school_analysis", system_prompt=research_prompt):
                 ai_analysis = self._create_chat_completion(
                 operation="school_analysis",
@@ -144,9 +156,9 @@ Provide structured analysis in JSON format."""
                     import re
                     json_match = re.search(r'\{.*\}', response_text, re.DOTALL)
                     if json_match:
-                        ai_data = json.loads(json_match.group())
+                        ai_data = safe_load_json(json_match.group())
                     else:
-                        ai_data = json.loads(response_text)
+                        ai_data = safe_load_json(response_text)
                     
                     result["enriched_data"] = ai_data
                     result["confidence_score"] = ai_data.get("confidence_score", 75)
@@ -637,7 +649,7 @@ Return refined analysis as JSON with improved confidence_score."""
                 import re
                 json_match = re.search(r'\{.*\}', response_text, re.DOTALL)
                 if json_match:
-                    refined_data = json.loads(json_match.group())
+                    refined_data = safe_load_json(json_match.group())
                     
         except Exception as e:
             logger.warning(f"Could not parse refined analysis: {e}")

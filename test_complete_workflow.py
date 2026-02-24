@@ -16,8 +16,8 @@ from pathlib import Path
 # Never use hardcoded defaults for production credentials
 os.environ['POSTGRES_HOST'] = os.getenv('POSTGRES_HOST')
 os.environ['POSTGRES_PORT'] = os.getenv('POSTGRES_PORT', '5432')
-os.environ['POSTGRES_DB'] = os.getenv('POSTGRES_DB', 'nextgenagentpostgres')
-os.environ['POSTGRES_USER'] = os.getenv('POSTGRES_USER', 'sleepy')
+os.environ['POSTGRES_DB'] = os.getenv('POSTGRES_DB', 'ApplicationsDB')
+os.environ['POSTGRES_USER'] = os.getenv('POSTGRES_USER', '')
 os.environ['POSTGRES_PASSWORD'] = os.getenv('POSTGRES_PASSWORD')
 
 from src.database import db

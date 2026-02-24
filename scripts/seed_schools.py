@@ -9,7 +9,8 @@ Usage:
 
 import sys
 import json
-sys.path.insert(0, '/Users/sleepy/Documents/Agent NextGen')
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from src.database import db
 from src.logger import app_logger as logger

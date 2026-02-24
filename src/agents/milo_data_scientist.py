@@ -9,17 +9,19 @@ from typing import Any, Dict, List, Optional
 
 from azure.ai.projects import AIProjectClient
 from azure.identity import DefaultAzureCredential
-from openai import AzureOpenAI
+# Avoid top-level dependency on `openai` to prevent import-time failures in environments
+# where the package is not installed. The client is accepted as a runtime object.
 from src.agents.base_agent import BaseAgent
 from src.config import config
 from src.telemetry import get_tracer
+from src.utils import safe_load_json
 
 
 class MiloDataScientist(BaseAgent):
     """
     Milo (Data Scientist) analyzes historical training data only.
     Character: Milo (Disney character from "Atlantis: The Lost Empire")
-    Model: gpt-4.1 (deployed as o4miniagent in Azure AI Foundry)
+    Model: gpt-4.1 (deployed as o4miniagent in Azure AI Foundry). Actual model/deployment is resolved from configuration if not specified.
 
     This agent:
     - Reads training examples (accepted vs not accepted)
@@ -30,15 +32,16 @@ class MiloDataScientist(BaseAgent):
     def __init__(
         self,
         name: str,
-        client: AzureOpenAI,
-        model: str,
+        client: Any,
+        model: Optional[str] = None,
         db_connection: Optional[Any] = None,
         max_samples_per_group: int = 12,
         cache_seconds: int = 600
     ):
         super().__init__(name, client)
-        self.model = model
-        self.model_display = "gpt-4.1"  # Display-friendly model name
+        # default to configured Foundry model or deployment name
+        self.model = model or config.foundry_model_name or config.deployment_name
+        self.model_display = self.model or "unknown"
         self.db = db_connection
         self.max_samples_per_group = max_samples_per_group
         self.cache_seconds = cache_seconds
@@ -67,6 +70,24 @@ class MiloDataScientist(BaseAgent):
                 "model_display": self.model_display,
                 "error": str(e)
             }
+
+        # compute average merlin score across the historical training set if available
+        avg_score = None
+        try:
+            scores = []
+            for row in training_examples:
+                # try common column names that may contain merlin score
+                for key in ("merlin_score", "overall_score", "overallscore"):
+                    if row.get(key) is not None:
+                        try:
+                            scores.append(float(row.get(key)))
+                        except Exception:
+                            pass
+                        break
+            if scores:
+                avg_score = sum(scores) / len(scores)
+        except Exception:
+            avg_score = None
 
         samples = self._build_samples(training_examples)
         signature = (
@@ -102,7 +123,7 @@ class MiloDataScientist(BaseAgent):
                 response_format={"type": "json_object"}
             )
             payload = response.choices[0].message.content
-            data = json.loads(payload)
+            data = safe_load_json(payload)
             data.update({
                 "status": "success",
                 "agent": self.name,
@@ -110,7 +131,8 @@ class MiloDataScientist(BaseAgent):
                 "model_display": self.model_display,
                 "cached": False,
                 "training_counts": samples["counts"],
-                "sample_sizes": samples["sample_sizes"]
+                "sample_sizes": samples["sample_sizes"],
+                "average_merlin_score": avg_score
             })
         except Exception as e:
             data = {
@@ -124,6 +146,53 @@ class MiloDataScientist(BaseAgent):
         self._cached_insights = data
         self._cached_signature = signature
         self._cached_at = time.time()
+        return data
+
+    async def compute_alignment(self, application: Dict[str, Any]) -> Dict[str, Any]:
+        """Given a single applicant and existing training insights, ask Milo to
+        compute a match score and NextGen alignment narrative using the AI model.
+        This uses the same model as other Milo calls and may hit the cache of
+        analyze_training_insights to avoid redundant work.
+        """
+        if not application:
+            return {"status": "error", "error": "No application provided"}
+
+        # ensure we have fresh insights first
+        insights = await self.analyze_training_insights()
+        prompt = (
+            "You are Milo, a data scientist. You have the following training insights:\n"
+            + json.dumps(insights, ensure_ascii=True)
+            + "\n\nEvaluate the new applicant below in light of these patterns.\n"
+            + json.dumps(application, ensure_ascii=True)
+            + "\nReturn valid JSON with fields: 'match_score' (0-100), 'nextgen_align_score' (0-100), and 'explanation' (a brief rationale)."
+        )
+        try:
+            response = self._create_chat_completion(
+                operation="milo.compute_alignment",
+                model=self.model,
+                messages=[
+                    {
+                        "role": "system",
+                        "content": (
+                            "You are Milo, a data scientist who summarizes training patterns."
+                        )
+                    },
+                    {"role": "user", "content": prompt}
+                ],
+                max_completion_tokens=800,
+                temperature=0.4,
+                response_format={"type": "json_object"}
+            )
+            payload = response.choices[0].message.content
+            data = safe_load_json(payload)
+            data.setdefault("status", "success")
+            data.setdefault("agent", self.name)
+        except Exception as e:
+            data = {
+                "status": "error",
+                "agent": self.name,
+                "error": str(e)
+            }
         return data
 
     async def build_and_upload_foundry_dataset(self) -> Dict[str, Any]:
@@ -330,7 +399,7 @@ class MiloDataScientist(BaseAgent):
             return parsed
 
         try:
-            parsed_payload = json.loads(parsed_json)
+            parsed_payload = safe_load_json(parsed_json)
             if isinstance(parsed_payload, dict):
                 for key, value in parsed_payload.items():
                     parsed.setdefault(key, value)

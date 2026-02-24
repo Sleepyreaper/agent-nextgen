@@ -1,0 +1,79 @@
+{% extends "base.html" %}
+
+{% block title %}Student Summary (JSON) - {{ application.application_id }}{% endblock %}
+
+{% block content %}
+<div class="card">
+    <h2>Student Summary (JSON-backed)</h2>
+    <p><strong>Applicant:</strong> {{ application.get('applicant_name') or application.get('student_name') or 'Unknown' }}</p>
+    <p><strong>Application ID:</strong> {{ application.application_id or application.ApplicationID }}</p>
+</div>
+
+<div class="card" style="margin-top:1rem;">
+    <h3>Executive Summary (Merlin / Aurora)</h3>
+    {% if human_summary %}
+    <div style="background:#f3f4f6;padding:1rem;border-radius:6px;margin-bottom:0.75rem;">
+        <strong>Quick Summary:</strong>
+        <p style="margin:0.5rem 0 0 0;">{{ human_summary }}</p>
+    </div>
+    {% endif %}
+    {% set merlin = agent_results.get('merlin') %}
+    {% set aurora = agent_results.get('aurora') %}
+
+    {% if aurora and (aurora.formatted_evaluation or aurora.get('formatted_evaluation')) %}
+        <div style="white-space:pre-wrap;">{{ aurora.formatted_evaluation or aurora.get('formatted_evaluation') }}</div>
+    {% elif merlin %}
+        <div>
+                {% if merlin.human_summary %}
+                    <p style="font-style:italic;margin-bottom:0.5rem;">{{ merlin.human_summary }}</p>
+                {% endif %}
+                <p><strong>Overall Score:</strong> {{ merlin.overall_score or merlin.get('overall_score') or (merlin.parsed_data and merlin.parsed_data.overall_score) | default('N/A') }}/100</p>
+                <p><strong>Recommendation:</strong> {{ merlin.recommendation or merlin.get('recommendation') or (merlin.parsed_data and merlin.parsed_data.recommendation) or 'Pending' }}</p>
+                <p><strong>Confidence:</strong> {{ merlin.confidence or merlin.get('confidence') or (merlin.parsed_data and merlin.parsed_data.confidence) or 'N/A' }}</p>
+                <p style="white-space:pre-wrap;">{{ merlin.rationale or merlin.get('rationale') or (merlin.parsed_data and merlin.parsed_data.rationale) }}</p>
+        </div>
+    {% else %}
+        <p>No merlin/aurora summary available.</p>
+    {% endif %}
+</div>
+
+<div class="card" style="margin-top:1rem;">
+    <h3>Agent Details</h3>
+    {% for name in ['tiana','rapunzel','mulan','moana'] %}
+        {% set a = agent_results.get(name) %}
+        <div style="border-top:1px solid #eee; padding:0.75rem 0;">
+            <h4>{{ name|title }}</h4>
+            {% if not a %}
+                <em>No data</em>
+            {% else %}
+                {% if name == 'tiana' %}
+                    <p><strong>Essay Summary:</strong> {{ a.essay_summary or a.essaysummary or (a.parsed_data and a.parsed_data.essay_summary) or 'N/A' }}</p>
+                    <p><strong>Readiness Score:</strong> {{ a.readiness_score or a.readinessscore or (a.parsed_data and a.parsed_data.readiness_score) or 'N/A' }}</p>
+                {% elif name == 'rapunzel' %}
+                    <p><strong>GPA:</strong> {{ a.gpa or a.get('gpa') or (a.parsed_json and a.parsed_json.gpa) or 'N/A' }}</p>
+                    <p><strong>Summary:</strong> {{ a.summary or a.get('summary') or (a.parsed_json and a.parsed_json.summary) or 'N/A' }}</p>
+                {% elif name == 'mulan' %}
+                    {% if a is mapping %}
+                        <p><strong>Summary:</strong> {{ a.summary or a.get('summary') or 'N/A' }}</p>
+                    {% elif a is sequence %}
+                        {% for rec in a %}
+                            <div style="padding:0.5rem 0;">
+                                <p><strong>From:</strong> {{ rec.recommendername or rec.recommender_name or rec.get('recommender_name') or 'Unknown' }} {% if rec.recommenderrole %}({{ rec.recommenderrole }}){% endif %}</p>
+                                <p><strong>Strength:</strong> {{ rec.endorsementstrength or rec.endorsement_strength or 'N/A' }}/100</p>
+                                <p><strong>Summary:</strong> {{ rec.summary or rec.get('summary') or (rec.parsed_json and rec.parsed_json.summary) or 'N/A' }}</p>
+                            </div>
+                        {% endfor %}
+                    {% else %}
+                        <pre>{{ a }}</pre>
+                    {% endif %}
+                {% elif name == 'moana' %}
+                    <p><strong>School Context:</strong> {{ a.comparison_notes or a.comparisonnotes or a.context or a.get('context') or 'N/A' }}</p>
+                {% endif %}
+                <details style="margin-top:0.5rem;"><summary>Raw JSON</summary><pre style="white-space:pre-wrap;">{{ a }}</pre></details>
+            {% endif %}
+        </div>
+    {% endfor %}
+</div>
+
+<div style="margin-top:1rem;"><a href="{{ url_for('student_detail', application_id=application.application_id) }}">Back to full detail</a></div>
+{% endblock %}

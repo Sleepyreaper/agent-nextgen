@@ -182,34 +182,84 @@
 {% block content %}
 <div class="card executive-summary">
     <h2>Executive Summary</h2>
-    {% if aurora_evaluation and aurora_evaluation.formattedevaluation %}
-        {% set aurora = aurora_evaluation.formattedevaluation %}
-        <div class="summary-grid">
-            <div class="summary-tile">
-                <div class="summary-label">Merlin Score</div>
-                <div class="summary-value">{{ aurora.merlin_summary.score|default('N/A') }}/100</div>
-            </div>
-            <div class="summary-tile">
-                <div class="summary-label">Recommendation</div>
-                <div class="summary-value">{{ aurora.merlin_summary.recommendation|default('Pending') }}</div>
-            </div>
-        </div>
-        {% if aurora.merlin_summary.overall %}
-            <div class="summary-body">{{ aurora.merlin_summary.overall }}</div>
+    {% if aurora_evaluation %}
+        {# aurora_evaluation may be a dict or contain a formatted_evaluation field; handle both shapes #}
+        {% set aurora_obj = (aurora_evaluation.formatted_evaluation if aurora_evaluation is mapping and aurora_evaluation.formatted_evaluation is not none else (aurora_evaluation.formattedevaluation if aurora_evaluation is mapping else aurora_evaluation)) %}
+        {% if aurora_obj %}
+            {% if aurora_obj is string %}
+                <div class="summary-body">{{ aurora_obj }}</div>
+            {% else %}
+                {# object-shaped aurora summary with merlin_summary subfield #}
+                {% set ms = (aurora_obj.merlin_summary if aurora_obj.merlin_summary is not none else (aurora_obj.get('merlin_summary') if aurora_obj is mapping else None)) %}
+                {% if ms %}
+                    <div class="summary-grid">
+                        <div class="summary-tile">
+                            <div class="summary-label">Merlin Score</div>
+                            <div class="summary-value">{{ ms.score|default(ms.get('score')|default('N/A')) }}/100</div>
+                        </div>
+                        <div class="summary-tile">
+                            <div class="summary-label">Recommendation</div>
+                            <div class="summary-value">{{ ms.recommendation|default(ms.get('recommendation')|default('Pending')) }}</div>
+                        </div>
+                    </div>
+                    {% if ms.overall %}
+                        <div class="summary-body">{{ ms.overall }}</div>
+                    {% elif ms.get('overall') %}
+                        <div class="summary-body">{{ ms.get('overall') }}</div>
+                    {% endif %}
+                {% endif %}
+            {% endif %}
         {% endif %}
-    {% elif agent_results and agent_results.merlin %}
+    {% elif agent_results and agent_results.get('merlin') %}
+        {% set src = agent_results.get('merlin') %}
+        {% set parsed = (src.get('parsed_data') if src.get('parsed_data') is not none else (src.get('parsed_json') if src.get('parsed_json') is mapping else None)) %}
         <div class="summary-grid">
             <div class="summary-tile">
                 <div class="summary-label">Merlin Score</div>
-                <div class="summary-value">{{ agent_results.merlin.overall_score|default('N/A') }}/100</div>
+                <div class="summary-value">{{ src.overall_score|default(src.get('overall_score')|default(src.get('overallscore')|default(parsed.get('overall_score') if parsed else 'N/A'))) }}/100</div>
             </div>
             <div class="summary-tile">
                 <div class="summary-label">Recommendation</div>
-                <div class="summary-value">{{ agent_results.merlin.recommendation|default('Pending') }}</div>
+                <div class="summary-value">{{ src.recommendation|default(src.get('recommendation')|default(parsed.get('recommendation') if parsed else 'Pending')) }}</div>
             </div>
         </div>
-        {% if agent_results.merlin.rationale %}
-            <div class="summary-body">{{ agent_results.merlin.rationale }}</div>
+        {% if src.rationale or src.get('rationale') or (parsed and (parsed.get('rationale') or parsed.get('text'))) %}
+            <div class="summary-body">{{ src.rationale|default(src.get('rationale')|default(parsed.get('rationale') if parsed else '')) }}</div>
+        {% endif %}
+    {% elif application.student_summary %}
+        {% set ss = application.student_summary %}
+        <div class="summary-grid">
+            <div class="summary-tile">
+                <div class="summary-label">Overall Score</div>
+                <div class="summary-value">{{ ss.overall_score|default('N/A') }}/100</div>
+            </div>
+            <div class="summary-tile">
+                <div class="summary-label">Recommendation</div>
+                <div class="summary-value">{{ ss.recommendation|default('Pending') }}</div>
+            </div>
+        </div>
+        {% if ss.rationale %}
+            <div class="summary-body">{{ ss.rationale }}</div>
+        {% endif %}
+        {% if ss.key_strengths %}
+            <div class="strengths-box" style="margin-top:1rem; padding:0.75rem;">
+                <strong>Strengths:</strong>
+                <ul>
+                    {% for s in ss.key_strengths %}
+                        <li>{{ s }}</li>
+                    {% endfor %}
+                </ul>
+            </div>
+        {% endif %}
+        {% if ss.key_risks %}
+            <div class="considerations-box" style="margin-top:1rem; padding:0.75rem;">
+                <strong>Considerations / Risks:</strong>
+                <ul>
+                    {% for r in ss.key_risks %}
+                        <li>{{ r }}</li>
+                    {% endfor %}
+                </ul>
+            </div>
         {% endif %}
     {% elif merlin_evaluation and merlin_evaluation.DetailedAnalysis %}
         <div class="summary-body">{{ merlin_evaluation.DetailedAnalysis }}</div>
@@ -217,6 +267,16 @@
         <div class="summary-body">Summary will appear once the evaluation completes.</div>
     {% endif %}
 </div>
+
+{# debug panel showing raw agent outputs for verification #}
+{% if agent_results %}
+<details style="margin:1rem 0;">
+    <summary style="cursor:pointer; font-weight:600;">Show raw agent results JSON</summary>
+    <pre style="background:#f9fafb; padding:0.75rem; overflow:auto; max-height:400px;">
+{{ agent_results | tojson(indent=2) }}
+    </pre>
+</details>
+{% endif %}
 
 {% if reprocess_notice %}
 <div class="reprocess-notice">
@@ -235,8 +295,8 @@
 </div>
 {% endif %}
 
-{% if aurora_evaluation and aurora_evaluation.formattedevaluation %}
-    {% set aurora = aurora_evaluation.formattedevaluation %}
+{% if aurora_evaluation %}
+    {% set aurora = aurora_evaluation.formatted_evaluation if aurora_evaluation.formatted_evaluation is not none else aurora_evaluation.formattedevaluation %}
 {% endif %}
 
 {# ===== SCHOOL CONTEXT FOR EVALUATION (TRAINING DATA) ===== #}
@@ -356,6 +416,12 @@
     </div>
 </div>
 {% elif agent_results %}
+    {% if human_summary %}
+    <div class="card" style="margin-top:1rem; background:#f8fafc;">
+        <h2>Quick Executive Summary</h2>
+        <p>{{ human_summary }}</p>
+    </div>
+    {% endif %}
 <div class="card" style="margin-top: 1.5rem;">
     <h2>Agent Summaries</h2>
     {% if agent_results.tiana %}
@@ -476,6 +542,84 @@
         </div>
     </div>
 
+    <!-- Top: Merlin / Aurora summary and agent quick responses -->
+    {% if aurora_evaluation %}
+    <div class="card" style="margin-top: 1.5rem; padding: 1rem; border-left: 4px solid #6b46c1; background: #f8f7ff;">
+        {% set aurora = aurora_evaluation.formatted_evaluation if aurora_evaluation.formatted_evaluation is not none else aurora_evaluation.formattedevaluation %}
+        <h2 style="margin-top: 0;">🔮 Merlin / Aurora Summary</h2>
+        {% if aurora.merlin_summary %}
+        <div style="display:flex; align-items:center; gap:1rem; margin-top:0.5rem;">
+            <div style="font-size:2.2rem; font-weight:700; color:#4c51bf;">{{ aurora.merlin_summary.score|default('N/A') }}/100</div>
+            <div>
+                <div style="font-size:1.05rem;"><span class="recommendation-badge">{{ aurora.merlin_summary.recommendation|default('Pending') }}</span></div>
+                {% if aurora and aurora.merlin_summary and aurora.merlin_summary.rationale %}
+                <div style="margin-top:0.5rem; color:#374151; white-space:pre-wrap;">{{ aurora.merlin_summary.rationale }}</div>
+                {% endif %}
+            </div>
+        </div>
+        {% endif %}
+
+        {% if aurora.agents %}
+        <div style="margin-top:1rem;">
+            <h3 style="margin:0 0 0.5rem 0;">🤖 Agent Responses (Quick View)</h3>
+            <div>
+                {% for name, agent in aurora.agents.items() %}
+                <div style="margin-bottom:0.75rem;">
+                    <strong>{{ name|capitalize }}:</strong>
+                    <div style="margin-top:0.25rem; color:#374151; white-space:pre-wrap;">{{ agent.analysis or agent.summary or agent.context or agent.strengths_found or 'No analysis available' }}</div>
+                    {% if name == 'rapunzel' and agent.grade_table_headers and agent.grade_table_rows %}
+                    <div style="margin-top:0.5rem;">
+                        <table class="grade-table" style="width:100%; border-collapse:collapse;">
+                            <thead>
+                                <tr>
+                                    {% for h in agent.grade_table_headers %}
+                                    <th style="text-align:left; padding:6px;">{{ h }}</th>
+                                    {% endfor %}
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for row in agent.grade_table_rows %}
+                                <tr>
+                                    {% for cell in row %}
+                                    <td style="padding:6px; border-top:1px solid #eef2ff;">{{ cell }}</td>
+                                    {% endfor %}
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                    {% endif %}
+                    {% if agent.raw_text or agent.full_text or agent.recommendation_text %}
+                    <div style="margin-top:0.5rem; background:#ffffff; padding:0.5rem; border-radius:6px;">
+                        <strong>Full text:</strong>
+                        <pre style="white-space:pre-wrap; margin:0;">{{ agent.raw_text or agent.full_text or agent.recommendation_text }}</pre>
+                    </div>
+                    {% endif %}
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+        {% endif %}
+    </div>
+    {% elif merlin_evaluation %}
+    <div class="card" style="margin-top: 1.5rem; padding: 1rem; border-left: 4px solid #6b46c1; background: #f8f7ff;">
+        <h2>🔮 Merlin Summary</h2>
+        <div style="display:flex; align-items:center; gap:1rem; margin-top:0.5rem;">
+            {% if merlin_evaluation.OverallScore %}
+            <div style="font-size:2.2rem; font-weight:700; color:#4c51bf;">{{ "%.1f"|format(merlin_evaluation.OverallScore) }}</div>
+            {% endif %}
+            <div>
+                {% if merlin_evaluation.Recommendation %}
+                <div><span class="recommendation-badge">{{ merlin_evaluation.Recommendation }}</span></div>
+                {% endif %}
+                {% if merlin_evaluation.Rationale or merlin_evaluation.rationale %}
+                <div style="margin-top:0.5rem; color:#374151; white-space:pre-wrap;">{{ merlin_evaluation.Rationale or merlin_evaluation.rationale }}</div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
     <!-- Agent Results from Database -->
     {% if agent_results %}
     <div class="card" style="margin-top: 2rem; background: #fefce8; border-left: 4px solid #ca8a04;">
@@ -531,6 +675,13 @@
                 </tr>
                 {% endif %}
             </table>
+            {% set mulan_full = agent_results.mulan.raw_text or agent_results.mulan.full_text or (agent_results.mulan.parsed_json.recommendation if (agent_results.mulan.parsed_json is defined and agent_results.mulan.parsed_json) else None) %}
+            {% if mulan_full %}
+            <div style="margin-top:0.75rem; background:#fff; padding:0.75rem; border-radius:6px;">
+                <strong>Full Recommendation (verbatim):</strong>
+                <pre style="white-space:pre-wrap; margin:0;">{{ mulan_full }}</pre>
+            </div>
+            {% endif %}
         </div>
         {% endif %}
         
@@ -568,13 +719,13 @@
     </div>
     {% endif %}
 
-    {% if aurora_evaluation and aurora_evaluation.formattedevaluation %}
+    {% if aurora_evaluation %}
         <!-- Aurora Formatted Evaluation Display -->
         <div class="aurora-evaluation">
             <div style="text-align: center; font-size: 3rem;">👑</div>
             <h3 style="text-align: center; margin: 1rem 0;">Aurora's Evaluation</h3>
-            {% set aurora = aurora_evaluation.formattedevaluation %}
-            {% if aurora.merlin_summary %}
+            {% set aurora = aurora_evaluation.formatted_evaluation if aurora_evaluation.formatted_evaluation is not none else aurora_evaluation.formattedevaluation %}
+            {% if aurora and aurora.merlin_summary %}
                 <div class="merlin-score">{{ aurora.merlin_summary.score|default('N/A') }}/100</div>
                 <div style="text-align: center;">
                     <span class="recommendation-badge">{{ aurora.merlin_summary.recommendation|default('Pending') }}</span>
@@ -606,8 +757,8 @@
     </div>
 
     <!-- Aurora-Formatted Summary Sections -->
-    {% if aurora_evaluation and aurora_evaluation.formattedevaluation %}
-    {% set aurora = aurora_evaluation.formattedevaluation %}
+    {% if aurora_evaluation %}
+    {% set aurora = aurora_evaluation.formatted_evaluation if aurora_evaluation.formatted_evaluation is not none else aurora_evaluation.formattedevaluation %}
     
     <!-- Key Strengths -->
     {% if aurora.merlin_summary and aurora.merlin_summary.key_strengths %}
@@ -744,6 +895,12 @@
             <div style="margin-top: 0.5rem; font-size: 0.95rem;">
                 {{ aurora.agents.mulan.summary or 'Recommendation analysis not available' }}
             </div>
+            {% if aurora.agents.mulan.raw_text or aurora.agents.mulan.full_text or aurora.agents.mulan.recommendation_text %}
+            <div style="margin-top:0.5rem; background:#fff; padding:0.6rem; border-radius:6px;">
+                <strong>Full Recommendation (verbatim):</strong>
+                <pre style="white-space:pre-wrap; margin:0;">{{ aurora.agents.mulan.raw_text or aurora.agents.mulan.full_text or aurora.agents.mulan.recommendation_text }}</pre>
+            </div>
+            {% endif %}
         </div>
         {% endif %}
         
@@ -1119,14 +1276,33 @@ async function evaluateApplication() {
             <summary style="cursor: pointer; font-weight: 600; color: #5b21b6;">🗡️ Mulan - Recommendation Reader</summary>
             <div style="margin-top: 1rem; padding-top: 1rem; border-top: 1px solid #e5e7eb;">
                 <div style="display: grid; grid-template-columns: 1fr; gap: 1rem;">
-                    {% for key, value in agent_results.mulan.items() %}
-                        {% if key not in ['created_at', 'application_id', 'agent_name'] and value %}
-                        <div>
-                            <div style="font-size: 0.85rem; color: #6b7280; text-transform: uppercase; letter-spacing: 0.05em;">{{ key|replace('_', ' ')|title }}</div>
-                            <div style="color: #1f2937; margin-top: 0.25rem; white-space: pre-wrap; max-height: 300px; overflow-y: auto; padding: 0.5rem; background: #f9fafb; border-radius: 4px;">{{ value|string }}</div>
-                        </div>
-                        {% endif %}
-                    {% endfor %}
+                    {% if agent_results.mulan is mapping %}
+                        {% for key, value in agent_results.mulan.items() %}
+                            {% if key not in ['created_at', 'application_id', 'agent_name'] and value %}
+                            <div>
+                                <div style="font-size: 0.85rem; color: #6b7280; text-transform: uppercase; letter-spacing: 0.05em;">{{ key|replace('_', ' ')|title }}</div>
+                                <div style="color: #1f2937; margin-top: 0.25rem; white-space: pre-wrap; max-height: 300px; overflow-y: auto; padding: 0.5rem; background: #f9fafb; border-radius: 4px;">{{ value|string }}</div>
+                            </div>
+                            {% endif %}
+                        {% endfor %}
+                    {% elif agent_results.mulan is sequence %}
+                        {% for rec in agent_results.mulan %}
+                            {% if rec is mapping %}
+                                {% for key, value in rec.items() %}
+                                    {% if key not in ['created_at', 'application_id', 'agent_name'] and value %}
+                                    <div>
+                                        <div style="font-size: 0.85rem; color: #6b7280; text-transform: uppercase; letter-spacing: 0.05em;">{{ key|replace('_', ' ')|title }}</div>
+                                        <div style="color: #1f2937; margin-top: 0.25rem; white-space: pre-wrap; max-height: 300px; overflow-y: auto; padding: 0.5rem; background: #f9fafb; border-radius: 4px;">{{ value|string }}</div>
+                                    </div>
+                                    {% endif %}
+                                {% endfor %}
+                            {% else %}
+                                <div>
+                                    <div style="color: #1f2937; margin-top: 0.25rem; white-space: pre-wrap; max-height: 300px; overflow-y: auto; padding: 0.5rem; background: #f9fafb; border-radius: 4px;">{{ rec|string }}</div>
+                                </div>
+                            {% endif %}
+                        {% endfor %}
+                    {% endif %}
                 </div>
             </div>
         </details>

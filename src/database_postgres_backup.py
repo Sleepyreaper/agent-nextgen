@@ -2,9 +2,11 @@
 
 from typing import Optional, List, Dict, Any
 from datetime import datetime
+import json
 import psycopg
 from psycopg.rows import tuple_row
 from .config import config
+from src.utils import safe_load_json
 
 
 class Database:
@@ -423,9 +425,8 @@ class Database:
             result = results[0]
             # Parse the FormattedEvaluation JSON if it's a string
             if isinstance(result.get('formattedevaluation'), str):
-                import json
                 try:
-                    result['formattedevaluation'] = json.loads(result['formattedevaluation'])
+                    result['formattedevaluation'] = safe_load_json(result['formattedevaluation'])
                 except:
                     pass
             return result
@@ -458,9 +459,8 @@ class Database:
             result = results[0]
             # Parse application IDs JSON
             if isinstance(result.get('applicationids'), str):
-                import json
                 try:
-                    result['applicationids'] = json.loads(result['applicationids'])
+                    result['applicationids'] = safe_load_json(result['applicationids'])
                 except:
                     result['applicationids'] = []
             return result
@@ -477,9 +477,8 @@ class Database:
         for result in results:
             # Parse application IDs JSON
             if isinstance(result.get('applicationids'), str):
-                import json
                 try:
-                    result['applicationids'] = json.loads(result['applicationids'])
+                    result['applicationids'] = safe_load_json(result['applicationids'])
                 except:
                     result['applicationids'] = []
         return results
@@ -492,8 +491,26 @@ class Database:
             List of dicts with: first_name, last_name, high_school, merlin_score, 
             application_id, email, status, uploaded_date
         """
+        # pull in summary and raw agent results if those columns exist; this
+        # may not be true in older backup datasets but including them is
+        # harmless because we will ignore them if absent.
+        summary_col = "", agent_col = ""
+        # simple check: assume Postgres backup environment so information_schema
+        # is available; we can query to see if the column exists
+        try:
+            info = self.execute_query(
+                "SELECT column_name FROM information_schema.columns WHERE table_name='applications' AND column_name IN ('student_summary','agent_results')"
+            )
+            cols = {r.get('column_name').lower() for r in info}
+            if 'student_summary' in cols:
+                summary_col = ", a.student_summary"
+            if 'agent_results' in cols:
+                agent_col = ", a.agent_results"
+        except Exception:
+            cols = set()
+
         if is_training:
-            base_query = """
+            base_query = f"""
                 SELECT 
                     a.ApplicationID,
                     a.ApplicantName,
@@ -502,7 +519,7 @@ class Database:
                     a.UploadedDate,
                     a.WasSelected,
                     m.OverallScore as MerlinScore,
-                    s.SchoolName as HighSchool
+                    s.SchoolName as HighSchool{summary_col}{agent_col}
                 FROM Applications a
                 LEFT JOIN MerlinEvaluations m ON a.ApplicationID = m.ApplicationID
                 LEFT JOIN StudentSchoolContext ssc ON a.ApplicationID = ssc.ApplicationID
@@ -510,7 +527,7 @@ class Database:
                 WHERE a.IsTrainingExample = TRUE
             """
         else:
-            base_query = """
+            base_query = f"""
                 SELECT 
                     a.ApplicationID,
                     a.ApplicantName,
@@ -519,7 +536,7 @@ class Database:
                     a.UploadedDate,
                     a.WasSelected,
                     m.OverallScore as MerlinScore,
-                    s.SchoolName as HighSchool
+                    s.SchoolName as HighSchool{summary_col}{agent_col}
                 FROM Applications a
                 LEFT JOIN MerlinEvaluations m ON a.ApplicationID = m.ApplicationID
                 LEFT JOIN StudentSchoolContext ssc ON a.ApplicationID = ssc.ApplicationID
@@ -547,7 +564,30 @@ class Database:
             parts = row.get('applicantname', '').strip().split()
             first_name = parts[0] if len(parts) > 0 else ''
             last_name = parts[-1] if len(parts) > 1 else ''
-            
+
+            # parse JSON columns if present
+            if 'student_summary' in row:
+                try:
+                    row['student_summary'] = safe_load_json(row['student_summary'])
+                except Exception:
+                    pass
+            if 'agent_results' in row:
+                try:
+                    row['agent_results'] = safe_load_json(row['agent_results'])
+                except Exception:
+                    pass
+
+            # derive merlin_score from whichever data is available
+            mer_score = row.get('merlinscore')
+            if mer_score is None:
+                ss = row.get('student_summary')
+                if isinstance(ss, dict):
+                    mer_score = ss.get('overall_score') or ss.get('score')
+            if mer_score is None:
+                ar = row.get('agent_results')
+                if isinstance(ar, dict):
+                    mer_score = ar.get('merlin', {}).get('overall_score')
+
             formatted.append({
                 'application_id': row.get('applicationid'),
                 'first_name': first_name,
@@ -555,7 +595,7 @@ class Database:
                 'full_name': row.get('applicantname'),
                 'email': row.get('email'),
                 'high_school': row.get('highschool') or 'Not specified',
-                'merlin_score': row.get('merlinscore'),
+                'merlin_score': mer_score,
                 'status': row.get('status'),
                 'uploaded_date': row.get('uploadeddate'),
                 'was_selected': row.get('wasselected')

@@ -678,12 +678,16 @@ function startTest(type = 'dynamic') {
             return;
         }
         
-        totalStudents = data.student_count;
+        totalStudents = data.student_count || 0;
         let testType = 'Random';
         if (type === 'preset') testType = 'Preset (3 students)';
         else if (type === 'single') testType = 'Single (Alice)';
         
-        status.innerHTML = '<span class="loading-spinner"></span>Processing ' + totalStudents + ' ' + testType + ' student(s)...';
+        if (totalStudents === 0) {
+            status.innerHTML = '<span class="loading-spinner"></span>Preparing test students...';
+        } else {
+            status.innerHTML = '<span class="loading-spinner"></span>Processing ' + totalStudents + ' ' + testType + ' student(s)...';
+        }
         
         // Start polling the database for student status (every 1 second for faster updates)
         pollStudentStatus();
@@ -771,6 +775,12 @@ function handleStreamMessage(msg) {
     
     if (msg.type === 'connected') {
         status.innerHTML = '<span class="loading-spinner"></span>Processing students...';
+    }
+    
+    else if (msg.type === 'student_count') {
+        // generator finished, update total count
+        totalStudents = msg.count || totalStudents;
+        status.innerHTML = '<span class="loading-spinner"></span>Processing ' + totalStudents + ' student(s)...';
     }
     
     else if (msg.type === 'student_submitted') {

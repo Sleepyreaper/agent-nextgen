@@ -1,0 +1,108 @@
+{% extends "base.html" %}
+
+{% block title %}Feedback - NextGen{% endblock %}
+
+{% block content %}
+<div class="dashboard-container">
+    <div class="section">
+        <h2 style="color: var(--emory-blue); margin-bottom: 0.5rem;">💬 Feedback</h2>
+        <p style="margin:0 0 0.5rem 0; font-size:0.9rem;"><a href="{{ url_for('feedback_admin') }}">View admin list</a></p>
+        <p style="color: #6b7280; margin-bottom: 1rem;">Report an issue or request a feature; we'll open a GitHub issue automatically.</p>
+        <form id="feedbackForm" style="display: grid; gap: 1rem; max-width: 600px;">
+            <div>
+                <label for="feedbackType" style="font-weight: 600;">Type</label>
+                <select id="feedbackType" name="feedbackType" class="btn" style="background: white; color: var(--ink-navy); border: 1px solid #e5e7eb; width: 100%;">
+                    <option value="issue">Issue</option>
+                    <option value="feature">Feature Request</option>
+                </select>
+            </div>
+            <div>
+                <label for="feedbackMessage" style="font-weight: 600;">Details</label>
+                <textarea id="feedbackMessage" name="feedbackMessage" rows="4" style="width: 100%; padding: 0.75rem; border-radius: 6px; border: 1px solid #e5e7eb; font-family: inherit;" placeholder="Tell us what's happening or what you'd like to see."></textarea>
+            </div>
+            <div>
+                <label for="feedbackEmail" style="font-weight: 600;">Email (optional)</label>
+                <input id="feedbackEmail" name="feedbackEmail" type="email" style="width: 100%; padding: 0.75rem; border-radius: 6px; border: 1px solid #e5e7eb;" placeholder="you@example.com">
+            </div>
+            <div style="display: flex; gap: 1rem; align-items: center;">
+                <button type="submit" class="btn btn-primary">Submit Feedback</button>
+                <span id="feedbackStatus" style="color: #6b7280;"></span>
+            </div>
+        </form>
+    </div>
+
+    {% if feedback_items and feedback_items|length > 0 %}
+    <div class="section" style="margin-top:2rem;">
+        <h3 style="color: var(--emory-blue)">Recent Feedback / Issue Links</h3>
+        <table style="width:100%; border-collapse: collapse;">
+            <thead>
+                <tr>
+                    <th style="text-align:left; padding:0.5rem;">Type</th>
+                    <th style="text-align:left; padding:0.5rem;">Title</th>
+                    <th style="text-align:left; padding:0.5rem;">Issue</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for item in feedback_items %}
+                {% set triage = item.triage_json or item.TriageJson or {} %}
+                <tr>
+                    <td style="padding:0.5rem;"><span class="level-badge">{{ item.feedback_type or item.FeedbackType }}</span></td>
+                    <td style="padding:0.5rem;"><strong>{{ triage.title or 'Feedback' }}</strong><br>{{ item.message }}</td>
+                    <td style="padding:0.5rem;">{% if item.issue_url %}<a href="{{ item.issue_url }}" target="_blank">Link</a>{% else %}-{% endif %}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+const feedbackForm = document.getElementById('feedbackForm');
+const feedbackStatus = document.getElementById('feedbackStatus');
+
+if (feedbackForm) {
+    feedbackForm.addEventListener('submit', async (event) => {
+        event.preventDefault();
+
+        const type = document.getElementById('feedbackType').value;
+        const message = document.getElementById('feedbackMessage').value.trim();
+        const email = document.getElementById('feedbackEmail').value.trim();
+
+        if (!message) {
+            feedbackStatus.textContent = 'Please add details before submitting.';
+            feedbackStatus.style.color = '#b45309';
+            return;
+        }
+
+        feedbackStatus.textContent = 'Submitting...';
+        feedbackStatus.style.color = '#6b7280';
+
+        try {
+            const response = await fetch('/feedback', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    type,
+                    message,
+                    email: email || null,
+                    page: window.location.href
+                })
+            });
+            const data = await response.json();
+            if (!response.ok) {
+                throw new Error(data.error || 'Unable to submit feedback');
+            }
+            feedbackStatus.textContent = 'Thank you! Your feedback was captured.';
+            feedbackStatus.style.color = '#059669';
+            feedbackForm.reset();
+        } catch (error) {
+            feedbackStatus.textContent = error.message;
+            feedbackStatus.style.color = '#b91c1c';
+        }
+    });
+}
+</script>
+{% endblock %}

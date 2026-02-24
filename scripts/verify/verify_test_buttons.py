@@ -9,7 +9,7 @@ print("\n" + "="*70)
 print("  TEST BUTTON VERIFICATION")
 print("="*70 + "\n")
 
-app_file = Path('/Users/sleepy/Documents/Agent NextGen/app.py')
+app_file = Path(__file__).resolve().parent.parent.parent / 'app.py'
 content = app_file.read_text()
 
 # Check 1: student_id_val generation in generate_session_updates

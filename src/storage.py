@@ -32,6 +32,7 @@ class StorageManager:
             try:
                 from azure.storage.blob import BlobServiceClient
                 from azure.identity import DefaultAzureCredential
+                from azure.core.exceptions import ClientAuthenticationError, AzureError
                 
                 # Use Azure AD (Entra ID) authentication exclusively
                 # Storage account has "Shared Key access not permitted" enabled
@@ -40,16 +41,25 @@ class StorageManager:
                     account_url=f"https://{self.account_name}.blob.core.windows.net",
                     credential=credential
                 )
-                logger.info("✅ Azure Storage initialized with Azure AD authentication")
+                logger.info("✅ Azure Storage client created, verifying access...")
+                # perform a quick check to catch RBAC/permission issues early
+                try:
+                    self.client.list_containers(tasks_per_page=1)
+                    logger.info("✅ Azure Storage access verified")
+                except ClientAuthenticationError as auth_err:
+                    logger.error("🔒 Azure Storage authorization failure: %s", auth_err)
+                    raise
+                except AzureError as az_err:
+                    logger.warning("⚠ Azure Storage reachable but error listing containers: %s", az_err)
                 
                 # Ensure containers exist
                 self._ensure_containers()
             except Exception as e:
                 logger.warning(f"⚠ Warning: Could not initialize Azure Storage: {e}")
-                logger.info("  Will use local file storage instead")
+                logger.info("  Falling back to local file storage for uploads")
                 self.client = None
         else:
-            logger.info("ℹ Azure Storage not configured. Using local file storage.")
+            logger.info("ℹ Azure Storage not configured (storage_account_name blank). Using local file storage.")
             self.client = None
     
     def _ensure_containers(self):
@@ -113,11 +123,16 @@ class StorageManager:
             container_client = self.client.get_container_client(container_name)
             
             # Upload blob
-            blob_client = container_client.upload_blob(
-                name=blob_path,
-                data=file_content,
-                overwrite=True
-            )
+            try:
+                blob_client = container_client.upload_blob(
+                    name=blob_path,
+                    data=file_content,
+                    overwrite=True
+                )
+            except Exception as upload_err:
+                # capture authorization failures specifically
+                logger.error(f"Azure Storage upload failed: {upload_err}")
+                raise
             
             # Build full URL
             blob_url = f"https://{self.account_name}.blob.core.windows.net/{container_name}/{blob_path}"
@@ -137,6 +152,10 @@ class StorageManager:
             
         except Exception as e:
             logger.error(f"Error uploading file: {e}")
+            # If auth failure, disable client for future attempts
+            if hasattr(e, 'status_code') and e.status_code in (403, 401):
+                logger.warning("Disabling Azure Storage client due to authorization failure")
+                self.client = None
             return {
                 'success': False,
                 'error': str(e),

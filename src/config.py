@@ -134,6 +134,49 @@ class Config:
         )
         if not self.foundry_project_endpoint:
             self.foundry_project_endpoint = os.getenv("PROJECT_ENDPOINT")
+        # Warn if the provided endpoint uses the legacy services.ai domain
+        if self.foundry_project_endpoint and ".services.ai.azure.com" in self.foundry_project_endpoint:
+            logging.getLogger(__name__).warning(
+                "FOUNDRY_PROJECT_ENDPOINT contains the legacy services.ai.azure.com domain; "
+                "model calls will be rewritten to cognitiveservices.azure.com automatically. "
+                "Consider updating the endpoint to the cognitiveservices host."
+            )
+        # Also warn if an application-specific or protocol-specific path
+        # has been included: this client expects just the host/project root
+        # and will strip any path when making model calls. Passing paths such
+        # as "/applications/SchoolAccessIndex" may lead to incorrect URLs.
+        if self.foundry_project_endpoint and "/applications/" in self.foundry_project_endpoint:
+            logging.getLogger(__name__).warning(
+                "FOUNDRY_PROJECT_ENDPOINT appears to include an application-specific path; "
+                "the model client will ignore it for chat requests. "
+                "Use the project root or cognitiveservices host instead."
+            )
+        # Foundry model deployment name (prefer gpt-4.1 for Foundry deployments)
+        self.foundry_model_name: Optional[str] = self._get_secret(
+            "foundry-model-name",
+            "FOUNDRY_MODEL_NAME"
+        ) or os.getenv("FOUNDRY_MODEL_NAME") or os.getenv("DEEPNEXTGEN_MODEL")
+        # Default to the most recent Foundry GPT‑4.1 deployment if none provided.
+        # the portal shows "gpt-4.1-2025-04-14" as the current stable model,
+        # so we use it here unless the environment overrides it.
+        if not self.foundry_model_name and (self.foundry_project_endpoint or os.getenv("PROJECT_ENDPOINT")):
+            # allow an explicit env override; otherwise use the known 2025-04-14 build
+            self.foundry_model_name = os.getenv("FOUNDRY_MODEL_NAME") or os.getenv("DEEPNEXTGEN_MODEL") or "gpt-4.1-2025-04-14"
+        # Foundry API key / token for service-to-service calls
+        self.foundry_api_key: Optional[str] = self._get_secret(
+            "foundry-api-key",
+            "FOUNDRY_API_KEY"
+        ) or os.getenv("FOUNDRY_API_KEY")
+        # Foundry API version (allow explicit override from Key Vault or env)
+        self.foundry_api_version: Optional[str] = self._get_secret(
+            "foundry-api-version",
+            "FOUNDRY_API_VERSION"
+        ) or os.getenv("FOUNDRY_API_VERSION")
+        # Optional: foundry project / deployment id if required by the API
+        self.foundry_project_name: Optional[str] = self._get_secret(
+            "foundry-project-name",
+            "FOUNDRY_PROJECT_NAME"
+        ) or os.getenv("FOUNDRY_PROJECT_NAME")
         self.foundry_dataset_name: Optional[str] = self._get_secret(
             "foundry-dataset-name",
             "FOUNDRY_DATASET_NAME"
@@ -161,7 +204,7 @@ class Config:
         self.sql_password: str = self._get_secret("sql-password", "SQL_PASSWORD")
         
         # Azure Storage configuration
-        self.storage_account_name: str = self._get_secret("storage-account-name", "AZURE_STORAGE_ACCOUNT_NAME") or "nextgendata2452"
+        self.storage_account_name: str = self._get_secret("storage-account-name", "AZURE_STORAGE_ACCOUNT_NAME")
         self.storage_account_key: str = self._get_secret("storage-account-key", "AZURE_STORAGE_ACCOUNT_KEY")
         self.storage_container_name: str = self._get_secret("storage-container-name", "AZURE_STORAGE_CONTAINER_NAME") or "student-uploads"
 
@@ -196,7 +239,7 @@ class Config:
         # GitHub feedback tracking (Key Vault first, then env)
         self.github_repo: str = (
             self._get_secret("github-repo", "GITHUB_REPO")
-            or "Sleepyreaper/agent-nextgen"
+            or ""
         )
         self.github_token: Optional[str] = (
             self._get_secret("github-token", "GITHUB_TOKEN")
@@ -207,6 +250,19 @@ class Config:
         self.connection_string: Optional[str] = None
         self.project_name: Optional[str] = None
         self.region: str = "westus2"
+
+        # Model provider hint (azure | foundry).
+        # If an explicit env var is provided use it; otherwise prefer
+        # Foundry when either a project endpoint or a model name is
+        # configured.  This makes the system robust when only the model
+        # name (gpt-4.1‑...) is stored in Key Vault but the endpoint isn't
+        # available at startup.
+        self.model_provider: str = os.getenv("NEXTGEN_MODEL_PROVIDER")
+        if not self.model_provider:
+            if self.foundry_project_endpoint or self.foundry_model_name:
+                self.model_provider = "foundry"
+            else:
+                self.model_provider = "azure"
     
     def _get_secret(self, key_vault_secret_name: str, env_var_name: str) -> Optional[str]:
         """
@@ -280,17 +336,31 @@ class Config:
         return None
     
     def validate(self) -> bool:
-        """Validate that required configuration is present."""
+        """Validate that required configuration is present.
+
+        Supports both Azure OpenAI and Foundry deployments.  For Azure we
+        require an endpoint and deployment name; for Foundry we require a
+        project endpoint and a model name (deployment).
+        """
+        if self.model_provider and self.model_provider.lower() == "foundry":
+            return bool((self.foundry_project_endpoint or self.foundry_model_name) and self.foundry_model_name)
+        # fallback to Azure criteria
         return bool(self.azure_openai_endpoint and self.deployment_name)
     
     def get_missing_config(self) -> list[str]:
         """Return list of missing configuration items."""
         missing = []
         
-        if not self.azure_openai_endpoint:
-            missing.append("azure-openai-endpoint (Key Vault) or AZURE_OPENAI_ENDPOINT (env)")
-        if not self.deployment_name:
-            missing.append("azure-deployment-name (Key Vault) or AZURE_DEPLOYMENT_NAME (env)")
+        if self.model_provider and self.model_provider.lower() == "foundry":
+            if not self.foundry_project_endpoint:
+                missing.append("foundry-project-endpoint (Key Vault) or FOUNDRY_PROJECT_ENDPOINT (env)")
+            if not self.foundry_model_name:
+                missing.append("foundry-model-name (Key Vault) or FOUNDRY_MODEL_NAME (env)")
+        else:
+            if not self.azure_openai_endpoint:
+                missing.append("azure-openai-endpoint (Key Vault) or AZURE_OPENAI_ENDPOINT (env)")
+            if not self.deployment_name:
+                missing.append("azure-deployment-name (Key Vault) or AZURE_DEPLOYMENT_NAME (env)")
         
         # Check PostgreSQL Database configuration (primary)
         if not self.postgres_url and not self.postgres_host:

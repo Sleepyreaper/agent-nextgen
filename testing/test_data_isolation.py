@@ -83,6 +83,9 @@ def test_filtering_logic():
         if student.get('is_training_example'):
             training_data_found.append(student)
             print(f"🔴 TRAINING DATA IN 2026: {student.get('application_id')} - {student.get('full_name')}")
+        # ensure merlin_score is present when a summary was available
+        if student.get('student_summary') and student.get('merlin_score') is None:
+            print(f"⚠️ student_summary present but merlin_score missing for {student.get('application_id')}")
     
     if test_data_found:
         print(f"\n❌ FAILURE: {len(test_data_found)} test records found in 2026 view!")
@@ -92,6 +95,73 @@ def test_filtering_logic():
         return False
     else:
         print(f"\n✓ SUCCESS: No test or training data contamination in 2026 view")
+        return True
+
+
+def test_backfill_summary():
+    """Exercise the backfill_student_summaries helper and make sure it works."""
+    print("\n" + "="*60)
+    print("TEST 4: Backfill student_summary helper")
+    print("="*60)
+
+    db = Database()
+    # create a fake application with agent_results but no student_summary
+    app_id = db.create_application(applicant_name='Backfill Test', email='bf@example.com')
+    fake_results = {'merlin': {'overall_score': 55, 'recommendation': 'Review', 'rationale': 'backfill test'}}
+    db.execute_non_query(
+        "UPDATE applications SET agent_results = %s WHERE application_id = %s",
+        (json.dumps(fake_results), app_id)
+    )
+    # before running backfill, confirm that the student list will derive score
+    all_students = db.get_formatted_student_list(is_training=False)
+    found = False
+    for s in all_students:
+        if s.get('application_id') == app_id:
+            found = True
+            print(f"Row in formatted list: {s}")
+            if s.get('merlin_score') == 55:
+                print("✓ merlin_score derived from agent_results")
+            else:
+                print("⚠ merlin_score not derived before backfill")
+            break
+    if not found:
+        print("⚠ Unable to find temp row in formatted list")
+
+    # ensure column exists
+    if not db.has_applications_column('student_summary'):
+        print("⚠ student_summary column missing, cannot run backfill")
+        return False
+    updated = db.backfill_student_summaries()
+    print(f"Backfill updated {updated} rows")
+    # verify that our row now has a summary
+    rec = db.get_application(app_id)
+    if rec and rec.get('student_summary'):
+        print("✓ Summary was added by backfill")
+        return True
+    else:
+        print("⚠ Summary still missing after backfill")
+        return False
+
+
+def test_api_test_data_list():
+    """Hit the test-data API endpoint and ensure response includes summary/score"""
+    print("\n" + "="*60)
+    print("TEST 5: /api/test-data/list response structure")
+    print("="*60)
+    from app import app as flask_app
+    with flask_app.test_client() as client:
+        resp = client.get('/api/test-data/list')
+        print(f"status {resp.status_code}")
+        if resp.status_code != 200:
+            print("⚠ Unexpected status from API")
+            return False
+        data = resp.get_json() or {}
+        students = data.get('students', [])
+        for stu in students:
+            if stu.get('student_summary') and stu.get('merlin_score') is None:
+                print(f"⚠ API did not derive score for {stu.get('applicationid')}")
+                return False
+        print("✓ API returned students with merlin_score when summary exists")
         return True
 
 

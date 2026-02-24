@@ -4,6 +4,7 @@ import json
 from typing import Dict, Any, Optional, List
 from openai import AzureOpenAI
 from src.agents.base_agent import BaseAgent
+from src.utils import safe_load_json
 from src.agents.telemetry_helpers import agent_run, tool_call
 
 
@@ -18,9 +19,10 @@ class TianaApplicationReader(BaseAgent):
     - Evidence of readiness and fit for the program
     """
 
-    def __init__(self, name: str, client: AzureOpenAI, model: str, db_connection=None):
+    def __init__(self, name: str, client: AzureOpenAI, model: Optional[str] = None, db_connection=None):
         super().__init__(name, client)
-        self.model = model
+        # allow model override; otherwise use global config
+        self.model = model or config.foundry_model_name or config.deployment_name
         self.db = db_connection
 
     async def parse_application(self, application: Dict[str, Any]) -> Dict[str, Any]:
@@ -33,21 +35,25 @@ class TianaApplicationReader(BaseAgent):
             prompt = self._build_prompt(applicant_name, application_text, application)
 
             try:
-                response = self._create_chat_completion(
-                    operation="tiana.parse_application",
+                # Two-step: first ask model to extract evidence and key facts,
+                # then ask it to format those findings into the strict JSON schema.
+                query_messages = [
+                    {"role": "system", "content": "You are a precise extractor. Read the user's application and return concise evidence bullets and facts useful for constructing a structured profile."},
+                    {"role": "user", "content": f"Extract key facts and evidence from the application for: {applicant_name}.\n\nApplication excerpt:\n{application_text[:2000]}"}
+                ]
+
+                format_template = [
+                    {"role": "system", "content": "You are Tiana, part of an NIH Department of Genetics review panel. Using the extracted facts provided, produce the final JSON object exactly matching the required schema. Return valid JSON only."},
+                    {"role": "user", "content": "Using these extracted facts: {found}\n\nNow return the structured JSON profile with the required fields (applicant_name, school_name, intended_major, essay_summary, core_competencies, readiness_score, confidence, etc.)."}
+                ]
+
+                q_resp, response = self.two_step_query_format(
+                    operation_base="tiana.parse_application",
                     model=self.model,
-                    messages=[
-                        {
-                            "role": "system",
-                            "content": "You are Tiana, part of an NIH Department of Genetics review panel evaluating Emory NextGen applicants. Apply the requirements: rising junior or senior in high school, must be 16 years old by June 1, 2026, and must demonstrate interest in advancing STEM education to groups from a variety of backgrounds. Extract structured applicant profiles with evidence. Use concise, evidence-grounded summaries. Return valid JSON only."
-                        },
-                        {"role": "user", "content": prompt}
-                    ],
-                    max_completion_tokens=1500,
-                    temperature=1,
-                    refinements=2,
-                    refinement_instruction="Refine the JSON output for accuracy, completeness, and strict JSON validity. If any fields are ambiguous, favor explicit nulls and add a confidence field for uncertain values."
-                    ,response_format={"type": "json_object"}
+                    query_messages=query_messages,
+                    format_messages_template=format_template,
+                    query_kwargs={"max_completion_tokens": 300, "temperature": 0},
+                    format_kwargs={"max_completion_tokens": 1500, "temperature": 1, "refinements": 2, "refinement_instruction": "Refine the JSON output for accuracy, completeness, and strict JSON validity. If any fields are ambiguous, favor explicit nulls and add a confidence field for uncertain values.", "response_format": {"type": "json_object"}}
                 )
                 # Guard against empty or malformed model responses
                 payload = None
@@ -69,7 +75,7 @@ class TianaApplicationReader(BaseAgent):
                         "raw_response": raw_resp
                     }
                 else:
-                    data = json.loads(payload)
+                    data = safe_load_json(payload)
                 data["status"] = "success"
                 data["agent"] = self.name
 

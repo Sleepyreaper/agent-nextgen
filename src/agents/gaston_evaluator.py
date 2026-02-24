@@ -3,6 +3,7 @@
 import time
 import json
 from typing import Dict, List, Any, Optional
+from src.utils import safe_load_json
 from openai import AzureOpenAI
 from src.agents.base_agent import BaseAgent
 from src.agents.system_prompts import GASTON_EVALUATOR_PROMPT
@@ -15,7 +16,7 @@ class GastonEvaluator(BaseAgent):
         self,
         name: str,
         client: AzureOpenAI,
-        model: str,
+        model: Optional[str] = None,
         training_examples: List[Dict[str, Any]] = None
     ):
         """
@@ -24,11 +25,11 @@ class GastonEvaluator(BaseAgent):
         Args:
             name: Agent name
             client: Azure OpenAI client
-            model: Model deployment name
+            model: Model deployment name (optional, falls back to config)
             training_examples: List of excellent application examples
         """
         super().__init__(name, client)
-        self.model = model
+        self.model = model or config.foundry_model_name or config.deployment_name
         self.training_examples = training_examples or []
     
     def set_training_examples(self, examples: List[Dict[str, Any]]):
@@ -104,27 +105,31 @@ class GastonEvaluator(BaseAgent):
         prompt = self._build_evaluation_prompt(application)
         
         try:
-            response = self._create_chat_completion(
-                operation="gaston.evaluate_application",
+            # Two-step: extract salient evidence and quotes, then synthesize the
+            # final JSON evaluation using that extracted material.
+            query_messages = [
+                {"role": "system", "content": "You are an expert at extracting salient evidence and direct quotes from an application for an admissions evaluation."},
+                {"role": "user", "content": f"Extract the 6 most important evidence snippets and any direct quotes from this application to support scoring:\n\n{application.get('ApplicationText', '')[:2500]}"}
+            ]
+
+            format_template = [
+                {"role": "system", "content": "You are an expert hiring manager. Using the extracted facts, produce the JSON evaluation exactly matching the requested schema. Respond ONLY with valid JSON."},
+                {"role": "user", "content": "Extracted facts and quotes: {found}\n\nNow return the JSON evaluation per the schema in the prompt."}
+            ]
+
+            q_resp, response = self.two_step_query_format(
+                operation_base="gaston.evaluate_application",
                 model=self.model,
-                messages=[
-                    {
-                        "role": "system",
-                        "content": "You are an expert hiring manager. Respond ONLY with valid JSON."
-                    },
-                    {
-                        "role": "user",
-                        "content": prompt
-                    }
-                ],
-                max_completion_tokens=2000,
-                response_format={"type": "json_object"}  # Ensure JSON response
+                query_messages=query_messages,
+                format_messages_template=format_template,
+                query_kwargs={"max_completion_tokens": 300, "temperature": 0},
+                format_kwargs={"max_completion_tokens": 2000, "temperature": 0.8, "response_format": {"type": "json_object"}}
             )
-            
+
             processing_time_ms = int((time.time() - start_time) * 1000)
-            
+
             # Parse the JSON response
-            evaluation = json.loads(response.choices[0].message.content)
+            evaluation = safe_load_json(response.choices[0].message.content)
             
             # Add metadata
             evaluation['processing_time_ms'] = processing_time_ms

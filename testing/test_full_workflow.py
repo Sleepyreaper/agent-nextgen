@@ -153,7 +153,8 @@ def verify_student_detail(app_id):
     
     print(f"\n5. Verifying student detail page for {app_id}...")
     
-    response = requests.get(f"{BASE_URL}/student/{app_id}")
+    # route renamed to /application/<id>
+    response = requests.get(f"{BASE_URL}/application/{app_id}")
     
     if response.status_code == 200:
         print("   ✓ Student detail page loads successfully")
@@ -164,7 +165,8 @@ def verify_student_detail(app_id):
             'Student Name': 'Test Student' in page_content or 'test_student' in page_content.lower(),
             'Status Field': 'status' in page_content.lower(),
             'Application Text': 'application' in page_content.lower(),
-            'Agent Evaluations': any(agent in page_content for agent in ['Tiana', 'Rapunzel', 'Moana', 'Mulan', 'Merlin'])
+            'Agent Evaluations': any(agent in page_content for agent in ['Tiana', 'Rapunzel', 'Moana', 'Mulan', 'Merlin']),
+            'Summary snippet': 'Overall Score' in page_content or 'Recommendation' in page_content
         }
         
         for check_name, passed in checks.items():

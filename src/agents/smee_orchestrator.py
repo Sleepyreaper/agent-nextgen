@@ -2,10 +2,14 @@
 
 import asyncio
 import json
+from src.utils import safe_load_json
 import logging
 import os
 from typing import Dict, List, Any, Optional, Tuple
-from openai import AzureOpenAI
+from src.config import config
+# Do not import `openai` at module import time. Accept the AI client as a runtime
+# object (Any) to avoid ModuleNotFoundError during application startup when the
+# `openai` package is not installed in the environment.
 from src.agents.base_agent import BaseAgent
 from src.agents.system_prompts import SMEE_ORCHESTRATOR_PROMPT
 from src.agents.agent_requirements import AgentRequirements
@@ -31,7 +35,7 @@ class SmeeOrchestrator(BaseAgent):
     def __init__(
         self,
         name: str,
-        client: AzureOpenAI,
+        client: Any,
         model: str,
         db_connection: Optional[Any] = None
     ):
@@ -112,6 +116,52 @@ class SmeeOrchestrator(BaseAgent):
         """
         self.agents[agent_id] = agent
         logger.info(f"Smee registered agent: {agent_id} ({agent.name})")
+
+    def _normalize_agent_result(self, result: Any) -> Any:
+        """
+        Ensure agent result is JSON-serializable and in a predictable shape.
+        - If dict/list: return as-is
+        - If string: try to parse JSON, otherwise return string
+        - If model/response-like object: try to extract message content
+        - Fallback to string representation
+        """
+        try:
+            if isinstance(result, (dict, list)):
+                return result
+            if isinstance(result, str):
+                try:
+                    return safe_load_json(result)
+                except Exception:
+                    return result
+
+            # handle response-like objects with .choices
+            choices = getattr(result, 'choices', None)
+            if choices:
+                try:
+                    first = choices[0]
+                    # openai style: first.message.content
+                    content = None
+                    if hasattr(first, 'message') and hasattr(first.message, 'content'):
+                        content = first.message.content
+                    elif isinstance(first, dict):
+                        content = first.get('message', {}).get('content') or first.get('text')
+                    if isinstance(content, (dict, list)):
+                        return content
+                    if isinstance(content, str):
+                        try:
+                            return safe_load_json(content)
+                        except Exception:
+                            return content
+                except Exception:
+                    pass
+
+            # Last resort: try to json-serialize, else string
+            try:
+                return json.loads(json.dumps(result))
+            except Exception:
+                return str(result)
+        except Exception:
+            return {'error': 'could_not_normalize_result'}
     
     def get_registered_agents(self) -> Dict[str, str]:
         """Get list of registered agents."""
@@ -201,6 +251,30 @@ class SmeeOrchestrator(BaseAgent):
         
         This ensures we never create duplicate student records.
         """
+        # If the incoming application already has an `application_id`, prefer
+        # that and skip matching/creation. Also try to resolve by `student_id`
+        # if provided so we don't create a duplicate row when the frontend
+        # already created a placeholder application earlier in the flow.
+        if application:
+            provided_app_id = application.get('application_id') or application.get('ApplicationID')
+            if provided_app_id:
+                logger.info(f"Using provided application_id: {provided_app_id} (skip matching)")
+                return provided_app_id
+            provided_student_id = application.get('student_id')
+            if provided_student_id and self.db:
+                try:
+                    rows = self.db.execute_query(
+                        "SELECT application_id FROM applications WHERE student_id = %s LIMIT 1",
+                        (provided_student_id,)
+                    )
+                    if rows:
+                        app_id = rows[0].get('application_id') if isinstance(rows[0], dict) else rows[0][0]
+                        logger.info(f"Found existing application by student_id: {app_id}")
+                        return app_id
+                except Exception:
+                    # fall through to normal matching if query fails
+                    pass
+
         if not self.db:
             logger.warning("No database connection - cannot match student records")
             return None
@@ -232,13 +306,12 @@ class SmeeOrchestrator(BaseAgent):
             state_code=state_norm,
             application_text=application.get('application_text', '')
         )
-        
         if new_app_id:
             logger.info(
                 f"✨ Created new student record: {new_app_id} "
                 f"for {first_name} {last_name} from {high_school}, {state_code}"
             )
-        
+
         return new_app_id
     
     async def _extract_data_with_belle(
@@ -529,7 +602,6 @@ class SmeeOrchestrator(BaseAgent):
             if agent_id == 'application_reader':
                 result = await agent.parse_application(application)
             elif agent_id == 'grade_reader':
-                # Pass school context for rigor weighting
                 transcript = application.get('transcript_text', '')
                 result = await agent.parse_grades(
                     transcript,
@@ -552,41 +624,209 @@ class SmeeOrchestrator(BaseAgent):
                     application.get('applicant_name', ''),
                     application.get('application_id')
                 )
+            elif agent_id == 'gaston':
+                try:
+                    result = await agent.evaluate_application(application)
+                except AttributeError:
+                    result = await agent.process(f"Evaluate: {application.get('applicant_name', '')}")
             else:
-                # Generic process
                 result = await agent.process(
                     f"Evaluate: {application.get('applicant_name', '')}"
                 )
-            
+
             logger.info(f"✅ {agent.name} completed")
-            return result
+            logger.debug(f"{agent.name} output: {result}")
+
+            # Always generate a human_summary for every agent result
+            normalized_result = self._normalize_agent_result(result)
+            try:
+                ctx = normalized_result if isinstance(normalized_result, (dict, list, str)) else str(normalized_result)
+                ctx_text = json.dumps(ctx, ensure_ascii=False) if not isinstance(ctx, str) else ctx
+                prompt = [
+                    {
+                        "role": "user",
+                        "content": (
+                            f"You are given the output from the agent '{self.agents[agent_id].name}'. "
+                            "Produce exactly three concise sentences that summarize the agent's output for a non-technical audience. "
+                            "Keep the tone neutral and factual. If the agent included a recommendation or a key risk, include that in one of the sentences.\n\n"
+                            "Agent output (JSON):\n" + str(ctx_text)
+                        )
+                    }
+                ]
+                resp = await asyncio.to_thread(
+                    self._create_chat_completion,
+                    f"{agent_id}.summary",
+                    None,
+                    prompt,
+                    max_completion_tokens=200,
+                    refinements=0,
+                )
+                summ = self._normalize_agent_result(resp)
+                if isinstance(summ, (dict, list)):
+                    try:
+                        summ_text = json.dumps(summ, ensure_ascii=False)
+                    except Exception:
+                        summ_text = str(summ)
+                else:
+                    summ_text = str(summ)
+                if isinstance(normalized_result, dict):
+                    normalized_result['human_summary'] = summ_text
+                else:
+                    normalized_result = {
+                        'result': normalized_result,
+                        'human_summary': summ_text
+                    }
+            except Exception as e:
+                logger.error(f"Failed to generate human_summary for agent={agent_id}: {e}")
+
+            # Optionally supplement every agent's output with an explicit model call
+            try:
+                enabled = str(config.get('NEXTGEN_ALWAYS_MODEL_SUPPLEMENT', '')).lower() in ('1', 'true', 'yes')
+            except Exception:
+                enabled = False
+
+            if enabled:
+                try:
+                    ctx = normalized_result
+                    ctx_text = json.dumps(ctx, ensure_ascii=False) if not isinstance(ctx, str) else ctx
+                    prompt = [
+                        {
+                            "role": "user",
+                            "content": (
+                                "Please provide any additional observations, clarifications, or structured "
+                                "supplementary fields that would improve this agent's output.\n\nContext:\n"
+                                + str(ctx_text)
+                            )
+                        }
+                    ]
+                    supp_resp = await asyncio.to_thread(
+                        self._create_chat_completion,
+                        f"{agent_id}.supplement",
+                        None,
+                        prompt,
+                        max_completion_tokens=350,
+                        refinements=1
+                    )
+                    supp_norm = self._normalize_agent_result(supp_resp)
+                    if isinstance(normalized_result, dict):
+                        normalized_result.setdefault('supplement', supp_norm)
+                    else:
+                        normalized_result = {
+                            'result': normalized_result,
+                            'supplement': supp_norm
+                        }
+                    logger.info(f"ℹ️ Supplemented {agent.name} output via model")
+                except Exception as e:
+                    logger.warning(f"Could not supplement agent {agent_id}: {e}")
+
+            return normalized_result
         except Exception as e:
             logger.error(f"❌ {agent.name} failed: {e}")
             return {'error': str(e), 'status': 'failed'}
     
-    def _create_student_summary(self, aurora_result: Dict[str, Any], merlin_result: Dict[str, Any]) -> Dict[str, Any]:
+    def _create_student_summary(
+        self,
+        aurora_result: Dict[str, Any],
+        merlin_result: Dict[str, Any],
+        all_agent_results: Optional[Dict[str, Any]] = None
+    ) -> Dict[str, Any]:
         """
         Create a concise student summary from Aurora and Merlin outputs for database storage.
         
         Args:
             aurora_result: Formatted report from Aurora agent
             merlin_result: Evaluation from Merlin agent
-            
+            all_agent_results: optional dict containing each agent's raw output;
+                will be embedded under ``agent_details`` so that a single
+                column on the ``applications`` table contains everything you
+                need to understand what the agents have reasoned.
+        
         Returns:
             Dictionary with summary information suitable for student_summary column
         """
+        def _get_first(d: Dict[str, Any], candidates: list):
+            for k in candidates:
+                if not d:
+                    continue
+                if isinstance(d, dict) and k in d and d.get(k) is not None:
+                    return d.get(k)
+            return None
+
+        # If merlin_result is a string, try to parse JSON
+        if isinstance(merlin_result, str):
+            try:
+                merlin_result = safe_load_json(merlin_result)
+            except Exception:
+                merlin_result = {}
+
+        overall = _get_first(merlin_result, ['overall_score', 'overall', 'score', 'overallScore', 'overallscore'])
+        try:
+            overall = float(overall) if overall is not None else None
+        except Exception:
+            overall = None
+
+        recommendation = _get_first(merlin_result, ['recommendation', 'recommendation_text', 'recommendationText']) or ''
+        rationale = _get_first(merlin_result, ['rationale', 'detailed_analysis', 'DetailedAnalysis']) or ''
+        key_strengths = _get_first(merlin_result, ['key_strengths', 'strengths']) or []
+        key_risks = _get_first(merlin_result, ['key_risks', 'considerations', 'risks']) or []
+        confidence = _get_first(merlin_result, ['confidence'])
+
         summary = {
             'status': 'completed',
-            'overall_score': merlin_result.get('overall_score'),
-            'recommendation': merlin_result.get('recommendation'),
-            'rationale': merlin_result.get('rationale', ''),
-            'key_strengths': merlin_result.get('key_strengths', []),
-            'key_risks': merlin_result.get('key_risks', []),
-            'confidence': merlin_result.get('confidence'),
+            'overall_score': overall,
+            'recommendation': recommendation,
+            'rationale': rationale,
+            'key_strengths': key_strengths,
+            'key_risks': key_risks,
+            'confidence': confidence,
             'agents_completed': list(self.agents.keys()) if self.agents else [],
             'formatted_by_aurora': bool(aurora_result),
             'aurora_sections': list(aurora_result.keys()) if isinstance(aurora_result, dict) else []
         }
+
+        if all_agent_results is not None:
+            details = {}
+            try:
+                # Support multiple shapes: dict (canonical), list (legacy), or other.
+                if isinstance(all_agent_results, dict):
+                    iterable = all_agent_results.items()
+                elif isinstance(all_agent_results, list):
+                    # Try to interpret a list of single-key dicts (e.g. [{"merlin": {...}}, {"aurora": {...}}])
+                    tmp = []
+                    for i, entry in enumerate(all_agent_results):
+                        if isinstance(entry, dict) and len(entry) == 1:
+                            k = next(iter(entry.keys()))
+                            v = entry[k]
+                            tmp.append((k, v))
+                        else:
+                            # fallback: create synthetic key
+                            tmp.append((f'agent_{i}', entry))
+                    iterable = tmp
+                else:
+                    # Unknown shape - coerce to string-safe fallback
+                    iterable = []
+
+                for aid, val in iterable:
+                    # canonicalize common agent ids
+                    canon = {
+                        'student_evaluator': 'merlin',
+                        'report_generator': 'aurora'
+                    }.get(aid, aid)
+                    try:
+                        details[canon] = self._normalize_agent_result(val)
+                    except Exception:
+                        # fallback to safe_load_json for strings
+                        if isinstance(val, str):
+                            try:
+                                details[canon] = safe_load_json(val)
+                            except Exception:
+                                details[canon] = val
+                        else:
+                            details[canon] = val
+                summary['agent_details'] = details
+            except Exception:
+                summary['agent_details'] = all_agent_results
+
         return summary
     
     async def coordinate_evaluation(
@@ -670,23 +910,12 @@ class SmeeOrchestrator(BaseAgent):
                         application.get('TranscriptText') or '')
         
         document_name = application.get('file_name', 'application_document')
-        # Ensure there is an application record so downstream agents can persist outputs
-        if not application_id and self.db:
-            try:
-                created_id = self.db.create_application(
-                    applicant_name=applicant_name,
-                    email=application.get('email', ''),
-                    application_text=document_text,
-                    file_name=document_name,
-                    file_type=application.get('file_type', 'text/plain')
-                )
-                if created_id:
-                    application_id = created_id
-                    self._current_application_id = created_id
-                    application['application_id'] = created_id
-                    logger.info(f"✨ Created placeholder application record: {created_id} for {applicant_name}")
-            except Exception as e:
-                logger.warning(f"Could not create application record before processing: {e}")
+        # NOTE: avoid creating a placeholder application record here. We need
+        # BELLE extraction to perform reliable student matching. Creating a
+        # placeholder before matching can lead to two inserts (placeholder +
+        # matched student record) and cause agent results to be persisted to a
+        # different application_id. Defer creating an application row until
+        # after student matching so a single record is created/used.
         print(f"DEBUG: document_name={document_name}, doc_length={len(document_text)}")
         belle_data = await self._extract_data_with_belle(document_text, document_name)
         print(f"DEBUG: BELLE returned: {list(belle_data.keys()) if isinstance(belle_data, dict) else 'NOT A DICT'}")
@@ -762,170 +991,32 @@ class SmeeOrchestrator(BaseAgent):
                 f"⚠️ Incomplete student info for matching: "
                 f"first={first_name}, last={last_name}, school={high_school}, state={state_code}"
             )
-        
-        # ===== STEP 2.5: Check or enrich high school =====
-        print(f"\nDEBUG: STEP 2.5 - High school enrichment")
-        print(f"DEBUG: high_school={high_school}, state_code={state_code}")
-        logger.info("📚 STEP 2.5: Checking/enriching high school data...")
-        print("📚 STEP 2.5: Checking/enriching high school data...")
-        
-        high_school_data = {}
-        if high_school and state_code:
-            high_school_data = await self._check_or_enrich_high_school(
-                high_school, 
-                state_code,
-                school_district=application.get('school_district', ''),
-                application_id=application_id
-            )
-            
-            if 'error' in high_school_data:
-                logger.warning(
-                    f"⚠️ Step 2.5 could not enrich high school: {high_school_data.get('error')}",
-                    extra={'school': high_school}
+
+        # If matching didn't produce an application_id, create one now so
+        # downstream agents and persistence use the same record. Include
+        # `student_id` to keep linkage between in-memory workflow and DB.
+        if not application_id and self.db:
+            try:
+                created_id = self.db.create_application(
+                    applicant_name=applicant_name,
+                    email=application.get('email', ''),
+                    application_text=document_text,
+                    file_name=document_name,
+                    file_type=application.get('file_type', 'text/plain'),
+                    student_id=student_id
                 )
-                # PHASE 5: Log Step 2.5 enrollment failure
-                self._log_interaction(
-                    application_id=application_id,
-                    agent_name='Smee',
-                    interaction_type='step_2_5_school_check',
-                    question_text=f"Check/enrich high school: {high_school}, {state_code}",
-                    extracted_data={
-                        'school_name': high_school,
-                        'state_code': state_code,
-                        'status': 'error',
-                        'error': high_school_data.get('error')
-                    }
-                )
-                # Continue anyway - Step 3 validation loop will handle enrichment
-            else:
-                # PHASE 5: Log Step 2.5 success
-                self._log_interaction(
-                    application_id=application_id,
-                    agent_name='Smee',
-                    interaction_type='step_2_5_school_check',
-                    question_text=f"Check/enrich high school: {high_school}, {state_code}",
-                    extracted_data={
-                        'school_name': high_school,
-                        'state_code': state_code,
-                        'status': 'success',
-                        'school_enrichment_id': high_school_data.get('school_enrichment_id'),
-                        'opportunity_score': high_school_data.get('opportunity_score')
-                    }
-                )
-                logger.info(f"✅ Step 2.5 complete: High school enrichment ready")
-                self.evaluation_results['results']['high_school_check'] = high_school_data
-        
-        # ===== STEP 3 & 3.5: NAVEEN enrichment + School validation loop =====
-        print(f"\nDEBUG: STEP 3/3.5 - NAVEEN enrichment & validation")
-        print(f"DEBUG: high_school={high_school}, state_code={state_code}, application_id={application_id}")
-        print(f"DEBUG: 'naveen' in self.agents? {'naveen' in self.agents}")
-        logger.info("🏫 STEP 3-3.5: NAVEEN enrichment & MOANA validation loop...")
-        print("🏫 STEP 3-3.5: NAVEEN enrichment & MOANA validation loop...")
-        
+                if created_id:
+                    application_id = created_id
+                    self._current_application_id = created_id
+                    application['application_id'] = created_id
+                    logger.info(f"✨ Created application record: {created_id} for {applicant_name}")
+            except Exception as e:
+                logger.warning(f"Could not create application record after matching: {e}")
+
+        # Simplified: skip NAVEEN/MOANA enrichment and validation in streamlined flow
+        logger.info("⚠️ Simplified workflow: skipping NAVEEN and MOANA school enrichment/validation")
         school_enrichment = {}
-        if high_school and state_code and application_id:
-            # Import the school workflow for Phase 3 validation/remediation
-            from src.school_workflow import SchoolDataWorkflow
-            
-            workflow = SchoolDataWorkflow(self.db)
-            naveen_agent = self.agents.get('naveen')
-            
-            # Run integrated NAVEEN ↔ MOANA validation loop with remediation
-            is_ready, school_data, validation_log = await asyncio.to_thread(
-                workflow.validate_and_remediate_school,
-                school_name=high_school,
-                state_code=state_code,
-                school_district=application.get('school_district', ''),
-                aurora_agent=naveen_agent,
-                max_remediation_attempts=2,  # Allow 1 remediation attempt
-                required_fields=None  # Use default MOANA requirements
-            )
-            
-            self.evaluation_results['results']['naveen_enrichment'] = school_data
-            self.evaluation_results['results']['school_validation_log'] = validation_log
-            
-            # PHASE 5: Log STEP 3 NAVEEN enrichment
-            self._log_interaction(
-                application_id=application_id,
-                agent_name='Naveen',
-                interaction_type='step_3_naveen_enrichment',
-                question_text=f"Enrich school data: {high_school}, {state_code}",
-                extracted_data={
-                    'school_name': high_school,
-                    'state_code': state_code,
-                    'enrichment_data': school_data,
-                    'opportunity_score': school_data.get('opportunity_score'),
-                    'validation_status': 'ready' if is_ready else 'pending'
-                }
-            )
-            
-            # PHASE 5: Log STEP 3.5 validation attempts
-            for attempt_num, attempt in enumerate(validation_log.get('attempts', []), 1):
-                self._log_interaction(
-                    application_id=application_id,
-                    agent_name='Moana',
-                    interaction_type='step_3_5_validation_attempt',
-                    question_text=f"Validation attempt #{attempt_num}: Verify school requirements",
-                    extracted_data={
-                        'attempt_number': attempt_num,
-                        'timestamp': attempt.get('timestamp'),
-                        'fields_checked': attempt.get('fields_checked', []),
-                        'passed': attempt.get('passed', False),
-                        'missing_fields': attempt.get('missing_fields', [])
-                    }
-                )
-                
-                # Log remediation if this was a remediation attempt
-                if attempt.get('is_remediation') and attempt_num > 1:
-                    self._log_interaction(
-                        application_id=application_id,
-                        agent_name='Naveen',
-                        interaction_type='step_3_5_remediation',
-                        question_text=f"Remediation #{attempt_num-1}: Enrich missing fields",
-                        extracted_data={
-                            'remediation_number': attempt_num - 1,
-                            'missing_fields_targeted': attempt.get('missing_fields', []),
-                            'remediation_context': f"Re-enriching: {', '.join(attempt.get('missing_fields', []))}",
-                            'result': 'passed' if attempt.get('passed') else 'incomplete'
-                        }
-                    )
-            
-            if is_ready:
-                school_enrichment = school_data
-                logger.info(
-                    f"✅ School validation PASSED and ready for MOANA",
-                    extra={'school': high_school, 'validation_attempts': len(validation_log.get('attempts', []))}
-                )
-                # Log final validation success
-                self._log_interaction(
-                    application_id=application_id,
-                    agent_name='Moana',
-                    interaction_type='step_3_5_validation_passed',
-                    question_text='Final school context validation',
-                    extracted_data={
-                        'validation_result': 'passed',
-                        'total_attempts': len(validation_log.get('attempts', [])),
-                        'school_name': high_school,
-                        'state_code': state_code
-                    }
-                )
-            else:
-                logger.warning(
-                    f"⚠️ School validation incomplete - continuing with partial school data",
-                    extra={
-                        'school': high_school,
-                        'missing_fields': validation_log.get('final_missing_fields', []),
-                        'attempts': len(validation_log.get('attempts', []))
-                    }
-                )
-                # Use partial school data rather than blocking the workflow
-                school_enrichment = school_data or {}
-                logger.info(
-                    f"📋 Continuing with core agents using partial school enrichment",
-                    extra={'school': high_school, 'has_enrichment': bool(school_enrichment)}
-                )
-        else:
-            logger.warning("⚠️ Cannot run school validation - missing school info or application_id")
+        self.evaluation_results['results']['school_enrichment'] = {}
         
         # ===== STEP 4: Core agents with per-agent validation =====
         print(f"\n{'='*80}")
@@ -935,7 +1026,7 @@ class SmeeOrchestrator(BaseAgent):
         logger.info("🤖 STEP 4: Running core agents with validation gates...")
         print("🤖 STEP 4: Running core agents with validation gates...")
         
-        core_agents = ['application_reader', 'grade_reader', 'school_context', 'recommendation_reader']
+        core_agents = ['application_reader', 'grade_reader', 'recommendation_reader', 'gaston']
         print(f"DEBUG: core_agents list={core_agents}")
         prior_results = {}
         
@@ -1032,9 +1123,39 @@ class SmeeOrchestrator(BaseAgent):
                 agent_result = await self._run_agent(
                     agent_id, application, school_enrichment, prior_results
                 )
-                
-                self.evaluation_results['results'][agent_id] = agent_result
-                prior_results[agent_id] = agent_result
+
+                # Normalize agent result into predictable JSON-serializable shape
+                normalized_result = self._normalize_agent_result(agent_result)
+                self.evaluation_results['results'][agent_id] = normalized_result
+                prior_results[agent_id] = normalized_result
+
+                # immediately persist the raw output so that the application
+                # row contains a snapshot of each agent's reasoning.  we keep
+                # everything under a single ``agent_results`` column which is
+                # created dynamically if it doesn't already exist.
+                try:
+                    if self.db and application_id:
+                        stored = {}
+                        try:
+                            existing = self.db.get_application(application_id) or {}
+                            stored = existing.get('agent_results') or {}
+                            if isinstance(stored, str):
+                                stored = safe_load_json(stored)
+                        except Exception:
+                            stored = {}
+                        # use canonical keys for certain synthesis agents
+                        canonical_map = {
+                            'student_evaluator': 'merlin',
+                            'report_generator': 'aurora'
+                        }
+                        stored_key = canonical_map.get(agent_id, agent_id)
+                        stored[stored_key] = normalized_result
+                        self.db.update_application(
+                            application_id=application_id,
+                            agent_results=json.dumps(stored)
+                        )
+                except Exception as _store_err:
+                    logger.debug(f"Could not update application agent_results: {_store_err}")
                 
                 # PHASE 5: Log STEP 4 agent execution
                 self._log_interaction(
@@ -1046,59 +1167,253 @@ class SmeeOrchestrator(BaseAgent):
                         'agent_id': agent_id,
                         'agent_number': agent_idx,
                         'execution_status': 'completed',
-                        'result_keys': list(agent_result.keys()) if isinstance(agent_result, dict) else [],
+                        'result_keys': list(normalized_result.keys()) if isinstance(normalized_result, dict) else [],
                         'execution_order': f"{agent_idx}/4"
                     }
                 )
                 
                 logger.info(f"✅ Agent {agent_id} completed")
                 print(f"✅ {agent_id.upper()}: COMPLETED")
+                # Persist agent outputs to database for auditing and downstream use
+                try:
+                    if self.db and application_id:
+                        # Agent audit entry
+                        try:
+                            self.db.save_agent_audit(application_id, self.agents[agent_id].name, None)
+                        except Exception as _audit_err:
+                            logger.debug(f"Could not save agent audit for {agent_id}: {_audit_err}")
+
+                        # Try to extract representative scores/fields from agent result
+                        overall_score = None
+                        try:
+                            if isinstance(normalized_result, dict):
+                                overall_score = normalized_result.get('overall_score') or normalized_result.get('readiness_score') or normalized_result.get('score')
+                                # Coerce numeric-like strings
+                                if overall_score is not None:
+                                    overall_score = float(overall_score)
+                        except Exception:
+                            overall_score = None
+
+                        technical = None
+                        communication = None
+                        experience = None
+                        cultural = None
+                        strengths = None
+                        weaknesses = None
+                        recommendation = None
+                        detailed = None
+                        comparison = None
+                        model_used = getattr(self.agents[agent_id], 'model', None) or self.model
+                        processing_ms = int(normalized_result.get('processing_time_ms', 0)) if isinstance(normalized_result, dict) else 0
+
+                        try:
+                            detailed = json.dumps(normalized_result, ensure_ascii=True)
+                        except Exception:
+                            try:
+                                detailed = str(normalized_result)
+                            except Exception:
+                                detailed = None
+
+                        try:
+                            self.db.save_evaluation(
+                                application_id,
+                                self.agents[agent_id].name,
+                                overall_score or 0.0,
+                                technical or 0.0,
+                                communication or 0.0,
+                                experience or 0.0,
+                                cultural or 0.0,
+                                strengths or '',
+                                weaknesses or '',
+                                recommendation or '',
+                                detailed or '',
+                                comparison or '',
+                                model_used or '',
+                                processing_ms
+                            )
+                        except Exception as _eval_err:
+                            logger.warning(f"Could not persist evaluation for {agent_id}: {_eval_err}")
+                        # If the agent result does not include a `human_summary`,
+                        # generate a concise, exactly-3-sentence human-friendly
+                        # summary using the model and persist it.  Apply to any
+                        # agent so older rows without summaries will get one when
+                        # the orchestrator runs.
+                        try:
+                            needs_summary = False
+                            if isinstance(normalized_result, dict):
+                                if not normalized_result.get('human_summary'):
+                                    needs_summary = True
+                            else:
+                                # non-dict results should get wrapped with a summary
+                                needs_summary = True
+
+                            if needs_summary:
+                                logger.info(
+                                    "Attempting to generate human_summary for agent=%s application_id=%s",
+                                    agent_id,
+                                    application_id,
+                                )
+                                ctx = normalized_result if isinstance(normalized_result, (dict, list, str)) else str(normalized_result)
+                                ctx_text = json.dumps(ctx, ensure_ascii=False) if not isinstance(ctx, str) else ctx
+                                prompt = [
+                                    {
+                                        "role": "user",
+                                        "content": (
+                                            f"You are given the output from the agent '{self.agents[agent_id].name}'. "
+                                            "Produce exactly three concise sentences that summarize the agent's output for a non-technical audience. "
+                                            "Keep the tone neutral and factual. If the agent included a recommendation or a key risk, include that in one of the sentences.\n\n"
+                                            "Agent output (JSON):\n" + str(ctx_text)
+                                        )
+                                    }
+                                ]
+
+                                try:
+                                    logger.debug("Summarization prompt length=%d for agent=%s", len(str(prompt)), agent_id)
+                                    resp = await asyncio.to_thread(
+                                        self._create_chat_completion,
+                                        f"{agent_id}.summary",
+                                        None,
+                                        prompt,
+                                        max_completion_tokens=200,
+                                        refinements=0,
+                                    )
+
+                                    summ = self._normalize_agent_result(resp)
+                                    if isinstance(summ, (dict, list)):
+                                        try:
+                                            summ_text = json.dumps(summ, ensure_ascii=False)
+                                        except Exception:
+                                            summ_text = str(summ)
+                                    else:
+                                        summ_text = str(summ)
+                                except Exception as e:
+                                    logger.exception(
+                                        "Agent summarization failed for %s (application_id=%s): %s",
+                                        agent_id,
+                                        application_id,
+                                        e,
+                                    )
+                                    summ_text = None
+
+                                if summ_text:
+                                    logger.info("Generated human_summary for agent=%s application_id=%s", agent_id, application_id)
+                                    if isinstance(normalized_result, dict):
+                                        normalized_result['human_summary'] = summ_text
+                                    else:
+                                        normalized_result = {
+                                            'result': normalized_result,
+                                            'human_summary': summ_text
+                                        }
+
+                                    if self.db and application_id:
+                                        try:
+                                            rec = self.db.get_application(application_id) or {}
+                                            stored = rec.get('agent_results') or {}
+                                            if isinstance(stored, str):
+                                                stored = safe_load_json(stored)
+                                        except Exception:
+                                            stored = {}
+                                        stored_key = canonical_map.get(agent_id, agent_id)
+                                        stored[stored_key] = normalized_result
+                                        try:
+                                            self.db.update_application(application_id=application_id, agent_results=json.dumps(stored))
+                                            logger.debug("Persisted human_summary for agent=%s application_id=%s", agent_id, application_id)
+                                        except Exception:
+                                            logger.exception("Could not persist agent human_summary for %s application_id=%s", agent_id, application_id)
+                        except Exception:
+                            # swallow any summarization errors to avoid failing the
+                            # overall orchestration flow
+                            pass
+                except Exception:
+                    logger.debug(f"Skipping DB persistence for {agent_id} due to missing DB or application_id")
             except Exception as agent_exec_error:
                 logger.error(f"❌ {agent_id} execution error: {agent_exec_error}")
                 print(f"❌ {agent_id.upper()}: FAILED - {str(agent_exec_error)[:100]}")
                 self.evaluation_results['results'][agent_id] = {'error': str(agent_exec_error)}
         
-        # ===== STEP 5: MILO - Training insights analysis =====
-        print(f"DEBUG: About to start STEP 5. Agents registered: {list(self.agents.keys())}")
-        print(f"DEBUG: data_scientist in agents? {'data_scientist' in self.agents}")
-        logger.info("📊 STEP 5: Analyzing training insights with MILO...")
-        print("📊 STEP 5: Analyzing training insights with MILO...")
-        
-        if 'data_scientist' in self.agents:
+        # ===== STEP 5: MILO - training analysis =====
+        logger.info("📊 STEP 5: Running Milo training analysis...")
+        if 'data_scientist' in evaluation_steps and 'data_scientist' in self.agents:
             milo = self.agents['data_scientist']
             try:
-                # Milo's analyze_training_insights is async; await it directly
                 milo_result = await milo.analyze_training_insights()
                 self.evaluation_results['results']['data_scientist'] = milo_result
-                
-                # PHASE 5: Log STEP 5 MILO analysis
+
+                # persist Milo output into the application record for downstream use
+                try:
+                    if self.db and application_id:
+                        existing = {}
+                        try:
+                            rec = self.db.get_application(application_id) or {}
+                            existing = rec.get('agent_results') or {}
+                            if isinstance(existing, str):
+                                existing = safe_load_json(existing)
+                        except Exception:
+                            existing = {}
+                        existing['data_scientist'] = milo_result
+                        try:
+                            self.db.update_application(
+                                application_id=application_id,
+                                agent_results=json.dumps(existing)
+                            )
+                        except Exception:
+                            logger.debug('Could not persist milo to agent_results')
+                except Exception:
+                    pass
+
+                # Log STEP 5 MILO analysis
                 self._log_interaction(
                     application_id=application_id,
                     agent_name='Milo',
                     interaction_type='step_5_milo_analysis',
-                    question_text='Analyze training insights and patterns',
+                    question_text='Analyze training examples to generate insights',
                     extracted_data={
                         'analysis_status': 'completed',
                         'result_keys': list(milo_result.keys()) if isinstance(milo_result, dict) else [],
                         'insights_generated': 'insights' in str(milo_result).lower() or 'analysis' in str(milo_result).lower()
                     }
                 )
-                
-                logger.info("✅ MILO analysis complete")
+
+                # compute alignment for this application if the method exists
+                try:
+                    if hasattr(milo, 'compute_alignment'):
+                        alignment = await milo.compute_alignment(application)
+                        self.evaluation_results['results']['milo_alignment'] = alignment
+                        # also persist alignment so UI/tests can access it easily
+                        if self.db and application_id:
+                            try:
+                                existing = {}
+                                rec = self.db.get_application(application_id) or {}
+                                existing = rec.get('agent_results') or {}
+                                if isinstance(existing, str):
+                                    existing = safe_load_json(existing)
+                                existing['milo_alignment'] = alignment
+                                self.db.update_application(
+                                    application_id=application_id,
+                                    agent_results=json.dumps(existing)
+                                )
+                            except Exception:
+                                pass
+                except Exception as align_err:
+                    logger.debug(f"Milo compute_alignment failed during orchestration: {align_err}")
             except Exception as e:
                 logger.error(f"❌ MILO analysis failed: {e}")
-                # PHASE 5: Log STEP 5 MILO failure
+                self.evaluation_results['results']['data_scientist'] = {'error': str(e)}
+                # still log failure for auditing
                 self._log_interaction(
                     application_id=application_id,
                     agent_name='Milo',
                     interaction_type='step_5_milo_analysis',
-                    question_text='Analyze training insights and patterns',
+                    question_text='Analyze training examples to generate insights',
                     extracted_data={
                         'analysis_status': 'failed',
                         'error': str(e)
                     }
                 )
-        
+        else:
+            # when the step isn't requested or the agent is missing we mark as skipped
+            self.evaluation_results['results']['data_scientist'] = {'skipped': True}
+
         # ===== STEP 6: MERLIN - Synthesis =====
         print(f"DEBUG: About to start STEP 6. evaluation_steps={evaluation_steps}")
         print(f"DEBUG: student_evaluator in evaluation_steps? {'student_evaluator' in evaluation_steps}")
@@ -1112,7 +1427,31 @@ class SmeeOrchestrator(BaseAgent):
                 merlin_result = await merlin.evaluate_student(
                     application, self.evaluation_results['results']
                 )
+                merlin_result = self._normalize_agent_result(merlin_result)
+                # store under both internal and canonical keys
                 self.evaluation_results['results']['student_evaluator'] = merlin_result
+                self.evaluation_results['results']['merlin'] = merlin_result
+                # Persist MERLIN into applications.agent_results for UI/backfill
+                try:
+                    if self.db and application_id:
+                        existing = {}
+                        try:
+                            rec = self.db.get_application(application_id) or {}
+                            existing = rec.get('agent_results') or {}
+                            if isinstance(existing, str):
+                                existing = safe_load_json(existing)
+                        except Exception:
+                            existing = {}
+                        existing_key = 'merlin'
+                        existing[existing_key] = merlin_result
+                        # also keep legacy key
+                        existing['student_evaluator'] = merlin_result
+                        try:
+                            self.db.update_application(application_id=application_id, agent_results=json.dumps(existing))
+                        except Exception:
+                            logger.debug('Could not persist merlin to agent_results')
+                except Exception:
+                    pass
                 
                 # PHASE 5: Log STEP 6 MERLIN synthesis
                 self._log_interaction(
@@ -1157,7 +1496,10 @@ class SmeeOrchestrator(BaseAgent):
                     aurora.format_evaluation_report,
                     self.evaluation_results['results']
                 )
+                aurora_result = self._normalize_agent_result(aurora_result)
+                # store under both internal and canonical keys
                 self.evaluation_results['results']['report_generator'] = aurora_result
+                self.evaluation_results['results']['aurora'] = aurora_result
                 
                 # PHASE 5: Log STEP 7 AURORA report generation
                 self._log_interaction(
@@ -1177,6 +1519,7 @@ class SmeeOrchestrator(BaseAgent):
                 if self.db and application_id:
                     try:
                         merlin_result = self.evaluation_results['results'].get('student_evaluator', {})
+                        merlin_result = self._normalize_agent_result(merlin_result)
                         aurora_eval_id = self.db.save_aurora_evaluation(
                             application_id=application_id,
                             formatted_evaluation=aurora_result,
@@ -1187,11 +1530,37 @@ class SmeeOrchestrator(BaseAgent):
                         logger.info(f"✅ Aurora evaluation saved: {aurora_eval_id}")
                         
                         # Create student summary from Aurora output
-                        student_summary = self._create_student_summary(aurora_result, merlin_result)
+                        # include every agent's raw output in the summary so
+                        # the row contains both high‑level and detailed
+                        # reasoning that can be surfaced later.
+                        student_summary = self._create_student_summary(
+                            aurora_result,
+                            merlin_result,
+                            all_agent_results=self.evaluation_results['results']
+                        )
+                        # Persist AURORA into applications.agent_results as well
+                        try:
+                            existing = {}
+                            try:
+                                rec = self.db.get_application(application_id) or {}
+                                existing = rec.get('agent_results') or {}
+                                if isinstance(existing, str):
+                                    existing = safe_load_json(existing)
+                            except Exception:
+                                existing = {}
+                            existing_key = 'aurora'
+                            existing[existing_key] = aurora_result
+                            existing['report_generator'] = aurora_result
+                            try:
+                                self.db.update_application(application_id=application_id, agent_results=json.dumps(existing))
+                            except Exception:
+                                logger.debug('Could not persist aurora to agent_results')
+                        except Exception:
+                            pass
                         if student_summary and application_id:
                             self.db.update_application(
                                 application_id=application_id,
-                                **{'student_summary': json.dumps(student_summary)} if hasattr(self.db, 'get_training_example_column') else {}
+                                student_summary=json.dumps(student_summary)
                             )
                     except Exception as e:
                         logger.warning(f"Could not save Aurora evaluation: {e}")
@@ -1662,6 +2031,29 @@ Return only the request sentence."""
                 self._progress_callback(update)
             except Exception as e:
                 logger.warning(f"Progress callback error: {e}")
+
+    async def _run_milo(self, application: Dict[str, Any]) -> Dict[str, Any]:
+        """Helper invoked during STEP 5 to execute Milo's training analysis.
+
+        Returns a dictionary containing Milo's insights. If the agent is not
+        registered the method returns an empty dict. Any exceptions are caught
+        and surfaced in an ``error`` key so callers can continue gracefully.
+        """
+        milo = self.agents.get('data_scientist')
+        if not milo:
+            return {}
+        try:
+            result = await milo.analyze_training_insights()
+            # optionally compute alignment for the given application
+            if hasattr(milo, 'compute_alignment'):
+                try:
+                    alignment = await milo.compute_alignment(application)
+                    result['computed_alignment'] = alignment
+                except Exception:
+                    pass
+            return result
+        except Exception as e:
+            return {'error': str(e)}
 
     async def _run_merlin_after_agents(self, application: Dict[str, Any]) -> None:
         """Run Merlin after all other agents and record its result with heartbeat check-ins."""

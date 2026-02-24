@@ -26,7 +26,7 @@ class BashfulAgent(BaseAgent):
         """
         super().__init__(name, client)
         self.system_prompt = system_prompt or "You are a helpful AI assistant."
-        self.model = model
+        self.model = model or config.foundry_model_name or config.deployment_name
     
     async def process(self, message: str) -> str:
         """

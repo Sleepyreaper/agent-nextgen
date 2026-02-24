@@ -170,7 +170,12 @@ if (feedbackForm) {
             });
             const data = await response.json();
             if (!response.ok) {
-                throw new Error(data.error || 'Unable to submit feedback');
+                // include any server-provided details
+                let errMsg = data.error || 'Unable to submit feedback';
+                if (data.details) {
+                    errMsg += ': ' + data.details;
+                }
+                throw new Error(errMsg);
             }
             feedbackStatus.textContent = 'Thank you! Your feedback was captured.';
             feedbackStatus.style.color = '#059669';

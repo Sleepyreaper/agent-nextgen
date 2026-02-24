@@ -25,12 +25,27 @@ wheels/
 
 # Virtual environments
 .venv/
+.venv_deploy/
 env/
 venv/
 
-# Environment variables
+# Environment variables — NEVER commit real credentials
 .env
 .env.local
+.env.production
+.env.staging
+
+# Azure deployment profiles & secrets
+publishProfile.xml
+*.publishsettings
+
+# Archives (may contain logs, secrets, or deployment bundles)
+*.zip
+
+# Student data & PII
+student_documents/
+uploads/
+debug_dataset.html
 
 # IDE
 .vscode/
@@ -54,3 +69,6 @@ push_to_github.sh
 .coverage
 htmlcov/
 .pytest_cache/
+
+# Docker build artifacts
+*.tar

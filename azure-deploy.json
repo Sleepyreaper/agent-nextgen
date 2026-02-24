@@ -4,7 +4,7 @@
   "parameters": {
     "accountName": {
       "type": "string",
-      "defaultValue": "NextGenAgentsAI2"
+      "defaultValue": ""
     },
     "location": {
       "type": "string",
@@ -32,7 +32,7 @@
     },
     "appInsightsRoleName": {
       "type": "string",
-      "defaultValue": "nextgen-agents-web"
+      "defaultValue": ""
     }
   },
   "resources": [

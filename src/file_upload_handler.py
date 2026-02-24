@@ -14,17 +14,57 @@ Workflow:
 
 import logging
 import json
+from src.utils import safe_load_json
 from typing import Dict, Any, Optional, Tuple, List
 from datetime import datetime
-from openai import AzureOpenAI
+# Avoid importing `openai` at module import time to prevent startup failures when
+# the package is not installed in the runtime. The client is accepted as a runtime
+# object and should be provided by the caller (lazy instantiation).
 
 logger = logging.getLogger(__name__)
+
+
+def _call_model(client, model, messages, **kwargs):
+    """Provider-agnostic helper to call the AI client.
+
+    Tries common client shapes in order so callers don't need to handle
+    Foundry vs Azure/OpenAI differences.
+    """
+    # Try Foundry-style: client.chat.create(...)
+    try:
+        if hasattr(client, "chat") and hasattr(client.chat, "create"):
+            return client.chat.create(model=model, messages=messages, **kwargs)
+    except Exception:
+        logger.debug("client.chat.create failed or not compatible")
+
+    # Try Azure/OpenAI-style: client.chat.completions.create(...)
+    try:
+        if hasattr(client, "chat") and hasattr(client.chat, "completions") and hasattr(client.chat.completions, "create"):
+            return client.chat.completions.create(model=model, messages=messages, **kwargs)
+    except Exception:
+        logger.debug("client.chat.completions.create failed or not compatible")
+
+    # Try generic generate()
+    try:
+        if hasattr(client, "generate"):
+            return client.generate(model=model, messages=messages, **kwargs)
+    except Exception:
+        logger.debug("client.generate failed or not compatible")
+
+    # Try older completions attribute: client.completions.create(...)
+    try:
+        if hasattr(client, "completions") and hasattr(client.completions, "create"):
+            return client.completions.create(model=model, messages=messages, **kwargs)
+    except Exception:
+        logger.debug("client.completions.create failed or not compatible")
+
+    raise RuntimeError("No compatible model call method found on client")
 
 
 class FileUploadHandler:
     """Manages file uploads and intelligent student matching."""
     
-    def __init__(self, db_connection, client: AzureOpenAI, model: str):
+    def __init__(self, db_connection, client: Any, model: str):
         """
         Initialize the file upload handler.
         
@@ -224,9 +264,10 @@ Extract ONLY these fields (return as JSON, null if not found):
 
 Return ONLY the JSON, no other text."""
             
-            response = self.client.chat.completions.create(
-                model=self.model,
-                messages=[
+            response = _call_model(
+                self.client,
+                self.model,
+                [
                     {
                         "role": "system",
                         "content": "You are an expert document analyzer. Extract student information accurately."
@@ -244,13 +285,13 @@ Return ONLY the JSON, no other text."""
             
             # Parse JSON response
             try:
-                extracted = json.loads(response_text)
+                extracted = safe_load_json(response_text)
             except json.JSONDecodeError:
                 # Try to extract JSON from response text
                 import re
                 json_match = re.search(r'\{.*\}', response_text, re.DOTALL)
                 if json_match:
-                    extracted = json.loads(json_match.group())
+                    extracted = safe_load_json(json_match.group())
                 else:
                     return {'error': 'Could not parse extraction response'}
             
@@ -348,9 +389,10 @@ Return JSON:
 
 Return ONLY JSON, no other text."""
             
-            response = self.client.chat.completions.create(
-                model=self.model,
-                messages=[
+            response = _call_model(
+                self.client,
+                self.model,
+                [
                     {
                         "role": "system",
                         "content": "You are expert at fuzzy matching student records"
@@ -365,7 +407,7 @@ Return ONLY JSON, no other text."""
             )
             
             response_text = response.choices[0].message.content.strip()
-            decision = json.loads(response_text)
+            decision = safe_load_json(response_text)
             
             confidence = decision.get('confidence', 0.0)
             best_match_id = decision.get('best_match_id')
@@ -572,7 +614,7 @@ async def handle_file_upload(
     file_type: str,
     file_size: int,
     db_connection,
-    client: AzureOpenAI,
+    client: Any,
     model: str
 ) -> Dict[str, Any]:
     """Convenience function to handle file upload."""

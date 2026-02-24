@@ -6,8 +6,11 @@ Understands user feedback and prepares a concise issue summary.
 
 import json
 from typing import Any, Dict, Optional
+from src.utils import safe_load_json
+from src.config import config
 
-from openai import AzureOpenAI
+# Avoid importing `openai` at module import time; accept the client as Any so
+# the application can start even when the `openai` package isn't present.
 from src.agents.base_agent import BaseAgent
 
 
@@ -17,10 +20,11 @@ class ScuttleFeedbackTriageAgent(BaseAgent):
     Understands user feedback and prepares a concise issue summary.
     """
 
-    def __init__(self, name: str = "Scuttle Feedback Triage", client: AzureOpenAI = None, model: str = None):
+    def __init__(self, name: str = "Scuttle Feedback Triage", client: Any = None, model: Optional[str] = None):
         super().__init__(name, client)
-        self.model = model
-        self.model_display = "gpt-4"  # Default display model
+        # use configured model if none provided
+        self.model = model or config.foundry_model_name or config.deployment_name
+        self.model_display = self.model or "gpt-4"  # Default display model
 
     async def analyze_feedback(
         self,
@@ -102,7 +106,7 @@ class ScuttleFeedbackTriageAgent(BaseAgent):
         fallback_message: str
     ) -> Dict[str, Any]:
         try:
-            parsed = json.loads(response_text)
+            parsed = safe_load_json(response_text)
         except json.JSONDecodeError:
             parsed = {}
 

@@ -320,6 +320,15 @@ class ComprehensiveTestRunner:
                 model=self.config.deployment_name
             )
             smee.register_agent('aurora_formatter', aurora)
+
+            # register a lightweight dummy Milo agent for training analysis
+            class DummyMilo:
+                name = 'Milo'
+                async def analyze_training_insights(self):
+                    return {'status': 'success', 'insights': []}
+                async def compute_alignment(self, application):
+                    return {'match_score': 50, 'nextgen_align_score': 50, 'explanation': 'dummy'}
+            smee.register_agent('data_scientist', DummyMilo())
             
             logger.info(f"✓ Smee initialized with {len(smee.get_registered_agents())} agents:")
             for agent_id, agent_name in smee.get_registered_agents().items():
@@ -350,6 +359,7 @@ class ComprehensiveTestRunner:
                 'rapunzel_grade_reader',
                 'mulan_recommendation_reader',
                 'moana_school_context',
+                'data_scientist',
                 'student_evaluator',
                 'aurora_formatter'
             ]

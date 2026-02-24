@@ -2,13 +2,28 @@
 
 from typing import Optional, List, Dict, Any
 from datetime import datetime
-import psycopg
-from .config import config
-from .logger import app_logger as logger
+import sqlite3
+try:
+    import psycopg
+    PSYCOPG_AVAILABLE = True
+except Exception:
+    psycopg = None
+    PSYCOPG_AVAILABLE = False
+
+try:
+    from config import config
+except Exception:
+    from .config import config
+
+try:
+    from logger import app_logger as logger
+except Exception:
+    from .logger import app_logger as logger
 import json
 import time
 from urllib.parse import urlparse, parse_qsl, urlencode, urlunparse, quote
 from decimal import Decimal
+from src.utils import safe_load_json
 
 
 class Database:
@@ -38,21 +53,70 @@ class Database:
             where_clauses.append(f"(a.{applicant_col} ILIKE %s OR a.{email_col} ILIKE %s)")
             params.extend([f"%{search_query}%", f"%{search_query}%"])
         where_clause = " AND ".join(where_clauses)
+        # If the new student_summary column exists we can return it here and
+        # later convert it to a Python object.  We don't attempt any JSON
+        # extraction in SQL so that both Postgres (JSONB) and SQLite (TEXT)
+        # continue to work.  The caller code will inspect the value and derive a
+        # merlin_score if needed.
+        select_cols = [
+            f"a.{app_id_col} as application_id",
+            f"a.{applicant_col} as applicant_name",
+            f"a.{email_col} as email",
+            f"a.{status_col} as status",
+            f"a.{uploaded_col} as uploaded_date",
+            f"a.{was_selected_col} as was_selected",
+            f"a.{training_col} as is_training_example",
+            f"a.{test_col} as is_test_data"
+        ]
+        # pull in agent_results as well so callers (including list view) can
+        # compute a temporary merlin_score if necessary.  The field might be
+        # JSONB or TEXT depending on migration state.
+        if self.has_applications_column('agent_results'):
+            select_cols.append("a.agent_results")
+        if self.has_applications_column('student_summary'):
+            select_cols.append("a.student_summary")
+        column_fragment = ",\n                ".join(select_cols)
+
         query = f"""
             SELECT
-                a.{app_id_col} as application_id,
-                a.{applicant_col} as applicant_name,
-                a.{email_col} as email,
-                a.{status_col} as status,
-                a.{uploaded_col} as uploaded_date,
-                a.{was_selected_col} as was_selected,
-                a.{training_col} as is_training_example,
-                a.{test_col} as is_test_data
+                {column_fragment}
             FROM {applications_table} a
             WHERE {where_clause}
             ORDER BY LOWER(a.{applicant_col}) ASC
         """
-        return self.execute_query(query, tuple(params))
+        rows = self.execute_query(query, tuple(params))
+
+        # post-process rows to parse JSON columns and provide a uniform
+        # ``merlin_score`` property that the UI expects.
+        for row in rows:
+            # parse JSON text columns if necessary
+            if 'student_summary' in row:
+                try:
+                    row['student_summary'] = safe_load_json(row['student_summary'])
+                except Exception:
+                    pass
+            if 'agent_results' in row:
+                try:
+                    row['agent_results'] = safe_load_json(row['agent_results'])
+                except Exception:
+                    pass
+
+            # give the UI something to render in the main table
+            score = None
+            if row.get('student_summary'):
+                ss = row.get('student_summary')
+                if isinstance(ss, dict):
+                    score = ss.get('overall_score') or ss.get('score')
+            # if we still don't have a score, try agent_results innards
+            if score is None and row.get('agent_results'):
+                ar = row.get('agent_results')
+                if isinstance(ar, dict):
+                    mer = ar.get('merlin') or {}
+                    score = mer.get('overall_score') or mer.get('overallscore')
+            if score is not None:
+                row['merlin_score'] = score
+
+        return rows
     """Database connection and operations manager for PostgreSQL."""
     
     def __init__(self):
@@ -66,6 +130,62 @@ class Database:
         self._schema_probe_failed_at = None
         self._schema_probe_cooldown_seconds = 30
         self._migrations_run = False
+        self._using_sqlite_fallback = False
+
+    # ------------------------------------------------------------------
+    # OPTIONAL DATABASE HELPERS
+    # ------------------------------------------------------------------
+
+    def backfill_student_summaries(self) -> int:
+        """Backfill the ``student_summary`` column for existing applications.
+
+        This helper is safe to call repeatedly.  For any row that has a
+        non-null ``agent_results`` field but no ``student_summary`` we compute a
+        lightweight summary (mimicking ``SmeeOrchestrator._create_student_summary``)
+        and update the row.  Returns the number of rows modified.
+        """
+        if not self.has_applications_column('student_summary'):
+            logger.info("backfill_student_summaries: column not present, skipping")
+            return 0
+
+        updated = 0
+        rows = self.execute_query(
+            "SELECT application_id, student_summary, agent_results FROM applications"
+        )
+        for row in rows:
+            if row.get('student_summary'):
+                continue
+            agents = row.get('agent_results') or {}
+            if not isinstance(agents, dict) or not agents:
+                continue
+
+            merlin = agents.get('merlin') or {}
+            aurora = agents.get('aurora') or {}
+            summary = {
+                'status': 'completed',
+                'overall_score': merlin.get('overall_score') or merlin.get('overallscore'),
+                'recommendation': merlin.get('recommendation'),
+                'rationale': merlin.get('rationale', ''),
+                'key_strengths': merlin.get('key_strengths', []),
+                'key_risks': merlin.get('key_risks', []),
+                'confidence': merlin.get('confidence'),
+                'agents_completed': list(agents.keys()),
+                'formatted_by_aurora': bool(aurora),
+                'aurora_sections': list(aurora.keys()) if isinstance(aurora, dict) else []
+            }
+            summary['agent_details'] = agents
+            try:
+                self.execute_non_query(
+                    "UPDATE applications SET student_summary = %s WHERE application_id = %s",
+                    (json.dumps(summary), row.get('application_id'))
+                )
+                updated += 1
+            except Exception:
+                # swallow errors to continue backfilling others
+                logger.debug(f"failed to backfill summary for {row.get('application_id')}")
+        logger.info(f"backfill_student_summaries: updated {updated} rows")
+        return updated
+
 
     def _schema_probe_allowed(self) -> bool:
         if self._schema_probe_failed_at is None:
@@ -276,6 +396,16 @@ class Database:
             params = self._build_connection_params()
             
             if not params:
+                # If psycopg is not available or no connection params provided, fall back to a lightweight
+                # in-memory SQLite database for local prototype runs. This avoids hard failures when
+                # Postgres is not configured in local development.
+                if not PSYCOPG_AVAILABLE:
+                    self._using_sqlite_fallback = True
+                    self.connection = sqlite3.connect(":memory:")
+                    # Return rows as tuples but provide cursor.description for mapping
+                    self.connection.row_factory = None
+                    return self.connection
+
                 raise ValueError(
                     "PostgreSQL configuration incomplete. Required: POSTGRES_HOST, POSTGRES_DB, "
                     "POSTGRES_USER, POSTGRES_PASSWORD (or DATABASE_URL) in Key Vault or environment"
@@ -289,10 +419,28 @@ class Database:
                 
                 # Run migrations on first successful connection
                 if not self._migrations_run:
-                    self._run_migrations()
-                    self._migrations_run = True
-                    
+                    try:
+                        self._run_migrations()
+                        self._migrations_run = True
+                    except Exception as mig_err:
+                        # if migrations fail, close the connection so future
+                        # calls will make a fresh one instead of reusing the
+                        # aborted/errored session.
+                        try:
+                            if self.connection and not self.connection.closed:
+                                self.connection.close()
+                        except Exception:
+                            pass
+                        self.connection = None
+                        raise mig_err
             except Exception as e:
+                # ensure we don't keep a bad connection alive
+                if self.connection:
+                    try:
+                        self.connection.close()
+                    except Exception:
+                        pass
+                    self.connection = None
                 raise ConnectionError(f"Failed to connect to PostgreSQL: {e}")
         return self.connection
     
@@ -310,34 +458,107 @@ class Database:
         try:
             conn = self.connect()
             cursor = conn.cursor()
+            # Disable statement_timeout for the duration of migrations; some ALTER
+            # statements can take longer than the default 5000ms so we want to
+            # let them run without cancellation.  ``SET LOCAL`` affects only the
+            # current transaction and is reverted automatically.
+            try:
+                cursor.execute("SET LOCAL statement_timeout = 0")
+            except Exception:
+                pass
             
             # ===== APPLICATIONS TABLE MIGRATIONS =====
+            # include the new JSON columns in our probe so we don't try to
+            # add them every time the migration runs (which triggers harmless
+            # but noisy "column already exists" errors).
             cursor.execute("""
                 SELECT column_name
                 FROM information_schema.columns
-                WHERE table_name = 'applications' AND column_name IN ('first_name', 'last_name', 'high_school', 'state_code', 'is_test_data')
+                WHERE table_name = 'applications' AND column_name IN (
+                    'first_name', 'last_name', 'high_school', 'state_code',
+                    'is_test_data', 'student_summary', 'agent_results'
+                )
             """)
-            existing_columns = set(row[0] for row in cursor.fetchall())
+            existing_columns = {row[0] for row in cursor.fetchall()}
             
             if 'first_name' not in existing_columns:
                 cursor.execute("ALTER TABLE applications ADD COLUMN first_name VARCHAR(255)")
+                conn.commit()
                 logger.info("✓ Added first_name column to applications")
             
             if 'last_name' not in existing_columns:
                 cursor.execute("ALTER TABLE applications ADD COLUMN last_name VARCHAR(255)")
+                conn.commit()
                 logger.info("✓ Added last_name column to applications")
             
             if 'high_school' not in existing_columns:
                 cursor.execute("ALTER TABLE applications ADD COLUMN high_school VARCHAR(500)")
+                conn.commit()
                 logger.info("✓ Added high_school column to applications")
             
             if 'state_code' not in existing_columns:
                 cursor.execute("ALTER TABLE applications ADD COLUMN state_code VARCHAR(10)")
+                conn.commit()
                 logger.info("✓ Added state_code column to applications")
             
             if 'is_test_data' not in existing_columns:
                 cursor.execute("ALTER TABLE applications ADD COLUMN is_test_data BOOLEAN DEFAULT FALSE")
+                conn.commit()
                 logger.info("✓ Added is_test_data column to applications")
+            
+            # add student_summary JSON column so we can store a concise
+            # precomputed summary of what the agents have reasoned about this
+            # application.  This is used by the UI as well as APIs to quickly
+            # surface results without having to join all of the individual
+            # evaluation tables.
+            if 'student_summary' not in existing_columns:
+                try:
+                    cursor.execute("ALTER TABLE applications ADD COLUMN student_summary JSONB")
+                    conn.commit()
+                    existing_columns.add('student_summary')
+                    logger.info("✓ Added student_summary column to applications")
+                except Exception as first_err:
+                    conn.rollback()
+                    # if the column already exists (race or prior migration) skip
+                    if 'already exists' in str(first_err).lower():
+                        logger.debug("student_summary already exists, skipping")
+                    else:
+                        try:
+                            cursor.execute("ALTER TABLE applications ADD COLUMN student_summary TEXT")
+                            conn.commit()
+                            existing_columns.add('student_summary')
+                            logger.info("✓ Added student_summary (TEXT) column to applications")
+                        except Exception as second_err:
+                            conn.rollback()
+                            if 'already exists' in str(second_err).lower():
+                                logger.debug("student_summary (TEXT) already exists, skipping")
+                            else:
+                                logger.warning(f"Could not add student_summary column: {first_err} / {second_err}")
+
+            # likewise keep an overall dump of each agent's raw output so the
+            # reasoning can be inspected later; this lives in agent_results.
+            if 'agent_results' not in existing_columns:
+                try:
+                    cursor.execute("ALTER TABLE applications ADD COLUMN agent_results JSONB")
+                    conn.commit()
+                    existing_columns.add('agent_results')
+                    logger.info("✓ Added agent_results column to applications")
+                except Exception as first_err:
+                    conn.rollback()
+                    if 'already exists' in str(first_err).lower():
+                        logger.debug("agent_results already exists, skipping")
+                    else:
+                        try:
+                            cursor.execute("ALTER TABLE applications ADD COLUMN agent_results TEXT")
+                            conn.commit()
+                            existing_columns.add('agent_results')
+                            logger.info("✓ Added agent_results (TEXT) column to applications")
+                        except Exception as second_err:
+                            conn.rollback()
+                            if 'already exists' in str(second_err).lower():
+                                logger.debug("agent_results (TEXT) already exists, skipping")
+                            else:
+                                logger.warning(f"Could not add agent_results column: {first_err} / {second_err}")
             
             # ===== RAPUNZEL GRADES TABLE MIGRATIONS =====
             # First check if table exists (check all schemas)
@@ -592,30 +813,52 @@ class Database:
                 logger.warning(f"Could not create is_test_data index: {idx_err}")
             
             conn.commit()
+            # attempt automatic backfill of student_summary for any existing
+            # rows that already have agent_results.  This is idempotent and
+            # safe to run repeatedly.
+            try:
+                rows_updated = self.backfill_student_summaries()
+                logger.info(f"★ Backfilled {rows_updated} student_summary row(s)")
+            except Exception as back_err:
+                logger.warning(f"Backfill helper failed during migrations: {back_err}")
+
             cursor.close()
             logger.info("⭐ COMPREHENSIVE DATABASE MIGRATIONS COMPLETED")
             
         except Exception as e:
             logger.error(f"❌ Migration error: {e}")
-            # Don't fail if migrations have issues - the app will continue
+            # ensure transaction is aborted and connection is reset so later
+            # operations don't hit "current transaction is aborted"
             if self.connection:
-                self.connection.rollback()
+                try:
+                    self.connection.rollback()
+                except Exception:
+                    pass
+                # drop conn so next call creates a fresh connection
+                self.connection = None
     
     def execute_query(self, query: str, params: tuple = None) -> List[Dict[str, Any]]:
         """Execute a SELECT query and return results."""
         try:
             conn = self.connect()
             cursor = conn.cursor()
-            
-            if params:
-                cursor.execute(query, params)
+
+            # If using SQLite fallback, adapt parameter placeholders from %s to ?
+            if self._using_sqlite_fallback:
+                exec_query = query.replace('%s', '?')
             else:
-                cursor.execute(query)
+                exec_query = query
+
+            if params:
+                cursor.execute(exec_query, params)
+            else:
+                cursor.execute(exec_query)
             
             # Get column names from cursor description
             columns = [column[0].lower() for column in cursor.description] if cursor.description else []
             results = []
             for row in cursor.fetchall():
+                # sqlite3 returns rows as tuples as does psycopg; mapping by column names works for both
                 mapped = dict(zip(columns, row))
                 alias_pairs = [
                     ("applicationid", "application_id"),
@@ -641,12 +884,24 @@ class Database:
             cursor.close()
             return results
         except Exception as e:
+            # rollback and drop connection to avoid reuse of bad session
             if self.connection:
                 try:
                     self.connection.rollback()
                 except:
                     pass
                 self.connection = None
+            # if the failure was due to a previous aborted transaction, we
+            # can safely attempt the query one more time after reconnecting.
+            try:
+                from psycopg import errors as _ps_errors
+            except ImportError:
+                _ps_errors = None
+            if _ps_errors and isinstance(e, _ps_errors.InFailedSqlTransaction):
+                try:
+                    return self.execute_query(query, params)
+                except Exception:
+                    pass
             raise e
     
     def execute_non_query(self, query: str, params: tuple = None) -> int:
@@ -654,11 +909,16 @@ class Database:
         try:
             conn = self.connect()
             cursor = conn.cursor()
-            
-            if params:
-                cursor.execute(query, params)
+            # Adapt placeholders for sqlite fallback
+            if self._using_sqlite_fallback:
+                exec_query = query.replace('%s', '?')
             else:
-                cursor.execute(query)
+                exec_query = query
+
+            if params:
+                cursor.execute(exec_query, params)
+            else:
+                cursor.execute(exec_query)
             
             conn.commit()
             rowcount = cursor.rowcount
@@ -677,11 +937,16 @@ class Database:
         try:
             conn = self.connect()
             cursor = conn.cursor()
-            
-            if params:
-                cursor.execute(query, params)
+            # Adapt placeholders for sqlite fallback
+            if self._using_sqlite_fallback:
+                exec_query = query.replace('%s', '?')
             else:
-                cursor.execute(query)
+                exec_query = query
+
+            if params:
+                cursor.execute(exec_query, params)
+            else:
+                cursor.execute(exec_query)
             
             result = cursor.fetchone()
             
@@ -1027,14 +1292,97 @@ class Database:
         return self.execute_scalar(query, tuple(values))
     
     def get_application(self, application_id: int) -> Optional[Dict[str, Any]]:
-        """Get application by ID."""
+        """Get application by ID.
+
+        Returns the row as a dictionary and will attempt to parse any JSON
+        columns (student_summary, agent_results) so callers see Python objects
+        instead of raw strings.  This keeps UI code simple.
+        """
         applications_table = self.get_table_name("applications")
         app_id_col = self.get_applications_column("application_id")
         query = f"SELECT * FROM {applications_table} WHERE {app_id_col} = %s"
         results = self.execute_query(query, (application_id,))
         if not results:
             return None
-        return results[0]
+        result = results[0]
+
+        # parse any JSON columns that may be stored as TEXT
+        try:
+            if 'student_summary' in result:
+                result['student_summary'] = safe_load_json(result.get('student_summary'))
+        except Exception:
+            pass
+
+        try:
+            if 'agent_results' in result:
+                result['agent_results'] = safe_load_json(result.get('agent_results'))
+                # If agents store rich JSON inside nested `parsed_json` structures
+                # (for example: merlin.parsed_json.content == "{...}"), try to
+                # deserialize and merge useful top-level fields so templates can
+                # access `overall_score`, `recommendation`, and `rationale`.
+                try:
+                    agents_tmp = result.get('agent_results') or {}
+                    merlin = agents_tmp.get('merlin') or agents_tmp.get('student_evaluator') or {}
+                    if isinstance(merlin, dict):
+                        parsed = merlin.get('parsed_json') or merlin.get('parsedjson') or {}
+                        if isinstance(parsed, dict):
+                            content = parsed.get('content') or parsed.get('text') or parsed.get('body')
+                            if isinstance(content, str) and content.strip():
+                                try:
+                                    parsed_inner = json.loads(content)
+                                    # Promote a few well-known keys if present
+                                    for k in ('overall_score', 'overallscore', 'recommendation', 'rationale', 'confidence', 'key_strengths', 'key_risks'):
+                                        if parsed_inner.get(k) is not None and not merlin.get(k):
+                                            merlin[k] = parsed_inner.get(k)
+                                except Exception:
+                                    # content may not be pure JSON; ignore silently
+                                    pass
+                        # write back any changes
+                        if merlin:
+                            if 'merlin' in agents_tmp:
+                                agents_tmp['merlin'] = merlin
+                            else:
+                                agents_tmp['student_evaluator'] = merlin
+                            result['agent_results'] = agents_tmp
+                except Exception:
+                    pass
+        except Exception:
+            pass
+
+        # If student_summary is missing but agent_results exist, synthesize
+        # a lightweight summary (mirrors backfill_student_summaries) so the
+        # UI can render agent reasoning immediately. Also attempt to persist
+        # the synthesized summary back to the DB as a best-effort operation.
+        if not result.get('student_summary') and result.get('agent_results') and isinstance(result.get('agent_results'), dict):
+            agents = result.get('agent_results') or {}
+            merlin = agents.get('merlin') or {}
+            aurora = agents.get('aurora') or {}
+
+            summary = {
+                'status': 'completed',
+                'overall_score': merlin.get('overall_score') or merlin.get('overallscore'),
+                'recommendation': merlin.get('recommendation'),
+                'rationale': merlin.get('rationale', ''),
+                'key_strengths': merlin.get('key_strengths', []),
+                'key_risks': merlin.get('key_risks', []),
+                'confidence': merlin.get('confidence'),
+                'agents_completed': list(agents.keys()),
+                'formatted_by_aurora': bool(aurora),
+                'aurora_sections': list(aurora.keys()) if isinstance(aurora, dict) else []
+            }
+            summary['agent_details'] = agents
+
+            # Attach synthesized summary for immediate rendering
+            result['student_summary'] = summary
+
+            # Persist synthesized summary back to DB (best-effort)
+            try:
+                update_query = f"UPDATE {applications_table} SET student_summary = %s WHERE {app_id_col} = %s"
+                self.execute_non_query(update_query, (json.dumps(summary), application_id))
+            except Exception:
+                logger.debug(f"Could not persist synthesized student_summary for {application_id}")
+
+        return result
 
     def update_application_status(self, application_id: int, status: str) -> None:
         """Update a student's application status safely across schema variants."""
@@ -1288,12 +1636,32 @@ class Database:
                     return str(v)
             if isinstance(v, datetime):
                 return v.isoformat()
-            # For numeric-like strings for readiness_score, try converting to float
+            # For strings, leave as-is; truncation for DB-limited columns is handled below
             if isinstance(v, str):
                 return v
             return v
 
-        safe_params = tuple(_prepare_param(p) for p in params)
+        # Prepare params and then defensively truncate `confidence` to fit VARCHAR(50)
+        prepared = [_prepare_param(p) for p in params]
+        try:
+            # confidence is the 6th parameter in this query
+            conf_idx = 5
+            conf_val = prepared[conf_idx]
+            if conf_val is not None:
+                # Ensure it's a string
+                conf_str = str(conf_val)
+                if len(conf_str) > 50:
+                    prepared[conf_idx] = conf_str[:47] + '...'
+                else:
+                    prepared[conf_idx] = conf_str
+        except Exception:
+            # Be defensive: if anything goes wrong, coerce to None so insert won't fail
+            try:
+                prepared[5] = None
+            except Exception:
+                pass
+
+        safe_params = tuple(prepared)
         return self.execute_scalar(query, safe_params)
 
     def save_mulan_recommendation(
@@ -1567,7 +1935,16 @@ class Database:
         applications_table = self.get_table_name("applications") or 'applications'
         training_col = training_col or 'is_training_example'
         query = f"SELECT * FROM {applications_table} WHERE COALESCE({training_col}, FALSE) = FALSE ORDER BY uploaded_date DESC"
-        return self.execute_query(query)
+        rows = self.execute_query(query)
+        # parse JSON columns if present
+        for row in rows:
+            for key in ("student_summary", "agent_results"):
+                if key in row:
+                    try:
+                        row[key] = safe_load_json(row[key])
+                    except Exception:
+                        pass
+        return rows
 
     def save_aurora_evaluation(
         self,
@@ -1604,15 +1981,24 @@ class Database:
         results = self.execute_query(query, (application_id,))
         if results:
             result = results[0]
-            # Parse the formatted_evaluation JSON if it's a string
+            # Parse the formatted_evaluation JSON if it's a string and create
+            # a second key without underscores so templates written against the
+            # old backup-style might still work.
             formatted_eval_key = next((k for k in result.keys() if 'formatted' in k.lower()), None)
             if formatted_eval_key:
                 val = result.get(formatted_eval_key)
                 if isinstance(val, str):
                     try:
-                        result[formatted_eval_key] = json.loads(val)
-                    except:
+                        parsed = safe_load_json(val)
+                        result[formatted_eval_key] = parsed
+                    except Exception:
+                        # leave original string if parsing fails
                         pass
+                # normalize result to always contain both variants so templates
+                # can reference either key without worrying about missing data.
+                canon = result.get(formatted_eval_key)
+                result['formatted_evaluation'] = canon
+                result['formattedevaluation'] = canon
             return result
         return None
     
@@ -1646,7 +2032,7 @@ class Database:
                 val = result.get(app_ids_key)
                 if isinstance(val, str):
                     try:
-                        result[app_ids_key] = json.loads(val)
+                        result[app_ids_key] = safe_load_json(val)
                     except:
                         result[app_ids_key] = []
             return result
@@ -1667,7 +2053,7 @@ class Database:
                 val = result.get(app_ids_key)
                 if isinstance(val, str):
                     try:
-                        result[app_ids_key] = json.loads(val)
+                        result[app_ids_key] = safe_load_json(val)
                     except:
                         result[app_ids_key] = []
         return results
@@ -1737,7 +2123,7 @@ class Database:
             val = result.get(triage_key)
             if isinstance(val, str):
                 try:
-                    result[triage_key] = json.loads(val)
+                    result[triage_key] = safe_load_json(val)
                 except Exception:
                     pass
         return result
@@ -1756,7 +2142,7 @@ class Database:
                 val = result.get(triage_key)
                 if isinstance(val, str):
                     try:
-                        result[triage_key] = json.loads(val)
+                        result[triage_key] = safe_load_json(val)
                     except Exception:
                         pass
         return results
@@ -1977,7 +2363,7 @@ class Database:
                 mf = row.get('missing_fields')
                 if mf:
                     try:
-                        missing_fields = json.loads(mf) if isinstance(mf, str) else mf
+                        missing_fields = safe_load_json(mf) if isinstance(mf, str) else mf
                     except Exception:
                         missing_fields = []
 

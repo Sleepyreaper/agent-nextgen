@@ -1,9 +1,10 @@
 """Merlin Student Evaluator - Produces overall recommendation using all agent outputs."""
 
 import json
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 from openai import AzureOpenAI
 from src.agents.base_agent import BaseAgent
+from src.utils import safe_load_json
 
 
 class MerlinStudentEvaluator(BaseAgent):
@@ -12,9 +13,9 @@ class MerlinStudentEvaluator(BaseAgent):
     a final student recommendation.
     """
 
-    def __init__(self, name: str, client: AzureOpenAI, model: str, db_connection=None):
+    def __init__(self, name: str, client: AzureOpenAI, model: Optional[str] = None, db_connection=None):
         super().__init__(name, client)
-        self.model = model
+        self.model = model or config.foundry_model_name or config.deployment_name
         self.db = db_connection
 
     async def evaluate_student(
@@ -46,7 +47,7 @@ class MerlinStudentEvaluator(BaseAgent):
             )
 
             payload = response.choices[0].message.content
-            data = json.loads(payload)
+            data = safe_load_json(payload)
             normalized = self._normalize_score(
                 data.get("overall_score"),
                 data.get("recommendation")
@@ -91,13 +92,16 @@ class MerlinStudentEvaluator(BaseAgent):
             "You are synthesizing multiple specialist evaluations into a final recommendation.",
             "Be explicit about how school context and recommendations affect the decision.",
             "If data conflicts, call it out and weigh reliability.",
-            "Use Milo's training insights (if present) as a prior, but do not let them override direct evidence.",
+            "Use Milo's training insights (if present) as a prior, comparing the current applicant to patterns observed in previous years' selected nominees and highlighting characteristics representative of Next Gen students. Do not let these insights override direct evidence.",
             "Confirm eligibility against requirements and note any gaps or unknowns.",
+
             "",
             f"Applicant: {applicant_name}",
             "",
             "Milo training insights (JSON):",
             training_json,
+            "",
+            "(The above JSON includes Milo's analysis of prior accepted vs not selected applicants. Compare the current student to that historical profile.)",
             "",
             "Specialist agent outputs (JSON):",
             outputs_json,

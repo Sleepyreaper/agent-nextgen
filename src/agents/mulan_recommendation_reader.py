@@ -5,6 +5,7 @@ import re
 from typing import Dict, Any, Optional
 from openai import AzureOpenAI
 from src.agents.base_agent import BaseAgent
+from src.utils import safe_load_json
 
 
 class MulanRecommendationReader(BaseAgent):
@@ -16,9 +17,9 @@ class MulanRecommendationReader(BaseAgent):
     - Endorsement strength and credibility
     """
 
-    def __init__(self, name: str, client: AzureOpenAI, model: str, db_connection=None):
+    def __init__(self, name: str, client: AzureOpenAI, model: Optional[str] = None, db_connection=None):
         super().__init__(name, client)
-        self.model = model
+        self.model = model or config.foundry_model_name or config.deployment_name
         self.db = db_connection
 
     async def parse_recommendation(self, recommendation_text: str, applicant_name: str = "Unknown", application_id: Optional[int] = None) -> Dict[str, Any]:
@@ -26,25 +27,27 @@ class MulanRecommendationReader(BaseAgent):
         prompt = self._build_prompt(applicant_name, recommendation_text)
 
         try:
-            response = self._create_chat_completion(
-                operation="mulan.parse_recommendation",
+            query_messages = [
+                {"role": "system", "content": "You are an expert extractor of recommendation letters. Extract concise evidence snippets, recommender identity clues, and endorsement signals."},
+                {"role": "user", "content": f"Recommendation for {applicant_name}:\n\n{recommendation_text[:2000]}"}
+            ]
+
+            format_template = [
+                {"role": "system", "content": "You are Mulan. Use the extracted facts to produce the final JSON with the required fields and evidence mappings. Return valid JSON only."},
+                {"role": "user", "content": "Extracted facts: {found}\n\nNow produce the structured JSON with fields: applicant_name, recommender_name, recommender_role, relationship, duration_known, key_strengths, growth_areas, comparative_statements, evidence_examples, core_competencies, endorsement_strength, specificity_score, credibility_notes, consensus_view, divergent_views, summary, eligibility_signals, confidence."}
+            ]
+
+            q_resp, response = self.two_step_query_format(
+                operation_base="mulan.parse_recommendation",
                 model=self.model,
-                messages=[
-                    {
-                        "role": "system",
-                        "content": "You are Mulan, part of an NIH Department of Genetics review panel evaluating Emory NextGen applicants. Apply the requirements: rising junior or senior in high school, must be 16 years old by June 1, 2026, and must demonstrate interest in advancing STEM education to groups from a variety of backgrounds. Extract reliable, structured insights with evidence and map them to core competencies. Return valid JSON only."
-                    },
-                    {"role": "user", "content": prompt}
-                ],
-                max_completion_tokens=1200,
-                temperature=1,
-                refinements=2,
-                refinement_instruction="Refine the JSON output to ensure clear evidence mapping and consistent endorsement strength scoring. If multiple recommenders are present, separate them explicitly.",
-                response_format={"type": "json_object"}
+                query_messages=query_messages,
+                format_messages_template=format_template,
+                query_kwargs={"max_completion_tokens": 200, "temperature": 0},
+                format_kwargs={"max_completion_tokens": 1200, "temperature": 1, "refinements": 2, "refinement_instruction": "Refine the JSON output to ensure clear evidence mapping and consistent endorsement strength scoring. If multiple recommenders are present, separate them explicitly.", "response_format": {"type": "json_object"}}
             )
 
             payload = response.choices[0].message.content
-            data = json.loads(payload)
+            data = safe_load_json(payload)
             data["status"] = "success"
             data["agent"] = self.name
 

@@ -5,7 +5,7 @@ Complete PostgreSQL Database Setup with Key Vault Integration
 This script:
 1. Stores admin credentials in Azure Key Vault
 2. Connects to PostgreSQL with admin credentials
-3. Creates the new database (nextgenagentpostgres)
+3. Creates the new database (set via POSTGRES_DB env var)
 4. Creates a limited-privilege application user
 5. Stores app user credentials in Key Vault
 6. Verifies the connection with app user

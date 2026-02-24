@@ -14,6 +14,10 @@ An intelligent multi-agent system that evaluates student applications using spec
 - **Comprehensive Audit Trail**: 14 interaction types logged to database for compliance verification
 - **File Upload Matching**: AI-based student identification with confidence scoring (0-1 scale)
 - **Unlimited Re-Evaluations**: More data sources = more accurate assessments
+- **Concise Student Summaries**: Each application row now includes a
+  `student_summary` payload (score, recommendation, rationale, strengths/risks)
+  that can be displayed in the UI and backfilled for historical records
+  using `scripts/backfill_summaries.py`.
 - **Validation Gates**: Per-agent readiness verification with reactive BELLE extraction
 - **Web Interface**: Modern Flask app for uploads and result visualization
 - **Secure by Default**: All credentials stored in Azure Key Vault

@@ -26,7 +26,7 @@ class RapunzelGradeReader(BaseAgent):
         self,
         name: str,
         client: AzureOpenAI,
-        model: str,
+        model: Optional[str] = None,
         db_connection=None
     ):
         """
@@ -35,11 +35,11 @@ class RapunzelGradeReader(BaseAgent):
         Args:
             name: Agent name (typically "Grade Report Reader")
             client: Azure OpenAI client
-            model: Model deployment name
+            model: Model deployment name (optional, falls back to config)
             db_connection: Database connection for saving results
         """
         super().__init__(name, client)
-        self.model = model
+        self.model = model or config.foundry_model_name or config.deployment_name
         self.db = db_connection
         self.extraction_focus = [
             "GPA/Grade Point Average",
@@ -98,26 +98,27 @@ class RapunzelGradeReader(BaseAgent):
             print(f"  📍 School context provided: {school_context.get('school_name', 'Unknown school')}")
         
         try:
-            # Use extended tokens for deep analysis
-            response = self._create_chat_completion(
-                operation="rapunzel.parse_grades",
+            # Two-step deep analysis: first extract structured facts (courses, grades, GPA candidates,
+            # table snippets), then ask the model to synthesize a comprehensive analysis using those facts.
+            query_messages = [
+                {"role": "system", "content": "You are an expert transcript extractor. From the provided transcript text, extract concise course/grade tuples, any GPAs present, and notable patterns as short bullets."},
+                {"role": "user", "content": f"Transcript excerpt:\n{transcript_text[:3000]}"}
+            ]
+
+            format_template = [
+                {"role": "system", "content": self._get_system_prompt()},
+                {"role": "user", "content": "Using the extracted facts: {found}\n\nProduce a detailed transcript analysis including GPA estimation, course levels, notable patterns, summary, confidence, and a grade table where appropriate. Preserve tables and JSON-serializable fields."}
+            ]
+
+            q_resp, response = self.two_step_query_format(
+                operation_base="rapunzel.parse_grades",
                 model=self.model,
-                messages=[
-                    {
-                        "role": "system",
-                        "content": self._get_system_prompt()
-                    },
-                    {
-                        "role": "user",
-                        "content": parsing_prompt
-                    }
-                ],
-                max_completion_tokens=3500,  # Increased for detailed analysis
-                temperature=1,  # GPT-5.2 only supports default temperature
-                refinements=2,
-                refinement_instruction="Refine the analysis to improve accuracy of GPA, course-level detection, and trend identification. Preserve format and tables."
+                query_messages=query_messages,
+                format_messages_template=format_template,
+                query_kwargs={"max_completion_tokens": 400, "temperature": 0},
+                format_kwargs={"max_completion_tokens": 3500, "temperature": 1, "refinements": 2, "refinement_instruction": "Refine the analysis to improve accuracy of GPA, course-level detection, and trend identification. Preserve format and tables."}
             )
-            
+
             response_text = response.choices[0].message.content
             self.add_to_history("assistant", response_text)
             

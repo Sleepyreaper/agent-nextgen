@@ -6,50 +6,69 @@ import time
 import uuid
 import json
 import re
-import difflib
 import threading
-import queue
-from typing import Optional, Dict, Any
 import requests
-from flask import Flask, render_template, request, redirect, url_for, flash, jsonify, Response, stream_with_context
+from flask import Flask, flash, jsonify, render_template, redirect, url_for, request, Response
 from werkzeug.utils import secure_filename
-from openai import AzureOpenAI
-from opentelemetry.instrumentation.flask import FlaskInstrumentor
-from opentelemetry.instrumentation.requests import RequestsInstrumentor
-from azure.identity import DefaultAzureCredential, get_bearer_token_provider
+
+from typing import Dict, Any, Optional
+import queue
+from src.test_data_generator import test_data_generator
+
+# document processing helper used in file upload endpoints
+from src.document_processor import DocumentProcessor
 
 from src.config import config
-from src.database import db
-from src.document_processor import DocumentProcessor
-from src.storage import storage
-from src.test_data_generator import test_data_generator
-from src.logger import app_logger as logger, audit_logger
 from src.telemetry import init_telemetry
-from src.observability import is_observability_enabled, get_observability_status
-from src.agents import (
-    GastonEvaluator,
-    SmeeOrchestrator,
-    RapunzelGradeReader,
-    MoanaSchoolContext,
-    TianaApplicationReader,
-    MulanRecommendationReader,
-    MerlinStudentEvaluator,
-    AuroraAgent,
-    BelleDocumentAnalyzer,
-    MiloDataScientist,
-    FeedbackTriageAgent,
-    NaveenSchoolDataScientist,
-    BashfulAgent,
-    ScuttleFeedbackTriageAgent
-)
-from src.agents.ariel_qa_agent import ArielQAAgent
+
+from src.storage import StorageManager
+
+# database connection used across views
+from src.database import db
+
+# initialize storage manager
+storage = StorageManager()
+
+# OpenTelemetry instrumentors used later
+from opentelemetry.instrumentation.flask import FlaskInstrumentor
+from opentelemetry.instrumentation.requests import RequestsInstrumentor
+
+# logging is used in the module (logger.warning earlier) so import
+import logging
+logger = logging.getLogger(__name__)
+
+try:
+    from src.agents.ariel_adapter import ArielQAAgent
+except Exception as _e:
+    # Optional agent may be absent in some deployment packages (packaging/sync issues).
+    # Defer failure until the specific endpoint is invoked so the app can boot.
+    ArielQAAgent = None
+    logger.warning("ArielQAAgent not available: %s", _e)
+
+try:
+    from src.agents.aurora_agent import AuroraAgent
+except Exception as _e:
+    # AuroraAgent also optional; allow app startup without it
+    AuroraAgent = None
+    logger.warning("AuroraAgent not available: %s", _e)
 from src.agents.agent_requirements import AgentRequirements
 from src.agents.fairy_godmother_document_generator import FairyGodmotherDocumentGenerator
 from src.agents.agent_monitor import get_agent_monitor
+from src.agents.foundry_client import FoundryClient
+from src.agents.smee_orchestrator import SmeeOrchestrator
+from src.agents.tiana_application_reader import TianaApplicationReader
+from src.agents.rapunzel_grade_reader import RapunzelGradeReader
+from src.agents.mulan_recommendation_reader import MulanRecommendationReader
+from src.agents.merlin_student_evaluator import MerlinStudentEvaluator
+from src.agents.gaston_evaluator import GastonEvaluator
+from src.agents.bashful_agent import BashfulAgent
+from src.agents.belle_document_analyzer import BelleDocumentAnalyzer
+from src.agents.milo_data_scientist import MiloDataScientist
+from src.agents.feedback_triage_agent import ScuttleFeedbackTriageAgent, FeedbackTriageAgent
 
 # Initialize Flask app
 app = Flask(__name__, template_folder='web/templates', static_folder='web/static')
-app.secret_key = config.flask_secret_key or 'dev-secret-key-change-in-production'
+app.secret_key = config.flask_secret_key or os.urandom(32).hex()
 app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB max file size
 app.config['UPLOAD_FOLDER'] = 'uploads'
 
@@ -69,7 +88,7 @@ os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 logger.info("Flask app initialized", extra={'upload_folder': app.config['UPLOAD_FOLDER']})
 
 # Initialize telemetry (prompt capture controlled by NEXTGEN_CAPTURE_PROMPTS)
-init_telemetry(service_name="nextgen-agents-web")
+init_telemetry(service_name=os.getenv("OTEL_SERVICE_NAME", "agent-framework"))
 
 # Initialize Azure OpenAI client
 def get_ai_client(api_version: str = None, azure_deployment: str = None):
@@ -86,7 +105,17 @@ def get_ai_client(api_version: str = None, azure_deployment: str = None):
     if azure_deployment is None:
         azure_deployment = config.deployment_name
         
+    # If configuration indicates Foundry as the model provider, return the Foundry adapter.
+    if config.model_provider and config.model_provider.lower() == "foundry":
+        # Prefer Entra ID managed identity (DefaultAzureCredential) when available;
+        # do not pass an API key so the FoundryClient will attempt AAD token acquisition.
+        return FoundryClient(endpoint=config.foundry_project_endpoint)
+
     if config.azure_openai_api_key:
+        try:
+            from openai import AzureOpenAI
+        except ImportError as e:
+            raise RuntimeError("AzureOpenAI client requested but openai package is not installed") from e
         return AzureOpenAI(
             api_key=config.azure_openai_api_key,
             api_version=api_version,
@@ -98,6 +127,10 @@ def get_ai_client(api_version: str = None, azure_deployment: str = None):
         DefaultAzureCredential(),
         "https://cognitiveservices.azure.com/.default"
     )
+    try:
+        from openai import AzureOpenAI
+    except ImportError as e:
+        raise RuntimeError("AzureOpenAI client requested but openai package is not installed") from e
     return AzureOpenAI(
         azure_ad_token_provider=token_provider,
         api_version=api_version,
@@ -119,12 +152,31 @@ def get_evaluator():
     """Get or create Gaston evaluator agent."""
     global evaluator_agent
     if not evaluator_agent:
-        client = get_ai_client()
+        # Prepare introspection defaults in case client construction fails
+        client_type = None
+        candidate_attrs = []
+        try:
+            client = get_ai_client()
+        except Exception as e:
+            app.logger.exception("Failed to construct AI client: %s", e)
+            return jsonify({"success": False, "error": str(e), "configured_provider": config.model_provider}), 500
+
+        # Introspect client for debugging (don't include secrets)
+        try:
+            client_type = type(client).__name__
+            candidate_attrs = [a for a in dir(client) if any(k in a.lower() for k in ("chat", "generate", "completion", "complete", "completions"))]
+        except Exception:
+            try:
+                client_type = str(type(client))
+            except Exception:
+                client_type = None
+            candidate_attrs = []
         training_examples = db.get_training_examples()
+        model_name = config.foundry_model_name if config.model_provider == "foundry" else config.deployment_name
         evaluator_agent = GastonEvaluator(
             name="GastonEvaluator",
             client=client,
-            model=config.deployment_name,
+            model=model_name,
             training_examples=training_examples
         )
     return evaluator_agent
@@ -134,10 +186,17 @@ def get_belle():
     """Get or create Belle document analyzer."""
     global belle_analyzer
     if not belle_analyzer:
+        # Prepare introspection defaults so error responses can include them
+        client_type = None
+        candidate_attrs = []
+        # Prepare introspection defaults so error responses can include them
+        client_type = None
+        candidate_attrs = []
         client = get_ai_client()
+        model_name = config.foundry_model_name if config.model_provider == "foundry" else config.deployment_name
         belle_analyzer = BelleDocumentAnalyzer(
             client=client,
-            model=config.deployment_name
+            model=model_name
         )
     return belle_analyzer
 
@@ -147,10 +206,12 @@ def get_feedback_agent():
     global feedback_agent
     if not feedback_agent:
         client = get_ai_client()
+        model_name = config.foundry_model_name if config.model_provider == "foundry" else config.deployment_name
+        # Use alias so callers don't need to know the renamed class
         feedback_agent = FeedbackTriageAgent(
             name="Scuttle Feedback Triage",
             client=client,
-            model=config.deployment_name
+            model=model_name
         )
     return feedback_agent
 
@@ -161,10 +222,11 @@ def get_orchestrator():
     if not orchestrator_agent:
         client = get_ai_client()
         client_mini = get_ai_client_mini()
+        model_name = config.foundry_model_name if config.model_provider == "foundry" else config.deployment_name
         orchestrator_agent = SmeeOrchestrator(
             name="Smee",
             client=client,
-            model=config.deployment_name,
+            model=model_name,
             db_connection=db
         )
 
@@ -174,7 +236,7 @@ def get_orchestrator():
             TianaApplicationReader(
                 name="Tiana Application Reader",
                 client=client,
-                model=config.deployment_name,
+                model=model_name,
                 db_connection=db
             )
         )
@@ -183,25 +245,17 @@ def get_orchestrator():
             RapunzelGradeReader(
                 name="Rapunzel Grade Reader",
                 client=client,
-                model=config.deployment_name,
+                model=model_name,
                 db_connection=db
             )
         )
-        orchestrator_agent.register_agent(
-            "school_context",
-            MoanaSchoolContext(
-                name="Moana School Context",
-                client=client,
-                model=config.deployment_name,
-                db_connection=db
-            )
-        )
+        # Note: Moana school context agent removed from simplified workflow
         orchestrator_agent.register_agent(
             "recommendation_reader",
             MulanRecommendationReader(
                 name="Mulan Recommendation Reader",
                 client=client,
-                model=config.deployment_name,
+                model=model_name,
                 db_connection=db
             )
         )
@@ -210,25 +264,18 @@ def get_orchestrator():
             MerlinStudentEvaluator(
                 name="Merlin Student Evaluator",
                 client=client,
-                model=config.deployment_name,
+                model=model_name,
                 db_connection=db
             )
         )
+        # Note: Milo (data_scientist) and Naveen removed from simplified workflow
         orchestrator_agent.register_agent(
             "data_scientist",
             MiloDataScientist(
                 name="Milo Data Scientist",
-                client=client,
-                model=config.deployment_name,
+                client=client_mini,
+                model=config.deployment_name_mini or config.foundry_model_name,
                 db_connection=db
-            )
-        )
-        orchestrator_agent.register_agent(
-            "naveen",
-            NaveenSchoolDataScientist(
-                name="Naveen School Data Scientist",
-                client=client,
-                model=config.deployment_name
             )
         )
         orchestrator_agent.register_agent(
@@ -249,7 +296,7 @@ def get_orchestrator():
             GastonEvaluator(
                 name="Gaston Evaluator",
                 client=client,
-                model=config.deployment_name
+                model=model_name
             )
         )
         orchestrator_agent.register_agent(
@@ -257,7 +304,7 @@ def get_orchestrator():
             BashfulAgent(
                 name="Bashful Agent",
                 client=client,
-                model=config.deployment_name,
+                model=model_name,
                 system_prompt="You are Bashful, a helpful assistant in the evaluation system."
             )
         )
@@ -266,7 +313,7 @@ def get_orchestrator():
             BelleDocumentAnalyzer(
                 name="Belle Document Analyzer",
                 client=client,
-                model=config.deployment_name,
+                model=model_name,
                 db_connection=db
             )
         )
@@ -275,9 +322,24 @@ def get_orchestrator():
             ScuttleFeedbackTriageAgent(
                 name="Scuttle Feedback Triage",
                 client=client,
-                model=config.deployment_name
+                model=model_name
             )
         )
+
+        # Ensure every registered agent has a valid AI client. Some agents (e.g. Aurora)
+        # may be created without a client because they don't usually call the model.
+        # Assign the configured client to any agent missing one so that calls from
+        # BaseAgent always have a client available and the resolver can probe it.
+        try:
+            for agent_key, agent_inst in orchestrator_agent.agents.items():
+                try:
+                    if getattr(agent_inst, 'client', None) is None:
+                        agent_inst.client = client
+                        logger.info("Assigned fallback AI client to agent %s", agent_key)
+                except Exception:
+                    logger.debug("Could not assign client to agent %s", agent_key, exc_info=True)
+        except Exception:
+            logger.debug("Error while assigning clients to orchestrator agents", exc_info=True)
 
     return orchestrator_agent
 
@@ -311,6 +373,9 @@ def refresh_foundry_dataset_async(reason: str) -> None:
 @app.route('/')
 def index():
     """Home page - Dashboard."""
+    # import here to guarantee availability even if globals fail
+    from src.database import db
+    from flask import flash
     try:
         applications_table = db.get_table_name("applications")
         training_col = db.get_training_example_column()
@@ -465,9 +530,23 @@ def _create_github_issue(title: str, body: str, labels: list[str]) -> Dict[str, 
     return response.json()
 
 
-@app.route('/feedback', methods=['POST'])
+@app.route('/feedback', methods=['GET','POST'])
 def submit_feedback():
-    """Capture user feedback and create a GitHub issue."""
+    """Capture user feedback (POST) or display the feedback page (GET).
+
+    The GET handler renders a simple form and shows recent GitHub-linked
+    feedback items. POST requests follow the previous logic to triage and
+    optionally create an issue.
+    """
+    if request.method == 'GET':
+        # render submission page with existing GH-linked items
+        try:
+            all_feedback = db.get_recent_user_feedback(limit=100) if db else []
+            feedback_items = [item for item in all_feedback if item.get('issue_url') or item.get('IssueUrl')]
+        except Exception:
+            feedback_items = []
+        return render_template('feedback.html', feedback_items=feedback_items)
+
     data = request.get_json(silent=True) or {}
     feedback_type = (data.get('type') or '').strip().lower()
     message = (data.get('message') or '').strip()
@@ -480,6 +559,11 @@ def submit_feedback():
         return jsonify({'error': 'Feedback type must be issue or feature.'}), 400
     if not message:
         return jsonify({'error': 'Feedback message is required.'}), 400
+
+    # quick sanity check that GitHub integration is complete when token is present
+    if config.github_token and not config.github_repo:
+        logger.error("GitHub token provided but repository unset")
+        return jsonify({'error': 'Feedback service misconfigured (missing GitHub repo).'}), 500
 
     feedback_id = None
     try:
@@ -573,7 +657,12 @@ def submit_feedback():
             "error": str(exc)
         })
         logger.error(f"Feedback submission failed: {exc}", exc_info=True)
-        return jsonify({'error': 'Unable to submit feedback right now.'}), 500
+        # surface the underlying message for easier debugging, but keep generic primary text
+        msg = str(exc)
+        return jsonify({
+            'error': 'Unable to submit feedback right now.',
+            'details': msg
+        }), 500
 
 
 @app.route('/feedback/admin')
@@ -930,7 +1019,12 @@ def upload():
             traceback.print_exc()
             return redirect(request.url)
     
-    return render_template('upload.html')
+    # if query parameter provided, pass along to template so JS can preselect
+    app_type = request.args.get('app_type')
+    was_selected = request.args.get('was_selected')
+    if app_type:
+        logger.info(f"Upload page requested with preselect app_type={app_type}")
+    return render_template('upload.html', preselect_type=app_type, preselect_selected=was_selected)
 
 
 def extract_student_name(text: str) -> Optional[str]:
@@ -1371,6 +1465,58 @@ def students():
         return render_template('students.html', students=[], search_query='')
 
 
+@app.route('/debug/dataset')
+def debug_dataset():
+    """Debug view: show raw `student_summary` and `agent_results` for recent applications."""
+    try:
+        applications_table = db.get_table_name("applications")
+        if not applications_table:
+            flash('Applications table not found', 'error')
+            return render_template('debug_dataset.html', rows=[])
+
+        query = f"SELECT application_id, applicant_name, email, uploaded_date, student_summary, agent_results FROM {applications_table} ORDER BY uploaded_date DESC LIMIT 200"
+        rows = db.execute_query(query)
+
+        # Ensure JSON/text columns are pretty-printed for template display
+        for r in rows:
+            # student_summary
+            ss = r.get('student_summary')
+            if isinstance(ss, (dict, list)):
+                try:
+                    r['student_summary_pretty'] = json.dumps(ss, indent=2)
+                except Exception:
+                    r['student_summary_pretty'] = str(ss)
+            elif isinstance(ss, str):
+                try:
+                    parsed = json.loads(ss)
+                    r['student_summary_pretty'] = json.dumps(parsed, indent=2)
+                except Exception:
+                    r['student_summary_pretty'] = ss
+            else:
+                r['student_summary_pretty'] = ''
+
+            # agent_results
+            ar = r.get('agent_results')
+            if isinstance(ar, (dict, list)):
+                try:
+                    r['agent_results_pretty'] = json.dumps(ar, indent=2)
+                except Exception:
+                    r['agent_results_pretty'] = str(ar)
+            elif isinstance(ar, str):
+                try:
+                    parsed = json.loads(ar)
+                    r['agent_results_pretty'] = json.dumps(parsed, indent=2)
+                except Exception:
+                    r['agent_results_pretty'] = ar
+            else:
+                r['agent_results_pretty'] = ''
+
+        return render_template('debug_dataset.html', rows=rows)
+    except Exception as e:
+        flash(f'Error loading dataset: {str(e)}', 'error')
+        return render_template('debug_dataset.html', rows=[])
+
+
 @app.route('/training')
 def training():
     """Training data management page - historical applications for agent learning."""
@@ -1780,6 +1926,100 @@ def api_get_missing_fields(application_id):
         }), 500
 
 
+@app.route('/api/debug/model_test', methods=['POST'])
+def api_debug_model_test():
+    """Debug endpoint: perform a lightweight model call and log payload/response.
+
+    This endpoint is intended for short-lived diagnostics only. It uses the
+    configured `get_ai_client()` so the call will exercise the same client
+    wiring as the running application (Foundry or Azure OpenAI).
+    """
+    try:
+        # Prepare introspection defaults so error responses can include them
+        client_type = None
+        candidate_attrs = []
+        client = get_ai_client()
+        try:
+            client_type = type(client).__name__
+            candidate_attrs = [a for a in dir(client) if any(k in a.lower() for k in ("chat", "generate", "completion", "complete", "completions"))]
+        except Exception:
+            try:
+                client_type = str(type(client))
+            except Exception:
+                client_type = None
+            candidate_attrs = []
+        model_name = config.foundry_model_name if config.model_provider == 'foundry' else config.deployment_name
+
+        messages = [
+            {"role": "system", "content": "You are a lightweight diagnostics assistant."},
+            {"role": "user", "content": "Respond with a single short sentence: hello from model."}
+        ]
+
+        # Try common shapes conservatively so we hit the actual adapter path.
+        resp = None
+        try:
+            if hasattr(client, 'chat') and hasattr(client.chat, 'create'):
+                resp = client.chat.create(model=model_name, messages=messages)
+            elif hasattr(client, 'chat') and callable(getattr(client, 'chat')):
+                resp = client.chat(model=model_name, messages=messages)
+            elif hasattr(client, 'generate') and callable(getattr(client, 'generate')):
+                resp = client.generate(model=model_name, messages=messages)
+            else:
+                # Last-resort: attempt BaseAgent-style probing
+                for name in dir(client):
+                    lname = name.lower()
+                    if any(k in lname for k in ("chat", "generate", "completion", "complete")):
+                        attr = getattr(client, name)
+                        if callable(attr):
+                            try:
+                                resp = attr(model=model_name, messages=messages)
+                                break
+                            except Exception:
+                                try:
+                                    resp = attr(model_name, messages)
+                                    break
+                                except Exception:
+                                    continue
+
+        except Exception as e:
+            logger.debug(f"No Merlin data: {e}")
+        return jsonify({
+            "configured_provider": config.model_provider,
+            "adapter_status": adapter_status,
+            "adapter_body": adapter_body,
+        }), 500
+
+        # Normalize response for return
+        result_text = None
+        try:
+            if resp is None:
+                result_text = "No response (client returned None)"
+            else:
+                # Try OpenAI-like extraction
+                if hasattr(resp, 'choices') and resp.choices:
+                    result_text = getattr(resp.choices[0].message, 'content', str(resp.choices[0]))
+                elif isinstance(resp, dict):
+                    result_text = resp.get('output') or resp.get('outputs') or str(resp)
+                else:
+                    result_text = str(getattr(resp, 'raw', resp))
+        except Exception:
+            result_text = str(resp)
+
+        app.logger.info("Model test result: %s", result_text)
+        return jsonify({
+            "success": True,
+            "model": model_name,
+            "result": result_text,
+            "client_type": client_type,
+            "client_candidate_attrs": candidate_attrs,
+            "configured_provider": config.model_provider
+        })
+
+    except Exception as e:
+        app.logger.exception("Debug model test endpoint error: %s", e)
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
 @app.route('/api/missing-fields/<int:application_id>', methods=['POST'])
 def api_update_missing_fields(application_id):
     """Update missing fields for a student."""
@@ -2175,6 +2415,61 @@ def student_detail(application_id):
             )
             if tiana_results:
                 agent_results['tiana'] = dict(tiana_results[0])  # Create explicit copy
+                # Normalize common key variants used in templates (underscored vs concatenated)
+                try:
+                    t = agent_results['tiana']
+                    # parsed_json -> parsed_data for consistency
+                    raw_parsed = t.get('parsed_json')
+                    if raw_parsed:
+                        try:
+                            import json as _json
+                            parsed_obj = _json.loads(raw_parsed) if isinstance(raw_parsed, str) else raw_parsed
+                            if isinstance(parsed_obj, dict):
+                                t.setdefault('parsed_data', parsed_obj)
+                        except Exception:
+                            pass
+
+                    # If parsed_data contains a 'content' field which is itself
+                    # a stringified JSON (many agents store nested content there),
+                    # try to decode and promote commonly used keys into the
+                    # top-level tiana dict so templates can access them directly.
+                    try:
+                        pd = t.get('parsed_data')
+                        if isinstance(pd, dict):
+                            inner = None
+                            try:
+                                content = pd.get('content') or pd.get('text') or pd.get('body')
+                                if isinstance(content, str) and content.strip():
+                                    inner = json.loads(content)
+                            except Exception:
+                                inner = None
+
+                            if isinstance(inner, dict):
+                                # Promote essay_summary/readiness_score/confidence
+                                if inner.get('essay_summary') and not t.get('essaysummary'):
+                                    t['essaysummary'] = inner.get('essay_summary')
+                                if inner.get('readiness_score') is not None and not t.get('readinessscore'):
+                                    t['readinessscore'] = inner.get('readiness_score')
+                                if inner.get('confidence') and not t.get('conf'):
+                                    t['conf'] = inner.get('confidence')
+                                # Merge any other simple keys if missing
+                                for k, v in inner.items():
+                                    if k not in t or not t.get(k):
+                                        t.setdefault(k, v)
+                    except Exception:
+                        pass
+
+                    # essay_summary -> essaysummary
+                    if t.get('essay_summary') and not t.get('essaysummary'):
+                        t['essaysummary'] = t.get('essay_summary')
+                    # readiness_score -> readinessscore
+                    if t.get('readiness_score') is not None and not t.get('readinessscore'):
+                        t['readinessscore'] = t.get('readiness_score')
+                    # confidence already uses 'confidence' but keep a defensive alias
+                    if t.get('confidence') and not t.get('conf'):
+                        t['conf'] = t.get('confidence')
+                except Exception:
+                    pass
         except Exception as e:
             logger.debug(f"No Tiana data: {e}")
         
@@ -2190,7 +2485,8 @@ def student_detail(application_id):
                 if agent_results['rapunzel'].get('parsed_json'):
                     try:
                         import json
-                        parsed = json.loads(agent_results['rapunzel']['parsed_json'])
+                        raw = agent_results['rapunzel']['parsed_json']
+                        parsed = json.loads(raw) if isinstance(raw, str) else raw
                         if isinstance(parsed, dict):
                             # Merge parsed data into a safe copy
                             for key, value in parsed.items():
@@ -2198,6 +2494,18 @@ def student_detail(application_id):
                                     # Ensure we're not creating circular references
                                     if key != 'rapunzel' and key != 'agent_results':
                                         agent_results['rapunzel'][key] = value
+                            # If parsed contains an inner 'content' stringified JSON,
+                            # decode and promote keys similarly so templates can read them.
+                            try:
+                                content = parsed.get('content') or parsed.get('text') or parsed.get('body')
+                                if isinstance(content, str) and content.strip():
+                                    inner = json.loads(content)
+                                    if isinstance(inner, dict):
+                                        for k, v in inner.items():
+                                            if k not in agent_results['rapunzel'] or not agent_results['rapunzel'].get(k):
+                                                agent_results['rapunzel'][k] = v
+                            except Exception:
+                                pass
                     except Exception as parse_err:
                         logger.debug(f"Error parsing rapunzel JSON: {parse_err}")
         except Exception as e:
@@ -2223,6 +2531,17 @@ def student_detail(application_id):
                                     # Ensure we're not creating circular references
                                     if key != 'moana' and key != 'agent_results':
                                         agent_results['moana'][key] = value
+                            # Promote inner 'content' JSON if present
+                            try:
+                                content = parsed.get('content') or parsed.get('text') or parsed.get('body')
+                                if isinstance(content, str) and content.strip():
+                                    inner = json.loads(content)
+                                    if isinstance(inner, dict):
+                                        for k, v in inner.items():
+                                            if k not in agent_results['moana'] or not agent_results['moana'].get(k):
+                                                agent_results['moana'][k] = v
+                            except Exception:
+                                pass
                     except Exception as parse_err:
                         logger.debug(f"Error parsing moana JSON: {parse_err}")
         except Exception as e:
@@ -2235,11 +2554,63 @@ def student_detail(application_id):
                 (application_id,)
             )
             if mulan_results:
-                agent_results['mulan'] = dict(mulan_results[0])  # Create explicit copy
+                # Normalize to a list of recommendations so templates can iterate
+                try:
+                    # If multiple rows are present return them all (most recent first)
+                    rows = db.execute_query(
+                        "SELECT * FROM mulan_recommendations WHERE application_id = %s ORDER BY created_at DESC",
+                        (application_id,)
+                    )
+                    agent_results['mulan'] = [dict(r) for r in rows] if rows else [dict(mulan_results[0])]
+                    # Normalize recommendation field names to match template expectations
+                    try:
+                        normalized = []
+                        for rec in agent_results['mulan']:
+                            # alias fields without underscores for template
+                            try:
+                                # If parsed_json exists and contains nested content, promote keys
+                                rawp = rec.get('parsed_json')
+                                if rawp:
+                                    try:
+                                        pdat = json.loads(rawp) if isinstance(rawp, str) else rawp
+                                        if isinstance(pdat, dict):
+                                            inner_content = None
+                                            try:
+                                                c = pdat.get('content') or pdat.get('text')
+                                                if isinstance(c, str) and c.strip():
+                                                    inner_content = json.loads(c)
+                                            except Exception:
+                                                inner_content = None
+                                            if isinstance(inner_content, dict):
+                                                for k, v in inner_content.items():
+                                                    if k not in rec or not rec.get(k):
+                                                        rec.setdefault(k, v)
+                                            else:
+                                                # merge top-level parsed_data
+                                                for k, v in pdat.items():
+                                                    if k not in rec or not rec.get(k):
+                                                        rec.setdefault(k, v)
+                                    except Exception:
+                                        pass
+                            except Exception:
+                                pass
+                            if rec.get('recommender_name') and not rec.get('recommendername'):
+                                rec['recommendername'] = rec.get('recommender_name')
+                            if rec.get('recommender_role') and not rec.get('recommenderrole'):
+                                rec['recommenderrole'] = rec.get('recommender_role')
+                            if rec.get('endorsement_strength') is not None and not rec.get('endorsementstrength'):
+                                rec['endorsementstrength'] = rec.get('endorsement_strength')
+                            normalized.append(rec)
+                        agent_results['mulan'] = normalized
+                    except Exception:
+                        pass
+                except Exception:
+                    agent_results['mulan'] = [dict(mulan_results[0])]
         except Exception as e:
             logger.debug(f"No Mulan data: {e}")
         
         # Merlin - Student Evaluator
+        # --- Patch: Promote executive summary from Merlin content ---
         try:
             merlin_results = db.execute_query(
                 "SELECT * FROM merlin_evaluations WHERE application_id = %s ORDER BY created_at DESC LIMIT 1",
@@ -2247,16 +2618,59 @@ def student_detail(application_id):
             )
             if merlin_results:
                 agent_results['merlin'] = dict(merlin_results[0])  # Create explicit copy
-                # Parse JSON for additional fields
                 if agent_results['merlin'].get('parsed_json'):
                     try:
                         import json
-                        parsed = json.loads(agent_results['merlin']['parsed_json'])
+                        raw_parsed = agent_results['merlin'].get('parsed_json')
+                        if isinstance(raw_parsed, str):
+                            parsed = json.loads(raw_parsed)
+                        elif isinstance(raw_parsed, dict):
+                            parsed = raw_parsed
+                        else:
+                            parsed = {}
                         agent_results['merlin']['parsed_data'] = parsed
+                        content = parsed.get('content') if isinstance(parsed, dict) else None
+                        if isinstance(content, str) and content.strip():
+                            try:
+                                inner = json.loads(content)
+                                mer = agent_results['merlin']
+                                # Promote summary/rationale as human_summary
+                                if inner.get('summary'):
+                                    mer['human_summary'] = inner.get('summary')
+                                elif inner.get('rationale'):
+                                    mer['human_summary'] = inner.get('rationale')
+                                elif inner.get('human_summary'):
+                                    mer['human_summary'] = inner.get('human_summary')
+                                elif inner.get('executive_summary'):
+                                    mer['human_summary'] = inner.get('executive_summary')
+                            except Exception:
+                                pass
                     except Exception as parse_err:
                         logger.debug(f"Error parsing merlin JSON: {parse_err}")
         except Exception as e:
             logger.debug(f"No Merlin data: {e}")
+        # ...existing code...
+        content = None
+
+        if isinstance(content, str) and content.strip():
+            try:
+                inner = json.loads(content)
+                mer = agent_results['merlin']
+                if isinstance(inner, dict):
+                    # Promote keys for template access
+                    for k in ('overall_score', 'match_score', 'overallscore', 'recommendation', 'rationale', 'confidence', 'key_strengths', 'key_risks'):
+                        if inner.get(k) is not None and not mer.get(k):
+                            mer[k] = inner.get(k)
+                    # Promote summary if present
+                    if inner.get('summary'):
+                        mer['human_summary'] = inner.get('summary')
+                    elif inner.get('human_summary'):
+                        mer['human_summary'] = inner.get('human_summary')
+                    elif inner.get('executive_summary'):
+                        mer['human_summary'] = inner.get('executive_summary')
+            except Exception:
+                # content may not be JSON; ignore silently
+                pass
         
         # Aurora - Formatter
         try:
@@ -2268,6 +2682,20 @@ def student_detail(application_id):
                 agent_results['aurora'] = dict(aurora_results[0])  # Create explicit copy
         except Exception as e:
             logger.debug(f"No Aurora data: {e}")
+
+        # If the applications table has an `agent_results` JSON/JSONB column
+        # (newer persistence path), prefer those consolidated results for the
+        # UI.  Merge keys only when they don't collide with already-loaded
+        # per-agent rows so local table data (if present) continues to take
+        # precedence for individual agent records.
+        try:
+            app_agent_results = application.get('agent_results')
+            if isinstance(app_agent_results, dict) and app_agent_results:
+                for k, v in app_agent_results.items():
+                    if k not in agent_results:
+                        agent_results[k] = v
+        except Exception as e:
+            logger.debug(f"Failed to merge application.agent_results: {e}")
         
         # Get document download info
         document_path = application.get('evaluation_document_path')
@@ -2344,22 +2772,316 @@ def student_detail(application_id):
                             pass
             except:
                 pass
+
+        # If the database row didn't include a precomputed student_summary we can
+        # derive one on the fly from the agent_results we just gathered.  This is
+        # helpful for older records created before the migration and prevents the
+        # UI from appearing empty when agents have already run.
+        if not application.get('student_summary') and agent_results:
+            try:
+                merlin = agent_results.get('merlin') or {}
+                aurora = agent_results.get('aurora') or {}
+                derived = {
+                    'status': 'completed',
+                    'overall_score': merlin.get('overallscore') or merlin.get('overall_score'),
+                    'recommendation': merlin.get('recommendation'),
+                    'rationale': merlin.get('rationale') or merlin.get('parsedjson', ''),
+                    'key_strengths': merlin.get('parsed_data', {}).get('key_strengths', []) if isinstance(merlin.get('parsed_data'), dict) else [],
+                    'key_risks': merlin.get('parsed_data', {}).get('considerations', []) if isinstance(merlin.get('parsed_data'), dict) else [],
+                    'confidence': merlin.get('confidence'),
+                    'agents_completed': list(agent_results.keys()),
+                    'formatted_by_aurora': bool(aurora),
+                    'aurora_sections': list(aurora.keys()) if isinstance(aurora, dict) else []
+                }
+                derived['agent_details'] = agent_results
+                application['student_summary'] = derived
+            except Exception as exc:
+                logger.debug(f"Failed to derive summary on the fly: {exc}")
         
         logger.debug(f"About to render template with application_id={application.get('application_id')}")
-        return render_template('application.html', 
-                             application=application,
-                             agent_results=agent_results,
-                             document_available=document_available,
-                             document_path=document_path,
-                             aurora_evaluation=aurora_evaluation,  # For backward compatibility
-                             merlin_evaluation=merlin_evaluation,  # For backward compatibility
-                             is_training=application.get('is_training_example', False),
-                             reprocess_notice=reprocess_notice,
-                             school_context=school_context)  # School data for training context
+
+        # Pull Milo insights so the UI can display training-pattern information
+        milo_insights = {}
+        milo_alignment = None
+        alignment_score = None
+        try:
+            orchestrator = get_orchestrator()
+            milo = orchestrator.agents.get('data_scientist') if orchestrator else None
+            # if the orchestrator already ran, it may have stored alignment in the
+            # application row; check there first to avoid redundant model calls.
+            try:
+                stored = application.get('agent_results') or {}
+                if isinstance(stored, str):
+                    stored = safe_load_json(stored)
+                if isinstance(stored, dict):
+                    # prefer explicit milo_alignment key, fall back to any
+                    # computed_alignment embedded inside data_scientist result
+                    milo_alignment = stored.get('milo_alignment') or \
+                        (stored.get('data_scientist') or {}).get('computed_alignment')
+            except Exception:
+                milo_alignment = None
+
+            if milo:
+                # always refresh insights (they are cached internally)
+                milo_insights = asyncio.run(milo.analyze_training_insights())
+                # compute AI-derived match/align for this specific application if
+                # we don't already have one from persisted results.
+                if not milo_alignment:
+                    try:
+                        milo_alignment = asyncio.run(milo.compute_alignment(application))
+                    except Exception as align_err:
+                        logger.debug(f"Milo compute_alignment failed: {align_err}")
+                # maintain simple numeric alignment as before as fallback
+                merlin_score = None
+                if agent_results.get('merlin'):
+                    try:
+                        merlin_score = float(agent_results['merlin'].get('overall_score') or
+                                              agent_results['merlin'].get('overallscore') or 0)
+                    except Exception:
+                        merlin_score = None
+                avg = milo_insights.get('average_merlin_score')
+                if merlin_score is not None and avg is not None:
+                    try:
+                        alignment_score = round(merlin_score - float(avg), 1)
+                    except Exception:
+                        alignment_score = None
+        except Exception as e:
+            logger.debug(f"Milo insights fetch failed in student_detail: {e}")
+
+        try:
+            human_summary = _synthesize_human_summary(agent_results, application)
+        except Exception:
+            human_summary = None
+        return render_template('student_detail.html', 
+                     summary=application,
+                     agent_results=agent_results,
+                     document_available=document_available,
+                     document_path=document_path,
+                     aurora_evaluation=aurora_evaluation,  # For backward compatibility
+                     merlin_evaluation=merlin_evaluation,  # For backward compatibility
+                     is_training=application.get('is_training_example', False),
+                     reprocess_notice=reprocess_notice,
+                     school_context=school_context,  # School data for training context
+                     human_summary=human_summary,
+                     milo_insights=milo_insights,
+                     milo_alignment=milo_alignment,
+                     alignment_score=alignment_score)
         
     except Exception as e:
         logger.error(f"Error in student_detail: {str(e)}", exc_info=True)
         flash(f'Error loading student: {str(e)}', 'error')
+        return redirect(url_for('students'))
+
+
+@app.route('/student/<int:application_id>/agent-results')
+def student_agent_results(application_id):
+    """Return raw agent_results for a student as JSON for debugging."""
+    try:
+        application = db.get_application(application_id)
+        if not application:
+            return jsonify({'error': 'Student not found'}), 404
+
+        # replicate the same agent collection logic used in student_detail
+        agent_results = {}
+        for tbl, key in [
+            ('tiana_applications', 'tiana'),
+            ('rapunzel_grades', 'rapunzel'),
+            ('student_school_context', 'moana'),
+            ('mulan_recommendations', 'mulan'),
+            ('merlin_evaluations', 'merlin'),
+            ('aurora_evaluations', 'aurora')
+        ]:
+            try:
+                rows = db.execute_query(
+                    f"SELECT * FROM {tbl} WHERE application_id = %s ORDER BY created_at DESC LIMIT 1",
+                    (application_id,)
+                )
+                if rows:
+                    agent_results[key] = dict(rows[0])
+            except Exception:
+                pass
+        return jsonify(agent_results)
+    except Exception as e:
+        logger.error(f"Error in student_agent_results: {e}", exc_info=True)
+        return jsonify({'error': str(e)}), 500
+
+
+def _synthesize_human_summary(agent_results: dict, application: dict) -> str:
+    """Create a concise, human-readable executive summary from agent_results.
+
+    Uses available fields from merlin, tiana, rapunzel, mulan, moana and aurora.
+    """
+    try:
+        parts = []
+        merlin = agent_results.get('merlin') or {}
+        tiana = agent_results.get('tiana') or {}
+        rap = agent_results.get('rapunzel') or {}
+        mulan = agent_results.get('mulan') or {}
+        moana = agent_results.get('moana') or {}
+        aurora = agent_results.get('aurora') or {}
+
+        # Profile / headline
+        headline = []
+        name = application.get('applicant_name') or application.get('student_name')
+        if name:
+            headline.append(name)
+        # course rigor + GPA
+        cr = rap.get('course_rigor_index') or rap.get('course_rigor')
+        gpa = rap.get('gpa') or rap.get('cumulative_weighted') or rap.get('cumulative')
+        if cr:
+            headline.append(f"pursues high‑rigor coursework (rigor={cr})")
+        elif gpa:
+            headline.append(f"weighted GPA ~{gpa}")
+        if headline:
+            parts.append('. '.join(headline) + '.')
+
+        # Strengths
+        strengths = []
+        if (rap.get('honors_awards') or rap.get('honor_roll')):
+            strengths.append('consistent honor‑roll performance')
+        if tiana.get('essay_summary') or (tiana.get('parsed_data') and tiana.get('parsed_data').get('essay_summary')):
+            strengths.append('essay expresses motivation and fit for STEM')
+        if mulan:
+            # if list, inspect first
+            first = mulan[0] if isinstance(mulan, list) and mulan else (mulan if isinstance(mulan, dict) else None)
+            if first and (first.get('endorsement_strength') or first.get('endorsement_strength') == 0 or first.get('endorsementstrength')):
+                strengths.append('teacher recommendation with modest endorsement')
+        if strengths:
+            parts.append('Strengths: ' + '; '.join(strengths) + '.')
+
+        # Risks / concerns
+        risks = []
+        # check AP/Honors performance pattern in rapunzel parsed content
+        if rap.get('course_rigor_index') and (rap.get('summary') and 'AP' in str(rap.get('summary'))):
+            # heuristics: presence of AP and note of lower grades
+            if 'C+' in str(rap.get('summary')) or 'drop' in str(rap.get('summary')).lower():
+                risks.append('modest AP/Honors grades despite high course rigor')
+        if not strengths and (not rap and not mulan and not tiana):
+            risks.append('limited supporting evidence in agent outputs')
+        if risks:
+            parts.append('Risks: ' + '; '.join(risks) + '.')
+
+        # Recommendation / verdict
+        rec = merlin.get('recommendation') or merlin.get('parsed_data', {}).get('recommendation') or aurora.get('merlin_recommendation')
+        score = merlin.get('overall_score') or merlin.get('overallscore')
+        verdict = []
+        if score:
+            verdict.append(f'Overall score ~{score}/100')
+        if rec:
+            verdict.append(f'Recommendation: {rec}')
+        if verdict:
+            parts.append(' '.join(verdict) + '.')
+
+        # If nothing produced, fall back to aurora short note
+        if not parts and aurora:
+            parts.append('Aurora produced a formatted evaluation; see detailed report.')
+
+        return ' '.join(parts)
+    except Exception:
+        return ''
+
+
+@app.route('/student/<int:application_id>/summary-json')
+def student_summary_json(application_id):
+    """Render a compact student summary page directly from agent-results JSON."""
+    try:
+        application = db.get_application(application_id)
+        if not application:
+            flash('Student not found', 'error')
+            return redirect(url_for('students'))
+
+        # reuse the same collection logic as the debug JSON endpoint
+        agent_results = {}
+        # Merge any existing agent_results JSON from the application row so
+        # persisted per-agent summaries are visible on this page.
+        try:
+            ar = application.get('agent_results')
+            if ar:
+                if isinstance(ar, str):
+                    try:
+                        ar = json.loads(ar)
+                    except Exception:
+                        ar = None
+                if isinstance(ar, dict):
+                    agent_results.update(ar)
+        except Exception:
+            pass
+        for tbl, key in [
+            ('tiana_applications', 'tiana'),
+            ('rapunzel_grades', 'rapunzel'),
+            ('student_school_context', 'moana'),
+            ('mulan_recommendations', 'mulan'),
+            ('merlin_evaluations', 'merlin'),
+            ('aurora_evaluations', 'aurora')
+        ]:
+            try:
+                rows = db.execute_query(
+                    f"SELECT * FROM {tbl} WHERE application_id = %s ORDER BY created_at DESC LIMIT 1",
+                    (application_id,)
+                )
+                if rows:
+                    agent_results[key] = dict(rows[0])
+            except Exception:
+                pass
+
+        # Executive summary: prefer Merlin's output only. Aurora is used
+        # elsewhere for formatting but should not drive the executive text.
+        human_summary = None
+        try:
+            merlin_row = agent_results.get('merlin') or agent_results.get('student_evaluator')
+            if merlin_row:
+                # If agent row already contains a precomputed human_summary, use it
+                if isinstance(merlin_row, dict) and merlin_row.get('human_summary'):
+                    human_summary = merlin_row.get('human_summary')
+                else:
+                    # Try parsed_json -> content
+                    parsed = None
+                    if isinstance(merlin_row, dict):
+                        parsed = merlin_row.get('parsed_json') or merlin_row.get('parsed') or merlin_row.get('parsed_data')
+                    elif isinstance(merlin_row, str):
+                        try:
+                            parsed = json.loads(merlin_row)
+                        except Exception:
+                            parsed = None
+
+                    if isinstance(parsed, str):
+                        try:
+                            parsed = json.loads(parsed)
+                        except Exception:
+                            parsed = None
+
+                    if isinstance(parsed, dict):
+                        content = parsed.get('content') or parsed.get('summary') or parsed.get('rationale')
+                        if isinstance(content, str):
+                            human_summary = content
+                        elif isinstance(content, dict):
+                            # prefer explicit fields if present
+                            human_summary = content.get('rationale') or content.get('summary') or json.dumps(content)
+
+                    # Fallback: use top-level merlin fields
+                    if not human_summary and isinstance(merlin_row, dict):
+                        rec = merlin_row.get('recommendation') or merlin_row.get('recommendation_text')
+                        score = merlin_row.get('overall_score') or merlin_row.get('score')
+                        rationale = merlin_row.get('rationale') or merlin_row.get('detailed_analysis')
+                        parts = []
+                        if score is not None:
+                            parts.append(f"Overall score ~{score}")
+                        if rec:
+                            parts.append(f"Recommendation: {rec}")
+                        if rationale and not human_summary:
+                            parts.append(str(rationale))
+                        if parts:
+                            human_summary = ' '.join(parts)
+        except Exception:
+            human_summary = None
+
+        return render_template('student_summary_json.html',
+                               application=application,
+                               agent_results=agent_results,
+                               human_summary=human_summary)
+    except Exception as e:
+        logger.error(f"Error in student_summary_json: {e}", exc_info=True)
+        flash(f'Error loading summary: {str(e)}', 'error')
         return redirect(url_for('students'))
 
 
@@ -2568,7 +3290,11 @@ def clear_training_data():
 
 # In-memory tracking of test submissions and processing status
 test_submissions = {}  # {session_id: {students, queue, processor_started}}
-aurora = AuroraAgent()
+# create aurora agent only if class is available
+if 'AuroraAgent' in globals() and AuroraAgent is not None:
+    aurora = AuroraAgent()
+else:
+    aurora = None
 
 
 def start_application_processing(application_id: int) -> None:
@@ -2679,7 +3405,10 @@ def generate_session_updates(session_id):
     if 'queue' not in submission:
         submission['queue'] = queue.Queue()
 
-    start_session_processing(session_id)
+    # only start processing if we already have students generated; the
+    # background worker will kick off processing when it finishes generation.
+    if submission.get('students'):
+        start_session_processing(session_id)
 
     yield f"data: {json.dumps({'type': 'connected', 'message': 'Connected to test stream'})}\n\n"
 
@@ -2706,6 +3435,7 @@ def _process_session(session_id):
         return
 
     students = submission['students']
+    logger.info("[%s] _process_session starting (%d students)", session_id, len(students) if students else 0)
     orchestrator = get_orchestrator()
 
     application_data_list = []
@@ -2824,7 +3554,8 @@ def _process_session(session_id):
 
             def run_orchestration():
                 try:
-                    logger.debug(f"Starting orchestration thread for {applicant_name}")
+                    # log at info so the activity is easier to find in App Service logs
+                    logger.info(f"Starting orchestration thread for {applicant_name}")
                     evaluation_steps = [
                         'application_reader',
                         'grade_reader',
@@ -2962,119 +3693,134 @@ def test_stream(session_id):
     )
 
 
+
+# helper used by test routes to prepare data in background
+
+def _prepare_test_session(session_id: str, mode: str = 'dynamic') -> None:
+    """Run cleanup and student generation in a worker thread.
+
+    This prevents the HTTP request from blocking while the database
+    operations and generator run.  Once students have been produced we
+    push a `student_count` update onto the session queue and kick off the
+    orchestration thread.
+    """
+    try:
+        logger.info("[%s] background worker starting (mode=%s)", session_id, mode)
+        # cleanup may take a while on large datasets
+        cleanup_test_data()
+        logger.info("[%s] cleanup complete", session_id)
+
+        if mode == 'preset':
+            students = test_data_generator.generate_batch(count=3)
+        elif mode == 'single':
+            students = test_data_generator.generate_batch(count=1)
+        else:
+            students = test_data_generator.generate_batch()
+
+        logger.info("[%s] generated %d test students", session_id, len(students))
+
+        # store results and notify stream/pollers
+        submission = test_submissions.get(session_id)
+        if submission is not None:
+            submission['students'] = students
+            submission['status'] = 'processing'
+            submission['queue'].put({'type': 'student_count', 'count': len(students)})
+
+        # begin evaluation
+        start_session_processing(session_id)
+    except Exception as e:
+        logger.error("[%s] error preparing test session: %s", session_id, str(e), exc_info=True)
+        submission = test_submissions.get(session_id)
+        if submission is not None:
+            submission['status'] = 'error'
+            submission['queue'].put({'type': 'error', 'error': str(e)})
+
+
 @app.route('/api/test/submit', methods=['POST'])
 def submit_test_data():
     """
-    Generate synthetic test students and start processing pipeline.
-    Cleans up old test data first, then creates new test students.
-    Returns a session ID to stream updates from.
+    Kick off a new test run; response returns immediately with a session id.
+
+    The heavy work lives in a daemon thread so the UI never locks up.  The
+    client will receive a `student_count` event once the generator completes
+    and can then update its display.
     """
     try:
-        # CLEANUP: Delete old test data (all applications marked as is_test_data=TRUE)
-        logger.info("Cleaning up old test data...")
-        cleanup_test_data()
-        logger.info("Test data cleanup complete. Generating new students...")
-        
-        # Generate 3 random test students with realistic data
-        students = test_data_generator.generate_batch()
-        logger.info(f"Generated {len(students)} test students")
-        
-        # Generate session ID
+        logger.info("Received request to create dynamic test session")
         session_id = str(uuid.uuid4())
-        
-        # Track submission
         test_submissions[session_id] = {
-            'students': students,
+            'students': [],
             'application_ids': [],
             'created_at': time.time(),
-            'status': 'processing',
+            'status': 'initializing',
             'queue': queue.Queue()
         }
 
-        start_session_processing(session_id)
-        
+        # spawn worker thread and return immediately
+        threading.Thread(target=_prepare_test_session, args=(session_id, 'dynamic'), daemon=True).start()
+
         return jsonify({
             'session_id': session_id,
-            'student_count': len(students),
+            'student_count': 0,
             'stream_url': url_for('test_stream', session_id=session_id)
         })
-        
     except Exception as e:
+        logger.error("submit_test_data failed: %s", e, exc_info=True)
         return jsonify({'error': str(e)}), 500
 
 
 @app.route('/api/test/submit-preset', methods=['POST'])
 def submit_preset_test_data():
     """
-    Submit randomized test students for quick testing.
-    Always generates fresh data.
+    Start a run with the fixed 3-student preset dataset.
+    The actual work is delegated to a background thread to keep the
+    request path non‑blocking.
     """
     try:
-        # CLEANUP: Delete old test data
-        logger.info("Cleaning up old test data...")
-        cleanup_test_data()
-        logger.info("Test data cleanup complete. Creating randomized students...")
-
-        preset_students = test_data_generator.generate_batch(count=3)
-        
-        # Generate session ID
+        logger.info("Received request to create preset test session")
         session_id = str(uuid.uuid4())
-        
-        # Track submission
         test_submissions[session_id] = {
-            'students': preset_students,
+            'students': [],
             'application_ids': [],
             'created_at': time.time(),
-            'status': 'processing',
+            'status': 'initializing',
             'queue': queue.Queue()
         }
-
-        start_session_processing(session_id)
-        
+        threading.Thread(target=_prepare_test_session, args=(session_id, 'preset'), daemon=True).start()
         return jsonify({
             'session_id': session_id,
-            'student_count': len(preset_students),
+            'student_count': 0,
             'stream_url': url_for('test_stream', session_id=session_id)
         })
-        
     except Exception as e:
+        logger.error("submit_preset_test_data failed: %s", e, exc_info=True)
         return jsonify({'error': str(e)}), 500
 
 
 @app.route('/api/test/submit-single', methods=['POST'])
 def submit_single_test_data():
     """
-    Submit a single randomized test student for quick testing.
+    Start a run with one randomly generated student.
+    Heavy work is executed asynchronously.
     """
     try:
-        # CLEANUP: Delete old test data
-        logger.info("Cleaning up old test data...")
-        cleanup_test_data()
-        logger.info("Test data cleanup complete. Creating single student...")
-
-        single_student = test_data_generator.generate_batch(count=1)
-        
-        # Generate session ID
+        logger.info("Received request to create single-student test session")
         session_id = str(uuid.uuid4())
-        
-        # Track submission
         test_submissions[session_id] = {
-            'students': single_student,
+            'students': [],
             'application_ids': [],
             'created_at': time.time(),
-            'status': 'processing',
+            'status': 'initializing',
             'queue': queue.Queue()
         }
-
-        start_session_processing(session_id)
-        
+        threading.Thread(target=_prepare_test_session, args=(session_id, 'single'), daemon=True).start()
         return jsonify({
             'session_id': session_id,
-            'student_count': len(single_student),
+            'student_count': 0,
             'stream_url': url_for('test_stream', session_id=session_id)
         })
-        
     except Exception as e:
+        logger.error("submit_single_test_data failed: %s", e, exc_info=True)
         return jsonify({'error': str(e)}), 500
 
 
@@ -3859,13 +4605,28 @@ def get_test_data_list():
         
         test_students = []
         for row in results:
+            # parse JSON summary if present
+            ss = None
+            if 'student_summary' in row and isinstance(row['student_summary'], str):
+                try:
+                    ss = json.loads(row['student_summary'])
+                except Exception:
+                    ss = None
+            elif 'student_summary' in row:
+                ss = row['student_summary']
+
+            merlin_score = row.get('merlinscore')
+            if merlin_score is None and ss and isinstance(ss, dict):
+                merlin_score = ss.get('overall_score') or ss.get('score')
+
             test_students.append({
                 'applicationid': row.get('applicationid'),
                 'applicantname': row.get('applicantname'),
                 'email': row.get('email'),
                 'status': row.get('status'),
                 'uploadeddate': str(row.get('uploadeddate')) if row.get('uploadeddate') else None,
-                'merlin_score': row.get('merlinscore')
+                'merlin_score': merlin_score,
+                'student_summary': ss
             })
         
         return jsonify({
@@ -3953,6 +4714,71 @@ def clear_test_data():
             'status': 'error',
             'error': str(e)
         }), 500
+
+
+# Admin endpoint for full/reset operation
+@app.route('/api/admin/reset', methods=['POST'])
+def admin_reset():
+    """One‑click database reset. Accepts JSON {keep_production: bool}.
+
+    If keep_production is true (default) only test+training rows are removed.
+    Otherwise every related table is truncated, leaving an empty database.
+    """
+    data = request.get_json(silent=True) or {}
+    keep_prod = data.get('keep_production', True)
+    try:
+        if keep_prod:
+            # call existing endpoints internally
+            test_resp = clear_test_data()
+            train_resp = clear_training_data()
+            test_json = test_resp.get_json() if hasattr(test_resp, 'get_json') else {}
+            train_json = train_resp.get_json() if hasattr(train_resp, 'get_json') else {}
+            return jsonify({
+                'status': 'success',
+                'training_deleted': train_json.get('count', 0),
+                'test_deleted': test_json.get('count', 0)
+            })
+        else:
+            # brute‑force wipe of every table we know about
+            tables = [
+                'aurora_communications', 'merlin_evaluations',
+                'mulan_recommendations', 'moana_background_analysis',
+                'rapunzel_transcript_analysis', 'tiana_applications',
+                'agent_audit_logs', 'student_school_context',
+                'grade_records', 'ai_evaluations', 'aurora_evaluations',
+                'test_submissions', 'applications'
+            ]
+            total = 0
+            for tbl in tables:
+                try:
+                    rows = db.execute_non_query(f"DELETE FROM {tbl}")
+                    total += rows or 0
+                except Exception as exc:
+                    logger.warning(f"admin_reset: could not clear {tbl}: {exc}")
+            return jsonify({'status': 'success', 'deleted': total})
+    except Exception as e:
+        logger.error(f"admin_reset error: {e}", exc_info=True)
+        return jsonify({'status': 'error', 'error': str(e)}), 500
+
+
+@app.route('/api/milo/insights', methods=['GET'])
+def milo_insights():
+    """Return current Milo training insights (synchronous).
+
+    This reads whatever training examples are in the database and asks Milo
+    to analyze them; useful for validating that Milo is "learning" as new
+    training data arrives.
+    """
+    try:
+        orchestrator = get_orchestrator()
+        milo = orchestrator.agents.get('data_scientist') if orchestrator else None
+        if not milo:
+            return jsonify({'status': 'error', 'error': 'Milo agent not available'})
+        result = asyncio.run(milo.analyze_training_insights())
+        return jsonify(result)
+    except Exception as e:
+        logger.error(f"Milo insights error: {e}", exc_info=True)
+        return jsonify({'status': 'error', 'error': str(e)}), 500
 
 
 
@@ -4355,7 +5181,15 @@ def ask_question(application_id):
                 'reference_data': {}
             }), 400
         
-        # Initialize ARIEL Q&A agent
+        # Initialize ARIEL Q&A agent (guard if missing in this deployment)
+        if ArielQAAgent is None:
+            return jsonify({
+                'success': False,
+                'error': 'Ariel Q&A agent not available in this deployment',
+                'answer': None,
+                'reference_data': {}
+            }), 503
+
         ariel = ArielQAAgent()
         
         # Process question

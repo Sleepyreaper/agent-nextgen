@@ -18,6 +18,7 @@ from src.agents.system_prompts import BELLE_ANALYZER_PROMPT
 from src.agents.telemetry_helpers import agent_run, tool_call
 from src.config import config
 from src.services.content_processing_client import ContentProcessingClient
+from src.utils import safe_load_json
 
 
 class BelleDocumentAnalyzer(BaseAgent):
@@ -32,7 +33,7 @@ class BelleDocumentAnalyzer(BaseAgent):
     - Categorize and structure extracted data
     """
     
-    def __init__(self, name: str = "Belle Document Analyzer", client: AzureOpenAI = None, model: str = None, db_connection=None):
+    def __init__(self, name: str = "Belle Document Analyzer", client: AzureOpenAI = None, model: Optional[str] = None, db_connection=None):
         """
         Initialize Belle Document Analyzer.
         
@@ -43,7 +44,7 @@ class BelleDocumentAnalyzer(BaseAgent):
             db_connection: Database connection (optional)
         """
         super().__init__(name=name, client=client)
-        self.model = model
+        self.model = model or config.foundry_model_name or config.deployment_name
         self.db_connection = db_connection
         self.emoji = "📖"
         self.description = "Analyzes documents and extracts structured data"
@@ -584,29 +585,40 @@ Document excerpt:
                 {"role": "user", "content": deep_prompt}
             ]
 
-            deep_resp = self._create_chat_completion(
-                operation="belle.extract_school_deep",
+            # Use two-step extraction: first get potential structured facts, then
+            # ask the model to produce the JSON object expected.
+            q_msgs = [
+                {"role": "system", "content": "You are an expert annotator. From the transcript excerpt, list candidate school name mentions, likely city, and state as short bullets."},
+                {"role": "user", "content": deep_prompt}
+            ]
+
+            fmt_template = [
+                {"role": "system", "content": "You are an expert annotator. Return ONLY JSON with the requested fields: {\"school_name\": string or null, \"city\": string or null, \"state\": string or null, \"confidence\": 0-100}."},
+                {"role": "user", "content": "Use these extracted facts: {found}\n\nNow produce the JSON object."}
+            ]
+
+            q_resp, deep_resp = self.two_step_query_format(
+                operation_base="belle.extract_school_deep",
                 model=self.model,
-                messages=deep_messages,
-                max_completion_tokens=400,
-                temperature=0
+                query_messages=q_msgs,
+                format_messages_template=fmt_template,
+                query_kwargs={"max_completion_tokens": 300, "temperature": 0},
+                format_kwargs={"max_completion_tokens": 400, "temperature": 0}
             )
 
             try:
                 deep_text = deep_resp.choices[0].message.content if deep_resp else ""
-                # Try to extract JSON block
                 json_match = re.search(r'\{[\s\S]*\}', deep_text)
                 if json_match:
-                    payload = json.loads(json_match.group())
+                    payload = safe_load_json(json_match.group())
                 else:
-                    payload = json.loads(deep_text)
+                    payload = safe_load_json(deep_text)
 
                 school_name = payload.get("school_name")
                 school_name = self._normalize_school_candidate(school_name)
                 if school_name and school_name != "NONE":
                     return school_name
             except Exception:
-                # Fall through to return None
                 pass
 
             return None

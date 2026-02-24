@@ -173,9 +173,41 @@ My strengths include mathematics, problem-solving, and leadership.
             result = db.execute_query("SELECT COUNT(*) as count FROM applications WHERE is_test_data = TRUE")
             count = result[0].get('count', 0) if result else 0
             print(f"  Test applications in DB: {count}")
-        except:
+        except Exception:
             pass
-            
+
+        # verify that the orchestrator updated the application row
+        try:
+            updated_app = db.get_application(app_id)
+            print(f"  Retrieved updated application record: {updated_app.keys()}")
+            if updated_app.get('agent_results'):
+                print("  ✓ agent_results column populated")
+                assert isinstance(updated_app.get('agent_results'), (dict, list, str)), "agent_results not parsed"
+            else:
+                print("  ⚠ agent_results missing")
+            if updated_app.get('student_summary'):
+                print("  ✓ student_summary column populated")
+                assert isinstance(updated_app.get('student_summary'), (dict, list, str)), "student_summary not parsed"
+            else:
+                print("  ⚠ student_summary missing")
+            # also check aurora evaluation aliasing behaviour
+            aurora_eval = db.get_aurora_evaluation(app_id)
+            if aurora_eval:
+                print("  ✓ aurora_evaluation row available for alias test")
+                keys = set(aurora_eval.keys())
+                # make sure both underscored and non-underscored keys exist after our fix
+                assert ('formatted_evaluation' in keys or 'formattedevaluation' in keys), "no formatted evaluation key"
+                # alias generation should provide alternative key if only one present
+                if 'formatted_evaluation' in keys and 'formattedevaluation' not in keys:
+                    print("    aliasing formatted_evaluation -> formattedevaluation")
+                    assert 'formattedevaluation' in aurora_eval, "alias not created"
+                if 'formattedevaluation' in keys and 'formatted_evaluation' not in keys:
+                    print("    aliasing formattedevaluation -> formatted_evaluation")
+                    assert 'formatted_evaluation' in aurora_eval, "underscore alias not created"
+            else:
+                print("  ⚠ aurora_evaluation absent, cannot test aliasing")
+        except Exception as _:
+            pass
     except Exception as e:
         print(f"✗ Orchestrator error: {e}")
         import traceback

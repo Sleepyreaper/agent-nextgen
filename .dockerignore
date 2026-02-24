@@ -1,0 +1,51 @@
+# Environment & secrets
+.env
+.env.*
+*.publishsettings
+publishProfile.xml
+
+# Git
+.git/
+.gitignore
+
+# Virtual environments
+.venv/
+.venv_deploy/
+env/
+venv/
+
+# Archives
+*.zip
+*.tar
+
+# Student data / PII
+student_documents/
+uploads/
+debug_dataset.html
+
+# Logs
+logs/
+*.log
+
+# IDE & OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Tests & docs (not needed in container)
+testing/
+documents/
+*.md
+!README.md
+
+# Scripts not needed at runtime
+scripts/
+push_to_github.sh
+
+# Build artifacts
+__pycache__/
+*.py[cod]
+htmlcov/
+.coverage
+.pytest_cache/
