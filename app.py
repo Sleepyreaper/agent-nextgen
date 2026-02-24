@@ -4825,7 +4825,7 @@ def get_schools_list():
         if request.args.get('search'):
             filters['search_text'] = request.args.get('search')
         
-        schools = db.get_all_schools_enriched(filters=filters, limit=200)
+        schools = db.get_all_schools_enriched(filters=filters, limit=500)
         
         return jsonify({
             'status': 'success',
@@ -4949,6 +4949,7 @@ def trigger_school_analysis(school_id):
         
         def background_analysis():
             try:
+                from src.agents.naveen_school_data_scientist import NaveenSchoolDataScientist
                 # Use Naveen School Data Scientist agent with mini model and client
                 client_mini = get_ai_client_mini()
                 scientist = NaveenSchoolDataScientist(
@@ -5000,9 +5001,149 @@ def trigger_school_analysis(school_id):
         return jsonify({'status': 'error', 'error': str(e)}), 500
 
 
-# ============================================================================
-# DEBUG & MONITORING ENDPOINTS
-# ============================================================================
+@app.route('/api/school/lookup', methods=['POST'])
+def lookup_or_create_school():
+    """Auto-lookup: if a school exists, return it. If not, create a skeleton record.
+    
+    Request body:
+        { "school_name": "...", "state_code": "GA", "school_district": "...", "county_name": "..." }
+    
+    Returns existing record or newly created skeleton with analysis_status='pending'.
+    """
+    try:
+        data = request.get_json() or {}
+        school_name = data.get('school_name', '').strip()
+        state_code = data.get('state_code', 'GA').strip().upper()
+        
+        if not school_name:
+            return jsonify({'status': 'error', 'error': 'school_name is required'}), 400
+        
+        from src.school_workflow import SchoolDataWorkflow
+        workflow = SchoolDataWorkflow(db)
+        
+        result = workflow.ensure_school_exists(
+            school_name=school_name,
+            state_code=state_code,
+            school_district=data.get('school_district'),
+            county_name=data.get('county_name'),
+        )
+        
+        if result.get('error'):
+            return jsonify({'status': 'error', 'error': result['error']}), 500
+        
+        # Convert any non-serializable types
+        result_dict = {k: (str(v) if hasattr(v, 'isoformat') else v) for k, v in result.items()}
+        
+        return jsonify({'status': 'success', 'school': result_dict})
+        
+    except Exception as e:
+        logger.error(f"Error in school lookup/create: {e}")
+        return jsonify({'status': 'error', 'error': str(e)}), 500
+
+
+@app.route('/api/schools/enrich-pending', methods=['POST'])
+def enrich_pending_schools():
+    """Bulk-enrich schools that have analysis_status='pending'.
+    
+    Request body (optional):
+        { "limit": 10 }   -- max schools to enrich in this batch (default 5)
+    
+    Runs enrichment in background threads, returns immediately.
+    """
+    try:
+        data = request.get_json() or {}
+        limit = min(int(data.get('limit', 5)), 50)  # Cap at 50 per call
+        
+        # Find pending schools
+        pending = db.execute_query(
+            "SELECT school_enrichment_id, school_name, school_district, state_code "
+            "FROM school_enriched_data WHERE analysis_status = 'pending' AND is_active = TRUE "
+            "ORDER BY school_enrichment_id LIMIT %s",
+            (limit,)
+        )
+        
+        if not pending:
+            return jsonify({'status': 'success', 'message': 'No pending schools to enrich', 'queued': 0})
+        
+        def background_batch_enrich(schools_to_enrich):
+            """Enrich schools sequentially in background."""
+            try:
+                from src.agents.naveen_school_data_scientist import NaveenSchoolDataScientist
+                from src.school_workflow import SchoolDataWorkflow
+                
+                client_mini = get_ai_client_mini()
+                scientist = NaveenSchoolDataScientist(
+                    name="Naveen School Data Scientist",
+                    client=client_mini,
+                    model=config.deployment_name_mini
+                )
+                workflow = SchoolDataWorkflow(db)
+                
+                for school in schools_to_enrich:
+                    try:
+                        sid = school['school_enrichment_id']
+                        name = school['school_name']
+                        logger.info(f"🔬 Enriching school {sid}: {name}")
+                        
+                        result = workflow.enrich_school_if_pending(
+                            school_id=sid,
+                            aurora_agent=scientist
+                        )
+                        
+                        status = result.get('analysis_status', 'unknown')
+                        score = result.get('opportunity_score', 0)
+                        logger.info(f"✓ Enriched {name}: status={status}, score={score}")
+                        
+                    except Exception as e:
+                        logger.error(f"Error enriching school {school.get('school_name')}: {e}")
+                        continue
+                        
+            except Exception as e:
+                logger.error(f"Error in batch enrichment: {e}", exc_info=True)
+        
+        # Start background thread
+        thread = threading.Thread(
+            target=background_batch_enrich,
+            args=([dict(s) for s in pending],)
+        )
+        thread.daemon = True
+        thread.start()
+        
+        school_names = [s['school_name'] for s in pending]
+        return jsonify({
+            'status': 'success',
+            'message': f'Queued {len(pending)} schools for enrichment',
+            'queued': len(pending),
+            'schools': school_names
+        })
+        
+    except Exception as e:
+        logger.error(f"Error in bulk enrichment: {e}")
+        return jsonify({'status': 'error', 'error': str(e)}), 500
+
+
+@app.route('/api/schools/clear', methods=['POST'])
+def clear_all_schools():
+    """Clear all school enriched data records. Requires confirmation."""
+    try:
+        data = request.get_json() or {}
+        if data.get('confirm') != 'yes':
+            return jsonify({
+                'status': 'error', 
+                'error': 'Send {"confirm": "yes"} to confirm deletion'
+            }), 400
+        
+        deleted = db.delete_all_school_enriched_data()
+        
+        return jsonify({
+            'status': 'success',
+            'message': f'Deleted {deleted} school records',
+            'deleted': deleted
+        })
+        
+    except Exception as e:
+        logger.error(f"Error clearing schools: {e}")
+        return jsonify({'status': 'error', 'error': str(e)}), 500
 
 @app.route('/debug/agents')
 def debug_agents():

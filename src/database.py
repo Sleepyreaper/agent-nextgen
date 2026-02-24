@@ -2555,6 +2555,59 @@ class Database:
             logger.error(f"Error getting school enriched data: {e}")
             return None
 
+    def delete_all_school_enriched_data(self) -> int:
+        """Delete ALL school enriched data records and cascade to child tables.
+        
+        Returns:
+            Number of records deleted
+        """
+        try:
+            if not self.has_table("school_enriched_data"):
+                logger.warning("School enrichment table missing: school_enriched_data")
+                return 0
+            
+            # Count first
+            count_result = self.execute_query("SELECT COUNT(*) as cnt FROM school_enriched_data")
+            count = count_result[0]['cnt'] if count_result else 0
+            
+            # Child tables cascade via FK, but delete explicitly for safety
+            child_tables = [
+                'school_web_sources', 'school_academic_profile', 
+                'school_salary_outcomes', 'school_analysis_history',
+                'school_opportunity_index', 'school_data_versions'
+            ]
+            for table in child_tables:
+                if self.has_table(table):
+                    self.execute_non_query(f"DELETE FROM {table}")
+            
+            self.execute_non_query("DELETE FROM school_enriched_data")
+            
+            logger.info(f"Deleted {count} school enrichment records (and cascade children)")
+            return count
+        except Exception as e:
+            logger.error(f"Error deleting all school enriched data: {e}")
+            return 0
+
+    def delete_school_enriched_data(self, school_id: int) -> bool:
+        """Delete a single school enriched data record by ID.
+        
+        Args:
+            school_id: The school_enrichment_id to delete
+            
+        Returns:
+            True if deleted, False otherwise
+        """
+        try:
+            self.execute_non_query(
+                "DELETE FROM school_enriched_data WHERE school_enrichment_id = %s",
+                (school_id,)
+            )
+            logger.info(f"Deleted school enrichment record {school_id}")
+            return True
+        except Exception as e:
+            logger.error(f"Error deleting school enrichment {school_id}: {e}")
+            return False
+
     def get_all_schools_enriched(self, filters: Optional[Dict[str, Any]] = None, 
                                 limit: int = 100) -> List[Dict[str, Any]]:
         """Get all enriched schools with optional filters."""

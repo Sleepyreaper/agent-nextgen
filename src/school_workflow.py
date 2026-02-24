@@ -142,7 +142,218 @@ class SchoolDataWorkflow:
             )
         
         return enriched_result
-    
+
+    def ensure_school_exists(
+        self,
+        school_name: str,
+        state_code: str = 'GA',
+        school_district: Optional[str] = None,
+        county_name: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """
+        Auto-lookup/create: Check if a school exists in the database.
+        If not, create a skeleton record with analysis_status='pending'.
+        
+        This is the entry point for the user requirement:
+        "Does this high school name exist? If not, create a new record."
+        
+        Args:
+            school_name: High school name
+            state_code: State code (default 'GA')
+            school_district: School district (optional)
+            county_name: County name (optional)
+            
+        Returns:
+            The existing or newly created school record dict
+        """
+        if not school_name:
+            return {'error': 'School name is required'}
+        
+        # Step 1: Look up by name + state
+        existing = self._lookup_school_in_database(school_name, state_code)
+        
+        if existing:
+            logger.info(f"✓ School exists: {school_name}", extra={'id': existing.get('school_enrichment_id')})
+            return existing
+        
+        # Step 2: Not found — create skeleton record
+        logger.info(f"→ School not found, creating skeleton: {school_name} ({state_code})")
+        
+        skeleton = {
+            'school_name': school_name,
+            'school_district': school_district or '',
+            'state_code': state_code,
+            'county_name': county_name or '',
+            'school_url': '',
+            'opportunity_score': 0,
+            'total_students': 0,
+            'graduation_rate': 0,
+            'college_acceptance_rate': 0,
+            'free_lunch_percentage': 0,
+            'ap_course_count': 0,
+            'ap_exam_pass_rate': 0,
+            'stem_program_available': False,
+            'ib_program_available': False,
+            'dual_enrollment_available': False,
+            'analysis_status': 'pending',
+            'human_review_status': 'pending',
+            'data_confidence_score': 0,
+            'created_by': 'auto_lookup',
+            'school_investment_level': 'unknown',
+            'is_active': True,
+        }
+        
+        school_id = self.db.create_school_enriched_data(skeleton)
+        
+        if school_id:
+            skeleton['school_enrichment_id'] = school_id
+            logger.info(f"✓ Created skeleton school record", extra={'school': school_name, 'id': school_id})
+            return skeleton
+        else:
+            logger.error(f"Failed to create school record for {school_name}")
+            return {'school_name': school_name, 'error': 'Failed to create record'}
+
+    def needs_enrichment(self, school_data: Dict[str, Any]) -> bool:
+        """
+        Check if a school record needs Naveen/Moana enrichment.
+        
+        A school needs enrichment if:
+        - analysis_status is 'pending' or 'failed'
+        - OR key fields are all zero/empty (skeleton record)
+        
+        Returns:
+            True if enrichment is needed
+        """
+        status = school_data.get('analysis_status', 'pending')
+        if status in ('pending', 'failed'):
+            return True
+        
+        # Even if status says 'complete', check if data is actually populated
+        key_fields = [
+            school_data.get('total_students', 0),
+            school_data.get('graduation_rate', 0),
+            school_data.get('opportunity_score', 0),
+        ]
+        return all(v == 0 or v is None for v in key_fields)
+
+    def enrich_school_if_pending(
+        self,
+        school_id: int,
+        aurora_agent=None,
+    ) -> Dict[str, Any]:
+        """
+        If a school has analysis_status='pending' and enrichment tables are blank,
+        call Naveen to populate enrichment data.
+        
+        This is the entry point for the user requirement:
+        "If the enrichment tables are blank, call Naveen and Moana to populate."
+        "If the high school name is there and enrichment data exists, skip."
+        
+        Args:
+            school_id: The school_enrichment_id
+            aurora_agent: NaveenSchoolDataScientist instance
+            
+        Returns:
+            Updated school data dict
+        """
+        school = self.db.get_school_enriched_data(school_id)
+        if not school:
+            return {'error': f'School {school_id} not found'}
+        
+        school_dict = dict(school) if hasattr(school, 'items') else school
+        
+        # Check if enrichment is needed
+        if not self.needs_enrichment(school_dict):
+            logger.info(
+                f"⏭️  School already enriched, skipping",
+                extra={'school': school_dict.get('school_name'), 'status': school_dict.get('analysis_status')}
+            )
+            return school_dict
+        
+        # Need enrichment — require agent
+        if not aurora_agent:
+            logger.warning(f"Naveen agent required to enrich school {school_id}")
+            return {**school_dict, 'error': 'Naveen agent not available'}
+        
+        school_name = school_dict.get('school_name', '')
+        school_district = school_dict.get('school_district', '')
+        state_code = school_dict.get('state_code', 'GA')
+        
+        logger.info(f"→ Enriching school: {school_name}", extra={'id': school_id})
+        
+        # Call Naveen
+        monitor = get_agent_monitor()
+        monitor.start_execution(
+            agent_name="Naveen (School Data Scientist)",
+            model=config.deployment_name_mini
+        )
+        
+        try:
+            enriched_result = aurora_agent.analyze_school(
+                school_name=school_name,
+                school_district=school_district,
+                state_code=state_code,
+                existing_data=school_dict
+            )
+            monitor.end_execution("Naveen (School Data Scientist)", status=AgentStatus.COMPLETED)
+        except Exception as e:
+            logger.error(f"Naveen enrichment failed for {school_name}: {e}", exc_info=True)
+            monitor.end_execution("Naveen (School Data Scientist)", status=AgentStatus.FAILED, error_message=str(e))
+            # Mark as failed so we can retry later
+            self.db.execute_non_query(
+                "UPDATE school_enriched_data SET analysis_status = 'failed', updated_at = CURRENT_TIMESTAMP WHERE school_enrichment_id = %s",
+                (school_id,)
+            )
+            return {**school_dict, 'analysis_status': 'failed', 'error': str(e)}
+        
+        # Update existing record with Naveen results (don't create a new one)
+        if enriched_result.get('analysis_status') == 'complete':
+            try:
+                update_fields = {
+                    'total_students': enriched_result.get('enrollment_size') or enriched_result.get('total_students', 0),
+                    'graduation_rate': enriched_result.get('graduation_rate', 0),
+                    'college_acceptance_rate': enriched_result.get('college_placement_rate') or enriched_result.get('college_acceptance_rate', 0),
+                    'free_lunch_percentage': enriched_result.get('free_lunch_percentage', 0),
+                    'ap_course_count': enriched_result.get('ap_classes_count') or enriched_result.get('ap_course_count', 0),
+                    'ap_exam_pass_rate': enriched_result.get('ap_exam_pass_rate', 0),
+                    'stem_program_available': enriched_result.get('stem_programs', False) or enriched_result.get('stem_program_available', False),
+                    'ib_program_available': enriched_result.get('ib_offerings', False) or enriched_result.get('ib_program_available', False),
+                    'dual_enrollment_available': enriched_result.get('honors_programs', False) or enriched_result.get('dual_enrollment_available', False),
+                    'opportunity_score': enriched_result.get('opportunity_score', 0),
+                    'data_confidence_score': enriched_result.get('confidence_score', 0) or enriched_result.get('data_confidence_score', 0),
+                    'analysis_status': 'complete',
+                    'school_investment_level': enriched_result.get('school_investment_level', 'medium'),
+                }
+                
+                # Build UPDATE query
+                set_parts = []
+                values = []
+                for col, val in update_fields.items():
+                    set_parts.append(f"{col} = %s")
+                    values.append(val)
+                
+                set_parts.append("updated_at = CURRENT_TIMESTAMP")
+                values.append(school_id)
+                
+                query = f"UPDATE school_enriched_data SET {', '.join(set_parts)} WHERE school_enrichment_id = %s"
+                self.db.execute_non_query(query, tuple(values))
+                
+                logger.info(
+                    f"✓ School enrichment updated in-place",
+                    extra={'school': school_name, 'id': school_id, 'score': update_fields['opportunity_score']}
+                )
+                
+                # Return merged data
+                school_dict.update(update_fields)
+                return school_dict
+                
+            except Exception as e:
+                logger.error(f"Error updating school enrichment: {e}", exc_info=True)
+                return {**school_dict, 'error': f'Update failed: {e}'}
+        else:
+            logger.warning(f"Naveen returned non-complete status for {school_name}")
+            return {**school_dict, 'analysis_status': enriched_result.get('analysis_status', 'failed')}
+
     def _lookup_school_in_database(
         self,
         school_name: str,
