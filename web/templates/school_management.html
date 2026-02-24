@@ -399,7 +399,7 @@
         </div>
         <div class="stat-card">
             <div class="stat-value" id="lastAnalyzed">N/A</div>
-            <div class="stat-label">Last Analysis</div>
+            <div class="stat-label">Data Quality</div>
         </div>
     </div>
 
@@ -513,16 +513,29 @@ function renderSchools(schools) {
         return;
     }
     
-    schoolList.innerHTML = schools.map(school => `
+    schoolList.innerHTML = schools.map(school => {
+        // Count filled key fields for data quality indicator
+        let filledFields = 0;
+        if (school.total_students) filledFields++;
+        if (school.graduation_rate && Number(school.graduation_rate) > 0) filledFields++;
+        if (school.ap_course_count && Number(school.ap_course_count) > 0) filledFields++;
+        if (school.college_acceptance_rate && Number(school.college_acceptance_rate) > 0) filledFields++;
+        if (school.free_lunch_percentage && Number(school.free_lunch_percentage) > 0) filledFields++;
+        if (school.opportunity_score && Number(school.opportunity_score) > 0) filledFields++;
+        
+        const qualityColor = filledFields >= 4 ? '#10b981' : filledFields >= 2 ? '#f59e0b' : '#ef4444';
+        const qualityLabel = filledFields >= 4 ? 'Good' : filledFields >= 2 ? 'Partial' : 'Low';
+        
+        return `
         <a href="/school/${school.school_enrichment_id}" style="text-decoration: none; color: inherit;">
             <div class="school-card">
                 <div class="school-card-header">
                     <div>
                         <div class="school-name">${school.school_name}</div>
-                        <div class="school-district">${school.school_district || ''} • ${school.state_code || ''}</div>
+                        <div class="school-district">${school.school_district || ''} &bull; ${school.state_code || ''}</div>
                     </div>
-                    <div class="opportunity-badge">
-                        <div class="opportunity-score">${(school.opportunity_score || 0).toFixed(1)}</div>
+                    <div class="opportunity-badge" style="${Number(school.opportunity_score || 0) === 0 ? 'background: #9ca3af;' : ''}">
+                        <div class="opportunity-score">${Number(school.opportunity_score || 0).toFixed(1)}</div>
                         <div class="opportunity-label">Opportunity</div>
                     </div>
                 </div>
@@ -530,47 +543,62 @@ function renderSchools(schools) {
                 <div class="school-metrics">
                     <div class="metric-box">
                         <div class="metric-label">AP Courses</div>
-                        <div class="metric-value">${school.ap_classes_count || 0}</div>
+                        <div class="metric-value">${school.ap_course_count || '\u2014'}</div>
                     </div>
                     <div class="metric-box">
                         <div class="metric-label">College Acceptance</div>
-                        <div class="metric-value">${(school.college_placement_rate || 0).toFixed(0)}%</div>
+                        <div class="metric-value">${school.college_acceptance_rate && Number(school.college_acceptance_rate) > 0 ? Number(school.college_acceptance_rate).toFixed(0) + '%' : '\u2014'}</div>
                     </div>
                     <div class="metric-box">
                         <div class="metric-label">Graduation Rate</div>
-                        <div class="metric-value">${(school.graduation_rate || 0).toFixed(0)}%</div>
+                        <div class="metric-value">${school.graduation_rate && Number(school.graduation_rate) > 0 ? Number(school.graduation_rate).toFixed(0) + '%' : '\u2014'}</div>
                     </div>
                     <div class="metric-box">
                         <div class="metric-label">Students</div>
-                        <div class="metric-value">${(school.enrollment_size || 0).toLocaleString()}</div>
+                        <div class="metric-value">${school.total_students ? Number(school.total_students).toLocaleString() : '\u2014'}</div>
                     </div>
                 </div>
                 
                 <div style="display: flex; justify-content: space-between; align-items: center;">
-                    <div>
+                    <div style="display: flex; gap: 0.5rem; align-items: center;">
                         <span class="review-status ${school.human_review_status || 'pending'}">
                             ${(school.human_review_status || 'pending').replace('_', ' ')}
                         </span>
+                        <span style="padding: 0.3rem 0.6rem; border-radius: 4px; font-size: 0.75rem; font-weight: 600; background: ${qualityColor}20; color: ${qualityColor};">
+                            ${filledFields}/6 fields &bull; ${qualityLabel}
+                        </span>
                     </div>
                     <div style="font-size: 0.85rem; color: #6b7280;">
-                        📋 Click to view & edit
+                        \ud83d\udccb Click to view & verify
                     </div>
                 </div>
             </div>
         </a>
-    `).join('');
+    `}).join('');
 }
 
 function updateStatistics() {
     const total = schoolsData.length;
     const pending = schoolsData.filter(s => s.human_review_status === 'pending').length;
     const avgScore = schoolsData.length > 0 
-        ? (schoolsData.reduce((sum, s) => sum + (s.opportunity_score || 0), 0) / schoolsData.length).toFixed(1)
+        ? (schoolsData.reduce((sum, s) => sum + (Number(s.opportunity_score) || 0), 0) / schoolsData.length).toFixed(1)
         : 0;
+    const lowData = schoolsData.filter(s => {
+        let filled = 0;
+        if (s.total_students) filled++;
+        if (s.graduation_rate && Number(s.graduation_rate) > 0) filled++;
+        if (s.ap_course_count && Number(s.ap_course_count) > 0) filled++;
+        if (s.college_acceptance_rate && Number(s.college_acceptance_rate) > 0) filled++;
+        if (s.free_lunch_percentage && Number(s.free_lunch_percentage) > 0) filled++;
+        if (s.opportunity_score && Number(s.opportunity_score) > 0) filled++;
+        return filled < 2;
+    }).length;
     
     document.getElementById('totalSchools').textContent = total;
     document.getElementById('reviewPending').textContent = pending;
     document.getElementById('avgOpportunityScore').textContent = avgScore;
+    document.getElementById('lastAnalyzed').textContent = lowData > 0 ? `${lowData} low data` : 'All OK';
+    document.getElementById('lastAnalyzed').style.color = lowData > 0 ? '#ef4444' : '#10b981';
 }
 
 function openSchoolDetail(schoolId) {

@@ -751,6 +751,99 @@ class Database:
                         logger.error(f"❌ Failed to add agents_completed to aurora_evaluations: {col_err}")
                         conn.rollback()
             
+            # ===== SCHOOL ENRICHED DATA TABLE =====
+            cursor.execute("""
+                SELECT EXISTS(
+                    SELECT 1 FROM information_schema.tables 
+                    WHERE table_name = 'school_enriched_data'
+                )
+            """)
+            school_enriched_exists = cursor.fetchone()[0]
+            
+            if not school_enriched_exists:
+                try:
+                    cursor.execute("""
+                        CREATE TABLE IF NOT EXISTS school_enriched_data (
+                            school_enrichment_id SERIAL PRIMARY KEY,
+                            school_name VARCHAR(500) NOT NULL,
+                            school_district VARCHAR(255),
+                            state_code VARCHAR(2),
+                            county_name VARCHAR(100),
+                            school_url VARCHAR(1000),
+                            school_url_verified BOOLEAN DEFAULT FALSE,
+                            school_url_verified_date TIMESTAMP,
+                            opportunity_score NUMERIC(5,2),
+                            opportunity_score_last_updated TIMESTAMP,
+                            total_students INTEGER,
+                            graduation_rate NUMERIC(5,2),
+                            college_acceptance_rate NUMERIC(5,2),
+                            free_lunch_percentage NUMERIC(5,2),
+                            ap_course_count INTEGER,
+                            ap_exam_pass_rate NUMERIC(5,2),
+                            honors_course_count INTEGER,
+                            standard_course_count INTEGER,
+                            stem_program_available BOOLEAN,
+                            ib_program_available BOOLEAN,
+                            dual_enrollment_available BOOLEAN,
+                            avg_class_size NUMERIC(5,2),
+                            student_teacher_ratio NUMERIC(5,2),
+                            college_prep_focus BOOLEAN,
+                            career_technical_focus BOOLEAN,
+                            median_graduate_salary NUMERIC(10,2),
+                            salary_data_source VARCHAR(255),
+                            salary_data_year INTEGER,
+                            community_sentiment_score NUMERIC(5,2),
+                            parent_satisfaction_score NUMERIC(5,2),
+                            school_investment_level VARCHAR(50),
+                            analysis_status VARCHAR(50) DEFAULT 'pending',
+                            human_review_status VARCHAR(50) DEFAULT 'pending',
+                            reviewed_by VARCHAR(255),
+                            reviewed_date TIMESTAMP,
+                            human_notes TEXT,
+                            data_confidence_score NUMERIC(5,2),
+                            data_source_notes TEXT,
+                            web_sources_analyzed TEXT,
+                            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                            created_by VARCHAR(255),
+                            is_active BOOLEAN DEFAULT TRUE,
+                            archived_at TIMESTAMP,
+                            moana_requirements_met BOOLEAN DEFAULT FALSE,
+                            last_moana_validation TIMESTAMP
+                        )
+                    """)
+                    cursor.execute("CREATE INDEX IF NOT EXISTS idx_school_enriched_name ON school_enriched_data(school_name)")
+                    cursor.execute("CREATE INDEX IF NOT EXISTS idx_school_enriched_state ON school_enriched_data(state_code)")
+                    cursor.execute("CREATE INDEX IF NOT EXISTS idx_school_enriched_opportunity ON school_enriched_data(opportunity_score)")
+                    cursor.execute("CREATE INDEX IF NOT EXISTS idx_school_enriched_review_status ON school_enriched_data(human_review_status)")
+                    cursor.execute("CREATE INDEX IF NOT EXISTS idx_school_enriched_active ON school_enriched_data(is_active)")
+                    conn.commit()
+                    logger.info("✓ Created school_enriched_data table with indexes")
+                except Exception as school_err:
+                    logger.error(f"❌ Failed to create school_enriched_data table: {school_err}")
+                    conn.rollback()
+            else:
+                # Ensure moana columns exist on existing tables
+                cursor.execute("""
+                    SELECT column_name
+                    FROM information_schema.columns
+                    WHERE table_name = 'school_enriched_data'
+                """)
+                school_columns = set(row[0] for row in cursor.fetchall())
+                
+                for col_name, col_type in {
+                    'moana_requirements_met': 'BOOLEAN DEFAULT FALSE',
+                    'last_moana_validation': 'TIMESTAMP'
+                }.items():
+                    if col_name not in school_columns:
+                        try:
+                            cursor.execute(f"ALTER TABLE school_enriched_data ADD COLUMN {col_name} {col_type}")
+                            conn.commit()
+                            logger.info(f"✓ Added {col_name} column to school_enriched_data")
+                        except Exception as col_err:
+                            logger.error(f"❌ Failed to add {col_name} to school_enriched_data: {col_err}")
+                            conn.rollback()
+
             # ===== STUDENT SCHOOL CONTEXT TABLE MIGRATIONS =====
             cursor.execute("""
                 SELECT EXISTS(

@@ -4864,26 +4864,27 @@ def update_school_enrichment(school_id):
         
         data = request.json or {}
         
-        # Update allowed fields
+        # Update allowed fields — column names must match DB schema
         update_fields = {
             'school_name': data.get('school_name'),
             'school_district': data.get('school_district'),
             'state_code': data.get('state_code'),
-            'enrollment_size': data.get('enrollment_size'),
-            'diversity_index': data.get('diversity_index'),
-            'socioeconomic_level': data.get('socioeconomic_level'),
-            'ap_classes_count': data.get('ap_classes_count'),
-            'ib_offerings': data.get('ib_offerings'),
-            'honors_programs': data.get('honors_programs'),
-            'stem_programs': data.get('stem_programs'),
+            'total_students': data.get('total_students'),
+            'free_lunch_percentage': data.get('free_lunch_percentage'),
+            'ap_course_count': data.get('ap_course_count'),
+            'ap_exam_pass_rate': data.get('ap_exam_pass_rate'),
+            'honors_course_count': data.get('honors_course_count'),
+            'stem_program_available': data.get('stem_program_available'),
+            'ib_program_available': data.get('ib_program_available'),
+            'dual_enrollment_available': data.get('dual_enrollment_available'),
             'graduation_rate': data.get('graduation_rate'),
-            'college_placement_rate': data.get('college_placement_rate'),
-            'avg_test_scores': data.get('avg_test_scores'),
+            'college_acceptance_rate': data.get('college_acceptance_rate'),
+            'median_graduate_salary': data.get('median_graduate_salary'),
             'school_investment_level': data.get('school_investment_level'),
             'opportunity_score': data.get('opportunity_score'),
-            'analysis_summary': data.get('analysis_summary'),
+            'data_source_notes': data.get('data_source_notes'),
             'human_review_status': data.get('human_review_status'),
-            'human_review_notes': data.get('human_review_notes')
+            'human_notes': data.get('human_notes')
         }
         
         # Build UPDATE query

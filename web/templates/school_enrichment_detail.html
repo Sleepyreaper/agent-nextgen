@@ -315,126 +315,241 @@
         <div>
             <h1>{{ school.school_name }}</h1>
             <div class="info">
-                {{ school.school_district or 'Unknown District' }} • {{ school.state_code or 'Unknown State' }}
+                {{ school.school_district or 'Unknown District' }} &bull; {{ school.state_code or 'Unknown State' }}
+                {% if school.county_name %} &bull; {{ school.county_name }} County{% endif %}
             </div>
-            {% if school.human_review_status %}
-            <div style="margin-top: 0.5rem;">
-                <span class="status-badge {% if school.human_review_status == 'approved' %}approved{% elif school.human_review_status == 'needs_review' %}needs-review{% else %}pending{% endif %}">
+            <div style="margin-top: 0.5rem; display: flex; gap: 0.5rem; flex-wrap: wrap;">
+                {% if school.human_review_status %}
+                <span class="status-badge {% if school.human_review_status == 'approved' %}approved{% elif school.human_review_status == 'needs_review' or school.human_review_status == 'review-needed' %}needs-review{% else %}pending{% endif %}">
                     {{ school.human_review_status|replace('_', ' ')|title }}
                 </span>
+                {% endif %}
+                {% if school.data_confidence_score and school.data_confidence_score|float > 0 %}
+                <span class="status-badge" style="background: {% if school.data_confidence_score|float >= 70 %}#d1fae5; color: #065f46{% elif school.data_confidence_score|float >= 40 %}#fef3c7; color: #92400e{% else %}#fee2e2; color: #991b1b{% endif %};">
+                    Confidence: {{ school.data_confidence_score }}%
+                </span>
+                {% endif %}
             </div>
-            {% endif %}
         </div>
-        <button class="edit-button" onclick="showEditModal()">✎ Edit Data</button>
+        <div style="display: flex; gap: 0.75rem;">
+            <button class="edit-button" onclick="showEditModal()">✎ Edit Data</button>
+        </div>
     </div>
 
+    <!-- Data Quality Alert -->
+    {% set filled_count = 0 %}
+    {% if school.total_students %}{% set filled_count = filled_count + 1 %}{% endif %}
+    {% if school.graduation_rate and school.graduation_rate|float > 0 %}{% set filled_count = filled_count + 1 %}{% endif %}
+    {% if school.ap_course_count and school.ap_course_count|int > 0 %}{% set filled_count = filled_count + 1 %}{% endif %}
+    {% if school.college_acceptance_rate and school.college_acceptance_rate|float > 0 %}{% set filled_count = filled_count + 1 %}{% endif %}
+    {% if school.free_lunch_percentage and school.free_lunch_percentage|float > 0 %}{% set filled_count = filled_count + 1 %}{% endif %}
+    {% if school.opportunity_score and school.opportunity_score|float > 0 %}{% set filled_count = filled_count + 1 %}{% endif %}
+    {% if filled_count < 3 %}
+    <div class="alert info" style="display: flex; align-items: flex-start; gap: 0.75rem;">
+        <span style="font-size: 1.5rem;">⚠️</span>
+        <div>
+            <strong>Low Data Coverage</strong> &mdash; Only {{ filled_count }} of 6 key fields have data.
+            This school record may need Naveen re-analysis or manual data entry.
+            Fields missing: 
+            {% if not school.total_students %}Total Students, {% endif %}
+            {% if not school.graduation_rate or school.graduation_rate|float == 0 %}Graduation Rate, {% endif %}
+            {% if not school.ap_course_count or school.ap_course_count|int == 0 %}AP Courses, {% endif %}
+            {% if not school.college_acceptance_rate or school.college_acceptance_rate|float == 0 %}College Acceptance, {% endif %}
+            {% if not school.free_lunch_percentage or school.free_lunch_percentage|float == 0 %}Free Lunch %, {% endif %}
+            {% if not school.opportunity_score or school.opportunity_score|float == 0 %}Opportunity Score{% endif %}
+        </div>
+    </div>
+    {% endif %}
+
     <div class="detail-sections">
-        <!-- Core Information -->
-        <div class="detail-section">
-            <div class="section-title">Basic Information</div>
-            <div class="field-grid">
-                <div class="field-item">
-                    <div class="field-label">School Name</div>
-                    <div class="field-value">{{ school.school_name }}</div>
-                </div>
-                <div class="field-item">
-                    <div class="field-label">District</div>
-                    <div class="field-value">{{ school.school_district or '—' }}</div>
-                </div>
-                <div class="field-item">
-                    <div class="field-label">State Code</div>
-                    <div class="field-value">{{ school.state_code }}</div>
-                </div>
-                <div class="field-item">
-                    <div class="field-label">Enrollment Size</div>
-                    <div class="field-value">{{ school.enrollment_size|default('—') }}</div>
-                </div>
-            </div>
-        </div>
 
-        <!-- Demographics -->
+        <!-- Opportunity Score & Analysis Status -->
         <div class="detail-section">
-            <div class="section-title">Demographics & Context</div>
-            <div class="field-grid">
-                <div class="field-item">
-                    <div class="field-label">Diversity Index</div>
-                    <div class="field-value">{{ school.diversity_index|default('—') }}</div>
-                </div>
-                <div class="field-item">
-                    <div class="field-label">Socioeconomic Level</div>
-                    <div class="field-value">{{ school.socioeconomic_level|default('—') }}</div>
-                </div>
-                <div class="field-item">
-                    <div class="field-label">School Investment Level</div>
-                    <div class="field-value">{{ school.school_investment_level|default('—') }}</div>
-                </div>
-            </div>
-        </div>
-
-        <!-- Academic Programs -->
-        <div class="detail-section">
-            <div class="section-title">Academic Programs</div>
-            <div class="field-grid">
-                <div class="field-item">
-                    <div class="field-label">AP Classes Available</div>
-                    <div class="field-value">{{ school.ap_classes_count|default('—') }}</div>
-                </div>
-                <div class="field-item">
-                    <div class="field-label">IB Offerings</div>
-                    <div class="field-value">{{ school.ib_offerings|default('—') }}</div>
-                </div>
-                <div class="field-item">
-                    <div class="field-label">Honors Programs</div>
-                    <div class="field-value">{{ school.honors_programs|default('—') }}</div>
-                </div>
-                <div class="field-item">
-                    <div class="field-label">STEM Programs</div>
-                    <div class="field-value">{{ school.stem_programs|default('—') }}</div>
-                </div>
-            </div>
-        </div>
-
-        <!-- Performance Metrics -->
-        <div class="detail-section">
-            <div class="section-title">Performance Metrics</div>
-            <div class="field-grid">
-                <div class="field-item">
-                    <div class="field-label">Graduation Rate</div>
-                    <div class="field-value">{{ school.graduation_rate|default('—') }}</div>
-                </div>
-                <div class="field-item">
-                    <div class="field-label">College Placement Rate</div>
-                    <div class="field-value">{{ school.college_placement_rate|default('—') }}</div>
-                </div>
-                <div class="field-item">
-                    <div class="field-label">Average Test Scores</div>
-                    <div class="field-value">{{ school.avg_test_scores|default('—') }}</div>
-                </div>
-            </div>
-        </div>
-
-        <!-- Opportunity Score -->
-        <div class="detail-section">
-            <div class="section-title">Analysis Summary</div>
+            <div class="section-title">📊 Opportunity Score &amp; Analysis</div>
             <div class="field-grid">
                 <div class="field-item">
                     <div class="field-label">Opportunity Score (0-100)</div>
                     <div class="opportunity-score">{{ school.opportunity_score|default('—') }}</div>
                 </div>
+                <div class="field-item">
+                    <div class="field-label">Data Confidence</div>
+                    <div class="field-value {% if not school.data_confidence_score or school.data_confidence_score|float == 0 %}empty{% endif %}">
+                        {{ school.data_confidence_score|default('—') }}{% if school.data_confidence_score and school.data_confidence_score|float > 0 %}%{% endif %}
+                    </div>
+                </div>
+                <div class="field-item">
+                    <div class="field-label">Analysis Status</div>
+                    <div class="field-value">{{ school.analysis_status|default('pending')|title }}</div>
+                </div>
+                <div class="field-item">
+                    <div class="field-label">Created By</div>
+                    <div class="field-value">{{ school.created_by|default('—') }}</div>
+                </div>
             </div>
-            {% if school.analysis_summary %}
-            <div style="margin-top: 1.5rem;">
-                <div class="field-label">Summary from Naveen Analysis</div>
-                <div class="field-value" style="white-space: pre-wrap; font-family: monospace; font-size: 0.9rem;">{{ school.analysis_summary }}</div>
+        </div>
+
+        <!-- NAVEEN: Fields Used for School Analysis -->
+        <div class="detail-section" style="border-left: 4px solid #667eea;">
+            <div class="section-title">🔬 Naveen's School Profile <small style="font-weight: normal; color: #6b7280; font-size: 0.75rem;">(School Data Scientist)</small></div>
+            <p style="color: #6b7280; font-size: 0.9rem; margin-bottom: 1.5rem;">
+                These are the fields Naveen analyzes and populates. Verify each field matches public school data.
+            </p>
+            
+            <h4 style="color: #374151; margin: 1.5rem 0 0.75rem; font-size: 0.95rem;">Basic Information</h4>
+            <div class="field-grid">
+                <div class="field-item">
+                    <div class="field-label">School Name</div>
+                    <div class="field-value {% if not school.school_name %}empty{% endif %}">{{ school.school_name }}</div>
+                </div>
+                <div class="field-item">
+                    <div class="field-label">District</div>
+                    <div class="field-value {% if not school.school_district %}empty{% endif %}">{{ school.school_district or '—' }}</div>
+                </div>
+                <div class="field-item">
+                    <div class="field-label">State</div>
+                    <div class="field-value">{{ school.state_code or '—' }}</div>
+                </div>
+                <div class="field-item">
+                    <div class="field-label">County</div>
+                    <div class="field-value {% if not school.county_name %}empty{% endif %}">{{ school.county_name or '—' }}</div>
+                </div>
+                <div class="field-item">
+                    <div class="field-label">School URL</div>
+                    <div class="field-value {% if not school.school_url %}empty{% endif %}">
+                        {% if school.school_url %}
+                        <a href="{{ school.school_url }}" target="_blank" style="color: #667eea;">{{ school.school_url }}</a>
+                        {% if school.school_url_verified %}<span style="color: #10b981; margin-left: 0.5rem;">✓ Verified</span>{% endif %}
+                        {% else %}—{% endif %}
+                    </div>
+                </div>
+                <div class="field-item">
+                    <div class="field-label">Total Students</div>
+                    <div class="field-value {% if not school.total_students %}empty{% endif %}">{{ school.total_students|default('—') }}</div>
+                </div>
             </div>
-            {% endif %}
+
+            <h4 style="color: #374151; margin: 1.5rem 0 0.75rem; font-size: 0.95rem;">Academic Programs</h4>
+            <div class="field-grid">
+                <div class="field-item">
+                    <div class="field-label">AP Course Count</div>
+                    <div class="field-value {% if not school.ap_course_count or school.ap_course_count|int == 0 %}empty{% endif %}">{{ school.ap_course_count|default('—') }}</div>
+                </div>
+                <div class="field-item">
+                    <div class="field-label">AP Exam Pass Rate</div>
+                    <div class="field-value {% if not school.ap_exam_pass_rate or school.ap_exam_pass_rate|float == 0 %}empty{% endif %}">{{ school.ap_exam_pass_rate|default('—') }}{% if school.ap_exam_pass_rate and school.ap_exam_pass_rate|float > 0 %}%{% endif %}</div>
+                </div>
+                <div class="field-item">
+                    <div class="field-label">Honors Course Count</div>
+                    <div class="field-value {% if not school.honors_course_count %}empty{% endif %}">{{ school.honors_course_count|default('—') }}</div>
+                </div>
+                <div class="field-item">
+                    <div class="field-label">STEM Program</div>
+                    <div class="field-value">{{ '✓ Available' if school.stem_program_available else '✗ Not Available' }}</div>
+                </div>
+                <div class="field-item">
+                    <div class="field-label">IB Program</div>
+                    <div class="field-value">{{ '✓ Available' if school.ib_program_available else '✗ Not Available' }}</div>
+                </div>
+                <div class="field-item">
+                    <div class="field-label">Dual Enrollment</div>
+                    <div class="field-value">{{ '✓ Available' if school.dual_enrollment_available else '✗ Not Available' }}</div>
+                </div>
+            </div>
+
+            <h4 style="color: #374151; margin: 1.5rem 0 0.75rem; font-size: 0.95rem;">Performance &amp; Outcomes</h4>
+            <div class="field-grid">
+                <div class="field-item">
+                    <div class="field-label">Graduation Rate</div>
+                    <div class="field-value {% if not school.graduation_rate or school.graduation_rate|float == 0 %}empty{% endif %}">
+                        {{ school.graduation_rate|default('—') }}{% if school.graduation_rate and school.graduation_rate|float > 0 %}%{% endif %}
+                    </div>
+                </div>
+                <div class="field-item">
+                    <div class="field-label">College Acceptance Rate</div>
+                    <div class="field-value {% if not school.college_acceptance_rate or school.college_acceptance_rate|float == 0 %}empty{% endif %}">
+                        {{ school.college_acceptance_rate|default('—') }}{% if school.college_acceptance_rate and school.college_acceptance_rate|float > 0 %}%{% endif %}
+                    </div>
+                </div>
+                <div class="field-item">
+                    <div class="field-label">Free/Reduced Lunch %</div>
+                    <div class="field-value {% if not school.free_lunch_percentage or school.free_lunch_percentage|float == 0 %}empty{% endif %}">
+                        {{ school.free_lunch_percentage|default('—') }}{% if school.free_lunch_percentage and school.free_lunch_percentage|float > 0 %}%{% endif %}
+                    </div>
+                </div>
+                <div class="field-item">
+                    <div class="field-label">School Investment Level</div>
+                    <div class="field-value {% if not school.school_investment_level %}empty{% endif %}">{{ school.school_investment_level|default('—')|title }}</div>
+                </div>
+                <div class="field-item">
+                    <div class="field-label">Median Graduate Salary</div>
+                    <div class="field-value {% if not school.median_graduate_salary or school.median_graduate_salary|float == 0 %}empty{% endif %}">
+                        {% if school.median_graduate_salary and school.median_graduate_salary|float > 0 %}${{ '{:,.0f}'.format(school.median_graduate_salary|float) }}{% else %}—{% endif %}
+                    </div>
+                </div>
+                <div class="field-item">
+                    <div class="field-label">Community Sentiment</div>
+                    <div class="field-value {% if not school.community_sentiment_score %}empty{% endif %}">
+                        {{ school.community_sentiment_score|default('—') }}{% if school.community_sentiment_score %}/100{% endif %}
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- MOANA: Validation Status -->
+        <div class="detail-section" style="border-left: 4px solid #06b6d4;">
+            <div class="section-title">🌊 Moana Validation Status <small style="font-weight: normal; color: #6b7280; font-size: 0.75rem;">(School Context Analyzer)</small></div>
+            <p style="color: #6b7280; font-size: 0.9rem; margin-bottom: 1rem;">
+                Moana uses Naveen's data to contextualize student evaluations. She needs: school name, state, AP count, honors count, STEM/IB/dual enrollment flags, graduation rate, free lunch %, and opportunity score.
+            </p>
+            <div class="field-grid">
+                <div class="field-item">
+                    <div class="field-label">Moana Requirements Met</div>
+                    <div class="field-value">
+                        {% if school.moana_requirements_met %}
+                        <span style="color: #10b981; font-weight: 600;">✓ Yes — All Required Fields Present</span>
+                        {% else %}
+                        <span style="color: #ef4444; font-weight: 600;">✗ No — Missing Required Data</span>
+                        {% endif %}
+                    </div>
+                </div>
+                <div class="field-item">
+                    <div class="field-label">Last Moana Validation</div>
+                    <div class="field-value {% if not school.last_moana_validation %}empty{% endif %}">
+                        {% if school.last_moana_validation %}
+                        <span class="timestamp">{{ school.last_moana_validation }}</span>
+                        {% else %}Never validated{% endif %}
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Quick check of Moana's required fields -->
+            <div style="margin-top: 1rem; padding: 1rem; background: #f0fdfa; border-radius: 6px;">
+                <strong style="font-size: 0.85rem; color: #134e4a;">Moana Field Check:</strong>
+                <div style="display: flex; flex-wrap: wrap; gap: 0.5rem; margin-top: 0.5rem;">
+                    <span style="padding: 0.25rem 0.5rem; border-radius: 4px; font-size: 0.8rem; background: {% if school.ap_course_count and school.ap_course_count|int > 0 %}#d1fae5; color: #065f46{% else %}#fee2e2; color: #991b1b{% endif %};">
+                        AP Courses: {{ '✓' if school.ap_course_count and school.ap_course_count|int > 0 else '✗ missing' }}
+                    </span>
+                    <span style="padding: 0.25rem 0.5rem; border-radius: 4px; font-size: 0.8rem; background: {% if school.honors_course_count %}#d1fae5; color: #065f46{% else %}#fee2e2; color: #991b1b{% endif %};">
+                        Honors Count: {{ '✓' if school.honors_course_count else '✗ missing' }}
+                    </span>
+                    <span style="padding: 0.25rem 0.5rem; border-radius: 4px; font-size: 0.8rem; background: {% if school.graduation_rate and school.graduation_rate|float > 0 %}#d1fae5; color: #065f46{% else %}#fee2e2; color: #991b1b{% endif %};">
+                        Graduation Rate: {{ '✓' if school.graduation_rate and school.graduation_rate|float > 0 else '✗ missing' }}
+                    </span>
+                    <span style="padding: 0.25rem 0.5rem; border-radius: 4px; font-size: 0.8rem; background: {% if school.free_lunch_percentage and school.free_lunch_percentage|float > 0 %}#d1fae5; color: #065f46{% else %}#fee2e2; color: #991b1b{% endif %};">
+                        Free Lunch %: {{ '✓' if school.free_lunch_percentage and school.free_lunch_percentage|float > 0 else '✗ missing' }}
+                    </span>
+                    <span style="padding: 0.25rem 0.5rem; border-radius: 4px; font-size: 0.8rem; background: {% if school.opportunity_score and school.opportunity_score|float > 0 %}#d1fae5; color: #065f46{% else %}#fee2e2; color: #991b1b{% endif %};">
+                        Opportunity Score: {{ '✓' if school.opportunity_score and school.opportunity_score|float > 0 else '✗ missing' }}
+                    </span>
+                </div>
+            </div>
         </div>
 
         <!-- Web Sources -->
-        {% if school.web_sources_analyzed %}
         <div class="detail-section">
-            <div class="section-title">Sources Analyzed</div>
-            <p style="color: #6b7280; margin-bottom: 1rem;">Data gathered from the following sources by Naveen:</p>
+            <div class="section-title">🔗 Sources Analyzed by Naveen</div>
+            {% if school.web_sources_analyzed %}
+            <p style="color: #6b7280; margin-bottom: 1rem;">Data gathered from the following public sources:</p>
             {% set sources = school.web_sources_analyzed %}
             {% if sources is string %}
                 {% set sources = sources.split(',') %}
@@ -442,65 +557,81 @@
             <ul class="sources-list">
                 {% for source in sources %}
                 <li>
-                    {% if source.startswith('http') %}
-                    <a href="{{ source }}" target="_blank" rel="noopener noreferrer">{{ source }}</a>
+                    {% if source.strip().startswith('http') %}
+                    <a href="{{ source.strip() }}" target="_blank" rel="noopener noreferrer">{{ source.strip() }}</a>
+                    {% elif source.strip().startswith('[') or source.strip().startswith('"') %}
+                    {{ source.strip().strip('[]"') }}
                     {% else %}
-                    {{ source }}
+                    {{ source.strip() }}
                     {% endif %}
                 </li>
                 {% endfor %}
             </ul>
+            {% else %}
+            <p style="color: #9ca3af; font-style: italic;">No web sources recorded for this school.</p>
+            {% endif %}
         </div>
-        {% endif %}
 
         <!-- Human Review -->
         <div class="detail-section">
-            <div class="section-title">Human Review & Validation</div>
+            <div class="section-title">👤 Human Review &amp; Validation</div>
             <div class="field-grid">
                 <div class="field-item">
                     <div class="field-label">Review Status</div>
                     <div class="field-value">
-                        {% if school.human_review_status %}
-                        <span class="status-badge {% if school.human_review_status == 'approved' %}approved{% elif school.human_review_status == 'needs_review' %}needs-review{% else %}pending{% endif %}">
-                            {{ school.human_review_status|replace('_', ' ')|title }}
+                        <span class="status-badge {% if school.human_review_status == 'approved' %}approved{% elif school.human_review_status == 'needs_review' or school.human_review_status == 'review-needed' %}needs-review{% else %}pending{% endif %}">
+                            {{ (school.human_review_status or 'pending')|replace('_', ' ')|title }}
                         </span>
-                        {% else %}
-                        <span class="status-badge pending">Pending Review</span>
-                        {% endif %}
+                    </div>
+                </div>
+                <div class="field-item">
+                    <div class="field-label">Reviewed By</div>
+                    <div class="field-value {% if not school.reviewed_by %}empty{% endif %}">{{ school.reviewed_by|default('Not yet reviewed') }}</div>
+                </div>
+                <div class="field-item">
+                    <div class="field-label">Review Date</div>
+                    <div class="field-value {% if not school.reviewed_date %}empty{% endif %}">
+                        {% if school.reviewed_date %}<span class="timestamp">{{ school.reviewed_date }}</span>{% else %}—{% endif %}
                     </div>
                 </div>
             </div>
-            {% if school.human_review_notes %}
+            {% if school.human_notes %}
             <div style="margin-top: 1rem;">
                 <div class="field-label">Review Notes</div>
-                <div class="field-value" style="white-space: pre-wrap;">{{ school.human_review_notes }}</div>
+                <div class="field-value" style="white-space: pre-wrap;">{{ school.human_notes }}</div>
+            </div>
+            {% endif %}
+            {% if school.data_source_notes %}
+            <div style="margin-top: 1rem;">
+                <div class="field-label">Data Source Notes</div>
+                <div class="field-value" style="white-space: pre-wrap; font-family: monospace; font-size: 0.9rem;">{{ school.data_source_notes }}</div>
             </div>
             {% endif %}
         </div>
 
         <!-- Metadata -->
         <div class="detail-section">
-            <div class="section-title">Metadata</div>
+            <div class="section-title">📋 Record Metadata</div>
             <div class="field-grid">
                 <div class="field-item">
-                    <div class="field-label">Analysis Date</div>
+                    <div class="field-label">Record ID</div>
+                    <div class="field-value">{{ school.school_enrichment_id }}</div>
+                </div>
+                <div class="field-item">
+                    <div class="field-label">Created At</div>
                     <div class="field-value">
-                        {% if school.analysis_date %}
-                        <span class="timestamp">{{ school.analysis_date }}</span>
-                        {% else %}
-                        <span class="field-value empty">Not recorded</span>
-                        {% endif %}
+                        {% if school.created_at %}<span class="timestamp">{{ school.created_at }}</span>{% else %}—{% endif %}
                     </div>
                 </div>
                 <div class="field-item">
                     <div class="field-label">Last Updated</div>
                     <div class="field-value">
-                        {% if school.updated_at %}
-                        <span class="timestamp">{{ school.updated_at }}</span>
-                        {% else %}
-                        <span class="field-value empty">Not recorded</span>
-                        {% endif %}
+                        {% if school.updated_at %}<span class="timestamp">{{ school.updated_at }}</span>{% else %}—{% endif %}
                     </div>
+                </div>
+                <div class="field-item">
+                    <div class="field-label">Active</div>
+                    <div class="field-value">{{ '✓ Active' if school.is_active else '✗ Archived' }}</div>
                 </div>
             </div>
         </div>
@@ -531,38 +662,55 @@
             </div>
 
             <div class="form-group">
-                <label>Enrollment Size</label>
-                <input type="number" id="enrollment_size" value="{{ school.enrollment_size or '' }}">
+                <label>Total Students</label>
+                <input type="number" id="total_students" value="{{ school.total_students or '' }}">
             </div>
 
             <div class="form-group">
-                <label>Diversity Index</label>
-                <input type="text" id="diversity_index" value="{{ school.diversity_index or '' }}">
+                <label>Free/Reduced Lunch %</label>
+                <input type="number" id="free_lunch_percentage" value="{{ school.free_lunch_percentage or '' }}" min="0" max="100" step="0.1">
             </div>
 
             <div class="form-group">
-                <label>Socioeconomic Level</label>
-                <input type="text" id="socioeconomic_level" value="{{ school.socioeconomic_level or '' }}">
+                <label>AP Course Count</label>
+                <input type="number" id="ap_course_count" value="{{ school.ap_course_count or '' }}">
             </div>
 
             <div class="form-group">
-                <label>AP Classes Count</label>
-                <input type="number" id="ap_classes_count" value="{{ school.ap_classes_count or '' }}">
+                <label>AP Exam Pass Rate (%)</label>
+                <input type="number" id="ap_exam_pass_rate" value="{{ school.ap_exam_pass_rate or '' }}" min="0" max="100" step="0.1">
             </div>
 
             <div class="form-group">
-                <label>IB Offerings</label>
-                <input type="number" id="ib_offerings" value="{{ school.ib_offerings or '' }}">
+                <label>Honors Course Count</label>
+                <input type="number" id="honors_course_count" value="{{ school.honors_course_count or '' }}">
             </div>
 
             <div class="form-group">
-                <label>Honors Programs</label>
-                <input type="number" id="honors_programs" value="{{ school.honors_programs or '' }}">
+                <label>STEM Program Available</label>
+                <select id="stem_program_available">
+                    <option value="">—</option>
+                    <option value="true" {% if school.stem_program_available %}selected{% endif %}>Yes</option>
+                    <option value="false" {% if not school.stem_program_available %}selected{% endif %}>No</option>
+                </select>
             </div>
 
             <div class="form-group">
-                <label>STEM Programs</label>
-                <input type="number" id="stem_programs" value="{{ school.stem_programs or '' }}">
+                <label>IB Program Available</label>
+                <select id="ib_program_available">
+                    <option value="">—</option>
+                    <option value="true" {% if school.ib_program_available %}selected{% endif %}>Yes</option>
+                    <option value="false" {% if not school.ib_program_available %}selected{% endif %}>No</option>
+                </select>
+            </div>
+
+            <div class="form-group">
+                <label>Dual Enrollment Available</label>
+                <select id="dual_enrollment_available">
+                    <option value="">—</option>
+                    <option value="true" {% if school.dual_enrollment_available %}selected{% endif %}>Yes</option>
+                    <option value="false" {% if not school.dual_enrollment_available %}selected{% endif %}>No</option>
+                </select>
             </div>
 
             <div class="form-group">
@@ -571,13 +719,13 @@
             </div>
 
             <div class="form-group">
-                <label>College Placement Rate (%)</label>
-                <input type="number" id="college_placement_rate" value="{{ school.college_placement_rate or '' }}" min="0" max="100">
+                <label>College Acceptance Rate (%)</label>
+                <input type="number" id="college_acceptance_rate" value="{{ school.college_acceptance_rate or '' }}" min="0" max="100" step="0.1">
             </div>
 
             <div class="form-group">
-                <label>Average Test Scores</label>
-                <input type="text" id="avg_test_scores" value="{{ school.avg_test_scores or '' }}">
+                <label>Median Graduate Salary</label>
+                <input type="number" id="median_graduate_salary" value="{{ school.median_graduate_salary or '' }}" step="0.01">
             </div>
 
             <div class="form-group">
@@ -596,8 +744,8 @@
             </div>
 
             <div class="form-group">
-                <label>Analysis Summary</label>
-                <textarea id="analysis_summary">{{ school.analysis_summary or '' }}</textarea>
+                <label>Analysis Notes</label>
+                <textarea id="data_source_notes">{{ school.data_source_notes or '' }}</textarea>
             </div>
 
             <div class="form-group">
@@ -612,7 +760,7 @@
 
             <div class="form-group">
                 <label>Review Notes</label>
-                <textarea id="human_review_notes">{{ school.human_review_notes or '' }}</textarea>
+                <textarea id="human_notes">{{ school.human_notes or '' }}</textarea>
             </div>
 
             <div class="form-actions">
@@ -639,21 +787,22 @@ document.getElementById('editForm').addEventListener('submit', async function(e)
         school_name: document.getElementById('school_name').value,
         school_district: document.getElementById('school_district').value,
         state_code: document.getElementById('state_code').value,
-        enrollment_size: document.getElementById('enrollment_size').value || null,
-        diversity_index: document.getElementById('diversity_index').value,
-        socioeconomic_level: document.getElementById('socioeconomic_level').value,
-        ap_classes_count: document.getElementById('ap_classes_count').value || null,
-        ib_offerings: document.getElementById('ib_offerings').value || null,
-        honors_programs: document.getElementById('honors_programs').value || null,
-        stem_programs: document.getElementById('stem_programs').value || null,
+        total_students: document.getElementById('total_students').value || null,
+        free_lunch_percentage: document.getElementById('free_lunch_percentage').value || null,
+        ap_course_count: document.getElementById('ap_course_count').value || null,
+        ap_exam_pass_rate: document.getElementById('ap_exam_pass_rate').value || null,
+        honors_course_count: document.getElementById('honors_course_count').value || null,
+        stem_program_available: document.getElementById('stem_program_available').value === 'true' ? true : document.getElementById('stem_program_available').value === 'false' ? false : null,
+        ib_program_available: document.getElementById('ib_program_available').value === 'true' ? true : document.getElementById('ib_program_available').value === 'false' ? false : null,
+        dual_enrollment_available: document.getElementById('dual_enrollment_available').value === 'true' ? true : document.getElementById('dual_enrollment_available').value === 'false' ? false : null,
         graduation_rate: document.getElementById('graduation_rate').value || null,
-        college_placement_rate: document.getElementById('college_placement_rate').value || null,
-        avg_test_scores: document.getElementById('avg_test_scores').value,
+        college_acceptance_rate: document.getElementById('college_acceptance_rate').value || null,
+        median_graduate_salary: document.getElementById('median_graduate_salary').value || null,
         school_investment_level: document.getElementById('school_investment_level').value,
         opportunity_score: document.getElementById('opportunity_score').value || null,
-        analysis_summary: document.getElementById('analysis_summary').value,
+        data_source_notes: document.getElementById('data_source_notes').value,
         human_review_status: document.getElementById('human_review_status').value,
-        human_review_notes: document.getElementById('human_review_notes').value
+        human_notes: document.getElementById('human_notes').value
     };
 
     try {
