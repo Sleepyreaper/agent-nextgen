@@ -19,7 +19,8 @@ from src.test_data_generator import test_data_generator
 from src.document_processor import DocumentProcessor
 
 from src.config import config
-from src.telemetry import init_telemetry
+from src.telemetry import init_telemetry, telemetry
+from src.observability import is_observability_enabled, get_observability_status
 
 from src.storage import storage
 
@@ -4948,6 +4949,7 @@ def trigger_school_analysis(school_id):
             return jsonify({'status': 'error', 'error': 'School not found'}), 404
         
         def background_analysis():
+            _start = time.time()
             try:
                 from src.agents.naveen_school_data_scientist import NaveenSchoolDataScientist
                 # Use Naveen School Data Scientist agent with mini model and client
@@ -5065,8 +5067,30 @@ def trigger_school_analysis(school_id):
                     f"score={opp_score}, confidence={conf_score}, students={total_students}, "
                     f"grad_rate={graduation_rate}, status={analysis_status}"
                 )
+                # Telemetry: log Naveen execution
+                telemetry.log_school_enrichment(
+                    school_name=school['school_name'],
+                    opportunity_score=float(opp_score),
+                    data_source='naveen_analysis',
+                    confidence=float(conf_score),
+                    processing_time_ms=(time.time() - _start) * 1000
+                )
+                telemetry.log_agent_execution(
+                    agent_name='Naveen School Data Scientist',
+                    model=config.deployment_name_mini or 'o4MiniAgent',
+                    success=analysis_status != 'error',
+                    processing_time_ms=(time.time() - _start) * 1000,
+                    result_summary={'school_id': school_id, 'opportunity_score': opp_score}
+                )
             except Exception as e:
                 logger.error(f"Error in background analysis for school {school_id}: {e}", exc_info=True)
+                telemetry.log_agent_execution(
+                    agent_name='Naveen School Data Scientist',
+                    model=config.deployment_name_mini or 'o4MiniAgent',
+                    success=False,
+                    processing_time_ms=(time.time() - _start) * 1000,
+                    result_summary={'school_id': school_id, 'error': str(e)}
+                )
                 # Update DB to reflect the error
                 try:
                     db.execute_non_query(
@@ -5149,6 +5173,7 @@ def trigger_school_analysis_sync(school_id):
 @app.route('/api/school/<int:school_id>/validate-moana', methods=['POST'])
 def validate_school_moana(school_id):
     """Run Moana validation on a school — checks requirements and generates context summary."""
+    _moana_start = time.time()
     try:
         school = db.get_school_enriched_data(school_id)
         if not school:
@@ -5253,6 +5278,13 @@ Write as a cohesive paragraph that other agents can reference when evaluating st
                 (is_valid, summary_fragment, summary_fragment, school_id)
             )
             logger.info(f"Moana validation saved for school {school_id}: valid={is_valid}, summary={'yes' if context_summary else 'no'}")
+            telemetry.log_agent_execution(
+                agent_name='Moana School Context',
+                model=getattr(config, 'deployment_name', 'gpt-4.1'),
+                success=True,
+                processing_time_ms=(time.time() - _moana_start) * 1000,
+                result_summary={'school_id': school_id, 'is_valid': is_valid, 'has_summary': bool(context_summary)}
+            )
         except Exception as e:
             logger.error(f"Failed to save Moana validation for school {school_id}: {e}", exc_info=True)
         
@@ -5271,6 +5303,13 @@ Write as a cohesive paragraph that other agents can reference when evaluating st
         
     except Exception as e:
         logger.error(f"Error in Moana validation: {e}")
+        telemetry.log_agent_execution(
+            agent_name='Moana School Context',
+            model=getattr(config, 'deployment_name', 'gpt-4.1'),
+            success=False,
+            processing_time_ms=(time.time() - _moana_start) * 1000,
+            result_summary={'school_id': school_id, 'error': str(e)}
+        )
         return jsonify({'status': 'error', 'error': str(e)}), 500
 
 
@@ -5759,6 +5798,103 @@ def bulk_seed_schools():
         return jsonify({'status': 'error', 'error': str(e)}), 500
 
 
+# ==================== TELEMETRY & MONITORING ====================
+
+@app.route('/telemetry')
+def telemetry_dashboard():
+    """Telemetry and observability dashboard."""
+    return render_template('telemetry_dashboard.html')
+
+
+@app.route('/api/telemetry/overview')
+def telemetry_overview():
+    """Comprehensive telemetry overview for the dashboard."""
+    try:
+        monitor = get_agent_monitor()
+        status = monitor.get_status()
+
+        # Get per-agent summary from history
+        all_history = monitor.get_all_history()
+        agent_summary = {}
+        for exec_rec in all_history:
+            name = exec_rec.get('agent_name', 'unknown')
+            if name not in agent_summary:
+                agent_summary[name] = {
+                    'total': 0, 'success': 0, 'failed': 0,
+                    'total_duration_ms': 0, 'min_duration_ms': float('inf'),
+                    'max_duration_ms': 0, 'last_run': None, 'models_used': set()
+                }
+            s = agent_summary[name]
+            s['total'] += 1
+            if exec_rec.get('status') == 'completed':
+                s['success'] += 1
+            elif exec_rec.get('status') == 'failed':
+                s['failed'] += 1
+            dur = exec_rec.get('duration_ms', 0)
+            s['total_duration_ms'] += dur
+            s['min_duration_ms'] = min(s['min_duration_ms'], dur) if dur > 0 else s['min_duration_ms']
+            s['max_duration_ms'] = max(s['max_duration_ms'], dur)
+            if exec_rec.get('model_used'):
+                s['models_used'].add(exec_rec['model_used'])
+            s['last_run'] = exec_rec.get('timestamp')
+
+        # Convert sets to lists for JSON
+        for name, s in agent_summary.items():
+            s['models_used'] = list(s['models_used'])
+            s['avg_duration_ms'] = round(s['total_duration_ms'] / s['total'], 1) if s['total'] > 0 else 0
+            s['success_rate'] = round((s['success'] / s['total']) * 100, 1) if s['total'] > 0 else 0
+            if s['min_duration_ms'] == float('inf'):
+                s['min_duration_ms'] = 0
+
+        # School enrichment stats from DB
+        school_stats = {}
+        try:
+            rows = db.execute_query(
+                "SELECT analysis_status, COUNT(*) as cnt FROM school_enriched_data WHERE is_active = TRUE GROUP BY analysis_status"
+            )
+        except Exception:
+            rows = []
+
+        for r in (rows or []):
+            school_stats[r.get('analysis_status') or 'null'] = r.get('cnt', 0)
+
+        moana_stats = {}
+        try:
+            moana_rows = db.execute_query(
+                "SELECT moana_requirements_met, COUNT(*) as cnt FROM school_enriched_data WHERE is_active = TRUE GROUP BY moana_requirements_met"
+            )
+            for r in (moana_rows or []):
+                key = 'validated' if r.get('moana_requirements_met') else ('not_validated' if r.get('moana_requirements_met') is False else 'pending')
+                moana_stats[key] = r.get('cnt', 0)
+        except Exception:
+            pass
+
+        # Observability status
+        obs_status = get_observability_status()
+
+        return jsonify({
+            'status': 'success',
+            'timestamp': datetime.utcnow().isoformat() if hasattr(datetime, 'utcnow') else datetime.now().isoformat(),
+            'observability': obs_status,
+            'agent_monitor': {
+                'total_calls': status.get('total_calls', 0),
+                'total_errors': status.get('total_errors', 0),
+                'currently_running': status.get('running_count', 0),
+                'avg_duration_ms': round(status.get('average_duration_ms', 0), 1),
+            },
+            'agents': agent_summary,
+            'school_enrichment': {
+                'by_status': school_stats,
+                'moana_validation': moana_stats,
+                'total': sum(school_stats.values()),
+            },
+            'recent_executions': status.get('recent_executions', [])[-20:],
+        })
+    except Exception as e:
+        logger.error(f"Telemetry overview error: {e}", exc_info=True)
+        return jsonify({'status': 'error', 'error': str(e)}), 500
+
+
 @app.route('/debug/agents')
 def debug_agents():
     """Real-time agent monitoring dashboard."""
@@ -5795,27 +5931,30 @@ def get_agent_history(agent_name):
 @app.route('/api/debug/telemetry-status')
 def get_telemetry_status():
     """Report whether observability is configured and where it would export."""
-    otlp_endpoint = os.getenv("OTEL_EXPORTER_OTLP_ENDPOINT")
-    telemetry_enabled = is_observability_enabled()
-    observability_status = get_observability_status()
+    try:
+        otlp_endpoint = os.getenv("OTEL_EXPORTER_OTLP_ENDPOINT")
+        telemetry_enabled = is_observability_enabled()
+        observability_status = get_observability_status()
 
-    endpoint = config.azure_openai_endpoint or ""
-    endpoint_hint = endpoint.replace("https://", "").split("/")[0] if endpoint else None
+        endpoint = getattr(config, 'azure_openai_endpoint', '') or ''
+        endpoint_hint = endpoint.replace('https://', '').split('/')[0] if endpoint else None
 
-    return jsonify({
-        'telemetry_enabled': telemetry_enabled,
-        'app_insights_configured': observability_status.get("connection_string_set"),
-        'otlp_endpoint_configured': bool(otlp_endpoint),
-        'otlp_endpoint': otlp_endpoint if otlp_endpoint else None,
-        'observability': observability_status,
-        'ai_config': {
-            'deployment_name': config.deployment_name,
-            'deployment_name_mini': config.deployment_name_mini,
-            'api_version': config.api_version,
-            'api_version_mini': config.api_version_mini,
-            'endpoint_host': endpoint_hint,
-        }
-    })
+        return jsonify({
+            'telemetry_enabled': telemetry_enabled,
+            'app_insights_configured': observability_status.get('connection_string_set'),
+            'otlp_endpoint_configured': bool(otlp_endpoint),
+            'otlp_endpoint': otlp_endpoint if otlp_endpoint else None,
+            'observability': observability_status,
+            'ai_config': {
+                'deployment_name': getattr(config, 'deployment_name', None),
+                'deployment_name_mini': getattr(config, 'deployment_name_mini', None),
+                'api_version': getattr(config, 'api_version', None),
+                'api_version_mini': getattr(config, 'api_version_mini', None),
+                'endpoint_host': endpoint_hint,
+            }
+        })
+    except Exception as e:
+        return jsonify({'status': 'error', 'error': str(e)}), 500
 
 
 @app.route('/admin/cleanup-test-data', methods=['POST'])

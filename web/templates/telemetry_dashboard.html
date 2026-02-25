@@ -1,0 +1,703 @@
+{% extends "base.html" %}
+
+{% block title %}Telemetry & Observability{% endblock %}
+
+{% block extra_css %}
+<style>
+    .telem-container {
+        max-width: 1600px;
+        margin: 0 auto;
+        padding: 2rem;
+    }
+
+    .telem-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 2rem;
+    }
+
+    .telem-header h1 {
+        color: #1f2937;
+        margin: 0;
+    }
+
+    .header-actions {
+        display: flex;
+        gap: 0.75rem;
+        align-items: center;
+    }
+
+    .refresh-btn {
+        padding: 0.5rem 1rem;
+        border: 1px solid #e5e7eb;
+        border-radius: 6px;
+        background: white;
+        cursor: pointer;
+        font-size: 0.9rem;
+        transition: all 0.2s;
+    }
+
+    .refresh-btn:hover {
+        background: #f9fafb;
+        border-color: #667eea;
+    }
+
+    .auto-refresh-label {
+        font-size: 0.85rem;
+        color: #6b7280;
+    }
+
+    /* Status Banner */
+    .status-banner {
+        padding: 1rem 1.5rem;
+        border-radius: 8px;
+        margin-bottom: 2rem;
+        display: flex;
+        align-items: center;
+        gap: 1rem;
+    }
+
+    .status-banner.connected {
+        background: linear-gradient(135deg, #d1fae5 0%, #a7f3d0 100%);
+        border: 1px solid #6ee7b7;
+    }
+
+    .status-banner.disconnected {
+        background: linear-gradient(135deg, #fef3c7 0%, #fde68a 100%);
+        border: 1px solid #fcd34d;
+    }
+
+    .status-dot {
+        width: 12px;
+        height: 12px;
+        border-radius: 50%;
+        animation: pulse 2s ease-in-out infinite;
+    }
+
+    .status-dot.green {
+        background: #10b981;
+        box-shadow: 0 0 6px rgba(16, 185, 129, 0.5);
+    }
+
+    .status-dot.yellow {
+        background: #f59e0b;
+        box-shadow: 0 0 6px rgba(245, 158, 11, 0.5);
+    }
+
+    @keyframes pulse {
+        0%, 100% { opacity: 1; }
+        50% { opacity: 0.5; }
+    }
+
+    /* Stats Grid */
+    .stats-row {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+        gap: 1rem;
+        margin-bottom: 2rem;
+    }
+
+    .stat-card {
+        background: white;
+        padding: 1.5rem;
+        border-radius: 8px;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        position: relative;
+        overflow: hidden;
+    }
+
+    .stat-card::before {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        height: 3px;
+    }
+
+    .stat-card.purple::before { background: linear-gradient(90deg, #667eea, #764ba2); }
+    .stat-card.green::before { background: linear-gradient(90deg, #10b981, #059669); }
+    .stat-card.blue::before { background: linear-gradient(90deg, #0ea5e9, #0284c7); }
+    .stat-card.orange::before { background: linear-gradient(90deg, #f59e0b, #d97706); }
+    .stat-card.red::before { background: linear-gradient(90deg, #ef4444, #dc2626); }
+    .stat-card.teal::before { background: linear-gradient(90deg, #14b8a6, #0d9488); }
+
+    .stat-value {
+        font-size: 2.25rem;
+        font-weight: 700;
+        color: #1f2937;
+        line-height: 1;
+    }
+
+    .stat-label {
+        font-size: 0.85rem;
+        color: #6b7280;
+        margin-top: 0.5rem;
+        text-transform: uppercase;
+        font-weight: 600;
+        letter-spacing: 0.025em;
+    }
+
+    .stat-sub {
+        font-size: 0.8rem;
+        color: #9ca3af;
+        margin-top: 0.25rem;
+    }
+
+    /* Section Layout */
+    .telem-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 2rem;
+        margin-bottom: 2rem;
+    }
+
+    @media (max-width: 1024px) {
+        .telem-grid { grid-template-columns: 1fr; }
+    }
+
+    .telem-section {
+        background: white;
+        border-radius: 8px;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+        overflow: hidden;
+    }
+
+    .section-header {
+        padding: 1rem 1.5rem;
+        border-bottom: 1px solid #f3f4f6;
+        font-weight: 700;
+        font-size: 1rem;
+        color: #374151;
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+    }
+
+    .section-body {
+        padding: 1.5rem;
+    }
+
+    /* Agent Table */
+    .agent-table {
+        width: 100%;
+        border-collapse: collapse;
+    }
+
+    .agent-table th {
+        text-align: left;
+        padding: 0.75rem 1rem;
+        font-size: 0.75rem;
+        text-transform: uppercase;
+        color: #6b7280;
+        font-weight: 600;
+        border-bottom: 2px solid #f3f4f6;
+        letter-spacing: 0.05em;
+    }
+
+    .agent-table td {
+        padding: 0.75rem 1rem;
+        font-size: 0.9rem;
+        border-bottom: 1px solid #f9fafb;
+        color: #374151;
+    }
+
+    .agent-table tr:hover td {
+        background: #f9fafb;
+    }
+
+    .agent-name {
+        font-weight: 600;
+        color: #1f2937;
+    }
+
+    .success-rate {
+        font-weight: 600;
+    }
+
+    .success-rate.good { color: #10b981; }
+    .success-rate.warn { color: #f59e0b; }
+    .success-rate.bad { color: #ef4444; }
+
+    /* School Pipeline Bars */
+    .pipeline-bar {
+        display: flex;
+        align-items: center;
+        margin-bottom: 0.75rem;
+        gap: 1rem;
+    }
+
+    .pipeline-label {
+        width: 120px;
+        font-size: 0.85rem;
+        font-weight: 600;
+        color: #374151;
+        text-transform: capitalize;
+    }
+
+    .pipeline-track {
+        flex: 1;
+        height: 24px;
+        background: #f3f4f6;
+        border-radius: 12px;
+        overflow: hidden;
+    }
+
+    .pipeline-fill {
+        height: 100%;
+        border-radius: 12px;
+        display: flex;
+        align-items: center;
+        padding: 0 0.75rem;
+        font-size: 0.75rem;
+        font-weight: 600;
+        color: white;
+        min-width: 30px;
+        transition: width 0.5s ease;
+    }
+
+    .pipeline-fill.complete { background: linear-gradient(90deg, #10b981, #059669); }
+    .pipeline-fill.pending { background: linear-gradient(90deg, #f59e0b, #d97706); }
+    .pipeline-fill.error { background: linear-gradient(90deg, #ef4444, #dc2626); }
+    .pipeline-fill.null { background: linear-gradient(90deg, #9ca3af, #6b7280); }
+
+    .pipeline-count {
+        width: 50px;
+        text-align: right;
+        font-size: 0.9rem;
+        font-weight: 600;
+        color: #374151;
+    }
+
+    /* Recent Executions */
+    .exec-item {
+        padding: 0.75rem 1rem;
+        border-bottom: 1px solid #f9fafb;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+    }
+
+    .exec-item:last-child {
+        border-bottom: none;
+    }
+
+    .exec-agent {
+        font-weight: 600;
+        font-size: 0.9rem;
+        color: #1f2937;
+    }
+
+    .exec-meta {
+        font-size: 0.8rem;
+        color: #6b7280;
+        margin-top: 0.25rem;
+    }
+
+    .exec-status {
+        padding: 0.25rem 0.75rem;
+        border-radius: 12px;
+        font-size: 0.75rem;
+        font-weight: 600;
+        text-transform: uppercase;
+    }
+
+    .exec-status.completed {
+        background: #d1fae5;
+        color: #065f46;
+    }
+
+    .exec-status.failed {
+        background: #fee2e2;
+        color: #991b1b;
+    }
+
+    .exec-status.running {
+        background: #dbeafe;
+        color: #1e40af;
+        animation: pulse 1.5s ease-in-out infinite;
+    }
+
+    /* App Insights Config */
+    .config-row {
+        display: flex;
+        justify-content: space-between;
+        padding: 0.5rem 0;
+        border-bottom: 1px solid #f9fafb;
+        font-size: 0.9rem;
+    }
+
+    .config-key {
+        color: #6b7280;
+        font-weight: 500;
+    }
+
+    .config-val {
+        color: #1f2937;
+        font-weight: 600;
+    }
+
+    .config-val.yes { color: #10b981; }
+    .config-val.no { color: #ef4444; }
+
+    .loading-spinner {
+        text-align: center;
+        padding: 3rem;
+        color: #6b7280;
+    }
+
+    .full-width {
+        grid-column: 1 / -1;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="telem-container">
+    <div class="telem-header">
+        <div>
+            <h1>📡 Telemetry & Observability</h1>
+            <p style="color: #6b7280; margin-top: 0.25rem;">Agent performance, Application Insights, and school pipeline status</p>
+        </div>
+        <div class="header-actions">
+            <label class="auto-refresh-label">
+                <input type="checkbox" id="autoRefresh" checked> Auto-refresh (30s)
+            </label>
+            <button class="refresh-btn" onclick="loadTelemetry()">🔄 Refresh Now</button>
+        </div>
+    </div>
+
+    <!-- Status Banner -->
+    <div id="statusBanner" class="status-banner disconnected">
+        <div class="status-dot yellow"></div>
+        <div>
+            <strong>Loading telemetry status...</strong>
+            <div style="font-size: 0.85rem; color: #6b7280;">Checking Application Insights connection</div>
+        </div>
+    </div>
+
+    <!-- Top Stats -->
+    <div class="stats-row" id="statsRow">
+        <div class="stat-card purple">
+            <div class="stat-value" id="statTotalCalls">—</div>
+            <div class="stat-label">Total Agent Calls</div>
+        </div>
+        <div class="stat-card green">
+            <div class="stat-value" id="statSuccessRate">—</div>
+            <div class="stat-label">Success Rate</div>
+        </div>
+        <div class="stat-card blue">
+            <div class="stat-value" id="statAvgDuration">—</div>
+            <div class="stat-label">Avg Duration</div>
+            <div class="stat-sub">milliseconds</div>
+        </div>
+        <div class="stat-card orange">
+            <div class="stat-value" id="statRunning">0</div>
+            <div class="stat-label">Currently Running</div>
+        </div>
+        <div class="stat-card teal">
+            <div class="stat-value" id="statSchoolsTotal">—</div>
+            <div class="stat-label">Schools Indexed</div>
+        </div>
+        <div class="stat-card red">
+            <div class="stat-value" id="statErrors">0</div>
+            <div class="stat-label">Total Errors</div>
+        </div>
+    </div>
+
+    <!-- Main Grid -->
+    <div class="telem-grid">
+        <!-- Agent Performance -->
+        <div class="telem-section">
+            <div class="section-header">🤖 Agent Performance</div>
+            <div class="section-body" id="agentPerformance">
+                <div class="loading-spinner">Loading agent data...</div>
+            </div>
+        </div>
+
+        <!-- School Pipeline -->
+        <div class="telem-section">
+            <div class="section-header">🏫 School Data Pipeline</div>
+            <div class="section-body" id="schoolPipeline">
+                <div class="loading-spinner">Loading pipeline data...</div>
+            </div>
+        </div>
+
+        <!-- Application Insights Config -->
+        <div class="telem-section">
+            <div class="section-header">🔧 Application Insights Configuration</div>
+            <div class="section-body" id="appInsightsConfig">
+                <div class="loading-spinner">Loading config...</div>
+            </div>
+        </div>
+
+        <!-- Recent Executions -->
+        <div class="telem-section">
+            <div class="section-header">⚡ Recent Agent Executions</div>
+            <div class="section-body" style="padding: 0; max-height: 400px; overflow-y: auto;" id="recentExecs">
+                <div class="loading-spinner">Loading...</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+let refreshInterval = null;
+
+document.addEventListener('DOMContentLoaded', function() {
+    loadTelemetry();
+    startAutoRefresh();
+
+    document.getElementById('autoRefresh').addEventListener('change', function() {
+        if (this.checked) {
+            startAutoRefresh();
+        } else {
+            stopAutoRefresh();
+        }
+    });
+});
+
+function startAutoRefresh() {
+    stopAutoRefresh();
+    refreshInterval = setInterval(loadTelemetry, 30000);
+}
+
+function stopAutoRefresh() {
+    if (refreshInterval) {
+        clearInterval(refreshInterval);
+        refreshInterval = null;
+    }
+}
+
+async function loadTelemetry() {
+    try {
+        const [overviewRes, telStatusRes] = await Promise.all([
+            fetch('/api/telemetry/overview'),
+            fetch('/api/debug/telemetry-status')
+        ]);
+
+        const overview = await overviewRes.json();
+        const telStatus = await telStatusRes.json();
+
+        renderStatusBanner(telStatus);
+        renderStats(overview);
+        renderAgentPerformance(overview.agents || {});
+        renderSchoolPipeline(overview.school_enrichment || {});
+        renderAppInsightsConfig(telStatus);
+        renderRecentExecs(overview.recent_executions || []);
+    } catch (error) {
+        console.error('Telemetry load error:', error);
+        document.getElementById('statusBanner').className = 'status-banner disconnected';
+        document.getElementById('statusBanner').innerHTML = `
+            <div class="status-dot yellow"></div>
+            <div>
+                <strong>Unable to load telemetry</strong>
+                <div style="font-size: 0.85rem; color: #92400e;">${error.message}</div>
+            </div>
+        `;
+    }
+}
+
+function renderStatusBanner(telStatus) {
+    const banner = document.getElementById('statusBanner');
+    const connected = telStatus.telemetry_enabled === true;
+    const appInsights = telStatus.app_insights_configured === true;
+
+    if (connected && appInsights) {
+        banner.className = 'status-banner connected';
+        banner.innerHTML = `
+            <div class="status-dot green"></div>
+            <div>
+                <strong style="color: #065f46;">✓ Application Insights Connected</strong>
+                <div style="font-size: 0.85rem; color: #047857;">
+                    Telemetry is flowing to Azure Monitor &bull; 
+                    ${telStatus.observability?.azure_monitor_version || 'SDK loaded'}
+                </div>
+            </div>
+        `;
+    } else {
+        banner.className = 'status-banner disconnected';
+        const reason = telStatus.observability?.last_error || 'Connection string may not be set';
+        banner.innerHTML = `
+            <div class="status-dot yellow"></div>
+            <div>
+                <strong style="color: #92400e;">⚠ Telemetry Not Active</strong>
+                <div style="font-size: 0.85rem; color: #b45309;">${reason}</div>
+            </div>
+        `;
+    }
+}
+
+function renderStats(overview) {
+    const monitor = overview.agent_monitor || {};
+    const total = monitor.total_calls || 0;
+    const errors = monitor.total_errors || 0;
+    const successRate = total > 0 ? ((total - errors) / total * 100).toFixed(1) : '—';
+
+    document.getElementById('statTotalCalls').textContent = total;
+    document.getElementById('statSuccessRate').textContent = successRate !== '—' ? successRate + '%' : '—';
+    document.getElementById('statAvgDuration').textContent = monitor.avg_duration_ms ? Math.round(monitor.avg_duration_ms).toLocaleString() : '—';
+    document.getElementById('statRunning').textContent = monitor.currently_running || 0;
+    document.getElementById('statErrors').textContent = errors;
+
+    const schoolTotal = overview.school_enrichment?.total || 0;
+    document.getElementById('statSchoolsTotal').textContent = schoolTotal;
+}
+
+function renderAgentPerformance(agents) {
+    const container = document.getElementById('agentPerformance');
+    const entries = Object.entries(agents);
+
+    if (entries.length === 0) {
+        container.innerHTML = '<div style="color: #9ca3af; text-align: center; padding: 2rem;">No agent executions recorded yet.<br><small>Run a school analysis to see data here.</small></div>';
+        return;
+    }
+
+    // Sort by total calls descending
+    entries.sort((a, b) => b[1].total - a[1].total);
+
+    let html = '<table class="agent-table"><thead><tr>';
+    html += '<th>Agent</th><th>Calls</th><th>Success</th><th>Avg (ms)</th><th>Model</th>';
+    html += '</tr></thead><tbody>';
+
+    for (const [name, data] of entries) {
+        const rateClass = data.success_rate >= 90 ? 'good' : data.success_rate >= 70 ? 'warn' : 'bad';
+        const modelStr = (data.models_used || []).join(', ') || '—';
+        html += `<tr>
+            <td class="agent-name">${name}</td>
+            <td>${data.total}</td>
+            <td><span class="success-rate ${rateClass}">${data.success_rate}%</span></td>
+            <td>${Math.round(data.avg_duration_ms).toLocaleString()}</td>
+            <td style="font-size: 0.8rem; color: #6b7280;">${modelStr}</td>
+        </tr>`;
+    }
+
+    html += '</tbody></table>';
+    container.innerHTML = html;
+}
+
+function renderSchoolPipeline(enrichment) {
+    const container = document.getElementById('schoolPipeline');
+    const byStatus = enrichment.by_status || {};
+    const moana = enrichment.moana_validation || {};
+    const total = enrichment.total || 1;
+
+    let html = '<div style="margin-bottom: 1.5rem;"><strong style="color: #374151;">Naveen Analysis Status</strong></div>';
+
+    const statuses = [
+        { key: 'complete', label: 'Complete', cls: 'complete' },
+        { key: 'pending', label: 'Pending', cls: 'pending' },
+        { key: 'error', label: 'Error', cls: 'error' },
+        { key: 'null', label: 'Unstarted', cls: 'null' },
+    ];
+
+    for (const s of statuses) {
+        const count = byStatus[s.key] || 0;
+        if (count === 0 && s.key === 'null') continue;
+        const pct = Math.max((count / total) * 100, 2);
+        html += `<div class="pipeline-bar">
+            <div class="pipeline-label">${s.label}</div>
+            <div class="pipeline-track">
+                <div class="pipeline-fill ${s.cls}" style="width: ${pct}%">${count}</div>
+            </div>
+            <div class="pipeline-count">${count}</div>
+        </div>`;
+    }
+
+    html += '<div style="margin: 1.5rem 0 1rem; border-top: 1px solid #f3f4f6; padding-top: 1rem;"><strong style="color: #374151;">Moana Validation Status</strong></div>';
+
+    const moanaStatuses = [
+        { key: 'validated', label: 'Validated', cls: 'complete' },
+        { key: 'not_validated', label: 'Not Valid', cls: 'error' },
+        { key: 'pending', label: 'Pending', cls: 'pending' },
+    ];
+
+    for (const s of moanaStatuses) {
+        const count = moana[s.key] || 0;
+        if (count === 0) continue;
+        const pct = Math.max((count / total) * 100, 2);
+        html += `<div class="pipeline-bar">
+            <div class="pipeline-label">${s.label}</div>
+            <div class="pipeline-track">
+                <div class="pipeline-fill ${s.cls}" style="width: ${pct}%">${count}</div>
+            </div>
+            <div class="pipeline-count">${count}</div>
+        </div>`;
+    }
+
+    container.innerHTML = html;
+}
+
+function renderAppInsightsConfig(telStatus) {
+    const container = document.getElementById('appInsightsConfig');
+    const obs = telStatus.observability || {};
+    const ai = telStatus.ai_config || {};
+
+    const rows = [
+        ['Telemetry Enabled', telStatus.telemetry_enabled],
+        ['App Insights Connected', telStatus.app_insights_configured],
+        ['Connection String Set', obs.connection_string_set],
+        ['Azure Monitor Available', obs.azure_monitor_available],
+        ['Azure Monitor Version', obs.azure_monitor_version || '—'],
+        ['OTLP Endpoint Set', obs.otlp_endpoint_set],
+        ['Agent Framework Available', obs.agent_framework_available],
+        ['Last Error', obs.last_error || 'None'],
+        ['', ''],
+        ['AI Endpoint', ai.endpoint_host || '—'],
+        ['Main Model', ai.deployment_name || '—'],
+        ['Mini Model', ai.deployment_name_mini || '—'],
+        ['API Version', ai.api_version || '—'],
+    ];
+
+    let html = '';
+    for (const [key, val] of rows) {
+        if (key === '') {
+            html += '<div style="border-top: 2px solid #f3f4f6; margin: 0.5rem 0;"></div>';
+            continue;
+        }
+        let valClass = '';
+        let display = val;
+        if (val === true) { display = '✓ Yes'; valClass = 'yes'; }
+        else if (val === false) { display = '✗ No'; valClass = 'no'; }
+        else if (val === null || val === undefined) { display = '—'; }
+
+        html += `<div class="config-row">
+            <span class="config-key">${key}</span>
+            <span class="config-val ${valClass}">${display}</span>
+        </div>`;
+    }
+
+    container.innerHTML = html;
+}
+
+function renderRecentExecs(executions) {
+    const container = document.getElementById('recentExecs');
+
+    if (!executions || executions.length === 0) {
+        container.innerHTML = '<div style="color: #9ca3af; text-align: center; padding: 2rem;">No recent executions.<br><small>Agent activity will appear here.</small></div>';
+        return;
+    }
+
+    // Reverse to show newest first
+    const reversed = [...executions].reverse();
+
+    let html = '';
+    for (const exec of reversed) {
+        const dur = exec.duration_ms ? Math.round(exec.duration_ms).toLocaleString() + 'ms' : '—';
+        const time = exec.timestamp ? new Date(exec.timestamp).toLocaleTimeString() : '';
+        const statusCls = exec.status === 'completed' ? 'completed' : exec.status === 'failed' ? 'failed' : 'running';
+
+        html += `<div class="exec-item">
+            <div>
+                <div class="exec-agent">${exec.agent_name}</div>
+                <div class="exec-meta">${exec.model_used || ''} &bull; ${dur} &bull; ${time}</div>
+            </div>
+            <span class="exec-status ${statusCls}">${exec.status}</span>
+        </div>`;
+    }
+
+    container.innerHTML = html;
+}
+</script>
+{% endblock %}
