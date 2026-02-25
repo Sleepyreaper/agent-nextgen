@@ -26,8 +26,12 @@
                 <div style="color: #6b7280; font-size: 0.85rem;">Total Applicants</div>
             </div>
             <div>
-                <div style="font-size: 2rem; font-weight: 700; color: #059669;">{{ stats.get('accepted', 0)|int }}</div>
-                <div style="color: #6b7280; font-size: 0.85rem;">Accepted</div>
+                <div style="font-size: 2rem; font-weight: 700; color: #059669;">{{ stats.get('eligible', 0)|int }}</div>
+                <div style="color: #6b7280; font-size: 0.85rem;">Eligible (met requirements)</div>
+            </div>
+            <div>
+                <div style="font-size: 2rem; font-weight: 700; color: #7c3aed;">{{ stats.get('selected', 0)|int }}</div>
+                <div style="color: #6b7280; font-size: 0.85rem;">Selected for Program</div>
             </div>
             <div>
                 <div style="font-size: 2rem; font-weight: 700; color: #ea580c;">{{ stats.get('scored_count', 0)|int }}</div>
@@ -41,21 +45,30 @@
             </div>
             <div>
                 <div style="font-size: 2rem; font-weight: 700; color: #059669;">
-                    {% if stats.get('avg_accepted_total') %}{{ "%.1f"|format(stats.avg_accepted_total) }}{% else %}-{% endif %}
+                    {% if stats.get('avg_selected_total') %}{{ "%.1f"|format(stats.avg_selected_total) }}{% else %}-{% endif %}
                 </div>
-                <div style="color: #6b7280; font-size: 0.85rem;">Avg Accepted Total</div>
+                <div style="color: #6b7280; font-size: 0.85rem;">Avg Selected Total</div>
             </div>
             <div>
                 <div style="font-size: 2rem; font-weight: 700; color: #dc2626;">
-                    {% if stats.get('avg_rejected_total') %}{{ "%.1f"|format(stats.avg_rejected_total) }}{% else %}-{% endif %}
+                    {% if stats.get('avg_not_selected_total') %}{{ "%.1f"|format(stats.avg_not_selected_total) }}{% else %}-{% endif %}
                 </div>
-                <div style="color: #6b7280; font-size: 0.85rem;">Avg Not-Accepted Total</div>
+                <div style="color: #6b7280; font-size: 0.85rem;">Avg Not-Selected Total</div>
             </div>
             <div>
                 <div style="font-size: 2rem; font-weight: 700; color: #0284c7;">{{ stats.get('linked_to_applications', 0)|int }}</div>
                 <div style="color: #6b7280; font-size: 0.85rem;">Linked to Applications</div>
             </div>
         </div>
+        {% if stats.get('selected', 0) == 0 %}
+        <div style="margin-top: 1rem; padding: 0.75rem; background: #fefce8; border: 1px solid #fde68a; border-radius: 6px;">
+            <p style="margin: 0; color: #92400e; font-size: 0.85rem;">
+                <strong>⚠️ No selection data yet.</strong> The "Eligible" count only shows students who had the right files, correct age, and submitted on time — 
+                NOT who was actually chosen. Upload 2024 applications on the <a href="{{ url_for('training') }}">Training page</a> and mark who was selected 
+                to let Milo build a model student profile.
+            </p>
+        </div>
+        {% endif %}
         {% else %}
         <p style="color: #6b7280;">No historical scores imported yet. Upload the 2024 spreadsheet to get started.</p>
         {% endif %}

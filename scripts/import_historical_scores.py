@@ -164,8 +164,9 @@ def import_scores(filepath, cohort_year=2024, clear_first=False):
           f"Total: {sample['total_rating']}")
 
     scored_count = sum(1 for s in scores if s.get('was_scored'))
-    accepted_count = sum(1 for s in scores if s.get('status') and s['status'].lower() == 'accepted')
-    print(f"  Scored: {scored_count}/{len(scores)} | Accepted: {accepted_count}/{len(scores)}")
+    eligible_count = sum(1 for s in scores if s.get('status') and s['status'].lower() == 'accepted')
+    print(f"  Scored: {scored_count}/{len(scores)} | Eligible (met requirements): {eligible_count}/{len(scores)}")
+    print(f"  Note: 'Eligible' = had correct files, age, submitted on time. NOT who was selected.")
 
     if clear_first:
         deleted = db.clear_historical_scores(cohort_year)
@@ -179,14 +180,15 @@ def import_scores(filepath, cohort_year=2024, clear_first=False):
     if stats:
         print(f"\nCohort {cohort_year} stats:")
         print(f"  Total applicants: {stats.get('total_applicants', 0)}")
-        print(f"  Accepted: {stats.get('accepted', 0)}")
+        print(f"  Eligible (met requirements): {stats.get('eligible', 0)}")
+        print(f"  Selected for program: {stats.get('selected', 0)}")
         print(f"  Scored: {stats.get('scored_count', 0)}")
         if stats.get('avg_total_rating'):
             print(f"  Avg total rating (scored): {stats['avg_total_rating']:.1f}")
-        if stats.get('avg_accepted_total'):
-            print(f"  Avg accepted total: {stats['avg_accepted_total']:.1f}")
-        if stats.get('avg_rejected_total'):
-            print(f"  Avg not-accepted total: {stats['avg_rejected_total']:.1f}")
+        if stats.get('avg_selected_total'):
+            print(f"  Avg selected total: {stats['avg_selected_total']:.1f}")
+        if stats.get('avg_not_selected_total'):
+            print(f"  Avg not-selected total: {stats['avg_not_selected_total']:.1f}")
 
     return result
 

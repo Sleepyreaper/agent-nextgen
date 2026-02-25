@@ -13,7 +13,8 @@ CREATE TABLE IF NOT EXISTS historical_scores (
     applicant_name_normalized VARCHAR(255),  -- lowercase, stripped for fuzzy matching
 
     -- Reviewer / Status
-    status VARCHAR(50),                      -- Accepted, Not Selected, Waitlist
+    status VARCHAR(50),                      -- Eligible status: Accepted = met requirements (files, age, deadline). NOT who was chosen.
+    was_selected BOOLEAN DEFAULT NULL,       -- Actually chosen for the program (set when 2024 apps uploaded with selection flag)
     preliminary_score VARCHAR(50),           -- High, Medium, Low
     quick_notes TEXT,
     reviewer_name VARCHAR(255),
@@ -56,3 +57,4 @@ CREATE INDEX IF NOT EXISTS idx_historical_scores_status ON historical_scores(sta
 CREATE INDEX IF NOT EXISTS idx_historical_scores_app_id ON historical_scores(application_id);
 CREATE INDEX IF NOT EXISTS idx_historical_scores_total ON historical_scores(total_rating);
 CREATE INDEX IF NOT EXISTS idx_historical_scores_was_scored ON historical_scores(was_scored);
+CREATE INDEX IF NOT EXISTS idx_historical_scores_selected ON historical_scores(was_selected);

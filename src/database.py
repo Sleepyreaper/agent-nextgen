@@ -963,7 +963,21 @@ class Database:
                     conn.commit()
                     logger.info("✓ Created historical_scores table with indexes")
                 else:
-                    logger.debug("historical_scores table already exists, skipping")
+                    # Add was_selected column if missing (eligible ≠ selected)
+                    try:
+                        cursor.execute("""
+                            SELECT column_name FROM information_schema.columns
+                            WHERE table_name = 'historical_scores' AND column_name = 'was_selected'
+                        """)
+                        if not cursor.fetchone():
+                            cursor.execute("ALTER TABLE historical_scores ADD COLUMN was_selected BOOLEAN DEFAULT NULL")
+                            cursor.execute("CREATE INDEX IF NOT EXISTS idx_historical_scores_selected ON historical_scores(was_selected)")
+                            conn.commit()
+                            logger.info("✓ Added was_selected column to historical_scores")
+                    except Exception as col_err:
+                        logger.warning(f"Could not add was_selected column: {col_err}")
+                        conn.rollback()
+                    logger.debug("historical_scores table already exists, skipping creation")
             except Exception as hs_err:
                 logger.error(f"❌ Failed to create historical_scores table: {hs_err}")
                 conn.rollback()
@@ -3369,24 +3383,38 @@ class Database:
 
         return None
 
-    def link_historical_score_to_application(self, score_id: int, application_id: int) -> bool:
-        """Link a historical score record to an application."""
+    def link_historical_score_to_application(self, score_id: int, application_id: int,
+                                                was_selected: Optional[bool] = None) -> bool:
+        """Link a historical score record to an application.
+        Optionally propagates was_selected from the application."""
         try:
-            query = "UPDATE historical_scores SET application_id = %s WHERE score_id = %s"
-            self.execute_non_query(query, (application_id, score_id))
+            if was_selected is not None:
+                query = "UPDATE historical_scores SET application_id = %s, was_selected = %s WHERE score_id = %s"
+                self.execute_non_query(query, (application_id, was_selected, score_id))
+            else:
+                query = "UPDATE historical_scores SET application_id = %s WHERE score_id = %s"
+                self.execute_non_query(query, (application_id, score_id))
             return True
         except Exception as e:
             logger.error(f"Error linking historical score {score_id} to application {application_id}: {e}")
             return False
 
     def get_historical_stats(self, cohort_year: int = 2024) -> Dict[str, Any]:
-        """Get aggregate stats for a cohort year's historical scores."""
+        """Get aggregate stats for a cohort year's historical scores.
+        
+        Note on terminology:
+        - 'eligible' (status='accepted') = met basic requirements (files, age, deadline)
+        - 'selected' (was_selected=TRUE) = actually chosen for the program
+        """
         try:
             query = """
                 SELECT
                     COUNT(*) as total_applicants,
-                    COUNT(CASE WHEN LOWER(status) = 'accepted' THEN 1 END) as accepted,
-                    COUNT(CASE WHEN LOWER(status) != 'accepted' OR status IS NULL THEN 1 END) as not_accepted,
+                    COUNT(CASE WHEN LOWER(status) = 'accepted' THEN 1 END) as eligible,
+                    COUNT(CASE WHEN LOWER(status) != 'accepted' OR status IS NULL THEN 1 END) as not_eligible,
+                    COUNT(CASE WHEN was_selected = TRUE THEN 1 END) as selected,
+                    COUNT(CASE WHEN was_selected = FALSE THEN 1 END) as not_selected,
+                    COUNT(CASE WHEN was_selected IS NULL THEN 1 END) as selection_unknown,
                     COUNT(CASE WHEN was_scored = TRUE THEN 1 END) as scored_count,
                     AVG(CASE WHEN was_scored THEN total_rating END) as avg_total_rating,
                     AVG(CASE WHEN was_scored THEN academic_record END) as avg_academic_record,
@@ -3394,8 +3422,9 @@ class Database:
                     AVG(CASE WHEN was_scored THEN essay_video END) as avg_essay_video,
                     AVG(CASE WHEN was_scored THEN recommendation END) as avg_recommendation,
                     AVG(CASE WHEN was_scored THEN bonus END) as avg_bonus,
-                    AVG(CASE WHEN was_scored AND LOWER(status) = 'accepted' THEN total_rating END) as avg_accepted_total,
-                    AVG(CASE WHEN was_scored AND LOWER(status) != 'accepted' THEN total_rating END) as avg_rejected_total,
+                    AVG(CASE WHEN was_scored AND was_selected = TRUE THEN total_rating END) as avg_selected_total,
+                    AVG(CASE WHEN was_scored AND was_selected = FALSE THEN total_rating END) as avg_not_selected_total,
+                    AVG(CASE WHEN was_scored AND LOWER(status) = 'accepted' THEN total_rating END) as avg_eligible_total,
                     COUNT(CASE WHEN application_id IS NOT NULL THEN 1 END) as linked_to_applications
                 FROM historical_scores
                 WHERE cohort_year = %s
@@ -3412,18 +3441,25 @@ class Database:
 
     def get_historical_scores_for_milo(self, cohort_year: int = 2024) -> Dict[str, Any]:
         """Get historical scores formatted for Milo's calibration.
-        Returns accepted vs not-accepted samples with rubric dimensions.
+        
+        Groups by was_selected (actual program selection), NOT by status
+        (which only indicates eligibility — correct files, age, on-time).
+        
+        Returns selected vs not-selected samples with rubric dimensions.
+        When was_selected is unknown, falls back to eligible grouping with a warning.
         """
         try:
             all_scores = self.get_historical_scores(cohort_year=cohort_year, scored_only=True)
             stats = self.get_historical_stats(cohort_year)
 
-            accepted = []
-            not_accepted = []
+            selected = []
+            not_selected = []
+            selection_unknown = []
             for row in all_scores:
                 entry = {
                     "applicant_name": row.get("applicant_name"),
-                    "status": row.get("status"),
+                    "eligible": (row.get("status") or "").lower() == "accepted",
+                    "was_selected": row.get("was_selected"),
                     "preliminary_score": row.get("preliminary_score"),
                     "academic_record": float(row["academic_record"]) if row.get("academic_record") is not None else None,
                     "stem_interest": float(row["stem_interest"]) if row.get("stem_interest") is not None else None,
@@ -3435,17 +3471,30 @@ class Database:
                     "previous_research_experience": row.get("previous_research_experience"),
                     "reviewer_name": row.get("reviewer_name"),
                 }
-                if row.get("status") and row["status"].lower() == "accepted":
-                    accepted.append(entry)
+                if row.get("was_selected") is True:
+                    selected.append(entry)
+                elif row.get("was_selected") is False:
+                    not_selected.append(entry)
                 else:
-                    not_accepted.append(entry)
+                    selection_unknown.append(entry)
+
+            has_selection_data = len(selected) > 0 or len(not_selected) > 0
 
             return {
                 "cohort_year": cohort_year,
                 "stats": stats,
-                "accepted_scores": accepted,
-                "not_accepted_scores": not_accepted,
+                "selected_scores": selected,
+                "not_selected_scores": not_selected,
+                "selection_unknown_scores": selection_unknown,
+                "has_selection_data": has_selection_data,
                 "total_scored": len(all_scores),
+                "note": (
+                    "Grouped by actual program selection (was_selected)."
+                    if has_selection_data else
+                    "Selection data not yet available. Upload 2024 applications and flag "
+                    "who was selected to enable model building. Current 'eligible' status "
+                    "only means the student had correct files, age, and submitted on time."
+                ),
             }
         except Exception as e:
             logger.error(f"Error getting historical scores for Milo: {e}")

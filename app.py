@@ -1056,15 +1056,18 @@ def upload():
                         db.update_application_fields(application_id, placeholder_fields)
 
                     # Auto-link historical scoring data by name match
+                    # Propagate was_selected so Milo can distinguish selected vs not-selected
                     try:
                         historical = db.get_historical_score_by_name(student_name)
                         if historical:
                             db.link_historical_score_to_application(
-                                historical['score_id'], application_id
+                                historical['score_id'], application_id,
+                                was_selected=was_selected
                             )
                             logger.info(
                                 f"✓ Linked historical score {historical['score_id']} "
                                 f"({historical.get('applicant_name')}) to application {application_id}"
+                                f" [was_selected={was_selected}]"
                             )
                     except Exception as hist_err:
                         logger.warning(f"Historical score matching failed for '{student_name}': {hist_err}")

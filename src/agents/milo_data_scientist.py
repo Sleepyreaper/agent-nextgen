@@ -25,9 +25,13 @@ class MiloDataScientist(BaseAgent):
     Model: gpt-4.1 (deployed as o4miniagent in Azure AI Foundry). Actual model/deployment is resolved from configuration if not specified.
 
     This agent:
-    - Reads training examples (accepted vs not accepted)
+    - Reads training examples (selected vs not selected for the program)
+    - Builds a model student profile from who was actually chosen
     - Extracts patterns and signals from prior selections
     - Produces a structured summary for Merlin to use
+    
+    Note: 'eligible/accepted' = met basic requirements (files, age, deadline).
+    'selected' = actually chosen for the program. Milo models on SELECTED.
     """
 
     def __init__(
@@ -131,9 +135,12 @@ class MiloDataScientist(BaseAgent):
                             "You are Milo, a careful data scientist for the Emory NextGen Scholars program. "
                             "For the 2026 cohort we are looking for the TOP 50 candidates from 1,000+ applicants. "
                             "Use only the provided training data. "
+                            "IMPORTANT: 'eligible/accepted' only means a student met basic requirements "
+                            "(correct files, age 16+, submitted on time). It does NOT mean they were chosen. "
+                            "'selected' (was_selected=true) means actually chosen for the program. "
+                            "Build your model student profile from SELECTED students. "
                             "When historical human rubric scores are provided, treat them as ground truth "
                             "and use them to calibrate scoring thresholds. "
-                            "Focus on patterns that differentiate accepted vs not selected. "
                             "If evidence is weak, say so. Return valid JSON only."
                         )
                     },
@@ -177,8 +184,9 @@ class MiloDataScientist(BaseAgent):
         compute a Next Gen Match probability.
 
         Context: The Emory NextGen program has ~30 openings and receives 1,000+
-        applicants each year.  Milo uses historical accepted vs not-selected
+        applicants each year.  Milo uses historical SELECTED vs not-selected
         patterns to estimate how likely this student is to be selected.
+        Note: 'eligible' = met basic requirements; 'selected' = actually chosen.
 
         Returns JSON with:
           - nextgen_match (0-100): probability percentage the student would be
@@ -220,10 +228,13 @@ class MiloDataScientist(BaseAgent):
 
         historical_context = ""
         if historical_score:
+            eligible_status = (historical_score.get("status") or "").lower() == "accepted"
+            was_selected_2024 = historical_score.get("was_selected")
             historical_context = (
                 "\n\nHISTORICAL HUMAN SCORING for this student (from 2024 cohort):\n"
                 + json.dumps({
-                    "status": historical_score.get("status"),
+                    "eligible": eligible_status,
+                    "was_selected": was_selected_2024,
                     "academic_record": float(historical_score["academic_record"]) if historical_score.get("academic_record") is not None else None,
                     "stem_interest": float(historical_score["stem_interest"]) if historical_score.get("stem_interest") is not None else None,
                     "essay_video": float(historical_score["essay_video"]) if historical_score.get("essay_video") is not None else None,
@@ -234,7 +245,9 @@ class MiloDataScientist(BaseAgent):
                     "reviewer_name": historical_score.get("reviewer_name"),
                     "preliminary_score": historical_score.get("preliminary_score"),
                 }, ensure_ascii=True)
-                + "\nUse this human scoring data to calibrate your prediction. "
+                + "\nNote: 'eligible' means met basic requirements (files, age, deadline). "
+                "'was_selected' means actually chosen for the program. "
+                "Use this human scoring data to calibrate your prediction. "
                 "The human reviewers' scores are the ground truth."
             )
 
@@ -242,7 +255,7 @@ class MiloDataScientist(BaseAgent):
             "You are Milo, the data scientist for the Emory NextGen Scholars program.\n"
             "PROGRAM CONTEXT: For the 2026 cohort, we are looking for the TOP 50 "
             "candidates from 1,000+ applicants. Selection is extremely competitive.\n\n"
-            "Your training insights from historical accepted vs not-selected students:\n"
+            "Your training insights from historical selected vs not-selected students:\n"
             + json.dumps(insights, ensure_ascii=True)
             + historical_context
             + "\n\nNow evaluate this NEW applicant:\n"
@@ -428,6 +441,8 @@ class MiloDataScientist(BaseAgent):
                     historical = self.db.get_historical_score_by_name(student_name)
                     if historical:
                         item["human_scores"] = {
+                            "eligible": (historical.get("status") or "").lower() == "accepted",
+                            "was_selected_2024": historical.get("was_selected"),
                             "academic_record": float(historical["academic_record"]) if historical.get("academic_record") is not None else None,
                             "stem_interest": float(historical["stem_interest"]) if historical.get("stem_interest") is not None else None,
                             "essay_video": float(historical["essay_video"]) if historical.get("essay_video") is not None else None,
@@ -567,45 +582,86 @@ class MiloDataScientist(BaseAgent):
         lines = [
             "Analyze the training data below.",
             "Only use this data. Do not invent facts.",
-            "Identify patterns that differentiate accepted vs not selected.",
+            "Identify patterns that differentiate SELECTED students (actually chosen "
+            "for the program) vs NOT SELECTED.",
+            "",
+            "IMPORTANT DISTINCTION:",
+            "- 'Eligible' = met basic requirements (correct files, age 16+, submitted on time). "
+            "This does NOT mean they were chosen.",
+            "- 'Selected' (was_selected=true) = actually chosen for the NextGen program. "
+            "THIS is what matters for building the model student profile.",
         ]
 
         # Include historical rubric data if available
         if historical_data and historical_data.get("total_scored", 0) > 0:
+            has_selection = historical_data.get("has_selection_data", False)
+            selected_scores = historical_data.get("selected_scores", [])
+            not_selected_scores = historical_data.get("not_selected_scores", [])
+            unknown_scores = historical_data.get("selection_unknown_scores", [])
+
             lines.extend([
                 "",
                 "=== HISTORICAL HUMAN RUBRIC SCORES (2024 Cohort) ===",
                 "These are REAL scores assigned by expert human reviewers.",
                 f"Total scored applicants: {historical_data['total_scored']}",
-                f"Accepted with scores: {len(historical_data.get('accepted_scores', []))}",
-                f"Not accepted with scores: {len(historical_data.get('not_accepted_scores', []))}",
+            ])
+
+            if has_selection:
+                lines.extend([
+                    f"SELECTED for program: {len(selected_scores)}",
+                    f"NOT selected: {len(not_selected_scores)}",
+                    f"Selection unknown: {len(unknown_scores)}",
+                ])
+            else:
+                lines.extend([
+                    "NOTE: Selection data not yet available. The scores below show "
+                    "eligibility (met basic requirements), NOT who was chosen.",
+                    f"Selection status unknown for all {len(unknown_scores)} scored applicants.",
+                ])
+
+            lines.extend([
                 "",
                 "Rubric: Academic Record (0-3), STEM Interest (0-3), Essay/Video (0-3), "
                 "Recommendation (0-2), Bonus (0-1) = Total (0-12)",
                 "",
             ])
+
             stats = historical_data.get("stats", {})
-            if stats.get("avg_accepted_total"):
-                lines.append(f"Avg total rating for ACCEPTED students: {stats['avg_accepted_total']:.1f}")
-            if stats.get("avg_rejected_total"):
-                lines.append(f"Avg total rating for NOT ACCEPTED students: {stats['avg_rejected_total']:.1f}")
+            if has_selection:
+                if stats.get("avg_selected_total"):
+                    lines.append(f"Avg total rating for SELECTED students: {stats['avg_selected_total']:.1f}")
+                if stats.get("avg_not_selected_total"):
+                    lines.append(f"Avg total rating for NOT SELECTED students: {stats['avg_not_selected_total']:.1f}")
+            if stats.get("avg_eligible_total"):
+                lines.append(f"Avg total rating for ELIGIBLE students (met requirements): {stats['avg_eligible_total']:.1f}")
 
-            # Include a sample of accepted scores
-            accepted_sample = historical_data.get("accepted_scores", [])[:15]
-            if accepted_sample:
+            # Include selected students' scores (the model students)
+            if selected_scores:
+                selected_sample = selected_scores[:15]
                 lines.append("")
-                lines.append("Accepted students' rubric scores:")
-                lines.append(json.dumps(accepted_sample, ensure_ascii=True))
+                lines.append("SELECTED students' rubric scores (these are YOUR model students):")
+                lines.append(json.dumps(selected_sample, ensure_ascii=True))
 
-            # Include a sample of not-accepted scores
-            not_accepted_sample = historical_data.get("not_accepted_scores", [])[:15]
-            if not_accepted_sample:
+            # Include not-selected students' scores
+            if not_selected_scores:
+                not_sel_sample = not_selected_scores[:15]
                 lines.append("")
-                lines.append("Not-accepted students' rubric scores:")
-                lines.append(json.dumps(not_accepted_sample, ensure_ascii=True))
+                lines.append("NOT SELECTED students' rubric scores:")
+                lines.append(json.dumps(not_sel_sample, ensure_ascii=True))
+
+            # If no selection data yet, show all scored as reference
+            if not has_selection and unknown_scores:
+                ref_sample = unknown_scores[:15]
+                lines.append("")
+                lines.append("All scored applicants (selection status unknown \u2014 use rubric scores as reference only):")
+                lines.append(json.dumps(ref_sample, ensure_ascii=True))
 
             lines.append("")
-            lines.append("Use these rubric scores to understand the TRUE scoring thresholds.")
+            if has_selection:
+                lines.append("Use SELECTED students as the ground truth for what a model student looks like.")
+                lines.append("Build your model from SELECTED patterns, not just eligibility.")
+            else:
+                lines.append("Use rubric scores as reference, but note selection data is not yet available.")
             lines.append("=== END HISTORICAL SCORES ===")
             lines.append("")
 
@@ -613,13 +669,14 @@ class MiloDataScientist(BaseAgent):
             "Return JSON with the fields:",
             "{",
             '  "summary": "",',
-            '  "accepted_signals": [""],',
+            '  "selected_signals": [""],',
             '  "not_selected_signals": [""],',
             '  "differentiators": [""],',
             '  "selection_risks": [""],',
             '  "data_gaps": [""],',
             '  "recommendations_for_merlin": [""],',
-            '  "rubric_thresholds": {"min_total_for_acceptance": 0, "avg_accepted_total": 0, "avg_rejected_total": 0},',
+            '  "rubric_thresholds": {"min_total_for_selection": 0, "avg_selected_total": 0, "avg_not_selected_total": 0},',
+            '  "model_student_profile": "<2-3 sentence description of the ideal candidate based on SELECTED students>",',
             '  "confidence": "High|Medium|Low"',
             "}",
             "Training data (JSON):",
