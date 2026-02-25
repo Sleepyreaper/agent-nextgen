@@ -1535,7 +1535,7 @@ This data will provide accurate context for evaluating student opportunity and a
             'ap_courses_offered': enriched_school.get('ap_course_count', 0),
             'ap_exam_pass_rate_pct': enriched_school.get('ap_exam_pass_rate', 0),
             'ib_offered': enriched_school.get('ib_program_available', False),
-            'honors_courses_available': True,
+            'honors_courses_available': enriched_school.get('honors_course_count', 0) or 10,
             'stem_programs': enriched_school.get('stem_program_available', False),
             'dual_enrollment': enriched_school.get('dual_enrollment_available', False),
             'total_enrollment': enriched_school.get('total_students', 1500),

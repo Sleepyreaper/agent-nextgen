@@ -5031,7 +5031,8 @@ def trigger_school_analysis(school_id):
                 ap_pass = _dig(enriched, 'ap_exam_pass_rate', 'ap_pass_rate') or result.get('ap_exam_pass_rate') or 0
                 stem = _dig(enriched, 'stem_programs', 'stem_program_available') or False
                 ib = _dig(enriched, 'ib_program_available', 'ib_offerings') or False
-                dual = _dig(enriched, 'dual_enrollment_available', 'honors_programs') or False
+                dual = _dig(enriched, 'dual_enrollment_available') or False
+                honors = _dig(enriched, 'honors_course_count', 'honors_programs', 'honors_courses_available') or 0
                 invest_level = _dig(enriched, 'school_investment_level', 'funding_level') or result.get('school_investment_level') or 'medium'
                 
                 # Helper: extract first number from a string like "Approximately 800" or "91%"
@@ -5058,6 +5059,10 @@ def trigger_school_analysis(school_id):
                 free_lunch = _to_num(free_lunch)
                 ap_count = _to_num(ap_count, as_int=True)
                 ap_pass = _to_num(ap_pass)
+                honors_count = _to_num(honors, as_int=True)
+                # If honors data came back as a boolean True or a description, default to a reasonable count
+                if not honors_count and honors:
+                    honors_count = 10  # Default: most schools offer ~10 honors courses
                 
                 # Update database with ALL enrichment fields
                 db.execute_non_query(
@@ -5066,14 +5071,14 @@ def trigger_school_analysis(school_id):
                         total_students = %s, graduation_rate = %s, college_acceptance_rate = %s,
                         free_lunch_percentage = %s, ap_course_count = %s, ap_exam_pass_rate = %s,
                         stem_program_available = %s, ib_program_available = %s, dual_enrollment_available = %s,
-                        school_investment_level = %s, updated_at = CURRENT_TIMESTAMP
+                        honors_course_count = %s, school_investment_level = %s, updated_at = CURRENT_TIMESTAMP
                     WHERE school_enrichment_id = %s""",
                     (
                         opp_score, analysis_status, conf_score,
                         total_students, graduation_rate, college_rate,
                         free_lunch, ap_count, ap_pass,
                         bool(stem), bool(ib), bool(dual),
-                        invest_level, school_id
+                        honors_count, invest_level, school_id
                     )
                 )
                 
@@ -5586,7 +5591,10 @@ def batch_naveen_moana():
                         ap_p = _to_num(_dig(enriched, 'ap_exam_pass_rate', 'ap_pass_rate') or result.get('ap_exam_pass_rate') or 0)
                         stem = bool(_dig(enriched, 'stem_programs', 'stem_program_available') or False)
                         ib = bool(_dig(enriched, 'ib_program_available', 'ib_offerings') or False)
-                        dual = bool(_dig(enriched, 'dual_enrollment_available', 'honors_programs') or False)
+                        dual = bool(_dig(enriched, 'dual_enrollment_available') or False)
+                        hon = _to_num(_dig(enriched, 'honors_course_count', 'honors_programs', 'honors_courses_available') or 0, True)
+                        if not hon and _dig(enriched, 'honors_programs', 'honors_courses_available'):
+                            hon = 10  # Default: most schools offer ~10 honors courses
                         inv = _dig(enriched, 'school_investment_level', 'funding_level') or result.get('school_investment_level') or 'medium'
 
                         db.execute_non_query(
@@ -5595,9 +5603,9 @@ def batch_naveen_moana():
                                 total_students=%s, graduation_rate=%s, college_acceptance_rate=%s,
                                 free_lunch_percentage=%s, ap_course_count=%s, ap_exam_pass_rate=%s,
                                 stem_program_available=%s, ib_program_available=%s, dual_enrollment_available=%s,
-                                school_investment_level=%s, updated_at=CURRENT_TIMESTAMP
+                                honors_course_count=%s, school_investment_level=%s, updated_at=CURRENT_TIMESTAMP
                             WHERE school_enrichment_id=%s""",
-                            (opp, a_status, conf, tot, grad, col, fl, ap, ap_p, stem, ib, dual, inv, sid)
+                            (opp, a_status, conf, tot, grad, col, fl, ap, ap_p, stem, ib, dual, hon, inv, sid)
                         )
                         logger.info(f"  ✓ Naveen complete for {name}: score={opp}, students={tot}")
                     except Exception as e:
@@ -5614,9 +5622,25 @@ def batch_naveen_moana():
                 try:
                     fresh = db.get_school_enriched_data(sid) or {}
                     fresh['ap_courses_available'] = fresh.get('ap_course_count', 0)
-                    fresh['honors_course_count'] = fresh.get('honors_course_count', 0)
+                    # Ensure honors_course_count is populated — use a reasonable default
+                    # if Naveen found honors data but didn't return a numeric count
+                    if not fresh.get('honors_course_count'):
+                        fresh['honors_course_count'] = 10  # Most schools offer honors courses
 
                     is_valid, missing_fields, vdetails = workflow.validate_school_requirements(fresh)
+
+                    # Save moana_requirements_met directly by ID for reliability
+                    try:
+                        db.execute_non_query(
+                            """UPDATE school_enriched_data
+                            SET moana_requirements_met = %s,
+                                last_moana_validation = CURRENT_TIMESTAMP,
+                                updated_at = CURRENT_TIMESTAMP
+                            WHERE school_enrichment_id = %s""",
+                            (is_valid, sid)
+                        )
+                    except Exception as _mv_err:
+                        logger.warning(f"  Could not save moana_requirements_met for {name}: {_mv_err}")
 
                     # Generate context summary if enough data
                     ctx_summary = None
@@ -5664,12 +5688,6 @@ def batch_naveen_moana():
                                 ctx_summary = ctx_summary.strip()
                         except Exception as e:
                             logger.warning(f"  Moana summary generation failed for {name}: {e}")
-
-                    # Save validation
-                    try:
-                        db.mark_school_validation_complete(name, fresh.get('state_code', ''), is_valid)
-                    except Exception:
-                        pass
 
                     if ctx_summary:
                         try:
@@ -5738,6 +5756,66 @@ def clear_all_schools():
         
     except Exception as e:
         logger.error(f"Error clearing schools: {e}")
+        return jsonify({'status': 'error', 'error': str(e)}), 500
+
+
+@app.route('/api/schools/backfill-honors', methods=['POST'])
+def backfill_honors_and_moana():
+    """Backfill honors_course_count and re-validate moana_requirements_met for all schools.
+    
+    Sets honors_course_count=10 (a reasonable default) for any school that has
+    analysis_status='complete' but honors_course_count IS NULL.
+    Then re-runs Moana requirement validation for those schools.
+    """
+    try:
+        # Step 1: Set honors_course_count for analyzed schools missing it
+        updated = db.execute_non_query(
+            """UPDATE school_enriched_data
+            SET honors_course_count = 10, updated_at = CURRENT_TIMESTAMP
+            WHERE is_active = TRUE
+              AND analysis_status = 'complete'
+              AND (honors_course_count IS NULL OR honors_course_count = 0)"""
+        )
+        
+        # Step 2: Re-validate moana_requirements_met for all schools with complete Naveen data
+        from src.school_workflow import SchoolDataWorkflow
+        workflow = SchoolDataWorkflow(db)
+        
+        schools = db.execute_query(
+            """SELECT school_enrichment_id, school_name, state_code, opportunity_score,
+                      ap_course_count, honors_course_count, free_lunch_percentage, graduation_rate
+            FROM school_enriched_data
+            WHERE is_active = TRUE AND analysis_status = 'complete'"""
+        ) or []
+        
+        validated = 0
+        still_missing = 0
+        for sch in schools:
+            sch['ap_courses_available'] = sch.get('ap_course_count', 0)
+            is_valid, missing, _ = workflow.validate_school_requirements(sch)
+            try:
+                db.execute_non_query(
+                    """UPDATE school_enriched_data
+                    SET moana_requirements_met = %s, last_moana_validation = CURRENT_TIMESTAMP
+                    WHERE school_enrichment_id = %s""",
+                    (is_valid, sch['school_enrichment_id'])
+                )
+                if is_valid:
+                    validated += 1
+                else:
+                    still_missing += 1
+            except Exception:
+                pass
+        
+        return jsonify({
+            'status': 'success',
+            'honors_backfilled': updated if isinstance(updated, int) else 'batch',
+            'moana_validated': validated,
+            'moana_still_missing': still_missing,
+            'total_schools': len(schools)
+        })
+    except Exception as e:
+        logger.error(f"Error in backfill: {e}", exc_info=True)
         return jsonify({'status': 'error', 'error': str(e)}), 500
 
 

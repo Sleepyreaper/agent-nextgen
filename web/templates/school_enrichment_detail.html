@@ -443,7 +443,7 @@
                 </div>
                 <div class="field-item">
                     <div class="field-label">Honors Course Count</div>
-                    <div class="field-value {% if not school.honors_course_count %}empty{% endif %}">{{ school.honors_course_count|default('—') }}</div>
+                    <div class="field-value {% if school.honors_course_count is none %}empty{% endif %}">{{ school.honors_course_count if school.honors_course_count is not none else '—' }}</div>
                 </div>
                 <div class="field-item">
                     <div class="field-label">STEM Program</div>
@@ -545,8 +545,8 @@
                     <span style="padding: 0.25rem 0.5rem; border-radius: 4px; font-size: 0.8rem; background: {% if school.ap_course_count and school.ap_course_count|int > 0 %}#d1fae5; color: #065f46{% else %}#fee2e2; color: #991b1b{% endif %};">
                         AP Courses: {{ '✓' if school.ap_course_count and school.ap_course_count|int > 0 else '✗ missing' }}
                     </span>
-                    <span style="padding: 0.25rem 0.5rem; border-radius: 4px; font-size: 0.8rem; background: {% if school.honors_course_count %}#d1fae5; color: #065f46{% else %}#fee2e2; color: #991b1b{% endif %};">
-                        Honors Count: {{ '✓' if school.honors_course_count else '✗ missing' }}
+                    <span style="padding: 0.25rem 0.5rem; border-radius: 4px; font-size: 0.8rem; background: {% if school.honors_course_count is not none and school.honors_course_count|int >= 0 %}#d1fae5; color: #065f46{% else %}#fee2e2; color: #991b1b{% endif %};">
+                        Honors Count: {{ '✓ (' ~ school.honors_course_count ~ ')' if school.honors_course_count is not none else '✗ missing' }}
                     </span>
                     <span style="padding: 0.25rem 0.5rem; border-radius: 4px; font-size: 0.8rem; background: {% if school.graduation_rate and school.graduation_rate|float > 0 %}#d1fae5; color: #065f46{% else %}#fee2e2; color: #991b1b{% endif %};">
                         Graduation Rate: {{ '✓' if school.graduation_rate and school.graduation_rate|float > 0 else '✗ missing' }}
