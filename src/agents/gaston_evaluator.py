@@ -104,22 +104,125 @@ class GastonEvaluator(BaseAgent):
         start_time = time.time()
         
         with agent_run("Gaston", "evaluate_application", {"application_id": str(application.get("application_id") or application.get("ApplicationID", ""))}) as span:
-            prompt = self._build_evaluation_prompt(application)
 
             try:
+                # Gather application text with fallbacks — try application_text
+                # first, then fall back to transcript or recommendation text so
+                # Gaston always has SOMETHING to evaluate.
+                app_text_input = (
+                    application.get('application_text') or
+                    application.get('ApplicationText') or
+                    application.get('transcript_text') or
+                    application.get('TranscriptText') or
+                    application.get('recommendation_text') or ''
+                ).strip()[:8000]
+
+                applicant_name = application.get('applicant_name') or application.get('ApplicantName', 'Unknown')
+                applicant_email = application.get('email') or application.get('Email', 'N/A')
+                application_id = application.get('application_id') or application.get('StudentID', 'N/A')
+
+                print(f"[Gaston] evaluate_application: applicant={applicant_name}, text_length={len(app_text_input)}")
+
+                if not app_text_input:
+                    print(f"[Gaston] WARNING: No application text for {applicant_name}! Keys: {list(application.keys())}")
+                    return {
+                        'technical_foundation_score': 0,
+                        'communication_score': 0,
+                        'intellectual_curiosity_score': 0,
+                        'growth_potential_score': 0,
+                        'team_contribution_score': 0,
+                        'overall_score': 0,
+                        'key_strengths': [],
+                        'growth_areas': ['No application text available for evaluation'],
+                        'evidence_quotes': [],
+                        'detailed_analysis': 'No application text was available for this student. Please upload the application essay or personal statement.',
+                        'fit_for_nextgen': 'Cannot assess — no application text provided.',
+                        'recommendation': 'REVIEW REQUIRED',
+                        'reasoning': 'No application materials available to evaluate.',
+                        'quick_pass': False,
+                        'quick_pass_reason': 'No application text provided',
+                        'processing_time_ms': int((time.time() - start_time) * 1000),
+                        'model_used': self.model,
+                        'agent_name': self.name,
+                        'application_id': application.get('application_id')
+                    }
+
+                # Build training examples context
+                training_context = ""
+                if self.training_examples:
+                    training_context = "\n\n# COMPELLING EXAMPLES FROM OUR PROGRAM\nStudy these examples of students who thrived in our program:\n"
+                    for idx, example in enumerate(self.training_examples[:3], 1):
+                        ex_name = example.get('applicant_name') or example.get('ApplicantName', 'Anonymous')
+                        ex_text = (example.get('application_text') or example.get('ApplicationText', ''))[:400]
+                        training_context += f"\n## Example {idx}: {ex_name}\n{ex_text}...\n"
+
                 # Two-step: extract salient evidence and quotes, then synthesize the
                 # final JSON evaluation using that extracted material.
-                # Use up to 8000 chars — Belle's section detection now routes
-                # focused application content here.
-                app_text_input = (application.get('application_text') or application.get('ApplicationText', ''))[:8000]
+                # Step 1 uses the Gaston system prompt so the LLM understands
+                # the evaluation criteria while extracting evidence.
                 query_messages = [
-                    {"role": "system", "content": "You are an expert at extracting salient evidence and direct quotes from an application for an admissions evaluation.\n\nIMPORTANT: The text may contain page markers like '--- PAGE N of M ---'. These indicate page boundaries from a multi-page PDF. When extracting evidence and quotes, note which page they come from (e.g., 'Page 2: \"I developed a passion for genetics...\"'). Focus on application/essay content and ignore transcript or recommendation sections if present."},
-                    {"role": "user", "content": f"Extract the 6 most important evidence snippets and any direct quotes from this application to support scoring:\n\n{app_text_input}"}
+                    {"role": "system", "content": (
+                        GASTON_EVALUATOR_PROMPT +
+                        "\n\nYour task now is to carefully extract the most important "
+                        "evidence and direct quotes from the application below. "
+                        "These will be used for scoring in a follow-up step."
+                        "\n\nIMPORTANT: The text may contain page markers like "
+                        "'--- PAGE N of M ---'. Note which page evidence comes from. "
+                        "Focus on application/essay content and ignore transcript "
+                        "or recommendation sections if present."
+                    )},
+                    {"role": "user", "content": (
+                        f"Applicant: {applicant_name}\n\n"
+                        f"Extract the 6 most important evidence snippets and any "
+                        f"direct quotes from this application to support scoring "
+                        f"across all evaluation dimensions (Technical Foundation, "
+                        f"Communication, Intellectual Curiosity, Growth Potential, "
+                        f"Team Contribution):\n\n{app_text_input}"
+                    )}
                 ]
 
+                # Step 2: produce the JSON evaluation with the full schema and
+                # evaluation criteria so the LLM knows exactly what to output.
+                json_schema = (
+                    '{\n'
+                    '  "quick_pass": true/false,\n'
+                    '  "quick_pass_reason": "explanation if No",\n'
+                    '  "age_eligible": true/false/"unknown",\n'
+                    '  "underrepresented_background": true/false,\n'
+                    '  "has_research_experience": true/false,\n'
+                    '  "has_advanced_coursework": true/false,\n'
+                    '  "technical_foundation_score": 0-100,\n'
+                    '  "communication_score": 0-100,\n'
+                    '  "intellectual_curiosity_score": 0-100,\n'
+                    '  "growth_potential_score": 0-100,\n'
+                    '  "team_contribution_score": 0-100,\n'
+                    '  "overall_score": 0-100,\n'
+                    '  "key_strengths": ["3-4 specific strengths with evidence"],\n'
+                    '  "growth_areas": ["2-3 areas for development"],\n'
+                    '  "evidence_quotes": ["direct quotes supporting scores"],\n'
+                    '  "detailed_analysis": "3-4 paragraph holistic assessment",\n'
+                    '  "fit_for_nextgen": "assessment of fit for STEM community",\n'
+                    '  "recommendation": "STRONG ADMIT|ADMIT|WAITLIST|RECONSIDER",\n'
+                    '  "reasoning": "concise explanation of recommendation"\n'
+                    '}'
+                )
+
                 format_template = [
-                    {"role": "system", "content": "You are an expert hiring manager. Using the extracted facts, produce the JSON evaluation exactly matching the requested schema. Respond ONLY with valid JSON."},
-                    {"role": "user", "content": "Extracted facts and quotes: {found}\n\nNow return the JSON evaluation per the schema in the prompt."}
+                    {"role": "system", "content": (
+                        GASTON_EVALUATOR_PROMPT +
+                        training_context +
+                        "\n\nUsing the extracted evidence below, produce the final "
+                        "JSON evaluation. Be fair to students from all backgrounds. "
+                        "Look for potential, not pedigree. Respond ONLY with valid JSON."
+                    )},
+                    {"role": "user", "content": (
+                        f"Applicant: {applicant_name}\n"
+                        f"Email: {applicant_email}\n"
+                        f"Application ID: {application_id}\n\n"
+                        f"Extracted evidence and quotes:\n{{found}}\n\n"
+                        f"Now produce the JSON evaluation using this exact schema:\n"
+                        f"```json\n{json_schema}\n```"
+                    )}
                 ]
 
                 q_resp, response = self.two_step_query_format(
