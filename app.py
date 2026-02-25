@@ -5872,9 +5872,10 @@ def telemetry_overview():
         # Observability status
         obs_status = get_observability_status()
 
+        from datetime import datetime as _dt_now
         return jsonify({
             'status': 'success',
-            'timestamp': datetime.utcnow().isoformat() if hasattr(datetime, 'utcnow') else datetime.now().isoformat(),
+            'timestamp': _dt_now.utcnow().isoformat(),
             'observability': obs_status,
             'agent_monitor': {
                 'total_calls': status.get('total_calls', 0),
