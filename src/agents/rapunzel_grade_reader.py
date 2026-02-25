@@ -3,6 +3,8 @@
 from typing import Dict, List, Any, Optional
 from openai import AzureOpenAI
 from src.agents.base_agent import BaseAgent
+from src.agents.telemetry_helpers import agent_run
+from src import config
 import re
 import json
 import logging
