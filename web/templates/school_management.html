@@ -373,6 +373,84 @@
         font-size: 0.9rem;
         margin-top: 0.25rem;
     }
+
+    .batch-actions {
+        background: linear-gradient(135deg, #f0f9ff 0%, #f0fdfa 100%);
+        border: 1px solid #67e8f9;
+        border-radius: 8px;
+        padding: 1.25rem 1.5rem;
+        margin-bottom: 2rem;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        flex-wrap: wrap;
+        gap: 1rem;
+    }
+
+    .batch-actions-info {
+        flex: 1;
+        min-width: 250px;
+    }
+
+    .batch-actions-info h3 {
+        margin: 0 0 0.25rem;
+        font-size: 1rem;
+        color: #0e7490;
+    }
+
+    .batch-actions-info p {
+        margin: 0;
+        font-size: 0.85rem;
+        color: #6b7280;
+    }
+
+    .batch-btn {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.5rem;
+        padding: 0.75rem 1.5rem;
+        background: linear-gradient(135deg, #667eea 0%, #0ea5e9 100%);
+        color: white;
+        border: none;
+        border-radius: 8px;
+        font-weight: 600;
+        font-size: 0.95rem;
+        cursor: pointer;
+        transition: all 0.2s;
+        white-space: nowrap;
+    }
+
+    .batch-btn:hover {
+        transform: translateY(-1px);
+        box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+    }
+
+    .batch-btn:disabled {
+        opacity: 0.6;
+        cursor: not-allowed;
+        transform: none;
+        box-shadow: none;
+    }
+
+    .batch-result {
+        margin-top: 1rem;
+        padding: 1rem;
+        border-radius: 6px;
+        font-size: 0.9rem;
+        display: none;
+    }
+
+    .batch-result.success {
+        background: #d1fae5;
+        border: 1px solid #6ee7b7;
+        color: #065f46;
+    }
+
+    .batch-result.error {
+        background: #fee2e2;
+        border: 1px solid #fca5a5;
+        color: #991b1b;
+    }
 </style>
 {% endblock %}
 
@@ -402,6 +480,26 @@
             <div class="stat-label">Data Quality</div>
         </div>
     </div>
+
+    <!-- Batch Actions -->
+    <div class="batch-actions">
+        <div class="batch-actions-info">
+            <h3>🔬 Batch School Analysis</h3>
+            <p>Run Naveen data enrichment + Moana context validation on up to 10 schools. Schools are processed sequentially with delays to manage API capacity (~2 min each).</p>
+        </div>
+        <div style="display: flex; align-items: center; gap: 1rem;">
+            <select id="batchLimit" style="padding: 0.5rem; border-radius: 6px; border: 1px solid #e5e7eb; font-size: 0.9rem;">
+                <option value="5">5 Schools</option>
+                <option value="10" selected>10 Schools</option>
+                <option value="15">15 Schools</option>
+                <option value="20">20 Schools</option>
+            </select>
+            <button class="batch-btn" id="batchBtn" onclick="triggerBatchAnalysis()">
+                🚀 Start Batch Analysis
+            </button>
+        </div>
+    </div>
+    <div class="batch-result" id="batchResult"></div>
 
     <!-- Filters -->
     <div class="school-filters">
@@ -848,6 +946,68 @@ async function reanalyzeSchool(schoolId) {
         }
     } catch (error) {
         alert('Error: ' + error.message);
+    }
+}
+
+async function triggerBatchAnalysis() {
+    const btn = document.getElementById('batchBtn');
+    const resultDiv = document.getElementById('batchResult');
+    const limit = document.getElementById('batchLimit').value;
+    const originalText = btn.innerHTML;
+
+    if (!confirm(`Start Naveen + Moana batch analysis on up to ${limit} schools?\n\nThis runs in the background — schools are processed one at a time with 60s delays to manage capacity.`)) return;
+
+    btn.disabled = true;
+    btn.innerHTML = '⏳ Queuing...';
+    resultDiv.style.display = 'none';
+
+    try {
+        const response = await fetch('/api/schools/batch-naveen-moana', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ limit: parseInt(limit) })
+        });
+        const data = await response.json();
+
+        if (data.status === 'success') {
+            btn.innerHTML = '✓ Batch Queued';
+            btn.style.background = 'linear-gradient(135deg, #10b981, #059669)';
+
+            if (data.queued === 0) {
+                resultDiv.className = 'batch-result success';
+                resultDiv.innerHTML = '✅ ' + data.message;
+            } else {
+                resultDiv.className = 'batch-result success';
+                resultDiv.innerHTML = `
+                    <strong>✅ ${data.queued} schools queued for processing</strong>
+                    <span style="margin-left: 0.5rem; color: #6b7280;">(~${data.estimated_minutes} min total)</span>
+                    <div style="margin-top: 0.75rem; max-height: 200px; overflow-y: auto;">
+                        ${data.schools.map((s, i) => `<div style="padding: 0.25rem 0; border-bottom: 1px solid #d1fae5;">
+                            <span style="color: #9ca3af;">${i+1}.</span> ${s}
+                        </div>`).join('')}
+                    </div>
+                    <div style="margin-top: 0.75rem; font-size: 0.85rem; color: #6b7280;">
+                        ℹ️ Processing runs in the background. Refresh this page to see updated data as schools complete.
+                    </div>
+                `;
+            }
+            resultDiv.style.display = 'block';
+
+            // Re-enable after a cooldown
+            setTimeout(() => {
+                btn.innerHTML = originalText;
+                btn.style.background = '';
+                btn.disabled = false;
+            }, 30000);
+        } else {
+            throw new Error(data.error || 'Unknown error');
+        }
+    } catch (error) {
+        resultDiv.className = 'batch-result error';
+        resultDiv.innerHTML = '❌ Error: ' + error.message;
+        resultDiv.style.display = 'block';
+        btn.innerHTML = originalText;
+        btn.disabled = false;
     }
 }
 

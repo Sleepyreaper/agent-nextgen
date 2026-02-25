@@ -5398,6 +5398,268 @@ def enrich_pending_schools():
         return jsonify({'status': 'error', 'error': str(e)}), 500
 
 
+@app.route('/api/schools/batch-naveen-moana', methods=['POST'])
+def batch_naveen_moana():
+    """Batch-process up to N schools through Naveen analysis + Moana validation.
+
+    Picks schools that are missing Naveen analysis or Moana validation,
+    processes them sequentially in a background thread with delays to
+    manage Azure OpenAI capacity.
+
+    Request body (optional):
+        { "limit": 10 }   -- max schools per batch (default 10, cap 20)
+    """
+    try:
+        data = request.get_json() or {}
+        limit = min(int(data.get('limit', 10)), 20)
+
+        # Find schools that need processing
+        pending = db.execute_query(
+            """SELECT school_enrichment_id, school_name, school_district, state_code,
+                      analysis_status, moana_requirements_met
+               FROM school_enriched_data
+               WHERE is_active = TRUE
+                 AND (analysis_status IS NULL
+                      OR analysis_status = 'pending'
+                      OR analysis_status = 'error'
+                      OR moana_requirements_met IS NULL)
+               ORDER BY
+                  CASE WHEN analysis_status IN ('pending', 'error') OR analysis_status IS NULL THEN 0
+                       WHEN moana_requirements_met IS NULL THEN 1
+                       ELSE 2 END,
+                  school_enrichment_id
+               LIMIT %s""",
+            (limit,)
+        )
+
+        if not pending:
+            return jsonify({
+                'status': 'success',
+                'message': 'All schools are fully processed — nothing to do!',
+                'queued': 0
+            })
+
+        def background_batch(schools_to_process):
+            """Process each school through Naveen then Moana, sequentially."""
+            import time as _time
+            from src.agents.naveen_school_data_scientist import NaveenSchoolDataScientist
+            from src.school_workflow import SchoolDataWorkflow
+            from src.agents.base_agent import BaseAgent
+            from decimal import Decimal
+            import re as _re
+
+            client_mini = get_ai_client_mini()
+            client_main = get_ai_client()
+            model_main = config.foundry_model_name if config.model_provider == 'foundry' else config.deployment_name
+
+            scientist = NaveenSchoolDataScientist(
+                name='Naveen School Data Scientist',
+                client=client_mini,
+                model=config.deployment_name_mini
+            )
+            workflow = SchoolDataWorkflow(db)
+
+            total = len(schools_to_process)
+            for idx, sch in enumerate(schools_to_process):
+                sid = sch['school_enrichment_id']
+                name = sch['school_name']
+                logger.info(f"🔬 Batch [{idx+1}/{total}] Starting: {name} (id={sid})")
+
+                # ── Step 1: Naveen analysis (if needed) ──────────────
+                needs_naveen = sch.get('analysis_status') in (None, 'pending', 'error')
+                if needs_naveen:
+                    try:
+                        full_school = db.get_school_enriched_data(sid) or {}
+                        web_sources = full_school.get('web_sources_analyzed', [])
+                        if isinstance(web_sources, str):
+                            import json as _json
+                            try:
+                                web_sources = _json.loads(web_sources)
+                            except Exception:
+                                web_sources = []
+
+                        result = scientist.analyze_school(
+                            school_name=name,
+                            school_district=sch.get('school_district', ''),
+                            state_code=sch.get('state_code', ''),
+                            web_sources=web_sources,
+                            existing_data=full_school
+                        )
+
+                        enriched = result.get('enriched_data', {})
+
+                        def _dig(d, *keys):
+                            if not isinstance(d, dict):
+                                return None
+                            for k in keys:
+                                if k in d and d[k] is not None:
+                                    return d[k]
+                            for v in d.values():
+                                if isinstance(v, dict):
+                                    for k in keys:
+                                        if k in v and v[k] is not None:
+                                            return v[k]
+                            return None
+
+                        def _to_num(val, as_int=False):
+                            if val is None or val == '' or val is False:
+                                return 0
+                            if isinstance(val, (int, float)):
+                                return int(val) if as_int else float(val)
+                            if isinstance(val, Decimal):
+                                return int(val) if as_int else float(val)
+                            if isinstance(val, str):
+                                m = _re.search(r'[\d,]+\.?\d*', val.replace(',', ''))
+                                if m:
+                                    num = float(m.group())
+                                    return int(num) if as_int else num
+                            try:
+                                return int(float(val)) if as_int else float(val)
+                            except (ValueError, TypeError):
+                                return 0
+
+                        opp = _to_num(_dig(enriched, 'opportunity_score') or result.get('opportunity_score', 0))
+                        conf = _to_num(_dig(enriched, 'confidence_score') or result.get('confidence_score', 0))
+                        a_status = result.get('analysis_status', 'complete')
+                        tot = _to_num(_dig(enriched, 'total_enrollment', 'enrollment_size', 'total_students') or result.get('enrollment_size') or 0, True)
+                        grad = _to_num(_dig(enriched, 'graduation_rate') or result.get('graduation_rate') or 0)
+                        col = _to_num(_dig(enriched, 'college_acceptance_rate', 'college_placement_rate') or result.get('college_placement_rate') or 0)
+                        fl = _to_num(_dig(enriched, 'free_lunch_percentage') or result.get('free_lunch_percentage') or 0)
+                        ap = _to_num(_dig(enriched, 'ap_course_count', 'ap_classes_count') or result.get('ap_classes_count') or 0, True)
+                        ap_p = _to_num(_dig(enriched, 'ap_exam_pass_rate', 'ap_pass_rate') or result.get('ap_exam_pass_rate') or 0)
+                        stem = bool(_dig(enriched, 'stem_programs', 'stem_program_available') or False)
+                        ib = bool(_dig(enriched, 'ib_program_available', 'ib_offerings') or False)
+                        dual = bool(_dig(enriched, 'dual_enrollment_available', 'honors_programs') or False)
+                        inv = _dig(enriched, 'school_investment_level', 'funding_level') or result.get('school_investment_level') or 'medium'
+
+                        db.execute_non_query(
+                            """UPDATE school_enriched_data
+                            SET opportunity_score=%s, analysis_status=%s, data_confidence_score=%s,
+                                total_students=%s, graduation_rate=%s, college_acceptance_rate=%s,
+                                free_lunch_percentage=%s, ap_course_count=%s, ap_exam_pass_rate=%s,
+                                stem_program_available=%s, ib_program_available=%s, dual_enrollment_available=%s,
+                                school_investment_level=%s, updated_at=CURRENT_TIMESTAMP
+                            WHERE school_enrichment_id=%s""",
+                            (opp, a_status, conf, tot, grad, col, fl, ap, ap_p, stem, ib, dual, inv, sid)
+                        )
+                        logger.info(f"  ✓ Naveen complete for {name}: score={opp}, students={tot}")
+                    except Exception as e:
+                        logger.error(f"  ✗ Naveen failed for {name}: {e}", exc_info=True)
+                        try:
+                            db.execute_non_query(
+                                "UPDATE school_enriched_data SET analysis_status='error', updated_at=CURRENT_TIMESTAMP WHERE school_enrichment_id=%s",
+                                (sid,)
+                            )
+                        except Exception:
+                            pass
+
+                # ── Step 2: Moana validation (if school now has data) ─
+                try:
+                    fresh = db.get_school_enriched_data(sid) or {}
+                    fresh['ap_courses_available'] = fresh.get('ap_course_count', 0)
+                    fresh['honors_course_count'] = fresh.get('honors_course_count', 0)
+
+                    is_valid, missing_fields, vdetails = workflow.validate_school_requirements(fresh)
+
+                    # Generate context summary if enough data
+                    ctx_summary = None
+                    if is_valid or len(missing_fields) <= 2:
+                        try:
+                            ctx_prompt = (
+                                f"You are Moana, the School Context Analyzer. "
+                                f"Based on the following school enrichment data, write a concise "
+                                f"school context summary (3-5 sentences).\n\n"
+                                f"School: {fresh.get('school_name')}\n"
+                                f"District: {fresh.get('school_district', 'N/A')}\n"
+                                f"State: {fresh.get('state_code', 'N/A')}\n"
+                                f"Students: {fresh.get('total_students', 'N/A')}\n"
+                                f"Graduation Rate: {fresh.get('graduation_rate', 'N/A')}%\n"
+                                f"College Rate: {fresh.get('college_acceptance_rate', 'N/A')}%\n"
+                                f"Free Lunch: {fresh.get('free_lunch_percentage', 'N/A')}%\n"
+                                f"AP Courses: {fresh.get('ap_course_count', 'N/A')}\n"
+                                f"Opportunity Score: {fresh.get('opportunity_score', 'N/A')}/100\n"
+                                f"STEM: {'Yes' if fresh.get('stem_program_available') else 'No'}\n"
+                                f"IB: {'Yes' if fresh.get('ib_program_available') else 'No'}\n"
+                                f"Dual Enrollment: {'Yes' if fresh.get('dual_enrollment_available') else 'No'}\n\n"
+                                f"Provide: 1) school environment description, 2) academic rigor context, "
+                                f"3) key insight about student opportunities."
+                            )
+
+                            class _BatchMoana(BaseAgent):
+                                async def process(self, message): return message
+
+                            moana = _BatchMoana(name='Moana Batch', client=client_main)
+                            moana.model = model_main
+
+                            resp = moana._create_chat_completion(
+                                operation='moana_batch_validation',
+                                model=model_main,
+                                messages=[
+                                    {'role': 'system', 'content': 'You are Moana, a school context analyzer. Provide concise, insightful school context summaries.'},
+                                    {'role': 'user', 'content': ctx_prompt}
+                                ],
+                                temperature=0.5,
+                                max_completion_tokens=500
+                            )
+
+                            if resp and hasattr(resp, 'choices') and resp.choices:
+                                ctx_summary = getattr(resp.choices[0].message, 'content', None) or ''
+                                ctx_summary = ctx_summary.strip()
+                        except Exception as e:
+                            logger.warning(f"  Moana summary generation failed for {name}: {e}")
+
+                    # Save validation
+                    try:
+                        db.mark_school_validation_complete(name, fresh.get('state_code', ''), is_valid)
+                    except Exception:
+                        pass
+
+                    if ctx_summary:
+                        try:
+                            from datetime import datetime as _dt
+                            db.execute_non_query(
+                                """UPDATE school_enriched_data
+                                SET data_source_notes = COALESCE(data_source_notes, '') || %s,
+                                    updated_at = CURRENT_TIMESTAMP
+                                WHERE school_enrichment_id = %s""",
+                                (f"\n\n🌊 Moana Context Summary ({_dt.now().strftime('%Y-%m-%d %H:%M')}):\n{ctx_summary}", sid)
+                            )
+                        except Exception:
+                            pass
+
+                    logger.info(f"  ✓ Moana complete for {name}: valid={is_valid}, missing={len(missing_fields)}, summary={'yes' if ctx_summary else 'no'}")
+                except Exception as e:
+                    logger.error(f"  ✗ Moana failed for {name}: {e}", exc_info=True)
+
+                # ── Delay between schools to manage API capacity ──
+                if idx < total - 1:
+                    logger.info(f"  ⏳ Waiting 60s before next school...")
+                    _time.sleep(60)
+
+            logger.info(f"🏁 Batch Naveen+Moana complete: processed {total} schools")
+
+        # Launch background thread
+        thread = threading.Thread(
+            target=background_batch,
+            args=([dict(s) for s in pending],)
+        )
+        thread.daemon = True
+        thread.start()
+
+        school_names = [s['school_name'] for s in pending]
+        return jsonify({
+            'status': 'success',
+            'message': f'Queued {len(pending)} schools for Naveen + Moana batch processing',
+            'queued': len(pending),
+            'schools': school_names,
+            'estimated_minutes': len(pending) * 2  # ~2 min per school (processing + delay)
+        })
+
+    except Exception as e:
+        logger.error(f"Error in batch Naveen+Moana: {e}", exc_info=True)
+        return jsonify({'status': 'error', 'error': str(e)}), 500
+
+
 @app.route('/api/schools/clear', methods=['POST'])
 def clear_all_schools():
     """Clear all school enriched data records. Requires confirmation."""
