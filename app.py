@@ -1682,13 +1682,18 @@ def training():
         selected_count = len([t for t in training_data if t.get('was_selected')])
         not_selected_count = total_count - selected_count
         
+        # Count students with historical XLSX matches
+        matched_count = len([t for t in training_data if t.get('has_historical_match')])
+
         return render_template('training.html',
                              training_data=training_data,
                              search_query=search_query,
                              filter_selected=filter_selected,
                              total_count=total_count,
                              selected_count=selected_count,
-                             not_selected_count=not_selected_count)
+                             not_selected_count=not_selected_count,
+                             matched_count=matched_count,
+                             is_training_view=True)
     except Exception as e:
         flash(f'Error loading training data: {str(e)}', 'error')
         return render_template('training.html', 

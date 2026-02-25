@@ -75,12 +75,22 @@ class Database:
             select_cols.append("a.agent_results")
         if self.has_applications_column('student_summary'):
             select_cols.append("a.student_summary")
+
+        # For training data, detect if a matching historical score record exists
+        join_clause = ""
+        if is_training:
+            select_cols.append(
+                "CASE WHEN hs.score_id IS NOT NULL THEN TRUE ELSE FALSE END AS has_historical_match"
+            )
+            join_clause = "LEFT JOIN historical_scores hs ON hs.application_id = a." + app_id_col
+
         column_fragment = ",\n                ".join(select_cols)
 
         query = f"""
             SELECT
                 {column_fragment}
             FROM {applications_table} a
+            {join_clause}
             WHERE {where_clause}
             ORDER BY LOWER(a.{applicant_col}) ASC
         """
