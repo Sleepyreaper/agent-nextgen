@@ -156,9 +156,17 @@ class MiloDataScientist(BaseAgent):
 
     async def compute_alignment(self, application: Dict[str, Any]) -> Dict[str, Any]:
         """Given a single applicant and existing training insights, ask Milo to
-        compute a match score and NextGen alignment narrative using the AI model.
-        This uses the same model as other Milo calls and may hit the cache of
-        analyze_training_insights to avoid redundant work.
+        compute a Next Gen Match probability.
+
+        Context: The Emory NextGen program has ~30 openings and receives 1,000+
+        applicants each year.  Milo uses historical accepted vs not-selected
+        patterns to estimate how likely this student is to be selected.
+
+        Returns JSON with:
+          - nextgen_match (0-100): probability percentage the student would be
+            selected given the competitive landscape.
+          - match_score (0-100): raw alignment to accepted-student profile.
+          - explanation: brief rationale.
         """
         # Register agent invocation (GenAI Semantic Convention: invoke_agent)
         _otel_ctx2 = agent_run("Milo Data Scientist", "compute_alignment", agent_id="milo-data-scientist")
@@ -169,12 +177,40 @@ class MiloDataScientist(BaseAgent):
 
         # ensure we have fresh insights first
         insights = await self.analyze_training_insights()
+
+        # Build a focused subset of the application to avoid token bloat
+        app_subset = {}
+        for key in ('applicant_name', 'first_name', 'last_name', 'high_school',
+                     'state_code', 'application_text', 'transcript_text',
+                     'recommendation_text', 'gpa', 'activities', 'interest',
+                     'school_name', 'agent_results'):
+            if application.get(key):
+                val = application[key]
+                # truncate long text fields
+                if isinstance(val, str) and len(val) > 1500:
+                    val = val[:1500] + '...'
+                app_subset[key] = val
+
         prompt = (
-            "You are Milo, a data scientist. You have the following training insights:\n"
+            "You are Milo, the data scientist for the Emory NextGen Scholars program.\n"
+            "PROGRAM CONTEXT: There are approximately 30 openings each year and over "
+            "1,000 applicants. Selection is extremely competitive.\n\n"
+            "Your training insights from historical accepted vs not-selected students:\n"
             + json.dumps(insights, ensure_ascii=True)
-            + "\n\nEvaluate the new applicant below in light of these patterns.\n"
-            + json.dumps(application, ensure_ascii=True)
-            + "\nReturn valid JSON with fields: 'match_score' (0-100), 'nextgen_align_score' (0-100), and 'explanation' (a brief rationale)."
+            + "\n\nNow evaluate this NEW applicant:\n"
+            + json.dumps(app_subset, ensure_ascii=True)
+            + "\n\nCompare this applicant against the historical patterns of who was "
+            "selected and who was not.  Produce a 'Next Gen Match' probability that "
+            "reflects how likely this student would be among the ~30 selected from "
+            "1,000+ applicants.\n\n"
+            "Return valid JSON with these fields:\n"
+            "{\n"
+            '  "nextgen_match": <int 0-100>,  // probability percentage of being selected\n'
+            '  "match_score": <int 0-100>,    // raw profile alignment to accepted students\n'
+            '  "confidence": "High|Medium|Low",\n'
+            '  "key_differentiators": ["(2-4 factors most influencing this score)"],\n'
+            '  "explanation": "(2-3 sentence rationale)"\n'
+            "}"
         )
         try:
             response = self._create_chat_completion(
@@ -184,17 +220,26 @@ class MiloDataScientist(BaseAgent):
                     {
                         "role": "system",
                         "content": (
-                            "You are Milo, a data scientist who summarizes training patterns."
+                            "You are Milo, a data scientist who analyzes historical "
+                            "selection patterns for the Emory NextGen Scholars program. "
+                            "The program selects roughly 30 students from 1,000+ applicants. "
+                            "Be realistic and calibrated — a score of 50 means a coin flip, "
+                            "not a sure thing. Most applicants should score below 30 given "
+                            "the 3% acceptance rate. Only truly outstanding candidates "
+                            "should score above 60."
                         )
                     },
                     {"role": "user", "content": prompt}
                 ],
-                max_completion_tokens=800,
+                max_completion_tokens=900,
                 temperature=0.4,
                 response_format={"type": "json_object"}
             )
             payload = response.choices[0].message.content
             data = safe_load_json(payload)
+            # Ensure nextgen_match is present; fall back to match_score if model omitted it
+            if 'nextgen_match' not in data and 'match_score' in data:
+                data['nextgen_match'] = data['match_score']
             data.setdefault("status", "success")
             data.setdefault("agent", self.name)
         except Exception as e:

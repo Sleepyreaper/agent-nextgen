@@ -51,7 +51,11 @@ CREATE TABLE IF NOT EXISTS Applications (
     last_name VARCHAR(255),
     high_school VARCHAR(500),
     state_code VARCHAR(2),
-    school_name VARCHAR(500)
+    school_name VARCHAR(500),
+    -- Next Gen Match: probability (0-100) of being among ~30 selected from 1000+ applicants
+    nextgen_match NUMERIC(5,2),
+    student_summary TEXT,
+    agent_results TEXT
 );
 
 CREATE INDEX IF NOT EXISTS idx_applications_is_training ON Applications(is_training_example);

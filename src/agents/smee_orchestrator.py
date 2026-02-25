@@ -1500,6 +1500,25 @@ class SmeeOrchestrator(BaseAgent):
                 except Exception:
                     pass
                 
+                # ===== Persist Next Gen Match to application record =====
+                # Resolve nextgen_match from Merlin first, then fall back to Milo
+                nextgen_match = None
+                if isinstance(merlin_result, dict):
+                    nextgen_match = merlin_result.get('nextgen_match')
+                if nextgen_match is None:
+                    milo_align = self.evaluation_results['results'].get('milo_alignment', {})
+                    if isinstance(milo_align, dict):
+                        nextgen_match = milo_align.get('nextgen_match')
+                if nextgen_match is not None and self.db and application_id:
+                    try:
+                        self.db.update_application(
+                            application_id=application_id,
+                            nextgen_match=nextgen_match
+                        )
+                        logger.info(f"🎯 Next Gen Match persisted: {nextgen_match}% for application {application_id}")
+                    except Exception as ngm_err:
+                        logger.debug(f"Could not persist nextgen_match: {ngm_err}")
+
                 # PHASE 5: Log STEP 6 MERLIN synthesis
                 self._log_interaction(
                     application_id=application_id,

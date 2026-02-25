@@ -47,29 +47,32 @@
         </div>
     </div>
     <div class="dashboard-stats">
-        <div class="stat-card">
-            <div class="stat-value">{{ summary['word_count'] if summary is defined and 'word_count' in summary and summary['word_count'] else 'N/A' }}</div>
-            <div class="stat-label">Words</div>
-        </div>
-        <div class="stat-card">
-            <div class="stat-value">{{ summary['file_name'].split('.')[-1].upper() if summary is defined and 'file_name' in summary and summary['file_name'] else 'TXT' }}</div>
-            <div class="stat-label">File Type</div>
-        </div>
-        <div class="stat-card">
-            <div class="stat-value">{{ 'Yes' if evaluation is defined and evaluation else 'No' }}</div>
-            <div class="stat-label">Evaluated</div>
+        <div class="stat-card" style="{% if nextgen_match is defined and nextgen_match is not none %}{% if nextgen_match >= 60 %}background:linear-gradient(135deg,#d1fae5,#a7f3d0); border:2px solid #10b981;{% elif nextgen_match >= 30 %}background:linear-gradient(135deg,#fef9c3,#fde68a); border:2px solid #f59e0b;{% else %}background:linear-gradient(135deg,#fee2e2,#fecaca); border:2px solid #ef4444;{% endif %}{% endif %}">
+            <div class="stat-value" style="font-size:2.6rem;">
+                {% if nextgen_match is defined and nextgen_match is not none %}
+                    {{ nextgen_match }}%
+                {% else %}
+                    N/A
+                {% endif %}
+            </div>
+            <div class="stat-label" style="font-weight:600; font-size:1.1rem;">Next Gen Match</div>
+            <div style="font-size:0.8rem; color:#64748b; margin-top:0.3rem;">~30 spots / 1,000+ applicants</div>
         </div>
         <div class="stat-card">
             <div class="stat-value">{{ agent_results.merlin.overall_score if agent_results and agent_results.merlin and agent_results.merlin.overall_score else 'N/A' }}</div>
             <div class="stat-label">Overall Score</div>
         </div>
         <div class="stat-card">
-            <div class="stat-value">{{ agent_results.merlin.match_score if agent_results and agent_results.merlin and agent_results.merlin.match_score is not none else 'N/A' }}</div>
-            <div class="stat-label">Match Score</div>
+            <div class="stat-value">{{ agent_results.merlin.recommendation if agent_results and agent_results.merlin and agent_results.merlin.recommendation else 'N/A' }}</div>
+            <div class="stat-label">Recommendation</div>
         </div>
         <div class="stat-card">
-            <div class="stat-value">{{ alignment_score if alignment_score is not none else 'N/A' }}</div>
-            <div class="stat-label">NextGen Align</div>
+            <div class="stat-value">{{ 'Yes' if evaluation is defined and evaluation else 'No' }}</div>
+            <div class="stat-label">Evaluated</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-value">{{ summary['word_count'] if summary is defined and 'word_count' in summary and summary['word_count'] else 'N/A' }}</div>
+            <div class="stat-label">Words</div>
         </div>
     </div>
 

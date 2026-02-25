@@ -2872,6 +2872,28 @@ def student_detail(application_id):
             human_summary = _synthesize_human_summary(agent_results, application)
         except Exception:
             human_summary = None
+
+        # Resolve Next Gen Match score for the UI
+        # Priority: DB column > Merlin output > Milo alignment output
+        nextgen_match = None
+        try:
+            # 1. Check DB column (persisted by orchestrator)
+            db_val = application.get('nextgen_match')
+            if db_val is not None:
+                nextgen_match = int(float(db_val))
+            # 2. Fallback to Merlin result
+            if nextgen_match is None and agent_results.get('merlin'):
+                merlin_ngm = agent_results['merlin'].get('nextgen_match')
+                if merlin_ngm is not None:
+                    nextgen_match = int(float(merlin_ngm))
+            # 3. Fallback to Milo alignment
+            if nextgen_match is None and milo_alignment and isinstance(milo_alignment, dict):
+                milo_ngm = milo_alignment.get('nextgen_match')
+                if milo_ngm is not None:
+                    nextgen_match = int(float(milo_ngm))
+        except Exception:
+            nextgen_match = None
+
         return render_template('student_detail.html', 
                      summary=application,
                      agent_results=agent_results,
@@ -2885,7 +2907,8 @@ def student_detail(application_id):
                      human_summary=human_summary,
                      milo_insights=milo_insights,
                      milo_alignment=milo_alignment,
-                     alignment_score=alignment_score)
+                     alignment_score=alignment_score,
+                     nextgen_match=nextgen_match)
         
     except Exception as e:
         logger.error(f"Error in student_detail: {str(e)}", exc_info=True)

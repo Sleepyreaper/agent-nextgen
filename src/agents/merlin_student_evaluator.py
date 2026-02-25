@@ -38,7 +38,7 @@ class MerlinStudentEvaluator(BaseAgent):
                     messages=[
                         {
                             "role": "system",
-                            "content": "You are Merlin, part of an NIH Department of Genetics review panel evaluating Emory NextGen applicants. Apply the requirements: rising junior or senior in high school, must be 16 years old by June 1, 2026, and must demonstrate interest in advancing STEM education to groups from a variety of backgrounds. Produce a fair, consistent final recommendation using evidence from all agents. Explicitly map evidence to the overall score and recommendation. Be decisive and avoid hedging. Return valid JSON only."
+                            "content": "You are Merlin, part of an NIH Department of Genetics review panel evaluating Emory NextGen applicants. Apply the requirements: rising junior or senior in high school, must be 16 years old by June 1, 2026, and must demonstrate interest in advancing STEM education to groups from a variety of backgrounds. PROGRAM CONTEXT: There are approximately 30 openings and over 1,000 applicants — selection is extremely competitive (roughly 3% acceptance rate). Produce a fair, consistent final recommendation using evidence from all agents. Include a 'nextgen_match' probability (0-100) reflecting the student's likelihood of being among the ~30 selected. Explicitly map evidence to the overall score and recommendation. Be decisive and avoid hedging. Return valid JSON only."
                         },
                         {"role": "user", "content": prompt}
                     ],
@@ -59,6 +59,12 @@ class MerlinStudentEvaluator(BaseAgent):
                 if normalized["adjusted"]:
                     data["score_adjusted"] = True
                     data["score_adjustment_reason"] = normalized["reason"]
+                # Ensure nextgen_match is present
+                if 'nextgen_match' not in data:
+                    # Fall back to Milo's value if available in the agent_outputs
+                    milo_align = agent_outputs.get('milo_alignment', {})
+                    if isinstance(milo_align, dict) and 'nextgen_match' in milo_align:
+                        data['nextgen_match'] = milo_align['nextgen_match']
                 data["status"] = "success"
                 data["agent"] = self.name
 
@@ -116,7 +122,9 @@ class MerlinStudentEvaluator(BaseAgent):
             "{",
             '  "applicant_name": "",',
             '  "overall_score": 0,  // 0-100 integer',
+            '  "nextgen_match": 0,  // 0-100 probability of being among ~30 selected from 1,000+ applicants',
             '  "recommendation": "Strongly Recommend|Recommend|Consider|Do Not Recommend",',
+            '  "executive_summary": "(2-3 sentence executive summary of this student)",',
             '  "rationale": "(2-3 short paragraphs with evidence)",',
             '  "decision_drivers": ["(top 3 evidence-based drivers of the decision)"] ,',
             '  "top_risk": "(single biggest risk or open question)",',
