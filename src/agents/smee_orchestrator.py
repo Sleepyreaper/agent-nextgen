@@ -631,8 +631,24 @@ class SmeeOrchestrator(BaseAgent):
                     application.get('application_id')
                 )
             elif agent_id == 'gaston':
+                # Ensure Gaston always has text to evaluate. If application_text
+                # was cleared/overwritten during Belle section routing or DB
+                # round-tripping, fall back to the preserved document text.
+                gaston_app = dict(application)
+                gaston_text = (
+                    gaston_app.get('application_text') or
+                    gaston_app.get('transcript_text') or
+                    gaston_app.get('recommendation_text') or
+                    gaston_app.get('_original_document_text') or ''
+                )
+                if gaston_text and not gaston_app.get('application_text'):
+                    gaston_app['application_text'] = gaston_text
+                    logger.info(f"[Gaston] Backfilled application_text from fallback ({len(gaston_text)} chars)")
+                    print(f"[Gaston] Backfilled application_text from fallback ({len(gaston_text)} chars)")
+                logger.info(f"[Gaston] Dispatching with text_len={len(gaston_text)}, keys={sorted(k for k in gaston_app if gaston_app.get(k) and isinstance(gaston_app.get(k), str) and len(str(gaston_app.get(k))) > 50)}")
+                print(f"[Gaston] Dispatching with text_len={len(gaston_text)}")
                 try:
-                    result = await agent.evaluate_application(application)
+                    result = await agent.evaluate_application(gaston_app)
                 except AttributeError:
                     result = await agent.process(f"Evaluate: {application.get('applicant_name', '')}")
             else:
@@ -922,6 +938,13 @@ class SmeeOrchestrator(BaseAgent):
                         application.get('ApplicationText') or 
                         application.get('transcript_text') or 
                         application.get('TranscriptText') or '')
+        
+        # Preserve the ORIGINAL full document text so downstream agents
+        # (especially Gaston) always have content even if Belle's section
+        # detection later overwrites individual text fields with section-
+        # specific content that may be shorter or empty.
+        if document_text:
+            application['_original_document_text'] = document_text
         
         document_name = application.get('file_name', 'application_document')
         # NOTE: avoid creating a placeholder application record here. We need

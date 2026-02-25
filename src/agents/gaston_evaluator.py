@@ -106,25 +106,46 @@ class GastonEvaluator(BaseAgent):
         with agent_run("Gaston", "evaluate_application", {"application_id": str(application.get("application_id") or application.get("ApplicationID", ""))}) as span:
 
             try:
-                # Gather application text with fallbacks — try application_text
-                # first, then fall back to transcript or recommendation text so
-                # Gaston always has SOMETHING to evaluate.
+                # Gather application text with aggressive fallbacks.
+                # Try known text fields first, then fall back to the preserved
+                # original document text, and finally search ALL string values
+                # in the dict for substantial content.
                 app_text_input = (
                     application.get('application_text') or
                     application.get('ApplicationText') or
                     application.get('transcript_text') or
                     application.get('TranscriptText') or
-                    application.get('recommendation_text') or ''
-                ).strip()[:8000]
+                    application.get('recommendation_text') or
+                    application.get('_original_document_text') or ''
+                )
+                # Last resort: scan all values for any substantial text
+                if not app_text_input or not app_text_input.strip():
+                    for k, v in application.items():
+                        if isinstance(v, str) and len(v.strip()) > 100:
+                            app_text_input = v
+                            print(f"[Gaston] Found text in fallback key '{k}' ({len(v)} chars)")
+                            break
+                app_text_input = (app_text_input or '').strip()[:8000]
 
                 applicant_name = application.get('applicant_name') or application.get('ApplicantName', 'Unknown')
                 applicant_email = application.get('email') or application.get('Email', 'N/A')
                 application_id = application.get('application_id') or application.get('StudentID', 'N/A')
 
                 print(f"[Gaston] evaluate_application: applicant={applicant_name}, text_length={len(app_text_input)}")
+                # Log which text fields have content for debugging
+                text_field_lengths = {
+                    k: len(str(v)) for k, v in application.items()
+                    if isinstance(v, str) and len(v) > 20
+                    and k in ('application_text', 'ApplicationText', 'transcript_text',
+                              'TranscriptText', 'recommendation_text', '_original_document_text')
+                }
+                print(f"[Gaston] Text field lengths: {text_field_lengths}")
 
                 if not app_text_input:
-                    print(f"[Gaston] WARNING: No application text for {applicant_name}! Keys: {list(application.keys())}")
+                    print(f"[Gaston] WARNING: No application text for {applicant_name}! ALL keys: {list(application.keys())}")
+                    for k, v in application.items():
+                        if isinstance(v, str):
+                            print(f"[Gaston]   key='{k}' len={len(v)} preview={repr(v[:80])}")
                     return {
                         'technical_foundation_score': 0,
                         'communication_score': 0,
