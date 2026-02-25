@@ -952,6 +952,23 @@ class SmeeOrchestrator(BaseAgent):
         belle_student_info = belle_data.get('student_info', {})
         belle_agent_fields = belle_data.get('agent_fields', {})
         
+        # ===== STEP 1.5: Apply Belle's section-detected fields =====
+        # Belle's section detection routes transcript/recommendation/application
+        # content to their specific fields. Apply these to the application dict
+        # so each downstream agent receives only its relevant content.
+        section_map = belle_agent_fields.get('_section_map', {})
+        if section_map:
+            logger.info(f"📖 Belle section routing: {section_map}")
+            print(f"📖 Belle section routing: {section_map}")
+            application['_belle_section_map'] = section_map
+        
+        for field in ('transcript_text', 'recommendation_text', 'application_text'):
+            if belle_agent_fields.get(field):
+                field_len = len(belle_agent_fields[field])
+                logger.info(f"  📄 Routing {field}: {field_len} chars of section-specific content")
+                print(f"  📄 Routing {field}: {field_len} chars of section-specific content")
+                application[field] = belle_agent_fields[field]
+        
         first_name = (belle_student_info.get('first_name') or 
                      belle_agent_fields.get('first_name') or
                      application.get('first_name') or 

@@ -95,6 +95,76 @@ os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 logger.info("Flask app initialized", extra={'upload_folder': app.config['UPLOAD_FOLDER']})
 
 # Initialize Azure OpenAI client
+def _make_ocr_callback():
+    """Create an OCR callback that uses the Azure AI vision model.
+    
+    Returns a function ``fn(image_bytes, page_label) -> str`` that sends
+    a PDF page image to the AI model and returns extracted text.
+    Returns None if the AI client is unavailable.
+    """
+    try:
+        client = get_ai_client()
+        model_name = config.foundry_model_name if config.model_provider == "foundry" else config.deployment_name
+    except Exception:
+        return None
+    
+    def _ocr(image_bytes: bytes, page_label: str) -> str:
+        """OCR a single page image using AI vision."""
+        import base64 as _b64
+        b64_image = _b64.b64encode(image_bytes).decode('utf-8')
+        
+        messages = [
+            {
+                "role": "system",
+                "content": (
+                    "You are a precise document OCR system. Extract ALL text from the "
+                    "provided image exactly as it appears. Preserve the layout, including "
+                    "tables, columns, and line breaks. For transcripts and grade reports, "
+                    "capture every course name, grade, credit, GPA, and any other data. "
+                    "Do NOT summarize or interpret — reproduce the text faithfully."
+                )
+            },
+            {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "text",
+                        "text": f"Extract all text from this document image ({page_label}). "
+                                "Reproduce every word, number, and table exactly as shown."
+                    },
+                    {
+                        "type": "image_url",
+                        "image_url": {
+                            "url": f"data:image/png;base64,{b64_image}",
+                            "detail": "high"
+                        }
+                    }
+                ]
+            }
+        ]
+        
+        try:
+            # Try OpenAI SDK style (AzureOpenAI client)
+            if hasattr(client, 'chat') and hasattr(client.chat, 'completions'):
+                resp = client.chat.completions.create(
+                    model=model_name,
+                    messages=messages,
+                    max_tokens=4000,
+                    temperature=0.0
+                )
+                return resp.choices[0].message.content
+            
+            # Try FoundryClient style — serialize image content for Foundry
+            # Foundry may not support vision; fall back to text-only prompt
+            logger.warning("OCR: FoundryClient may not support vision — skipping image OCR")
+            return ""
+        except Exception as e:
+            logger.warning(f"OCR vision call failed for {page_label}: {e}")
+            return ""
+    
+    return _ocr
+
+
 def get_ai_client(api_version: str = None, azure_deployment: str = None):
     """
     Get Azure OpenAI client with specified API version.
@@ -744,7 +814,11 @@ def upload():
                 temp_path = os.path.join(app.config['UPLOAD_FOLDER'], f"temp_{temp_id}_{filename}")
                 file.save(temp_path)
 
-                application_text, file_type = DocumentProcessor.process_document(temp_path)
+                # Use AI vision OCR for image-based PDF pages (e.g., scanned transcripts)
+                ocr_callback = _make_ocr_callback()
+                application_text, file_type = DocumentProcessor.process_document(
+                    temp_path, ocr_callback=ocr_callback
+                )
 
                 with open(temp_path, 'rb') as handle:
                     file_content = handle.read()

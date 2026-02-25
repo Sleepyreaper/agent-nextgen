@@ -427,6 +427,19 @@ class BelleDocumentAnalyzer(BaseAgent):
         
         for page_num, page_text in sorted(pages.items()):
             page_lower = page_text.lower()
+            page_char_count = len(page_text.strip())
+            
+            # Skip very sparse pages (likely image-only content that wasn't OCR'd)
+            if page_char_count < 50:
+                logger.info(
+                    f"  Page {page_num}: only {page_char_count} chars — marking as sparse/unknown"
+                )
+                result["section_map"][page_num] = {
+                    'type': 'sparse',
+                    'scores': {'transcript': 0, 'recommendation': 0, 'application': 0},
+                    'note': 'page too sparse to classify (likely image-based)'
+                }
+                continue
             
             # Calculate scores for each section type
             t_score = sum(3 for kw in transcript_indicators['high'] if kw in page_lower)
@@ -452,6 +465,11 @@ class BelleDocumentAnalyzer(BaseAgent):
             ))
             if grade_pattern_count > 5:
                 t_score += 2  # Multiple grades on page
+            
+            logger.debug(
+                f"  Page {page_num} scores: transcript={t_score}, "
+                f"recommendation={r_score}, application={a_score}"
+            )
             
             # Determine section type based on highest score
             max_score = max(t_score, r_score, a_score)
