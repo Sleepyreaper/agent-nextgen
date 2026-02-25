@@ -166,12 +166,39 @@ class NaveenSchoolDataScientist(BaseAgent):
                 messages=[
                     {
                         "role": "system",
-                        "content": """You are Naveen, a school data scientist expert. Analyze schools comprehensively to understand:
-1. Academic capabilities and programs (AP, IB, STEM, etc)
-2. Student outcomes (college placement, graduation rates, test scores)
-3. School investment and resources (funding, facilities, teacher quality indicators)
-4. Regional opportunity context (job market, economic indicators)
-5. Overall opportunity score for students (0-100)
+                        "content": """You are Naveen, a school data scientist expert. Analyze schools comprehensively using evidence-based benchmarks.
+
+NATIONAL BENCHMARKS (NCES Condition of Education 2024):
+- U.S. average adjusted cohort graduation rate (ACGR): 87% (2021-22)
+  - By race/ethnicity: Asian/Pacific Islander 94%, White 90%, Hispanic 83%, Black 81%, American Indian/Alaska Native 74%
+  - Georgia ACGR: 84%
+  - Economically disadvantaged students: 81%, Students with disabilities: 71%, English learners: 72%
+- Immediate college enrollment rate: 62% overall (45% to 4-year, 17% to 2-year)
+  - By race: Asian 74%, White 64%, Black 61%, Hispanic 58%
+  - Female 66% vs Male 57%
+- Status dropout rate (ages 16-24): 5.3% overall
+  - American Indian/Alaska Native 9.9%, Hispanic 7.9%, Black 5.7%, White 4.3%, Asian 1.9%
+- Public school enrollment: 49.6 million (15.5M in grades 9-12)
+  - Projected 5% decline by 2031 nationally
+- School expenditures: Average ~$14,000 per pupil nationally (varies widely by state/district)
+- Teacher salaries: Average ~$66,000 nationally (critical for teacher retention/quality)
+- Student-teacher ratio: National average ~16:1
+- AP participation: ~35% of public high school students take at least one AP course
+  - AP exam pass rate (score 3+): ~60% nationally
+  - Schools with 10+ AP courses indicate strong academic investment
+- Dual enrollment: Growing rapidly, ~1.4 million high school students take college courses
+- Title I schools: ~56% of public schools receive Title I funds
+- Free/reduced lunch: ~52% of public school students eligible nationally
+
+Use these benchmarks to contextualize every school analysis:
+1. Academic capabilities and programs (AP, IB, STEM, dual enrollment, honors) — compare to national averages
+2. Student outcomes (college placement, graduation rates, test scores) — benchmark against ACGR by state and demographics
+3. School investment and resources (per-pupil spending, teacher salaries, facilities, teacher quality indicators)
+4. Opportunity equity (free/reduced lunch %, Title I status, how well school serves disadvantaged students)
+5. Regional opportunity context (job market, economic indicators, immediate college enrollment rates)
+6. Overall opportunity score for students (0-100) — grounded in how this school compares to national/state benchmarks
+
+Always compare school metrics against these benchmarks. A school with 84% graduation rate may look average nationally but could be exceptional given its demographics.
 
 Provide structured analysis in JSON format."""
                     },
@@ -253,6 +280,7 @@ Provide structured analysis in JSON format."""
 
         # Federal references
         sources.append("https://nces.ed.gov/fastfacts/")
+        sources.append("https://nces.ed.gov/programs/coe")  # NCES Condition of Education indicators
 
         # De-duplicate while preserving order
         seen = set()
@@ -559,11 +587,21 @@ Based on available sources and data, provide a comprehensive JSON analysis inclu
    - Demographic diversity indicators
    - Community sentiment/satisfaction
 
-5. Opportunity Score
-   - Provide an overall opportunity score (0-100) reflecting how well this school positions students for college/career success
-   - Consider academic rigor, resources, student outcomes, and addressing barriers
+5. Opportunity Equity & Access
+   - Free/reduced lunch percentage vs national average (52%)
+   - Title I status
+   - How well school serves disadvantaged students relative to its demographics
+   - Dual enrollment availability and participation
+   - Compare graduation rate to NCES benchmarks: national 87%, GA 84%
+   - Compare immediate college enrollment to national 62%
 
-6. Confidence Score
+6. Opportunity Score
+   - Provide an overall opportunity score (0-100) reflecting how well this school positions students for college/career success
+   - Use NCES Condition of Education benchmarks as reference points
+   - Consider: academic rigor, resources, student outcomes, equity, and addressing barriers
+   - A school exceeding benchmarks given its demographics should score higher than raw numbers suggest
+
+7. Confidence Score
    - How confident you are in this analysis (0-100) based on data availability
 
 Available web sources to analyze (including a search query hint if provided): {json.dumps(web_sources) if web_sources else 'None provided'}

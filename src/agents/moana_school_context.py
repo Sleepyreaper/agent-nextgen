@@ -56,6 +56,7 @@ class MoanaSchoolContext(BaseAgent):
         # National and state data sources for non-Georgia schools
         self.national_data_sources = {
             'nces': 'https://nces.ed.gov/ccd/',  # National Center for Education Statistics
+            'nces_coe': 'https://nces.ed.gov/programs/coe',  # NCES Condition of Education indicators
             'great_schools': 'https://www.greatschools.org/',
             'school_digger': 'https://www.schooldigger.com/',
             'niche': 'https://www.niche.com/k12/search/best-schools/',
@@ -858,8 +859,16 @@ PERFORMANCE METRICS:
 COLLEGE PREPARATION:
 - Number of students going to 4-year colleges
 - Dual enrollment/early college programs
+- Immediate college enrollment rate vs national 62%
 
-Provide this as a structured analysis. Be honest about data availability. If exact numbers aren't publicly available, provide conservative estimates based on school size/type/location and clearly label them as estimates."""
+OPPORTUNITY BENCHMARKING (use NCES Condition of Education 2024):
+- Compare graduation rate to national 87% and state averages (GA=84%)
+- Compare AP access to national ~35% participation rate
+- Compare free/reduced lunch to national ~52%
+- Note if school exceeds expectations given its demographics
+- Assess dual enrollment availability as equity indicator
+
+Provide this as a structured analysis. Be honest about data availability. If exact numbers aren't publicly available, provide conservative estimates based on school size/type/location and clearly label them as estimates. Always contextualize against NCES benchmarks."""
 
         try:
             response = self._create_chat_completion(
@@ -868,7 +877,7 @@ Provide this as a structured analysis. Be honest about data availability. If exa
                 messages=[
                     {
                         "role": "system",
-                        "content": "You are part of an NIH Department of Genetics review panel evaluating Emory NextGen applicants. You find and synthesize publicly available school data to contextualize opportunity and STEM access. Use national and state sources, not just Georgia data. Label estimates clearly and avoid overconfident claims."
+                        "content": "You are part of an NIH Department of Genetics review panel evaluating Emory NextGen applicants. You find and synthesize publicly available school data to contextualize opportunity and STEM access. Use national and state sources, not just Georgia data. Label estimates clearly and avoid overconfident claims.\n\nNCES CONDITION OF EDUCATION BENCHMARKS (2024):\n- National ACGR: 87% (GA: 84%). By race: Asian/Pacific Islander 94%, White 90%, Hispanic 83%, Black 81%, AI/AN 74%\n- Economically disadvantaged students graduate at 81%, students with disabilities at 71%\n- Immediate college enrollment: 62% overall (45% 4-year, 17% 2-year). Asian 74%, White 64%, Black 61%, Hispanic 58%\n- AP participation: ~35% of students take AP; pass rate ~60%. Schools with 10+ AP courses signal strong investment\n- Dual enrollment: ~1.4M students nationally. A key equity indicator for rural/under-resourced schools\n- Free/reduced lunch: ~52% of students eligible nationally. Title I schools: ~56% of public schools\n- Student-teacher ratio: ~16:1 nationally. Per-pupil spending: ~$14,000 average\n- Status dropout rate: 5.3% overall (AI/AN 9.9%, Hispanic 7.9%, Black 5.7%, White 4.3%, Asian 1.9%)\n\nUse these benchmarks to evaluate whether a school is above, at, or below national/state norms. A school beating benchmarks given its demographics deserves recognition."
                     },
                     {
                         "role": "user",
@@ -1005,7 +1014,7 @@ Provide realistic, conservative estimates. Explicitly note where opportunity is 
                 messages=[
                     {
                         "role": "system",
-                        "content": "You are part of an NIH Department of Genetics review panel evaluating Emory NextGen applicants. Provide realistic assessments of high schools based on common patterns. Be specific with numbers, label estimates, and call out opportunity constraints."
+                        "content": "You are part of an NIH Department of Genetics review panel evaluating Emory NextGen applicants. Provide realistic assessments of high schools based on common patterns. Be specific with numbers, label estimates, and call out opportunity constraints.\n\nNCES BENCHMARKS: Graduation rate national avg 87% (GA 84%). AP participation ~35%. Free/reduced lunch ~52% nationally. Immediate college enrollment 62%. Compare this school's metrics against these benchmarks, especially accounting for demographics and socioeconomic context."
                     },
                     {
                         "role": "user",
@@ -1562,7 +1571,7 @@ This data will provide accurate context for evaluating student opportunity and a
         messages = [
             {
                 "role": "system",
-                "content": "You are Moana, an expert in education systems and school contexts. You understand socioeconomic factors, advanced programs, and educational opportunities. Use broader knowledge and public sources beyond Georgia. Emphasize how opportunity constraints shape interpretation of performance."
+                "content": "You are Moana, an expert in education systems and school contexts. You understand socioeconomic factors, advanced programs, and educational opportunities. Use broader knowledge and public sources beyond Georgia. Emphasize how opportunity constraints shape interpretation of performance.\n\nNCES CONDITION OF EDUCATION REFERENCE POINTS:\n- National graduation rate: 87% (varies by state and demographics)\n- GA graduation rate: 84%\n- AP access: ~35% of students take AP; 10+ AP courses = strong academic investment\n- Dual enrollment growing as equity bridge for under-resourced schools\n- Free/reduced lunch: 52% eligible nationally; schools above this face greater resource challenges\n- Immediate college enrollment: 62% nationally, lower for males (57%) vs females (66%)\n- College enrollment by race: Asian 74%, White 64%, Black 61%, Hispanic 58%\n- Status dropout rate: 5.3% nationally\n- Per-pupil spending and student-teacher ratio vary widely and are key capability indicators\n\nUse these benchmarks when evaluating any school's context. A 4.0 GPA from a school with 2 AP courses and 75% free lunch is categorically different from the same GPA at a school with 20 APs and 15% free lunch. Context defines opportunity."
             }
         ] + self.conversation_history
         
