@@ -465,7 +465,13 @@ class FoundryClient:
                 elif "choices" in raw and isinstance(raw["choices"], list) and raw["choices"]:
                     c0 = raw["choices"][0]
                     if isinstance(c0, dict):
-                        text = c0.get("text") or c0.get("message") or json.dumps(c0)
+                        msg = c0.get("message")
+                        if isinstance(msg, dict):
+                            text = msg.get("content") or json.dumps(msg)
+                        elif isinstance(msg, str):
+                            text = msg
+                        else:
+                            text = c0.get("text") or json.dumps(c0)
                     else:
                         text = str(c0)
                 else:

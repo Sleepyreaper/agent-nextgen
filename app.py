@@ -5093,13 +5093,23 @@ def trigger_school_analysis_sync(school_id):
         )
         
         # Return full result for debugging
+        enriched = result.get('enriched_data', {})
+        # If enriched_data has ChatCompletionMessage keys, extract the real content
+        if isinstance(enriched, dict) and 'content' in enriched and 'role' in enriched:
+            raw_content = enriched.get('content', '')
+            enriched_preview = f"MESSAGE_OBJECT_DETECTED - content preview: {str(raw_content)[:500]}"
+        else:
+            enriched_preview = str(enriched)[:500]
+        
         return jsonify({
             'status': 'success',
             'analysis_status': result.get('analysis_status'),
             'error': result.get('error'),
             'opportunity_score': result.get('opportunity_score'),
             'confidence_score': result.get('confidence_score'),
-            'enriched_data_keys': list(result.get('enriched_data', {}).keys()),
+            'enriched_data_keys': list(result.get('enriched_data', {}).keys()) if isinstance(result.get('enriched_data'), dict) else str(type(result.get('enriched_data'))),
+            'enriched_data_preview': enriched_preview,
+            'analysis_summary': result.get('analysis_summary', '')[:500],
             'model_used': result.get('model_used'),
             'agent_name': result.get('agent_name'),
             'result_keys': list(result.keys())
