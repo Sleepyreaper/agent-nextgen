@@ -74,6 +74,6 @@ opentelemetry-instrumentation-requests==0.49b2
 # OTLP exporter required by src/observability imports (fallback when no App Insights)
 opentelemetry-exporter-otlp-proto-grpc==1.28.2
 
-# GenAI Semantic Conventions for agent observability (Agent Framework compatible)
-opentelemetry-semantic-conventions-ai==0.4.14
+# GenAI Semantic Conventions attribute names are defined as string literals in
+# telemetry_helpers.py (no package needed; compatible with OTel SDK 1.28)
 
