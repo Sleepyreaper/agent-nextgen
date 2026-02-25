@@ -66,6 +66,25 @@ def parse_boolean(value):
     return s in ('y', 'yes', 'true', '1')
 
 
+def _normalize_name(name: str) -> str:
+    """Lowercase, strip whitespace/punctuation for dedup matching."""
+    import re
+    return re.sub(r'[^a-z0-9 ]', '', name.lower()).strip()
+
+
+def _score_richness(record: dict) -> tuple:
+    """Return a sort key so the richest record wins during dedup.
+    Priority: was_scored=True > has total_rating > has more non-null rubric fields.
+    """
+    scored = 1 if record.get('was_scored') else 0
+    total = record.get('total_rating') or 0
+    filled = sum(1 for k in ('academic_record', 'stem_interest', 'essay_video',
+                              'recommendation', 'bonus', 'total_rating',
+                              'overall_rating', 'preliminary_score')
+                  if record.get(k) is not None)
+    return (scored, filled, total)
+
+
 def parse_xlsx(filepath, cohort_year=2024):
     """Parse Excel file and return list of score dictionaries."""
     wb = openpyxl.load_workbook(filepath, read_only=True, data_only=True)
@@ -142,7 +161,22 @@ def parse_xlsx(filepath, cohort_year=2024):
         scores.append(score_data)
 
     wb.close()
-    return scores
+
+    # Deduplicate: keep one record per student name (the richest row wins)
+    seen: dict = {}  # normalized_name -> best record
+    for record in scores:
+        key = _normalize_name(record.get('applicant_name', ''))
+        if not key:
+            continue
+        if key not in seen or _score_richness(record) > _score_richness(seen[key]):
+            seen[key] = record
+
+    deduped = list(seen.values())
+    if len(deduped) < len(scores):
+        print(f"  Deduplication: {len(scores)} rows → {len(deduped)} unique students "
+              f"({len(scores) - len(deduped)} duplicate rows merged)")
+
+    return deduped
 
 
 def import_scores(filepath, cohort_year=2024, clear_first=False):
