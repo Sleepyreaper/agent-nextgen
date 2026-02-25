@@ -387,14 +387,6 @@ def get_orchestrator():
         
         # Register supporting agents
         orchestrator_agent.register_agent(
-            "gaston",
-            GastonEvaluator(
-                name="Gaston Evaluator",
-                client=client,
-                model=model_name
-            )
-        )
-        orchestrator_agent.register_agent(
             "bashful",
             BashfulAgent(
                 name="Bashful Agent",
