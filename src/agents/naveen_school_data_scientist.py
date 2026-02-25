@@ -12,6 +12,7 @@ import logging
 import json
 import re
 import time
+from decimal import Decimal
 from src.utils import safe_load_json
 from typing import Dict, Any, Optional, List
 from datetime import datetime
@@ -29,6 +30,21 @@ except Exception:
     from observability import get_tracer
 
 logger = logging.getLogger(__name__)
+
+
+def _sanitize_for_json(obj):
+    """Recursively convert Decimal/datetime values so json.dumps works."""
+    if isinstance(obj, dict):
+        return {k: _sanitize_for_json(v) for k, v in obj.items()}
+    if isinstance(obj, (list, tuple)):
+        return [_sanitize_for_json(v) for v in obj]
+    if isinstance(obj, Decimal):
+        return float(obj)
+    if isinstance(obj, datetime):
+        return obj.isoformat()
+    if hasattr(obj, 'isoformat'):  # date, time
+        return obj.isoformat()
+    return obj
 
 
 class NaveenSchoolDataScientist(BaseAgent):
@@ -527,7 +543,7 @@ Based on available sources and data, provide a comprehensive JSON analysis inclu
 
 Available web sources to analyze (including a search query hint if provided): {json.dumps(web_sources) if web_sources else 'None provided'}
 
-Existing data from other agents: {json.dumps(existing_data) if existing_data else 'None provided'}
+Existing data from other agents: {json.dumps(_sanitize_for_json(existing_data)) if existing_data else 'None provided'}
 
 Focus guidance: {enrichment_focus if enrichment_focus else 'General enrichment requested'}
 

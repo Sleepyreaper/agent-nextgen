@@ -5063,6 +5063,52 @@ def trigger_school_analysis(school_id):
         return jsonify({'status': 'error', 'error': str(e)}), 500
 
 
+@app.route('/api/school/<int:school_id>/analyze-sync', methods=['POST'])
+def trigger_school_analysis_sync(school_id):
+    """Synchronous analysis endpoint for diagnostics — returns full result."""
+    try:
+        school = db.get_school_enriched_data(school_id)
+        if not school:
+            return jsonify({'status': 'error', 'error': 'School not found'}), 404
+        
+        from src.agents.naveen_school_data_scientist import NaveenSchoolDataScientist
+        client_mini = get_ai_client_mini()
+        scientist = NaveenSchoolDataScientist(
+            name="Naveen School Data Scientist",
+            client=client_mini,
+            model=config.deployment_name_mini
+        )
+        
+        web_sources = school.get('web_sources_analyzed', [])
+        if isinstance(web_sources, str):
+            import json as _json
+            web_sources = _json.loads(web_sources)
+        
+        result = scientist.analyze_school(
+            school_name=school['school_name'],
+            school_district=school.get('school_district', ''),
+            state_code=school.get('state_code', ''),
+            web_sources=web_sources,
+            existing_data=school
+        )
+        
+        # Return full result for debugging
+        return jsonify({
+            'status': 'success',
+            'analysis_status': result.get('analysis_status'),
+            'error': result.get('error'),
+            'opportunity_score': result.get('opportunity_score'),
+            'confidence_score': result.get('confidence_score'),
+            'enriched_data_keys': list(result.get('enriched_data', {}).keys()),
+            'model_used': result.get('model_used'),
+            'agent_name': result.get('agent_name'),
+            'result_keys': list(result.keys())
+        })
+    except Exception as e:
+        import traceback
+        return jsonify({'status': 'error', 'error': str(e), 'traceback': traceback.format_exc()}), 500
+
+
 @app.route('/api/school/lookup', methods=['POST'])
 def lookup_or_create_school():
     """Auto-lookup: if a school exists, return it. If not, create a skeleton record.
