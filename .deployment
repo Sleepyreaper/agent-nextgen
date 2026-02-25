@@ -1,5 +1,4 @@
 [config]
-SCM_DO_BUILD_DURING_DEPLOYMENT=true
-ENABLE_ORYX_BUILD=true
-# Trigger workflow
-# Trigger workflow 2026-02-18T22:13:29
+SCM_DO_BUILD_DURING_DEPLOYMENT=false
+ENABLE_ORYX_BUILD=false
+# Using startup.sh for pip install instead of Oryx build
