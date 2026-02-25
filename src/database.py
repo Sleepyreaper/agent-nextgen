@@ -916,6 +916,58 @@ class Database:
                 logger.warning(f"Could not create is_test_data index: {idx_err}")
             
             conn.commit()
+
+            # ===== HISTORICAL SCORES TABLE =====
+            try:
+                cursor.execute("""
+                    SELECT EXISTS(
+                        SELECT 1 FROM information_schema.tables
+                        WHERE table_name = 'historical_scores'
+                    )
+                """)
+                hs_exists = cursor.fetchone()[0]
+                if not hs_exists:
+                    cursor.execute("""
+                        CREATE TABLE IF NOT EXISTS historical_scores (
+                            score_id SERIAL PRIMARY KEY,
+                            cohort_year INTEGER NOT NULL DEFAULT 2024,
+                            applicant_name VARCHAR(255) NOT NULL,
+                            applicant_name_normalized VARCHAR(255),
+                            status VARCHAR(50),
+                            preliminary_score VARCHAR(50),
+                            quick_notes TEXT,
+                            reviewer_name VARCHAR(255),
+                            was_scored BOOLEAN DEFAULT FALSE,
+                            academic_record NUMERIC(3,1),
+                            stem_interest NUMERIC(3,1),
+                            essay_video NUMERIC(3,1),
+                            recommendation NUMERIC(3,1),
+                            bonus NUMERIC(3,1),
+                            total_rating NUMERIC(4,1),
+                            eligibility_notes TEXT,
+                            previous_research_experience TEXT,
+                            advanced_coursework TEXT,
+                            overall_rating VARCHAR(255),
+                            column_q TEXT,
+                            application_id INTEGER REFERENCES Applications(application_id) ON DELETE SET NULL,
+                            imported_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                            import_source VARCHAR(500),
+                            row_number INTEGER
+                        )
+                    """)
+                    cursor.execute("CREATE INDEX IF NOT EXISTS idx_historical_scores_year ON historical_scores(cohort_year)")
+                    cursor.execute("CREATE INDEX IF NOT EXISTS idx_historical_scores_name ON historical_scores(applicant_name_normalized)")
+                    cursor.execute("CREATE INDEX IF NOT EXISTS idx_historical_scores_status ON historical_scores(status)")
+                    cursor.execute("CREATE INDEX IF NOT EXISTS idx_historical_scores_app_id ON historical_scores(application_id)")
+                    cursor.execute("CREATE INDEX IF NOT EXISTS idx_historical_scores_total ON historical_scores(total_rating)")
+                    conn.commit()
+                    logger.info("✓ Created historical_scores table with indexes")
+                else:
+                    logger.debug("historical_scores table already exists, skipping")
+            except Exception as hs_err:
+                logger.error(f"❌ Failed to create historical_scores table: {hs_err}")
+                conn.rollback()
+
             # attempt automatic backfill of student_summary for any existing
             # rows that already have agent_results.  This is idempotent and
             # safe to run repeatedly.
@@ -3178,6 +3230,241 @@ class Database:
         except Exception as e:
             logger.error(f"Error updating file upload review: {e}")
             return False
+
+    # =====================================================================
+    # Historical Scores - 2024 cohort human-assigned rubric data
+    # =====================================================================
+
+    @staticmethod
+    def _normalize_name(name: str) -> str:
+        """Normalize a student name for fuzzy matching.
+        Handles 'Last, First' and 'First Last' formats.
+        Strips whitespace, lowercases, removes extra punctuation.
+        """
+        if not name:
+            return ""
+        import re
+        name = name.strip().lower()
+        # Remove extra whitespace
+        name = re.sub(r'\s+', ' ', name)
+        # If "Last, First" → "first last"
+        if ',' in name:
+            parts = [p.strip() for p in name.split(',', 1)]
+            if len(parts) == 2:
+                name = f"{parts[1]} {parts[0]}"
+        return name
+
+    def insert_historical_score(self, score_data: Dict[str, Any]) -> Optional[int]:
+        """Insert a single historical score row. Returns score_id or None."""
+        try:
+            query = """
+                INSERT INTO historical_scores
+                (cohort_year, applicant_name, applicant_name_normalized,
+                 status, preliminary_score, quick_notes, reviewer_name, was_scored,
+                 academic_record, stem_interest, essay_video, recommendation,
+                 bonus, total_rating, eligibility_notes, previous_research_experience,
+                 advanced_coursework, overall_rating, column_q,
+                 import_source, row_number)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                RETURNING score_id
+            """
+            normalized = self._normalize_name(score_data.get('applicant_name', ''))
+            params = (
+                score_data.get('cohort_year', 2024),
+                score_data.get('applicant_name', ''),
+                normalized,
+                score_data.get('status'),
+                score_data.get('preliminary_score'),
+                score_data.get('quick_notes'),
+                score_data.get('reviewer_name'),
+                score_data.get('was_scored', False),
+                score_data.get('academic_record'),
+                score_data.get('stem_interest'),
+                score_data.get('essay_video'),
+                score_data.get('recommendation'),
+                score_data.get('bonus'),
+                score_data.get('total_rating'),
+                score_data.get('eligibility_notes'),
+                score_data.get('previous_research_experience'),
+                score_data.get('advanced_coursework'),
+                score_data.get('overall_rating'),
+                score_data.get('column_q'),
+                score_data.get('import_source'),
+                score_data.get('row_number'),
+            )
+            return self.execute_scalar(query, params)
+        except Exception as e:
+            logger.error(f"Error inserting historical score: {e}")
+            return None
+
+    def bulk_insert_historical_scores(self, scores: List[Dict[str, Any]]) -> Dict[str, Any]:
+        """Bulk insert historical scores. Returns summary of results."""
+        inserted = 0
+        errors = 0
+        for score in scores:
+            result = self.insert_historical_score(score)
+            if result:
+                inserted += 1
+            else:
+                errors += 1
+        return {"inserted": inserted, "errors": errors, "total": len(scores)}
+
+    def get_historical_scores(self, cohort_year: Optional[int] = None,
+                               status: Optional[str] = None,
+                               scored_only: bool = False) -> List[Dict[str, Any]]:
+        """Get historical scores with optional filters."""
+        conditions = []
+        params = []
+        if cohort_year:
+            conditions.append("cohort_year = %s")
+            params.append(cohort_year)
+        if status:
+            conditions.append("LOWER(status) = LOWER(%s)")
+            params.append(status)
+        if scored_only:
+            conditions.append("was_scored = TRUE")
+
+        where = "WHERE " + " AND ".join(conditions) if conditions else ""
+        query = f"SELECT * FROM historical_scores {where} ORDER BY applicant_name"
+        return self.execute_query(query, tuple(params) if params else None)
+
+    def get_historical_score_by_name(self, name: str, cohort_year: int = 2024) -> Optional[Dict[str, Any]]:
+        """Find a historical score by fuzzy name matching.
+        Tries exact normalized match first, then LIKE-based partial match.
+        """
+        normalized = self._normalize_name(name)
+        if not normalized:
+            return None
+
+        # Exact normalized match
+        query = """
+            SELECT * FROM historical_scores
+            WHERE applicant_name_normalized = %s AND cohort_year = %s
+            LIMIT 1
+        """
+        results = self.execute_query(query, (normalized, cohort_year))
+        if results:
+            return results[0]
+
+        # Partial match: try last name + first initial
+        parts = normalized.split()
+        if len(parts) >= 2:
+            # Try "first% last%" pattern
+            like_pattern = f"%{parts[0]}%{parts[-1]}%"
+            query = """
+                SELECT * FROM historical_scores
+                WHERE applicant_name_normalized LIKE %s AND cohort_year = %s
+                ORDER BY applicant_name_normalized
+                LIMIT 1
+            """
+            results = self.execute_query(query, (like_pattern, cohort_year))
+            if results:
+                return results[0]
+
+            # Try reversed: "last% first%"
+            like_pattern_rev = f"%{parts[-1]}%{parts[0]}%"
+            results = self.execute_query(query, (like_pattern_rev, cohort_year))
+            if results:
+                return results[0]
+
+        return None
+
+    def link_historical_score_to_application(self, score_id: int, application_id: int) -> bool:
+        """Link a historical score record to an application."""
+        try:
+            query = "UPDATE historical_scores SET application_id = %s WHERE score_id = %s"
+            self.execute_non_query(query, (application_id, score_id))
+            return True
+        except Exception as e:
+            logger.error(f"Error linking historical score {score_id} to application {application_id}: {e}")
+            return False
+
+    def get_historical_stats(self, cohort_year: int = 2024) -> Dict[str, Any]:
+        """Get aggregate stats for a cohort year's historical scores."""
+        try:
+            query = """
+                SELECT
+                    COUNT(*) as total_applicants,
+                    COUNT(CASE WHEN LOWER(status) = 'accepted' THEN 1 END) as accepted,
+                    COUNT(CASE WHEN LOWER(status) != 'accepted' OR status IS NULL THEN 1 END) as not_accepted,
+                    COUNT(CASE WHEN was_scored = TRUE THEN 1 END) as scored_count,
+                    AVG(CASE WHEN was_scored THEN total_rating END) as avg_total_rating,
+                    AVG(CASE WHEN was_scored THEN academic_record END) as avg_academic_record,
+                    AVG(CASE WHEN was_scored THEN stem_interest END) as avg_stem_interest,
+                    AVG(CASE WHEN was_scored THEN essay_video END) as avg_essay_video,
+                    AVG(CASE WHEN was_scored THEN recommendation END) as avg_recommendation,
+                    AVG(CASE WHEN was_scored THEN bonus END) as avg_bonus,
+                    AVG(CASE WHEN was_scored AND LOWER(status) = 'accepted' THEN total_rating END) as avg_accepted_total,
+                    AVG(CASE WHEN was_scored AND LOWER(status) != 'accepted' THEN total_rating END) as avg_rejected_total,
+                    COUNT(CASE WHEN application_id IS NOT NULL THEN 1 END) as linked_to_applications
+                FROM historical_scores
+                WHERE cohort_year = %s
+            """
+            results = self.execute_query(query, (cohort_year,))
+            if results:
+                row = results[0]
+                # Convert Decimal values to float for JSON serialization
+                return {k: float(v) if isinstance(v, Decimal) else v for k, v in row.items()}
+            return {}
+        except Exception as e:
+            logger.error(f"Error getting historical stats: {e}")
+            return {}
+
+    def get_historical_scores_for_milo(self, cohort_year: int = 2024) -> Dict[str, Any]:
+        """Get historical scores formatted for Milo's calibration.
+        Returns accepted vs not-accepted samples with rubric dimensions.
+        """
+        try:
+            all_scores = self.get_historical_scores(cohort_year=cohort_year, scored_only=True)
+            stats = self.get_historical_stats(cohort_year)
+
+            accepted = []
+            not_accepted = []
+            for row in all_scores:
+                entry = {
+                    "applicant_name": row.get("applicant_name"),
+                    "status": row.get("status"),
+                    "preliminary_score": row.get("preliminary_score"),
+                    "academic_record": float(row["academic_record"]) if row.get("academic_record") is not None else None,
+                    "stem_interest": float(row["stem_interest"]) if row.get("stem_interest") is not None else None,
+                    "essay_video": float(row["essay_video"]) if row.get("essay_video") is not None else None,
+                    "recommendation": float(row["recommendation"]) if row.get("recommendation") is not None else None,
+                    "bonus": float(row["bonus"]) if row.get("bonus") is not None else None,
+                    "total_rating": float(row["total_rating"]) if row.get("total_rating") is not None else None,
+                    "overall_rating": row.get("overall_rating"),
+                    "previous_research_experience": row.get("previous_research_experience"),
+                    "reviewer_name": row.get("reviewer_name"),
+                }
+                if row.get("status") and row["status"].lower() == "accepted":
+                    accepted.append(entry)
+                else:
+                    not_accepted.append(entry)
+
+            return {
+                "cohort_year": cohort_year,
+                "stats": stats,
+                "accepted_scores": accepted,
+                "not_accepted_scores": not_accepted,
+                "total_scored": len(all_scores),
+            }
+        except Exception as e:
+            logger.error(f"Error getting historical scores for Milo: {e}")
+            return {"error": str(e)}
+
+    def clear_historical_scores(self, cohort_year: int = 2024) -> int:
+        """Delete all historical scores for a given cohort year. Returns count deleted."""
+        try:
+            query = "DELETE FROM historical_scores WHERE cohort_year = %s"
+            conn = self.connect()
+            cursor = conn.cursor()
+            cursor.execute(query, (cohort_year,))
+            deleted = cursor.rowcount
+            conn.commit()
+            cursor.close()
+            return deleted
+        except Exception as e:
+            logger.error(f"Error clearing historical scores: {e}")
+            return 0
 
 
 # Create a singleton instance for module-level import

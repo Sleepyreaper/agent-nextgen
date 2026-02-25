@@ -51,7 +51,12 @@ class MiloDataScientist(BaseAgent):
         self._cached_signature: Optional[tuple] = None
 
     async def analyze_training_insights(self) -> Dict[str, Any]:
-        """Analyze training-only data and return selection insights."""
+        """Analyze training-only data and return selection insights.
+
+        When historical human scores are available (imported from the 2024
+        spreadsheet), they are included alongside the training examples so
+        Milo can calibrate against the actual rubric dimensions.
+        """
         # Register agent invocation with OpenTelemetry (GenAI Semantic Convention: invoke_agent)
         _otel_ctx = agent_run("Milo Data Scientist", "analyze_training_insights", agent_id="milo-data-scientist")
         _otel_ctx.__enter__()
@@ -76,6 +81,13 @@ class MiloDataScientist(BaseAgent):
                 "error": str(e)
             }
 
+        # Load historical human scoring data for calibration
+        historical_data = None
+        try:
+            historical_data = self.db.get_historical_scores_for_milo(2024)
+        except Exception:
+            pass  # gracefully degrade if table doesn't exist yet
+
         # compute average merlin score across the historical training set if available
         avg_score = None
         try:
@@ -98,7 +110,8 @@ class MiloDataScientist(BaseAgent):
         signature = (
             samples["counts"]["accepted"],
             samples["counts"]["not_selected"],
-            samples["counts"]["unknown"]
+            samples["counts"]["unknown"],
+            historical_data.get("total_scored", 0) if historical_data else 0
         )
 
         if self._is_cache_valid(signature):
@@ -106,7 +119,7 @@ class MiloDataScientist(BaseAgent):
             cached["cached"] = True
             return cached
 
-        prompt = self._build_prompt(samples)
+        prompt = self._build_prompt(samples, historical_data=historical_data)
         try:
             response = self._create_chat_completion(
                 operation="milo.analyze_training",
@@ -115,15 +128,18 @@ class MiloDataScientist(BaseAgent):
                     {
                         "role": "system",
                         "content": (
-                            "You are Milo, a careful data scientist. "
+                            "You are Milo, a careful data scientist for the Emory NextGen Scholars program. "
+                            "For the 2026 cohort we are looking for the TOP 50 candidates from 1,000+ applicants. "
                             "Use only the provided training data. "
+                            "When historical human rubric scores are provided, treat them as ground truth "
+                            "and use them to calibrate scoring thresholds. "
                             "Focus on patterns that differentiate accepted vs not selected. "
                             "If evidence is weak, say so. Return valid JSON only."
                         )
                     },
                     {"role": "user", "content": prompt}
                 ],
-                max_completion_tokens=1200,
+                max_completion_tokens=1800,
                 temperature=0.4,
                 response_format={"type": "json_object"}
             )
@@ -137,7 +153,9 @@ class MiloDataScientist(BaseAgent):
                 "cached": False,
                 "training_counts": samples["counts"],
                 "sample_sizes": samples["sample_sizes"],
-                "average_merlin_score": avg_score
+                "average_merlin_score": avg_score,
+                "historical_data_available": bool(historical_data and historical_data.get("total_scored", 0) > 0),
+                "historical_scored_count": historical_data.get("total_scored", 0) if historical_data else 0
             })
         except Exception as e:
             data = {
@@ -191,17 +209,47 @@ class MiloDataScientist(BaseAgent):
                     val = val[:1500] + '...'
                 app_subset[key] = val
 
+        # Look up this student's historical human scores if available
+        historical_score = None
+        try:
+            if self.db:
+                student_name = application.get('applicant_name', '')
+                historical_score = self.db.get_historical_score_by_name(student_name)
+        except Exception:
+            pass
+
+        historical_context = ""
+        if historical_score:
+            historical_context = (
+                "\n\nHISTORICAL HUMAN SCORING for this student (from 2024 cohort):\n"
+                + json.dumps({
+                    "status": historical_score.get("status"),
+                    "academic_record": float(historical_score["academic_record"]) if historical_score.get("academic_record") is not None else None,
+                    "stem_interest": float(historical_score["stem_interest"]) if historical_score.get("stem_interest") is not None else None,
+                    "essay_video": float(historical_score["essay_video"]) if historical_score.get("essay_video") is not None else None,
+                    "recommendation": float(historical_score["recommendation"]) if historical_score.get("recommendation") is not None else None,
+                    "bonus": float(historical_score["bonus"]) if historical_score.get("bonus") is not None else None,
+                    "total_rating": float(historical_score["total_rating"]) if historical_score.get("total_rating") is not None else None,
+                    "overall_rating": historical_score.get("overall_rating"),
+                    "reviewer_name": historical_score.get("reviewer_name"),
+                    "preliminary_score": historical_score.get("preliminary_score"),
+                }, ensure_ascii=True)
+                + "\nUse this human scoring data to calibrate your prediction. "
+                "The human reviewers' scores are the ground truth."
+            )
+
         prompt = (
             "You are Milo, the data scientist for the Emory NextGen Scholars program.\n"
-            "PROGRAM CONTEXT: There are approximately 30 openings each year and over "
-            "1,000 applicants. Selection is extremely competitive.\n\n"
+            "PROGRAM CONTEXT: For the 2026 cohort, we are looking for the TOP 50 "
+            "candidates from 1,000+ applicants. Selection is extremely competitive.\n\n"
             "Your training insights from historical accepted vs not-selected students:\n"
             + json.dumps(insights, ensure_ascii=True)
+            + historical_context
             + "\n\nNow evaluate this NEW applicant:\n"
             + json.dumps(app_subset, ensure_ascii=True)
             + "\n\nCompare this applicant against the historical patterns of who was "
             "selected and who was not.  Produce a 'Next Gen Match' probability that "
-            "reflects how likely this student would be among the ~30 selected from "
+            "reflects how likely this student would be among the top 50 selected from "
             "1,000+ applicants.\n\n"
             "Return valid JSON with these fields:\n"
             "{\n"
@@ -222,11 +270,13 @@ class MiloDataScientist(BaseAgent):
                         "content": (
                             "You are Milo, a data scientist who analyzes historical "
                             "selection patterns for the Emory NextGen Scholars program. "
-                            "The program selects roughly 30 students from 1,000+ applicants. "
+                            "For 2026, the program is expanding to select the top 50 "
+                            "students from 1,000+ applicants (~5% acceptance rate). "
                             "Be realistic and calibrated — a score of 50 means a coin flip, "
-                            "not a sure thing. Most applicants should score below 30 given "
-                            "the 3% acceptance rate. Only truly outstanding candidates "
-                            "should score above 60."
+                            "not a sure thing. Most applicants should score below 30. "
+                            "Only truly outstanding candidates should score above 60. "
+                            "When historical human rubric scores are available for a student, "
+                            "weight them heavily — they represent ground truth from expert reviewers."
                         )
                     },
                     {"role": "user", "content": prompt}
@@ -371,6 +421,25 @@ class MiloDataScientist(BaseAgent):
                 "status": row.get("status")
             }
 
+            # Enrich with historical rubric scores if available
+            student_name = item.get("applicant_name", "")
+            if student_name and self.db:
+                try:
+                    historical = self.db.get_historical_score_by_name(student_name)
+                    if historical:
+                        item["human_scores"] = {
+                            "academic_record": float(historical["academic_record"]) if historical.get("academic_record") is not None else None,
+                            "stem_interest": float(historical["stem_interest"]) if historical.get("stem_interest") is not None else None,
+                            "essay_video": float(historical["essay_video"]) if historical.get("essay_video") is not None else None,
+                            "recommendation": float(historical["recommendation"]) if historical.get("recommendation") is not None else None,
+                            "bonus": float(historical["bonus"]) if historical.get("bonus") is not None else None,
+                            "total_rating": float(historical["total_rating"]) if historical.get("total_rating") is not None else None,
+                            "overall_rating": historical.get("overall_rating"),
+                            "preliminary_score": historical.get("preliminary_score"),
+                        }
+                except Exception:
+                    pass
+
             if item["was_selected"] is True:
                 accepted.append(item)
             elif item["was_selected"] is False:
@@ -493,12 +562,54 @@ class MiloDataScientist(BaseAgent):
 
         raise RuntimeError("Foundry dataset connection not found. Set FOUNDRY_DATASET_CONNECTION_NAME.")
 
-    def _build_prompt(self, samples: Dict[str, Any]) -> str:
+    def _build_prompt(self, samples: Dict[str, Any], historical_data: Optional[Dict[str, Any]] = None) -> str:
         samples_json = json.dumps(samples, ensure_ascii=True)
-        return "\n".join([
+        lines = [
             "Analyze the training data below.",
             "Only use this data. Do not invent facts.",
             "Identify patterns that differentiate accepted vs not selected.",
+        ]
+
+        # Include historical rubric data if available
+        if historical_data and historical_data.get("total_scored", 0) > 0:
+            lines.extend([
+                "",
+                "=== HISTORICAL HUMAN RUBRIC SCORES (2024 Cohort) ===",
+                "These are REAL scores assigned by expert human reviewers.",
+                f"Total scored applicants: {historical_data['total_scored']}",
+                f"Accepted with scores: {len(historical_data.get('accepted_scores', []))}",
+                f"Not accepted with scores: {len(historical_data.get('not_accepted_scores', []))}",
+                "",
+                "Rubric: Academic Record (0-3), STEM Interest (0-3), Essay/Video (0-3), "
+                "Recommendation (0-2), Bonus (0-1) = Total (0-12)",
+                "",
+            ])
+            stats = historical_data.get("stats", {})
+            if stats.get("avg_accepted_total"):
+                lines.append(f"Avg total rating for ACCEPTED students: {stats['avg_accepted_total']:.1f}")
+            if stats.get("avg_rejected_total"):
+                lines.append(f"Avg total rating for NOT ACCEPTED students: {stats['avg_rejected_total']:.1f}")
+
+            # Include a sample of accepted scores
+            accepted_sample = historical_data.get("accepted_scores", [])[:15]
+            if accepted_sample:
+                lines.append("")
+                lines.append("Accepted students' rubric scores:")
+                lines.append(json.dumps(accepted_sample, ensure_ascii=True))
+
+            # Include a sample of not-accepted scores
+            not_accepted_sample = historical_data.get("not_accepted_scores", [])[:15]
+            if not_accepted_sample:
+                lines.append("")
+                lines.append("Not-accepted students' rubric scores:")
+                lines.append(json.dumps(not_accepted_sample, ensure_ascii=True))
+
+            lines.append("")
+            lines.append("Use these rubric scores to understand the TRUE scoring thresholds.")
+            lines.append("=== END HISTORICAL SCORES ===")
+            lines.append("")
+
+        lines.extend([
             "Return JSON with the fields:",
             "{",
             '  "summary": "",',
@@ -508,11 +619,13 @@ class MiloDataScientist(BaseAgent):
             '  "selection_risks": [""],',
             '  "data_gaps": [""],',
             '  "recommendations_for_merlin": [""],',
+            '  "rubric_thresholds": {"min_total_for_acceptance": 0, "avg_accepted_total": 0, "avg_rejected_total": 0},',
             '  "confidence": "High|Medium|Low"',
             "}",
             "Training data (JSON):",
             samples_json
         ])
+        return "\n".join(lines)
 
     def _truncate(self, text: Optional[str], limit: int = 1200) -> str:
         if not text:

@@ -78,3 +78,6 @@ opentelemetry-exporter-otlp-proto-grpc==1.28.2
 # GenAI Semantic Conventions attribute names are defined as string literals in
 # telemetry_helpers.py (no package needed; compatible with OTel SDK 1.28)
 
+# Excel spreadsheet parsing for historical score import
+openpyxl>=3.1.0
+

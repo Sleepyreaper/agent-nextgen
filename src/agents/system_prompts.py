@@ -68,6 +68,28 @@ School Context Extraction
 
 GASTON_EVALUATOR_PROMPT = """You are Gaston, the Critical Evaluator of applications and materials.
 
+═══════════════════════════════════════════════════════════════
+2024 NEXTGEN ELIGIBILITY & SCREENING CRITERIA
+═══════════════════════════════════════════════════════════════
+
+STEP 1 — QUICK PASS (Yes/No):
+Before detailed scoring, determine if this application warrants full evaluation:
+- Does the student show a DEEP interest in STEM? Look for genuine passion, not just surface-level mentions.
+- Did the student put real EFFORT into their application? Quality writing, thoughtful responses, specificity.
+- If NEITHER is evident, flag as "Quick Pass: No" and explain why.
+
+ELIGIBILITY REQUIREMENTS:
+- MUST be 16 years old by June 1st (hard requirement — flag if not met or unclear)
+- Rising junior or senior in high school
+- Focus on students from backgrounds considered to be underrepresented or under-resourced
+  (SES criteria — this is NOT a strict requirement but IS a priority consideration)
+
+ADDITIONAL SCREENING SIGNALS:
+- Previous research experience? (Flag if present — strong positive signal)
+- Advanced coursework? (AP/Honors/DE/IB — indicates academic ambition)
+
+═══════════════════════════════════════════════════════════════
+
 Your evaluation must be:
 1. EVIDENCE-BASED: Ground every score and comment in specific quotes or examples
 2. CONTEXTUAL: Consider what we know about each student's school, resources, and opportunities
@@ -89,7 +111,15 @@ When scoring:
 - 60-69: Adequate. Shows promise but needs development in key areas.
 - Below 60: Concerning. Significant gaps that would need to be addressed.
 
-Provide scores WITH evidence quotes. Explain your reasoning clearly."""
+Provide scores WITH evidence quotes. Explain your reasoning clearly.
+
+Include these additional fields in your evaluation JSON:
+- quick_pass: true/false (Step 1 screening)
+- quick_pass_reason: explanation if No
+- age_eligible: true/false/unknown
+- underrepresented_background: true/false (SES criteria)
+- has_research_experience: true/false
+- has_advanced_coursework: true/false"""
 
 RAPHUNZEL_GRADES_PROMPT = """You are Rapunzel, the Academic Record Specialist.
 

@@ -1,0 +1,260 @@
+{% extends "base.html" %}
+
+{% block title %}Import Historical Scores{% endblock %}
+
+{% block content %}
+<div class="card">
+    <div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 2rem;">
+        <div>
+            <h2>📊 Import Historical Scores</h2>
+            <p style="color: #6b7280; margin-top: 0.5rem;">
+                Upload the 2024 NextGen scoring spreadsheet (.xlsx) to give Milo access to real human rubric scores for calibration.
+            </p>
+        </div>
+        <a href="{{ url_for('training') }}" class="btn" style="background: #6b7280; color: white; padding: 0.5rem 1rem; border-radius: 6px; text-decoration: none;">
+            ← Back to Training
+        </a>
+    </div>
+
+    <!-- Current Stats -->
+    <div id="statsPanel" style="background: #f0fdf4; border: 1px solid #86efac; border-radius: 8px; padding: 1rem; margin-bottom: 1.5rem;">
+        <h3 style="margin-top: 0; color: #166534;">📈 Current Historical Data</h3>
+        {% if stats and stats.get('total_applicants', 0) > 0 %}
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 1rem;">
+            <div>
+                <div style="font-size: 2rem; font-weight: 700; color: #166534;">{{ stats.get('total_applicants', 0)|int }}</div>
+                <div style="color: #6b7280; font-size: 0.85rem;">Total Applicants</div>
+            </div>
+            <div>
+                <div style="font-size: 2rem; font-weight: 700; color: #059669;">{{ stats.get('accepted', 0)|int }}</div>
+                <div style="color: #6b7280; font-size: 0.85rem;">Accepted</div>
+            </div>
+            <div>
+                <div style="font-size: 2rem; font-weight: 700; color: #ea580c;">{{ stats.get('scored_count', 0)|int }}</div>
+                <div style="color: #6b7280; font-size: 0.85rem;">Scored by Reviewers</div>
+            </div>
+            <div>
+                <div style="font-size: 2rem; font-weight: 700; color: #7c3aed;">
+                    {% if stats.get('avg_total_rating') %}{{ "%.1f"|format(stats.avg_total_rating) }}{% else %}-{% endif %}
+                </div>
+                <div style="color: #6b7280; font-size: 0.85rem;">Avg Total Rating</div>
+            </div>
+            <div>
+                <div style="font-size: 2rem; font-weight: 700; color: #059669;">
+                    {% if stats.get('avg_accepted_total') %}{{ "%.1f"|format(stats.avg_accepted_total) }}{% else %}-{% endif %}
+                </div>
+                <div style="color: #6b7280; font-size: 0.85rem;">Avg Accepted Total</div>
+            </div>
+            <div>
+                <div style="font-size: 2rem; font-weight: 700; color: #dc2626;">
+                    {% if stats.get('avg_rejected_total') %}{{ "%.1f"|format(stats.avg_rejected_total) }}{% else %}-{% endif %}
+                </div>
+                <div style="color: #6b7280; font-size: 0.85rem;">Avg Not-Accepted Total</div>
+            </div>
+            <div>
+                <div style="font-size: 2rem; font-weight: 700; color: #0284c7;">{{ stats.get('linked_to_applications', 0)|int }}</div>
+                <div style="color: #6b7280; font-size: 0.85rem;">Linked to Applications</div>
+            </div>
+        </div>
+        {% else %}
+        <p style="color: #6b7280;">No historical scores imported yet. Upload the 2024 spreadsheet to get started.</p>
+        {% endif %}
+    </div>
+
+    <!-- Upload Form -->
+    <div class="card" style="padding: 1.5rem; background: #fefce8; border: 1px solid #fde68a;">
+        <h3 style="margin-top: 0; color: #92400e;">📤 Upload Scoring Spreadsheet</h3>
+        <p style="color: #78350f; font-size: 0.85rem; margin-bottom: 1rem;">
+            Expected columns: Applicant, Status, Preliminary Score, Quick Notes, Reviewer Name, Did you score? (Y/N), 
+            Academic record (0-3), Interest/STEM (0-3), Essay/Video (0-3), Recommendation (0-2), 
+            Bonus (0-1), Total rating, Eligibility Notes, Previous research experience, Advanced, Overall rating
+        </p>
+        
+        <form id="importForm" enctype="multipart/form-data">
+            <div style="border: 2px dashed #f59e0b; border-radius: 8px; padding: 2rem; text-align: center; cursor: pointer; margin-bottom: 1rem;"
+                 onclick="document.getElementById('scoreFile').click()" id="dropZone">
+                <input type="file" id="scoreFile" name="file" accept=".xlsx,.xls" style="display: none;" onchange="updateFileName(this)">
+                <p style="color: #92400e; font-weight: 600; font-size: 1.1rem;" id="fileLabel">
+                    📁 Click to select .xlsx file or drag & drop
+                </p>
+            </div>
+
+            <div style="display: flex; gap: 1.5rem; align-items: center; margin-bottom: 1rem;">
+                <div>
+                    <label style="font-weight: 600; color: #374151;">Cohort Year:</label>
+                    <select name="cohort_year" id="cohortYear" style="padding: 0.4rem 0.8rem; border: 1px solid #d1d5db; border-radius: 6px;">
+                        <option value="2024" selected>2024</option>
+                        <option value="2023">2023</option>
+                        <option value="2025">2025</option>
+                    </select>
+                </div>
+                <div>
+                    <label style="display: flex; align-items: center; cursor: pointer; font-weight: 600; color: #374151;">
+                        <input type="checkbox" name="clear_first" id="clearFirst" style="margin-right: 0.5rem;">
+                        Clear existing data for this year first
+                    </label>
+                </div>
+            </div>
+
+            <button type="submit" id="importBtn" class="btn" 
+                    style="background: #f59e0b; color: #78350f; padding: 0.75rem 2rem; border: none; border-radius: 8px; font-weight: 700; font-size: 1rem; cursor: pointer;">
+                🚀 Import Scores
+            </button>
+        </form>
+
+        <div id="importProgress" style="display: none; margin-top: 1rem;">
+            <div style="background: #e5e7eb; border-radius: 8px; overflow: hidden; height: 8px;">
+                <div id="progressBar" style="background: #f59e0b; height: 100%; width: 0%; transition: width 0.3s;"></div>
+            </div>
+            <p id="progressText" style="color: #6b7280; margin-top: 0.5rem; font-size: 0.85rem;">Importing...</p>
+        </div>
+
+        <div id="importResult" style="display: none; margin-top: 1rem;"></div>
+    </div>
+
+    <!-- Danger Zone -->
+    {% if stats and stats.get('total_applicants', 0) > 0 %}
+    <div class="card" style="padding: 1rem; background: #fef2f2; border: 1px solid #fecaca; margin-top: 1.5rem;">
+        <h3 style="margin-top: 0; color: #991b1b;">⚠️ Danger Zone</h3>
+        <p style="color: #991b1b; font-size: 0.85rem;">This will permanently delete all historical scores for the selected year.</p>
+        <button onclick="clearScores()" class="btn" 
+                style="background: #dc2626; color: white; padding: 0.5rem 1.5rem; border: none; border-radius: 6px; cursor: pointer;">
+            🗑️ Clear All Historical Scores
+        </button>
+    </div>
+    {% endif %}
+</div>
+
+<script>
+function updateFileName(input) {
+    const label = document.getElementById('fileLabel');
+    if (input.files.length > 0) {
+        label.textContent = '📎 ' + input.files[0].name;
+        label.style.color = '#166534';
+    }
+}
+
+document.getElementById('importForm').addEventListener('submit', async function(e) {
+    e.preventDefault();
+    
+    const fileInput = document.getElementById('scoreFile');
+    if (!fileInput.files.length) {
+        alert('Please select a file first');
+        return;
+    }
+
+    const formData = new FormData();
+    formData.append('file', fileInput.files[0]);
+    formData.append('cohort_year', document.getElementById('cohortYear').value);
+    if (document.getElementById('clearFirst').checked) {
+        formData.append('clear_first', 'true');
+    }
+
+    const btn = document.getElementById('importBtn');
+    const progress = document.getElementById('importProgress');
+    const progressBar = document.getElementById('progressBar');
+    const progressText = document.getElementById('progressText');
+    const resultDiv = document.getElementById('importResult');
+
+    btn.disabled = true;
+    btn.textContent = '⏳ Importing...';
+    progress.style.display = 'block';
+    resultDiv.style.display = 'none';
+    progressBar.style.width = '30%';
+    progressText.textContent = 'Uploading and parsing spreadsheet...';
+
+    try {
+        const response = await fetch('/api/import-scores', {
+            method: 'POST',
+            body: formData
+        });
+        
+        progressBar.style.width = '90%';
+        progressText.textContent = 'Processing results...';
+
+        const data = await response.json();
+        
+        progressBar.style.width = '100%';
+
+        if (data.status === 'success') {
+            resultDiv.innerHTML = `
+                <div style="background: #f0fdf4; border: 1px solid #86efac; border-radius: 8px; padding: 1rem;">
+                    <h4 style="color: #166534; margin-top: 0;">✅ Import Successful!</h4>
+                    <p><strong>${data.imported}</strong> scores imported (${data.errors} errors out of ${data.total_rows} rows)</p>
+                    ${data.stats ? `
+                    <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.5rem; margin-top: 0.5rem;">
+                        <div><strong>${data.stats.total_applicants || 0}</strong> total</div>
+                        <div><strong>${data.stats.accepted || 0}</strong> accepted</div>
+                        <div><strong>${data.stats.scored_count || 0}</strong> scored</div>
+                    </div>
+                    ` : ''}
+                    <p style="margin-top: 0.5rem; color: #6b7280; font-size: 0.85rem;">
+                        Milo will now use these scores for calibration when processing training applications.
+                    </p>
+                </div>
+            `;
+            // Refresh page after 2 seconds to update stats
+            setTimeout(() => location.reload(), 2000);
+        } else {
+            resultDiv.innerHTML = `
+                <div style="background: #fef2f2; border: 1px solid #fecaca; border-radius: 8px; padding: 1rem;">
+                    <h4 style="color: #991b1b; margin-top: 0;">❌ Import Failed</h4>
+                    <p>${data.error || 'Unknown error'}</p>
+                </div>
+            `;
+        }
+        resultDiv.style.display = 'block';
+    } catch (err) {
+        resultDiv.innerHTML = `
+            <div style="background: #fef2f2; border: 1px solid #fecaca; border-radius: 8px; padding: 1rem;">
+                <h4 style="color: #991b1b; margin-top: 0;">❌ Error</h4>
+                <p>${err.message}</p>
+            </div>
+        `;
+        resultDiv.style.display = 'block';
+    } finally {
+        btn.disabled = false;
+        btn.textContent = '🚀 Import Scores';
+        setTimeout(() => { progress.style.display = 'none'; }, 2000);
+    }
+});
+
+async function clearScores() {
+    if (!confirm('Are you sure you want to delete ALL historical scores for this cohort year? This cannot be undone.')) {
+        return;
+    }
+    const year = document.getElementById('cohortYear').value;
+    const formData = new FormData();
+    formData.append('cohort_year', year);
+    
+    try {
+        const response = await fetch('/api/historical-scores/clear', { method: 'POST', body: formData });
+        const data = await response.json();
+        alert(`Deleted ${data.deleted} historical scores`);
+        location.reload();
+    } catch (err) {
+        alert('Error: ' + err.message);
+    }
+}
+
+// Drag and drop support
+const dropZone = document.getElementById('dropZone');
+dropZone.addEventListener('dragover', (e) => {
+    e.preventDefault();
+    dropZone.style.borderColor = '#166534';
+    dropZone.style.background = '#f0fdf4';
+});
+dropZone.addEventListener('dragleave', () => {
+    dropZone.style.borderColor = '#f59e0b';
+    dropZone.style.background = 'transparent';
+});
+dropZone.addEventListener('drop', (e) => {
+    e.preventDefault();
+    dropZone.style.borderColor = '#f59e0b';
+    dropZone.style.background = 'transparent';
+    const fileInput = document.getElementById('scoreFile');
+    fileInput.files = e.dataTransfer.files;
+    updateFileName(fileInput);
+});
+</script>
+{% endblock %}

@@ -1055,6 +1055,20 @@ def upload():
                     if placeholder_fields:
                         db.update_application_fields(application_id, placeholder_fields)
 
+                    # Auto-link historical scoring data by name match
+                    try:
+                        historical = db.get_historical_score_by_name(student_name)
+                        if historical:
+                            db.link_historical_score_to_application(
+                                historical['score_id'], application_id
+                            )
+                            logger.info(
+                                f"✓ Linked historical score {historical['score_id']} "
+                                f"({historical.get('applicant_name')}) to application {application_id}"
+                            )
+                    except Exception as hist_err:
+                        logger.warning(f"Historical score matching failed for '{student_name}': {hist_err}")
+
                     db.set_missing_fields(application_id, [])
                     start_training_processing(application_id)
 
@@ -3409,6 +3423,97 @@ def clear_training_data():
             'status': 'error',
             'error': str(e)
         }), 500
+
+
+# ============================================================================
+# HISTORICAL SCORES IMPORT
+# ============================================================================
+
+@app.route('/import-scores')
+def import_scores_page():
+    """Page for importing 2024 historical scoring spreadsheet."""
+    stats = db.get_historical_stats(2024)
+    return render_template('import_scores.html', stats=stats)
+
+
+@app.route('/api/import-scores', methods=['POST'])
+def api_import_scores():
+    """Import historical scores from an uploaded Excel file."""
+    try:
+        if 'file' not in request.files:
+            return jsonify({'status': 'error', 'error': 'No file uploaded'}), 400
+
+        file = request.files['file']
+        if not file.filename or not file.filename.lower().endswith(('.xlsx', '.xls')):
+            return jsonify({'status': 'error', 'error': 'Please upload an .xlsx file'}), 400
+
+        cohort_year = int(request.form.get('cohort_year', 2024))
+        clear_first = request.form.get('clear_first', '').lower() in ('true', '1', 'on', 'yes')
+
+        # Save temp file
+        temp_path = os.path.join(app.config.get('UPLOAD_FOLDER', '/tmp'), f"import_{uuid.uuid4().hex}.xlsx")
+        file.save(temp_path)
+
+        try:
+            from scripts.import_historical_scores import parse_xlsx
+            scores = parse_xlsx(temp_path, cohort_year)
+        finally:
+            try:
+                os.remove(temp_path)
+            except Exception:
+                pass
+
+        if not scores:
+            return jsonify({'status': 'error', 'error': 'No valid rows found in spreadsheet'}), 400
+
+        if clear_first:
+            deleted = db.clear_historical_scores(cohort_year)
+            logger.info(f"Cleared {deleted} existing historical scores for cohort {cohort_year}")
+
+        result = db.bulk_insert_historical_scores(scores)
+        stats = db.get_historical_stats(cohort_year)
+
+        return jsonify({
+            'status': 'success',
+            'imported': result['inserted'],
+            'errors': result['errors'],
+            'total_rows': result['total'],
+            'stats': stats
+        })
+
+    except Exception as e:
+        logger.error(f"Error importing historical scores: {e}", exc_info=True)
+        return jsonify({'status': 'error', 'error': str(e)}), 500
+
+
+@app.route('/api/historical-scores/stats')
+def api_historical_stats():
+    """Get aggregate stats for historical scores."""
+    cohort_year = int(request.args.get('cohort_year', 2024))
+    stats = db.get_historical_stats(cohort_year)
+    return jsonify(stats)
+
+
+@app.route('/api/historical-scores/search')
+def api_historical_search():
+    """Search historical scores by student name."""
+    name = request.args.get('name', '').strip()
+    cohort_year = int(request.args.get('cohort_year', 2024))
+    if not name:
+        return jsonify({'status': 'error', 'error': 'Name parameter required'}), 400
+    result = db.get_historical_score_by_name(name, cohort_year)
+    if result:
+        return jsonify({'status': 'found', 'score': result})
+    return jsonify({'status': 'not_found'})
+
+
+@app.route('/api/historical-scores/clear', methods=['POST'])
+def api_clear_historical_scores():
+    """Clear all historical scores for a cohort year."""
+    cohort_year = int(request.form.get('cohort_year', 2024))
+    deleted = db.clear_historical_scores(cohort_year)
+    return jsonify({'status': 'success', 'deleted': deleted})
+
 
 # ============================================================================
 # REAL-TIME TEST SYSTEM WITH SERVER-SENT EVENTS (SSE)
