@@ -624,7 +624,17 @@ class SmeeOrchestrator(BaseAgent):
                     application_id=application.get('application_id')
                 )
             elif agent_id == 'recommendation_reader':
+                # Ensure Mulan has recommendation text. If Belle's section
+                # routing didn't find dedicated recommendation pages, fall
+                # back to the full document text so Mulan can still attempt
+                # to find recommendation content within it.
                 recommendation = application.get('recommendation_text', '')
+                if not recommendation or len(recommendation.strip()) < 30:
+                    fallback = application.get('_original_document_text', '')
+                    if fallback and len(fallback.strip()) > 100:
+                        recommendation = fallback
+                        logger.info(f"[Mulan] Backfilled recommendation_text from _original_document_text ({len(recommendation)} chars)")
+                        print(f"[Mulan] Backfilled recommendation_text from _original_document_text ({len(recommendation)} chars)")
                 result = await agent.parse_recommendation(
                     recommendation,
                     application.get('applicant_name', ''),
@@ -943,8 +953,16 @@ class SmeeOrchestrator(BaseAgent):
         # (especially Gaston) always have content even if Belle's section
         # detection later overwrites individual text fields with section-
         # specific content that may be shorter or empty.
-        if document_text:
-            application['_original_document_text'] = document_text
+        # Also gather ALL text fields from the DB so the fallback covers
+        # recommendation text that was stored separately.
+        all_text_parts = []
+        for _tf in ('application_text', 'transcript_text', 'recommendation_text'):
+            _tv = application.get(_tf, '')
+            if _tv and isinstance(_tv, str) and len(_tv.strip()) > 20:
+                all_text_parts.append(_tv)
+        original_full_text = '\n\n'.join(all_text_parts) if all_text_parts else document_text
+        if original_full_text:
+            application['_original_document_text'] = original_full_text
         
         document_name = application.get('file_name', 'application_document')
         # NOTE: avoid creating a placeholder application record here. We need

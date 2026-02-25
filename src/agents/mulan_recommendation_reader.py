@@ -26,6 +26,35 @@ class MulanRecommendationReader(BaseAgent):
     async def parse_recommendation(self, recommendation_text: str, applicant_name: str = "Unknown", application_id: Optional[int] = None) -> Dict[str, Any]:
         """Parse a recommendation letter into structured data."""
         with agent_run("Mulan", "parse_recommendation", {"applicant": applicant_name, "application_id": str(application_id or "")}) as span:
+            # Guard: if no recommendation text was provided, return a clean
+            # "missing" result instead of sending empty text to the LLM.
+            if not recommendation_text or not recommendation_text.strip() or len(recommendation_text.strip()) < 30:
+                print(f"[Mulan] WARNING: No recommendation text for {applicant_name} (len={len(recommendation_text or '')}). Returning missing-data result.")
+                return {
+                    "status": "success",
+                    "agent": self.name,
+                    "applicant_name": applicant_name,
+                    "recommender_name": "N/A",
+                    "recommender_role": "N/A",
+                    "relationship": "N/A",
+                    "duration_known": "N/A",
+                    "key_strengths": [],
+                    "growth_areas": [],
+                    "comparative_statements": [],
+                    "evidence_examples": [],
+                    "core_competencies": {},
+                    "endorsement_strength": 0,
+                    "specificity_score": 0,
+                    "recommendation_score": 0,
+                    "credibility_notes": "No recommendation letter was provided or detected in the uploaded documents.",
+                    "consensus_view": "No recommendation available.",
+                    "divergent_views": [],
+                    "summary": "No recommendation letter was provided for this student. The program expects two letters of recommendation.",
+                    "eligibility_signals": [],
+                    "confidence": "Low",
+                    "note": "No recommendation text available — document may not contain a recommendation letter."
+                }
+
             prompt = self._build_prompt(applicant_name, recommendation_text)
 
             try:
