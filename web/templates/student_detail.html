@@ -66,14 +66,6 @@
             <div class="stat-value">{{ agent_results.merlin.recommendation if agent_results and agent_results.merlin and agent_results.merlin.recommendation else 'N/A' }}</div>
             <div class="stat-label">Recommendation</div>
         </div>
-        <div class="stat-card">
-            <div class="stat-value">{{ 'Yes' if evaluation is defined and evaluation else 'No' }}</div>
-            <div class="stat-label">Evaluated</div>
-        </div>
-        <div class="stat-card">
-            <div class="stat-value">{{ summary['word_count'] if summary is defined and 'word_count' in summary and summary['word_count'] else 'N/A' }}</div>
-            <div class="stat-label">Words</div>
-        </div>
     </div>
 
     <div class="section">
