@@ -4978,36 +4978,63 @@ def trigger_school_analysis(school_id):
                 # Extract enriched data — Naveen puts detailed fields in enriched_data dict
                 enriched = result.get('enriched_data', {})
                 
+                # Helper: dig into nested dicts for a value
+                def _dig(d, *keys):
+                    """Try top-level keys, then nested dicts (like academic_courses.ap_course_count)."""
+                    if not isinstance(d, dict):
+                        return None
+                    for k in keys:
+                        if k in d and d[k] is not None:
+                            return d[k]
+                    # Try nested dicts
+                    for v in d.values():
+                        if isinstance(v, dict):
+                            for k in keys:
+                                if k in v and v[k] is not None:
+                                    return v[k]
+                    return None
+                
                 # Build comprehensive UPDATE with all available fields
-                opp_score = result.get('opportunity_score', 0) or 0
-                conf_score = result.get('confidence_score', 0) or 0
+                opp_score = _dig(enriched, 'opportunity_score') or result.get('opportunity_score', 0) or 0
+                conf_score = _dig(enriched, 'confidence_score') or result.get('confidence_score', 0) or 0
                 analysis_status = result.get('analysis_status', 'complete')
                 
-                # Extract school metrics from enriched_data or top-level result
-                total_students = enriched.get('enrollment_size') or enriched.get('total_students') or result.get('enrollment_size') or 0
-                graduation_rate = enriched.get('graduation_rate') or result.get('graduation_rate') or 0
-                college_rate = enriched.get('college_placement_rate') or enriched.get('college_acceptance_rate') or result.get('college_placement_rate') or 0
-                free_lunch = enriched.get('free_lunch_percentage') or result.get('free_lunch_percentage') or 0
-                ap_count = enriched.get('ap_classes_count') or enriched.get('ap_course_count') or result.get('ap_classes_count') or 0
-                ap_pass = enriched.get('ap_exam_pass_rate') or result.get('ap_exam_pass_rate') or 0
-                stem = enriched.get('stem_programs') or enriched.get('stem_program_available') or False
-                ib = enriched.get('ib_offerings') or enriched.get('ib_program_available') or False
-                dual = enriched.get('honors_programs') or enriched.get('dual_enrollment_available') or False
-                invest_level = enriched.get('school_investment_level') or result.get('school_investment_level') or 'medium'
+                # Extract school metrics from enriched_data (including nested dicts) or top-level result
+                total_students = _dig(enriched, 'total_enrollment', 'enrollment_size', 'total_students') or result.get('enrollment_size') or 0
+                graduation_rate = _dig(enriched, 'graduation_rate') or result.get('graduation_rate') or 0
+                college_rate = _dig(enriched, 'college_acceptance_rate', 'college_placement_rate') or result.get('college_placement_rate') or 0
+                free_lunch = _dig(enriched, 'free_lunch_percentage') or result.get('free_lunch_percentage') or 0
+                ap_count = _dig(enriched, 'ap_course_count', 'ap_classes_count') or result.get('ap_classes_count') or 0
+                ap_pass = _dig(enriched, 'ap_exam_pass_rate', 'ap_pass_rate') or result.get('ap_exam_pass_rate') or 0
+                stem = _dig(enriched, 'stem_programs', 'stem_program_available') or False
+                ib = _dig(enriched, 'ib_program_available', 'ib_offerings') or False
+                dual = _dig(enriched, 'dual_enrollment_available', 'honors_programs') or False
+                invest_level = _dig(enriched, 'school_investment_level', 'funding_level') or result.get('school_investment_level') or 'medium'
+                
+                # Helper: extract first number from a string like "Approximately 800" or "91%"
+                def _to_num(val, as_int=False):
+                    if val is None or val == '' or val is False:
+                        return 0
+                    if isinstance(val, (int, float)):
+                        return int(val) if as_int else float(val)
+                    if isinstance(val, str):
+                        import re as _re
+                        m = _re.search(r'[\d,]+\.?\d*', val.replace(',', ''))
+                        if m:
+                            num = float(m.group())
+                            return int(num) if as_int else num
+                    try:
+                        return int(float(val)) if as_int else float(val)
+                    except (ValueError, TypeError):
+                        return 0
                 
                 # Ensure numeric types
-                try:
-                    total_students = int(float(total_students)) if total_students else 0
-                except (ValueError, TypeError):
-                    total_students = 0
-                try:
-                    graduation_rate = float(graduation_rate) if graduation_rate else 0
-                except (ValueError, TypeError):
-                    graduation_rate = 0
-                try:
-                    college_rate = float(college_rate) if college_rate else 0
-                except (ValueError, TypeError):
-                    college_rate = 0
+                total_students = _to_num(total_students, as_int=True)
+                graduation_rate = _to_num(graduation_rate)
+                college_rate = _to_num(college_rate)
+                free_lunch = _to_num(free_lunch)
+                ap_count = _to_num(ap_count, as_int=True)
+                ap_pass = _to_num(ap_pass)
                 
                 # Update database with ALL enrichment fields
                 db.execute_non_query(
