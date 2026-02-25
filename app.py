@@ -5027,14 +5027,29 @@ def trigger_school_analysis(school_id):
                     )
                 )
                 
+                # If Naveen returned an error status, log the error detail
+                if analysis_status == 'error':
+                    error_detail = result.get('error', 'Unknown error from Naveen')
+                    logger.error(f"Naveen returned error for school {school_id}: {error_detail}")
+                
                 logger.info(
                     f"School {school_id} re-analysis completed by {result.get('agent_name')} "
                     f"using {result.get('model_display')}: "
                     f"score={opp_score}, confidence={conf_score}, students={total_students}, "
-                    f"grad_rate={graduation_rate}"
+                    f"grad_rate={graduation_rate}, status={analysis_status}"
                 )
             except Exception as e:
-                logger.error(f"Error in background analysis for school {school_id}: {e}")
+                logger.error(f"Error in background analysis for school {school_id}: {e}", exc_info=True)
+                # Update DB to reflect the error
+                try:
+                    db.execute_non_query(
+                        """UPDATE school_enriched_data 
+                        SET analysis_status = 'error', updated_at = CURRENT_TIMESTAMP
+                        WHERE school_enrichment_id = %s""",
+                        (school_id,)
+                    )
+                except Exception:
+                    pass
         
         # Start background task
         thread = threading.Thread(target=background_analysis)
