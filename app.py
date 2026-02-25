@@ -63,7 +63,7 @@ from src.agents.bashful_agent import BashfulAgent
 from src.agents.belle_document_analyzer import BelleDocumentAnalyzer
 from src.agents.milo_data_scientist import MiloDataScientist
 from src.agents.naveen_school_data_scientist import NaveenSchoolDataScientist
-from src.agents.moana_school_context import MoanaSchoolContextAnalyzer
+from src.agents.moana_school_context import MoanaSchoolContext
 from src.agents.feedback_triage_agent import ScuttleFeedbackTriageAgent, FeedbackTriageAgent
 
 # Initialize Flask app
@@ -255,7 +255,7 @@ def get_orchestrator():
         )
         orchestrator_agent.register_agent(
             "school_context",
-            MoanaSchoolContextAnalyzer(
+            MoanaSchoolContext(
                 name="Moana School Context Analyzer",
                 client=client,
                 model=model_name,
