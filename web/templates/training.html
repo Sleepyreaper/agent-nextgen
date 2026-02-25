@@ -53,12 +53,6 @@
             <button type="button" class="btn btn-info" onclick="fetchMiloInsights()">
                 📊 Milo Insights
             </button>
-            <button type="button" class="btn btn-danger" onclick="resetDatabase()">
-                ⚠️ Reset Database
-            </button>
-            <label style="margin-left:0.5rem; font-size:0.9rem; color:#374151;">
-                <input type="checkbox" id="keepProd" checked style="margin-right:0.25rem;">Keep production
-            </label>
             <a id="trainingUploadLink" href="{{ url_for('upload', app_type='training') }}" class="btn btn-primary">
                 ➕ Add Training Example
             </a>
@@ -156,35 +150,6 @@ async function clearTrainingData() {
         location.reload();
     } catch (error) {
         alert(`Error: ${error.message}`);
-    }
-}
-
-async function resetDatabase() {
-    if (!confirm('This will clear all test and training records. Proceed?')) {
-        return;
-    }
-    const keep = document.getElementById('keepProd').checked;
-    try {
-        const resp = await fetch('/api/admin/reset', {
-            method: 'POST',
-            headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({keep_production: keep})
-        });
-        const data = await resp.json();
-        if (!resp.ok || data.status !== 'success') {
-            alert(`Reset failed: ${data.error || 'unknown error'}`);
-            return;
-        }
-        let msg = 'Database reset completed.';
-        if (keep) {
-            msg = `Removed ${data.training_deleted || 0} training and ${data.test_deleted || 0} test records.`;
-        } else {
-            msg = `Removed ${data.deleted || 0} total rows from all tables.`;
-        }
-        alert(msg);
-        location.reload();
-    } catch (err) {
-        alert(`Error: ${err.message}`);
     }
 }
 

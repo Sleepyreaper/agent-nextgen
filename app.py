@@ -4783,6 +4783,27 @@ def milo_insights():
         return jsonify({'status': 'error', 'error': str(e)}), 500
 
 
+# ==================== DATA MANAGEMENT ROUTES ====================
+
+@app.route('/data-management')
+def data_management():
+    """Central hub for database and data operations."""
+    return render_template('data_management.html')
+
+
+@app.route('/api/students/count', methods=['GET'])
+def student_counts():
+    """Return quick counts for the data management dashboard."""
+    try:
+        all_students = db.get_formatted_student_list()
+        training = db.get_formatted_student_list(is_training=True)
+        return jsonify({
+            'total': len(all_students) if all_students else 0,
+            'training': len(training) if training else 0
+        })
+    except Exception as e:
+        logger.error(f"student_counts error: {e}")
+        return jsonify({'total': 0, 'training': 0})
 
 
 # ==================== SCHOOL MANAGEMENT ROUTES ====================

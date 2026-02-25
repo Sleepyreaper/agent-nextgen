@@ -1,0 +1,338 @@
+{% extends "base.html" %}
+
+{% block title %}Data Management{% endblock %}
+
+{% block extra_css %}
+<style>
+    .dm-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
+        gap: 1.5rem;
+        margin-bottom: 2rem;
+    }
+    .dm-card {
+        background: white;
+        padding: 1.75rem;
+        border-radius: 14px;
+        box-shadow: 0 6px 16px rgba(15, 23, 42, 0.08);
+        border-top: 4px solid var(--accent-teal);
+        display: flex;
+        flex-direction: column;
+        gap: 1rem;
+    }
+    .dm-card h3 {
+        margin: 0;
+        color: var(--ink-navy);
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+    }
+    .dm-card p {
+        color: #6b7280;
+        margin: 0;
+        font-size: 0.93rem;
+        line-height: 1.6;
+    }
+    .dm-card .dm-actions {
+        display: flex;
+        gap: 0.75rem;
+        flex-wrap: wrap;
+        margin-top: auto;
+        padding-top: 0.5rem;
+    }
+    .dm-stat-row {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+        gap: 1rem;
+        margin-bottom: 2rem;
+    }
+    .dm-stat {
+        background: white;
+        padding: 1.25rem;
+        border-radius: 12px;
+        box-shadow: 0 4px 12px rgba(15, 23, 42, 0.06);
+        text-align: center;
+    }
+    .dm-stat .val {
+        font-size: 2rem;
+        font-weight: 700;
+        color: var(--accent-teal);
+    }
+    .dm-stat .lbl {
+        color: #6b7280;
+        font-size: 0.85rem;
+        margin-top: 0.25rem;
+    }
+    .dm-danger {
+        border-top-color: #ef4444;
+    }
+    .dm-warning {
+        border-top-color: #f59e0b;
+    }
+    .check-label {
+        display: flex;
+        align-items: center;
+        gap: 0.4rem;
+        font-size: 0.92rem;
+        color: #374151;
+        cursor: pointer;
+    }
+    #resetLog {
+        background: #f9fafb;
+        border: 1px solid #e5e7eb;
+        border-radius: 8px;
+        padding: 1rem;
+        font-family: 'IBM Plex Mono', monospace;
+        font-size: 0.85rem;
+        max-height: 200px;
+        overflow-y: auto;
+        display: none;
+        color: #374151;
+        white-space: pre-wrap;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div style="margin-bottom: 2rem;">
+    <h2 style="color: var(--ink-navy); margin-bottom: 0.5rem;">🗄️ Data Management</h2>
+    <p style="color: #6b7280;">Manage schools, training data, and database operations from one place.</p>
+</div>
+
+<!-- Stats Row -->
+<div class="dm-stat-row" id="statsRow">
+    <div class="dm-stat">
+        <div class="val" id="statStudents">—</div>
+        <div class="lbl">Total Students</div>
+    </div>
+    <div class="dm-stat">
+        <div class="val" id="statTraining">—</div>
+        <div class="lbl">Training Examples</div>
+    </div>
+    <div class="dm-stat">
+        <div class="val" id="statSchools">—</div>
+        <div class="lbl">Schools</div>
+    </div>
+    <div class="dm-stat">
+        <div class="val" id="statEnriched">—</div>
+        <div class="lbl">Enriched Schools</div>
+    </div>
+</div>
+
+<div class="dm-grid">
+    <!-- School Management -->
+    <div class="dm-card">
+        <h3>🏫 School Management</h3>
+        <p>View, search, and enrich the school database. Run Naveen + Moana analysis on pending schools or seed new school records from training data.</p>
+        <div class="dm-actions">
+            <a href="{{ url_for('schools_dashboard') }}" class="btn btn-secondary">🏫 Manage Schools</a>
+            <button class="btn" onclick="seedSchools()" id="btnSeed">🌱 Seed Schools</button>
+        </div>
+    </div>
+
+    <!-- Training Data -->
+    <div class="dm-card">
+        <h3>📚 Training Data</h3>
+        <p>View historical applications used for agent calibration. Upload new examples or clear existing training records.</p>
+        <div class="dm-actions">
+            <a href="{{ url_for('training') }}" class="btn btn-secondary">📚 View Training</a>
+            <button class="btn" style="background: var(--champagne); color: var(--ink-navy);" onclick="clearTrainingData()" id="btnClearTraining">🧹 Clear Training Data</button>
+        </div>
+    </div>
+
+    <!-- Milo Insights -->
+    <div class="dm-card">
+        <h3>📊 Milo Insights</h3>
+        <p>Ask Milo to analyze current training examples and surface patterns about what makes strong applicants.</p>
+        <div class="dm-actions">
+            <button class="btn btn-secondary" onclick="fetchMiloInsights()" id="btnMilo">📊 Run Milo Analysis</button>
+        </div>
+    </div>
+
+    <!-- Clear Schools -->
+    <div class="dm-card dm-warning">
+        <h3>🧹 Clear School Data</h3>
+        <p>Remove all school enrichment records. This does not affect student or training data.</p>
+        <div class="dm-actions">
+            <button class="btn" style="background: #f59e0b; color: #78350f;" onclick="clearSchools()" id="btnClearSchools">🧹 Clear Schools</button>
+        </div>
+    </div>
+
+    <!-- Database Reset -->
+    <div class="dm-card dm-danger">
+        <h3>⚠️ Reset Database</h3>
+        <p>Clear test and training records from the database. Use the checkbox below to protect production applicant data.</p>
+        <label class="check-label">
+            <input type="checkbox" id="keepProd" checked>
+            Keep production applicants (only clear test + training)
+        </label>
+        <div class="dm-actions">
+            <button class="btn btn-danger" onclick="resetDatabase()" id="btnReset">⚠️ Reset Database</button>
+        </div>
+        <div id="resetLog"></div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+// ── Load stats on page load ──
+async function loadStats() {
+    try {
+        // Student counts
+        const sr = await fetch('/api/students/count');
+        if (sr.ok) {
+            const sd = await sr.json();
+            document.getElementById('statStudents').textContent = sd.total ?? '—';
+            document.getElementById('statTraining').textContent = sd.training ?? '—';
+        }
+    } catch (_) {}
+
+    try {
+        // School counts
+        const scr = await fetch('/api/schools/list');
+        if (scr.ok) {
+            const scd = await scr.json();
+            const schools = scd.schools || [];
+            document.getElementById('statSchools').textContent = schools.length;
+            const enriched = schools.filter(s => s.enrichment_status === 'complete' || s.enrichment_status === 'enriched').length;
+            document.getElementById('statEnriched').textContent = enriched;
+        }
+    } catch (_) {}
+}
+loadStats();
+
+// ── Reset Database ──
+async function resetDatabase() {
+    const keep = document.getElementById('keepProd').checked;
+    const msg = keep
+        ? 'This will clear all test and training records but keep production applicants. Proceed?'
+        : 'This will DELETE ALL records from the database including production data. Are you absolutely sure?';
+    if (!confirm(msg)) return;
+    if (!keep && !confirm('FINAL WARNING: This will wipe the entire database. Type OK to continue.')) return;
+
+    const btn = document.getElementById('btnReset');
+    const log = document.getElementById('resetLog');
+    btn.disabled = true;
+    btn.textContent = 'Resetting...';
+    log.style.display = 'block';
+    log.textContent = 'Starting reset...\n';
+
+    try {
+        const resp = await fetch('/api/admin/reset', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ keep_production: keep })
+        });
+        const data = await resp.json();
+        if (!resp.ok || data.status !== 'success') {
+            log.textContent += '❌ Reset failed: ' + (data.error || 'unknown error') + '\n';
+            return;
+        }
+        if (keep) {
+            log.textContent += `✅ Removed ${data.training_deleted || 0} training records\n`;
+            log.textContent += `✅ Removed ${data.test_deleted || 0} test records\n`;
+        } else {
+            log.textContent += `✅ Removed ${data.deleted || 0} total rows\n`;
+        }
+        log.textContent += 'Done.\n';
+        loadStats();
+    } catch (err) {
+        log.textContent += '❌ Error: ' + err.message + '\n';
+    } finally {
+        btn.disabled = false;
+        btn.textContent = '⚠️ Reset Database';
+    }
+}
+
+// ── Clear Training Data ──
+async function clearTrainingData() {
+    if (!confirm('Clear ALL training data (excluding test uploads)? This cannot be undone.')) return;
+    const btn = document.getElementById('btnClearTraining');
+    btn.disabled = true;
+    btn.textContent = 'Clearing...';
+    try {
+        const resp = await fetch('/api/training-data/clear', { method: 'POST' });
+        const data = await resp.json();
+        if (!resp.ok || data.status !== 'success') {
+            alert('Error: ' + (data.error || 'Unable to clear training data'));
+            return;
+        }
+        alert(data.message || 'Training data cleared.');
+        loadStats();
+    } catch (err) {
+        alert('Error: ' + err.message);
+    } finally {
+        btn.disabled = false;
+        btn.textContent = '🧹 Clear Training Data';
+    }
+}
+
+// ── Clear Schools ──
+async function clearSchools() {
+    if (!confirm('Remove all school enrichment records? This cannot be undone.')) return;
+    const btn = document.getElementById('btnClearSchools');
+    btn.disabled = true;
+    btn.textContent = 'Clearing...';
+    try {
+        const resp = await fetch('/api/schools/clear', { method: 'POST' });
+        const data = await resp.json();
+        if (!resp.ok || data.status !== 'success') {
+            alert('Error: ' + (data.error || 'Unable to clear schools'));
+            return;
+        }
+        alert(data.message || 'School data cleared.');
+        loadStats();
+    } catch (err) {
+        alert('Error: ' + err.message);
+    } finally {
+        btn.disabled = false;
+        btn.textContent = '🧹 Clear Schools';
+    }
+}
+
+// ── Seed Schools ──
+async function seedSchools() {
+    if (!confirm('Seed school records from training data? This may take a moment.')) return;
+    const btn = document.getElementById('btnSeed');
+    btn.disabled = true;
+    btn.textContent = 'Seeding...';
+    try {
+        const resp = await fetch('/api/schools/bulk-seed', { method: 'POST' });
+        const data = await resp.json();
+        if (!resp.ok || data.status !== 'success') {
+            alert('Error: ' + (data.error || 'Seed failed'));
+            return;
+        }
+        alert(`Seeded ${data.inserted || data.count || 0} schools.`);
+        loadStats();
+    } catch (err) {
+        alert('Error: ' + err.message);
+    } finally {
+        btn.disabled = false;
+        btn.textContent = '🌱 Seed Schools';
+    }
+}
+
+// ── Milo Insights ──
+async function fetchMiloInsights() {
+    const btn = document.getElementById('btnMilo');
+    btn.disabled = true;
+    btn.textContent = 'Analyzing...';
+    try {
+        const resp = await fetch('/api/milo/insights');
+        const data = await resp.json();
+        if (resp.ok && data.status === 'success') {
+            alert('Milo insights:\n' + JSON.stringify(data, null, 2));
+        } else {
+            alert('Error: ' + (data.error || JSON.stringify(data)));
+        }
+    } catch (err) {
+        alert('Error: ' + err.message);
+    } finally {
+        btn.disabled = false;
+        btn.textContent = '📊 Run Milo Analysis';
+    }
+}
+</script>
+{% endblock %}
