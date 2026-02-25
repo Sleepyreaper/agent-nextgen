@@ -167,6 +167,11 @@ class Config:
             "foundry-api-key",
             "FOUNDRY_API_KEY"
         ) or os.getenv("FOUNDRY_API_KEY")
+        # Vision model deployment name (dedicated GPT-4o for OCR/image tasks)
+        self.foundry_vision_model_name: Optional[str] = self._get_secret(
+            "foundry-vision-model-name",
+            "FOUNDRY_VISION_MODEL_NAME"
+        ) or os.getenv("FOUNDRY_VISION_MODEL_NAME") or "gpt-4o"
         # Foundry API version (allow explicit override from Key Vault or env)
         self.foundry_api_version: Optional[str] = self._get_secret(
             "foundry-api-version",

@@ -96,20 +96,29 @@ logger.info("Flask app initialized", extra={'upload_folder': app.config['UPLOAD_
 
 # Initialize Azure OpenAI client
 def _make_ocr_callback():
-    """Create an OCR callback that uses the Azure AI vision model.
+    """Create an OCR callback that uses the Azure AI vision model (GPT-4o).
     
     Returns a function ``fn(image_bytes, page_label) -> str`` that sends
-    a PDF page image to the AI model and returns extracted text.
+    a PDF page image to the AI vision model and returns extracted text.
     Returns None if the AI client is unavailable.
+
+    The callback uses the dedicated vision model deployment (``config.foundry_vision_model_name``,
+    default: ``gpt-4o``) which is optimised for multimodal image+text tasks.
     """
     try:
         client = get_ai_client()
-        model_name = config.foundry_model_name if config.model_provider == "foundry" else config.deployment_name
+        # Prefer the dedicated vision model (gpt-4o) for OCR tasks
+        if config.model_provider and config.model_provider.lower() == "foundry":
+            vision_model = getattr(config, 'foundry_vision_model_name', None) or 'gpt-4o'
+        else:
+            vision_model = config.deployment_name
+        logger.info("OCR callback initialized: client=%s, vision_model=%s", type(client).__name__, vision_model)
     except Exception:
+        logger.warning("OCR callback: failed to create AI client")
         return None
     
     def _ocr(image_bytes: bytes, page_label: str) -> str:
-        """OCR a single page image using AI vision."""
+        """OCR a single page image using AI vision (GPT-4o)."""
         import base64 as _b64
         b64_image = _b64.b64encode(image_bytes).decode('utf-8')
         
@@ -144,22 +153,19 @@ def _make_ocr_callback():
         ]
         
         try:
-            # Try OpenAI SDK style (AzureOpenAI client)
-            if hasattr(client, 'chat') and hasattr(client.chat, 'completions'):
-                resp = client.chat.completions.create(
-                    model=model_name,
-                    messages=messages,
-                    max_tokens=4000,
-                    temperature=0.0
-                )
-                return resp.choices[0].message.content
-            
-            # Try FoundryClient style — serialize image content for Foundry
-            # Foundry may not support vision; fall back to text-only prompt
-            logger.warning("OCR: FoundryClient may not support vision — skipping image OCR")
-            return ""
+            # Both AzureOpenAI and FoundryClient expose .chat.completions.create()
+            # FoundryClient now preserves multimodal message format for the SDK path
+            resp = client.chat.completions.create(
+                model=vision_model,
+                messages=messages,
+                max_tokens=4000,
+                temperature=0.0
+            )
+            text = resp.choices[0].message.content or ""
+            logger.info("OCR vision extracted %d chars from %s", len(text), page_label)
+            return text
         except Exception as e:
-            logger.warning(f"OCR vision call failed for {page_label}: {e}")
+            logger.warning("OCR vision call failed for %s: %s", page_label, e)
             return ""
     
     return _ocr

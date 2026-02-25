@@ -56,7 +56,7 @@ class FoundryChatCompletions:
     def __init__(self, base_client: "FoundryClient"):
         self._client = base_client
 
-    def create(self, model: Optional[str] = None, messages: Optional[List[Dict[str, str]]] = None, **kwargs):
+    def create(self, model: Optional[str] = None, messages: Optional[List[Dict[str, Any]]] = None, **kwargs):
         return self._client._create_completion_request(model=model, messages=messages, **kwargs)
     
     @property
@@ -190,7 +190,43 @@ class FoundryClient:
             parts.append(f"[{role}] {content}")
         return "\n\n".join(parts)
 
-    def _create_completion_request(self, model: Optional[str], messages: Optional[List[Dict[str, str]]], **kwargs):
+    @staticmethod
+    def _coerce_messages_for_http(messages: Optional[List[Dict[str, Any]]]) -> Optional[List[Dict[str, Any]]]:
+        """Coerce message content to primitive strings for the HTTP fallback.
+
+        The raw HTTP path sends JSON directly to the Foundry REST API which
+        may reject non-string ``content`` values (e.g. multimodal list-of-dicts).
+        For multimodal messages we extract the text portions and drop image data
+        since the HTTP path cannot reliably pass binary payloads.
+        """
+        if not messages:
+            return messages
+        import copy
+        coerced = copy.deepcopy(messages)
+        for msg in coerced:
+            if msg is None:
+                continue
+            content = msg.get("content")
+            if content is not None and not isinstance(content, str):
+                if isinstance(content, list):
+                    # Multimodal content: extract text parts, note image presence
+                    text_parts = []
+                    for part in content:
+                        if isinstance(part, dict):
+                            if part.get("type") == "text":
+                                text_parts.append(part.get("text", ""))
+                            elif part.get("type") == "image_url":
+                                text_parts.append("[image attached]")
+                    msg["content"] = "\n".join(text_parts) if text_parts else json.dumps(content)
+                else:
+                    try:
+                        msg["content"] = json.dumps(content)
+                    except Exception:
+                        msg["content"] = str(content)
+                logger.debug("[Foundry] coerced non-str message content for HTTP path")
+        return coerced
+
+    def _create_completion_request(self, model: Optional[str], messages: Optional[List[Dict[str, Any]]], **kwargs):
         if not self.endpoint:
             raise RuntimeError("Foundry endpoint not configured (config.foundry_project_endpoint)")
         # start with the normalized model endpoint when building the URL
@@ -200,25 +236,13 @@ class FoundryClient:
         deployment = model or config.foundry_model_name
         url = base.rstrip("/") + f"/openai/deployments/{deployment}/chat/completions"
 
-        # Ensure every message content is a primitive string; Foundry rejects
-        # objects/arrays. This guards against callers accidentally passing
-        # dictionaries or other types (see runtime error in logs).
-        if messages:
-            for msg in messages:
-                if msg is None:
-                    continue
-                content = msg.get("content")
-                if content is not None and not isinstance(content, str):
-                    try:
-                        msg["content"] = json.dumps(content)
-                        logger.debug("[Foundry] coerced non-str message content to JSON string")
-                    except Exception:
-                        msg["content"] = str(content)
-                        logger.debug("[Foundry] coerced non-str message content to str")
-
         # If we have an OpenAI SDK client available that was initialized
         # with a bearer token provider, prefer using it — it will handle
         # token refresh and wiring for Entra ID automatically.
+        # NOTE: we do NOT coerce message content before the SDK path because
+        # the OpenAI SDK natively supports multimodal messages (list-of-dicts
+        # content with image_url, etc.).  See _coerce_messages_for_http()
+        # for the HTTP fallback path which requires plain-string content.
         if self._openai_client is not None:
             try:
                 client_resp = self._openai_client.chat.completions.create(model=deployment, messages=messages or [], **kwargs)
@@ -293,7 +317,9 @@ class FoundryClient:
             # Some Foundry APIs expect an `inputs` array of dicts
             payload["inputs"] = [{"text": prompt}] if prompt else []
         else:
-            payload["messages"] = messages
+            # Coerce multimodal content to strings for the HTTP fallback path.
+            # The OpenAI SDK path (above) preserves multimodal format natively.
+            payload["messages"] = self._coerce_messages_for_http(messages)
 
         # Pass-through of common parameters where supported
         for k in ("temperature", "max_completion_tokens", "max_tokens", "top_p", "n"):
