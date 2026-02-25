@@ -5145,6 +5145,85 @@ def clear_all_schools():
         logger.error(f"Error clearing schools: {e}")
         return jsonify({'status': 'error', 'error': str(e)}), 500
 
+
+@app.route('/api/schools/bulk-seed', methods=['POST'])
+def bulk_seed_schools():
+    """Bulk-create school skeleton records from a JSON array.
+    
+    Request body:
+        { "schools": [ {"school_name": "...", "city": "...", "county": "...", "district": "..."} ] }
+    
+    Creates skeleton records (analysis_status='pending') for each school that doesn't already exist.
+    """
+    try:
+        data = request.get_json() or {}
+        schools_data = data.get('schools', [])
+        
+        if not schools_data:
+            return jsonify({'status': 'error', 'error': 'No schools provided'}), 400
+        
+        created = 0
+        skipped = 0
+        errors = 0
+        
+        for school in schools_data:
+            name = school.get('school_name', '').strip()
+            if not name:
+                errors += 1
+                continue
+            
+            try:
+                existing = db.get_school_enriched_data(school_name=name, state_code='GA')
+                if existing:
+                    skipped += 1
+                    continue
+                
+                record = {
+                    'school_name': name,
+                    'school_district': school.get('district', ''),
+                    'state_code': 'GA',
+                    'county_name': school.get('county', ''),
+                    'school_url': '',
+                    'opportunity_score': 0,
+                    'total_students': 0,
+                    'graduation_rate': 0,
+                    'college_acceptance_rate': 0,
+                    'free_lunch_percentage': 0,
+                    'ap_course_count': 0,
+                    'ap_exam_pass_rate': 0,
+                    'stem_program_available': False,
+                    'ib_program_available': False,
+                    'dual_enrollment_available': False,
+                    'analysis_status': 'pending',
+                    'human_review_status': 'pending',
+                    'data_confidence_score': 0,
+                    'created_by': 'bulk_seed',
+                    'school_investment_level': 'unknown',
+                    'is_active': True,
+                }
+                
+                school_id = db.create_school_enriched_data(record)
+                if school_id:
+                    created += 1
+                else:
+                    errors += 1
+            except Exception as e:
+                errors += 1
+                logger.error(f"Error seeding {name}: {e}")
+        
+        return jsonify({
+            'status': 'success',
+            'created': created,
+            'skipped': skipped,
+            'errors': errors,
+            'total': len(schools_data)
+        })
+        
+    except Exception as e:
+        logger.error(f"Error in bulk seed: {e}")
+        return jsonify({'status': 'error', 'error': str(e)}), 500
+
+
 @app.route('/debug/agents')
 def debug_agents():
     """Real-time agent monitoring dashboard."""
