@@ -4982,6 +4982,31 @@ def update_school_enrichment(school_id):
         return jsonify({'status': 'error', 'error': str(e)}), 500
 
 
+@app.route('/api/school/<int:school_id>/delete', methods=['DELETE'])
+def delete_school_record(school_id):
+    """Permanently delete a school enrichment record."""
+    try:
+        school = db.get_school_enriched_data(school_id)
+        if not school:
+            return jsonify({'status': 'error', 'error': 'School not found'}), 404
+
+        school_name = school.get('school_name', 'Unknown')
+        success = db.delete_school_enriched_data(school_id)
+
+        if success:
+            logger.info(f"School {school_id} ({school_name}) permanently deleted")
+            return jsonify({
+                'status': 'success',
+                'message': f'School "{school_name}" has been permanently deleted',
+                'school_id': school_id
+            })
+        else:
+            return jsonify({'status': 'error', 'error': 'Failed to delete school record'}), 500
+    except Exception as e:
+        logger.error(f"Error deleting school {school_id}: {e}")
+        return jsonify({'status': 'error', 'error': str(e)}), 500
+
+
 @app.route('/api/school/<int:school_id>/review', methods=['POST'])
 def submit_school_review(school_id):
     """Submit human review for a school."""

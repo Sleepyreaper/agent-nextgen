@@ -270,6 +270,15 @@
         background: #5568d3;
     }
 
+    .btn-delete {
+        background: #ef4444;
+        color: white;
+    }
+
+    .btn-delete:hover {
+        background: #dc2626;
+    }
+
     .btn-approve {
         background: #10b981;
         color: white;
@@ -884,6 +893,7 @@ function openSchoolDetail(schoolId) {
                 <div class="button-group">
                     <button type="submit" class="btn btn-approve">✓ Save & Submit</button>
                     <button type="button" class="btn btn-analyze" onclick="reanalyzeSchool(${schoolId})">🔄 Reanalyze School</button>
+                    <button type="button" class="btn btn-delete" onclick="deleteSchool(${schoolId}, '${(school.school_name || '').replace(/'/g, "\\'")}')" style="margin-left: auto;">🗑 Delete School</button>
                 </div>
             </form>
         </div>
@@ -928,6 +938,26 @@ async function submitReview(event, schoolId) {
         }
     } catch (error) {
         alert('Error submitting review: ' + error.message);
+    }
+}
+
+async function deleteSchool(schoolId, schoolName) {
+    if (!confirm(`⚠️ Permanently delete "${schoolName}"?\n\nThis will remove ALL data for this school and cannot be undone.`)) return;
+    if (!confirm(`Are you sure? This is irreversible.`)) return;
+
+    try {
+        const response = await fetch(`/api/school/${schoolId}/delete`, { method: 'DELETE' });
+        const data = await response.json();
+
+        if (data.status === 'success') {
+            alert(`✅ ${data.message}`);
+            closeSchoolDetail();
+            loadSchools();
+        } else {
+            alert('Error: ' + data.error);
+        }
+    } catch (error) {
+        alert('Error deleting school: ' + error.message);
     }
 }
 

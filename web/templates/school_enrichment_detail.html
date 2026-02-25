@@ -336,6 +336,7 @@
                 🔬 Analyze with Naveen
             </button>
             <button class="edit-button" onclick="showEditModal()">✎ Edit Data</button>
+            <button class="edit-button" onclick="deleteSchool()" style="background: #ef4444; color: white;">🗑 Delete School</button>
         </div>
     </div>
 
@@ -820,6 +821,28 @@
 </div>
 
 <script>
+async function deleteSchool() {
+    const schoolName = '{{ school.school_name|e }}';
+    const schoolId = {{ school.school_enrichment_id }};
+
+    if (!confirm(`⚠️ Permanently delete "${schoolName}"?\n\nThis will remove ALL data for this school and cannot be undone.`)) return;
+    if (!confirm('Are you sure? This is irreversible.')) return;
+
+    try {
+        const response = await fetch(`/api/school/${schoolId}/delete`, { method: 'DELETE' });
+        const data = await response.json();
+
+        if (data.status === 'success') {
+            alert(`✅ ${data.message}`);
+            window.location.href = '/schools';
+        } else {
+            alert('Error: ' + data.error);
+        }
+    } catch (error) {
+        alert('Error deleting school: ' + error.message);
+    }
+}
+
 function showEditModal() {
     document.getElementById('editModal').classList.add('show');
 }

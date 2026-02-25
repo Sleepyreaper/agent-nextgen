@@ -817,6 +817,7 @@ class Database:
                     cursor.execute("CREATE INDEX IF NOT EXISTS idx_school_enriched_opportunity ON school_enriched_data(opportunity_score)")
                     cursor.execute("CREATE INDEX IF NOT EXISTS idx_school_enriched_review_status ON school_enriched_data(human_review_status)")
                     cursor.execute("CREATE INDEX IF NOT EXISTS idx_school_enriched_active ON school_enriched_data(is_active)")
+                    cursor.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_school_enriched_name_state ON school_enriched_data(LOWER(school_name), state_code)")
                     conn.commit()
                     logger.info("✓ Created school_enriched_data table with indexes")
                 except Exception as school_err:
@@ -843,6 +844,15 @@ class Database:
                         except Exception as col_err:
                             logger.error(f"❌ Failed to add {col_name} to school_enriched_data: {col_err}")
                             conn.rollback()
+
+                # Ensure unique index on (school_name, state_code) exists
+                try:
+                    cursor.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_school_enriched_name_state ON school_enriched_data(LOWER(school_name), state_code)")
+                    conn.commit()
+                    logger.info("✓ Ensured unique index on school_enriched_data(school_name, state_code)")
+                except Exception as idx_err:
+                    logger.warning(f"Could not create unique index (duplicates may exist): {idx_err}")
+                    conn.rollback()
 
             # ===== STUDENT SCHOOL CONTEXT TABLE MIGRATIONS =====
             cursor.execute("""
@@ -2501,7 +2511,24 @@ class Database:
     # ==================== SCHOOL ENRICHMENT METHODS ====================
     
     def create_school_enriched_data(self, school_data: Dict[str, Any]) -> Optional[int]:
-        """Create a new enriched school record."""
+        """Create or upsert an enriched school record.
+        
+        If a school with the same name and state already exists, returns
+        the existing record's ID instead of creating a duplicate.
+        """
+        # --- Dedup check: look for existing school by name + state ---
+        school_name = school_data.get('school_name')
+        state_code = school_data.get('state_code')
+        if school_name and state_code:
+            existing = self.get_school_enriched_data(
+                school_name=school_name, state_code=state_code
+            )
+            if existing:
+                logger.info(
+                    f"School already exists, skipping duplicate: {school_name} ({state_code}) → ID {existing['school_enrichment_id']}"
+                )
+                return existing['school_enrichment_id']
+
         query = """
             INSERT INTO school_enriched_data (
                 school_name, school_district, state_code, county_name, school_url,
