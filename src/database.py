@@ -1478,6 +1478,11 @@ class Database:
             "Pending",
         ]
 
+        # Include student_id if provided and the column exists
+        if student_id and self.has_applications_column("student_id"):
+            columns.append("student_id")
+            values.append(student_id)
+
         if test_col and self.has_applications_column(test_col):
             test_filter = ""
             if test_col and self.has_applications_column(test_col):

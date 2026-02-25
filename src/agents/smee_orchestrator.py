@@ -645,12 +645,60 @@ class SmeeOrchestrator(BaseAgent):
                 # was cleared/overwritten during Belle section routing or DB
                 # round-tripping, fall back to the preserved document text.
                 gaston_app = dict(application)
+
+                # ── Diagnostic: log ALL text fields before Gaston dispatch ──
+                _gaston_diag = {
+                    k: (type(v).__name__, len(v) if isinstance(v, str) else 'N/A')
+                    for k, v in gaston_app.items()
+                    if isinstance(v, str) and len(v) > 10
+                }
+                print(f"[Gaston] PRE-DISPATCH text fields (>10 chars): {_gaston_diag}")
+                logger.info(f"[Gaston] PRE-DISPATCH text fields: {_gaston_diag}")
+
                 gaston_text = (
                     gaston_app.get('application_text') or
                     gaston_app.get('transcript_text') or
                     gaston_app.get('recommendation_text') or
                     gaston_app.get('_original_document_text') or ''
                 )
+
+                # ── NUCLEAR FALLBACK: If ALL in-memory text is empty,
+                #    re-fetch the record from the database. This handles
+                #    race conditions, dict mutation bugs, and any scenario
+                #    where text was lost during the workflow. ──
+                if not gaston_text or not gaston_text.strip():
+                    _refetch_id = gaston_app.get('application_id')
+                    print(f"[Gaston] ⚠️  ALL text empty! Attempting DB re-fetch for app_id={_refetch_id}")
+                    logger.warning(f"[Gaston] ALL text empty — re-fetching from DB for app_id={_refetch_id}")
+                    if _refetch_id and self.db:
+                        try:
+                            _db_record = self.db.get_application(_refetch_id)
+                            if _db_record:
+                                for _tf in ('application_text', 'transcript_text', 'recommendation_text'):
+                                    _db_val = _db_record.get(_tf, '')
+                                    if _db_val and isinstance(_db_val, str) and len(_db_val.strip()) > 20:
+                                        gaston_app[_tf] = _db_val
+                                        print(f"[Gaston] DB re-fetch restored {_tf} ({len(_db_val)} chars)")
+                                        logger.info(f"[Gaston] DB re-fetch restored {_tf} ({len(_db_val)} chars)")
+                                # Rebuild gaston_text after DB refetch
+                                gaston_text = (
+                                    gaston_app.get('application_text') or
+                                    gaston_app.get('transcript_text') or
+                                    gaston_app.get('recommendation_text') or ''
+                                )
+                        except Exception as _db_err:
+                            logger.error(f"[Gaston] DB re-fetch failed: {_db_err}")
+                            print(f"[Gaston] DB re-fetch failed: {_db_err}")
+
+                    # Last resort: scan ALL string values in the dict
+                    if not gaston_text or not gaston_text.strip():
+                        for _k, _v in gaston_app.items():
+                            if isinstance(_v, str) and len(_v.strip()) > 50 and _k not in ('status', 'email', 'file_type'):
+                                gaston_text = _v
+                                print(f"[Gaston] Last-resort: using key '{_k}' ({len(_v)} chars)")
+                                logger.info(f"[Gaston] Last-resort text from key '{_k}' ({len(_v)} chars)")
+                                break
+
                 if gaston_text and not gaston_app.get('application_text'):
                     gaston_app['application_text'] = gaston_text
                     logger.info(f"[Gaston] Backfilled application_text from fallback ({len(gaston_text)} chars)")
@@ -949,6 +997,17 @@ class SmeeOrchestrator(BaseAgent):
                         application.get('transcript_text') or 
                         application.get('TranscriptText') or '')
         
+        # ── Diagnostic: Log what text fields the DB record contains ──
+        _text_field_report = {}
+        for _tf in ('application_text', 'ApplicationText', 'transcript_text',
+                     'TranscriptText', 'recommendation_text', 'recommendationtext'):
+            _tv = application.get(_tf)
+            if _tv and isinstance(_tv, str):
+                _text_field_report[_tf] = len(_tv)
+        print(f"DEBUG STEP1: text field lengths from DB: {_text_field_report}")
+        print(f"DEBUG STEP1: document_text length={len(document_text)}")
+        logger.info(f"STEP1 text fields from DB: {_text_field_report}, document_text={len(document_text)}")
+        
         # Preserve the ORIGINAL full document text so downstream agents
         # (especially Gaston) always have content even if Belle's section
         # detection later overwrites individual text fields with section-
@@ -961,8 +1020,9 @@ class SmeeOrchestrator(BaseAgent):
             if _tv and isinstance(_tv, str) and len(_tv.strip()) > 20:
                 all_text_parts.append(_tv)
         original_full_text = '\n\n'.join(all_text_parts) if all_text_parts else document_text
-        if original_full_text:
-            application['_original_document_text'] = original_full_text
+        # ALWAYS set _original_document_text, even if it's just document_text
+        application['_original_document_text'] = original_full_text or document_text or ''
+        print(f"DEBUG STEP1: _original_document_text set to {len(application.get('_original_document_text', ''))} chars")
         
         document_name = application.get('file_name', 'application_document')
         # NOTE: avoid creating a placeholder application record here. We need

@@ -118,10 +118,14 @@ class GastonEvaluator(BaseAgent):
                     application.get('recommendation_text') or
                     application.get('_original_document_text') or ''
                 )
-                # Last resort: scan all values for any substantial text
+                # Last resort: scan all values for any substantial text (lowered
+                # threshold from 100 → 30 chars to catch short but real content)
                 if not app_text_input or not app_text_input.strip():
                     for k, v in application.items():
-                        if isinstance(v, str) and len(v.strip()) > 100:
+                        if isinstance(v, str) and len(v.strip()) > 30 and k not in (
+                            'status', 'email', 'file_type', 'file_name',
+                            'original_file_name', 'applicant_name', 'student_id'
+                        ):
                             app_text_input = v
                             print(f"[Gaston] Found text in fallback key '{k}' ({len(v)} chars)")
                             break
@@ -135,17 +139,26 @@ class GastonEvaluator(BaseAgent):
                 # Log which text fields have content for debugging
                 text_field_lengths = {
                     k: len(str(v)) for k, v in application.items()
-                    if isinstance(v, str) and len(v) > 20
+                    if isinstance(v, str) and len(v) > 10
                     and k in ('application_text', 'ApplicationText', 'transcript_text',
-                              'TranscriptText', 'recommendation_text', '_original_document_text')
+                              'TranscriptText', 'recommendation_text', '_original_document_text',
+                              'applicationtext', 'transcripttext', 'recommendationtext')
                 }
                 print(f"[Gaston] Text field lengths: {text_field_lengths}")
 
                 if not app_text_input:
-                    print(f"[Gaston] WARNING: No application text for {applicant_name}! ALL keys: {list(application.keys())}")
-                    for k, v in application.items():
+                    # ── EXTREME DIAGNOSTIC: dump EVERY key/value in the dict ──
+                    print(f"[Gaston] ❌ CRITICAL: No text for {applicant_name}! app_id={application_id}")
+                    print(f"[Gaston] ALL keys ({len(application)}): {sorted(application.keys())}")
+                    for k, v in sorted(application.items()):
                         if isinstance(v, str):
-                            print(f"[Gaston]   key='{k}' len={len(v)} preview={repr(v[:80])}")
+                            print(f"[Gaston]   STR  key='{k}' len={len(v)} preview={repr(v[:120])}")
+                        elif isinstance(v, (dict, list)):
+                            print(f"[Gaston]   {type(v).__name__:4s} key='{k}' len={len(v)}")
+                        elif v is None:
+                            print(f"[Gaston]   NONE key='{k}'")
+                        else:
+                            print(f"[Gaston]   {type(v).__name__:4s} key='{k}' val={repr(v)[:80]}")
                     return {
                         'technical_foundation_score': 0,
                         'communication_score': 0,
