@@ -163,7 +163,7 @@ Provide structured analysis in JSON format."""
                 )
             
             # Parse AI response
-            if ai_analysis and "content" in ai_analysis.choices[0].message:
+            if ai_analysis and hasattr(ai_analysis, 'choices') and ai_analysis.choices and getattr(ai_analysis.choices[0].message, 'content', None):
                 response_text = ai_analysis.choices[0].message.content
                 
                 # Try to extract JSON from response
@@ -613,7 +613,7 @@ Return only the search query text."""
                 max_completion_tokens=40
             )
 
-            if response and "content" in response.choices[0].message:
+            if response and hasattr(response, 'choices') and response.choices and getattr(response.choices[0].message, 'content', None):
                 query_text = response.choices[0].message.content.strip()
                 return query_text.strip("\"' ") or base_query
         except Exception as e:
@@ -632,7 +632,7 @@ Return only the search query text."""
         
         refinement_prompt = f"""The initial analysis for '{school_name}' had low confidence ({initial_result['confidence_score']}%).
         
-Initial findings: {json.dumps(initial_result['enriched_data'])}
+Initial findings: {json.dumps(_sanitize_for_json(initial_result['enriched_data']))}
 
 Please refine this analysis by:
 1. Identifying what data is missing or uncertain
@@ -660,7 +660,7 @@ Return refined analysis as JSON with improved confidence_score."""
         
         refined_data = {}
         try:
-            if refined_response and "content" in refined_response.choices[0].message:
+            if refined_response and hasattr(refined_response, 'choices') and refined_response.choices and getattr(refined_response.choices[0].message, 'content', None):
                 response_text = refined_response.choices[0].message.content
                 import re
                 json_match = re.search(r'\{.*\}', response_text, re.DOTALL)

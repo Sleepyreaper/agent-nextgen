@@ -1886,7 +1886,7 @@ Return only the request sentence."""
                 temperature=0.2,
                 max_completion_tokens=60
             )
-            if response and "content" in response.choices[0].message:
+            if response and hasattr(response, 'choices') and response.choices and getattr(response.choices[0].message, 'content', None):
                 generated_prompt = response.choices[0].message.content.strip()
                 telemetry.track_event(
                     "smee_missing_evidence_prompt",
