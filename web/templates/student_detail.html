@@ -77,8 +77,12 @@
         {% if merlin %}
             {% if merlin.human_summary %}
                 {% set merlin_summary = merlin.human_summary %}
+            {% elif merlin.executive_summary %}
+                {% set merlin_summary = merlin.executive_summary %}
             {% elif merlin.summary %}
                 {% set merlin_summary = merlin.summary %}
+            {% elif merlin.rationale %}
+                {% set merlin_summary = merlin.rationale %}
             {% endif %}
         {% endif %}
         {% if aurora %}
@@ -116,6 +120,15 @@
                     <h3>{{ agent_id|capitalize }} {% if agent.overall_score %}<span class="score-badge">{{ agent.overall_score }}</span>{% endif %}</h3>
                     <div class="agent-summary">{{ agent.human_summary }}</div>
                     <div class="agent-details">
+                        {% if agent.gpa %}
+                            <strong>GPA:</strong> {{ agent.gpa }}<br>
+                        {% endif %}
+                        {% if agent.academic_strength %}
+                            <strong>Academic Strength:</strong> {{ agent.academic_strength }}<br>
+                        {% endif %}
+                        {% if agent.course_rigor_index %}
+                            <strong>Course Rigor:</strong> {{ agent.course_rigor_index }}<br>
+                        {% endif %}
                         {% if agent.key_strengths %}
                             <strong>Strengths:</strong> {{ agent.key_strengths }}<br>
                         {% endif %}

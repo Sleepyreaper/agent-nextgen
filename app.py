@@ -2528,6 +2528,17 @@ def student_detail(application_id):
                                 pass
                     except Exception as parse_err:
                         logger.debug(f"Error parsing rapunzel JSON: {parse_err}")
+                # Promote summary → human_summary so Rapunzel appears in Agent Insights cards
+                rap = agent_results['rapunzel']
+                if not rap.get('human_summary'):
+                    if rap.get('summary'):
+                        rap['human_summary'] = rap['summary']
+                    elif rap.get('full_analysis'):
+                        # Use first 500 chars of full analysis as fallback
+                        rap['human_summary'] = rap['full_analysis'][:500]
+                # Promote GPA as a display-friendly overall_score
+                if not rap.get('overall_score') and rap.get('gpa'):
+                    rap['overall_score'] = f"GPA: {rap['gpa']}"
         except Exception as e:
             logger.debug(f"No Rapunzel data: {e}")
         
@@ -2649,48 +2660,41 @@ def student_detail(application_id):
                         else:
                             parsed = {}
                         agent_results['merlin']['parsed_data'] = parsed
-                        content = parsed.get('content') if isinstance(parsed, dict) else None
-                        if isinstance(content, str) and content.strip():
-                            try:
-                                inner = json.loads(content)
-                                mer = agent_results['merlin']
-                                # Promote summary/rationale as human_summary
-                                if inner.get('summary'):
-                                    mer['human_summary'] = inner.get('summary')
-                                elif inner.get('rationale'):
-                                    mer['human_summary'] = inner.get('rationale')
-                                elif inner.get('human_summary'):
-                                    mer['human_summary'] = inner.get('human_summary')
-                                elif inner.get('executive_summary'):
-                                    mer['human_summary'] = inner.get('executive_summary')
-                            except Exception:
-                                pass
+                        mer = agent_results['merlin']
+                        if isinstance(parsed, dict):
+                            # Promote all useful keys from parsed_json to top-level for template access
+                            for k in ('overall_score', 'match_score', 'nextgen_match', 'recommendation',
+                                       'rationale', 'confidence', 'key_strengths', 'key_risks',
+                                       'decision_drivers', 'top_risk', 'context_factors', 'evidence_used',
+                                       'executive_summary'):
+                                if parsed.get(k) is not None and not mer.get(k):
+                                    mer[k] = parsed[k]
+                            # Promote human_summary from the best available field
+                            if not mer.get('human_summary'):
+                                if parsed.get('executive_summary'):
+                                    mer['human_summary'] = parsed['executive_summary']
+                                elif parsed.get('summary'):
+                                    mer['human_summary'] = parsed['summary']
+                                elif parsed.get('rationale'):
+                                    mer['human_summary'] = parsed['rationale']
+                            # Also try nested 'content' JSON if present
+                            content = parsed.get('content')
+                            if isinstance(content, str) and content.strip():
+                                try:
+                                    inner = json.loads(content)
+                                    if isinstance(inner, dict):
+                                        for k in ('overall_score', 'recommendation', 'rationale', 'confidence',
+                                                   'key_strengths', 'key_risks', 'executive_summary'):
+                                            if inner.get(k) is not None and not mer.get(k):
+                                                mer[k] = inner[k]
+                                        if not mer.get('human_summary'):
+                                            mer['human_summary'] = inner.get('executive_summary') or inner.get('summary') or inner.get('rationale')
+                                except Exception:
+                                    pass
                     except Exception as parse_err:
                         logger.debug(f"Error parsing merlin JSON: {parse_err}")
         except Exception as e:
             logger.debug(f"No Merlin data: {e}")
-        # ...existing code...
-        content = None
-
-        if isinstance(content, str) and content.strip():
-            try:
-                inner = json.loads(content)
-                mer = agent_results['merlin']
-                if isinstance(inner, dict):
-                    # Promote keys for template access
-                    for k in ('overall_score', 'match_score', 'overallscore', 'recommendation', 'rationale', 'confidence', 'key_strengths', 'key_risks'):
-                        if inner.get(k) is not None and not mer.get(k):
-                            mer[k] = inner.get(k)
-                    # Promote summary if present
-                    if inner.get('summary'):
-                        mer['human_summary'] = inner.get('summary')
-                    elif inner.get('human_summary'):
-                        mer['human_summary'] = inner.get('human_summary')
-                    elif inner.get('executive_summary'):
-                        mer['human_summary'] = inner.get('executive_summary')
-            except Exception:
-                # content may not be JSON; ignore silently
-                pass
         
         # Aurora - Formatter
         try:
