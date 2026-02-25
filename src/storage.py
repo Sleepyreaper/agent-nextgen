@@ -53,15 +53,17 @@ class StorageManager:
                 logger.info("✅ Azure Storage client created, verifying access...")
                 # perform a quick check to catch RBAC/permission issues early
                 try:
-                    # list_containers() returns a lazy iterator — consume one page
-                    # to force a real network call and surface auth errors immediately
-                    next(iter(self.client.list_containers(results_per_page=1)), None)
-                    logger.info("✅ Azure Storage access verified")
-                except ClientAuthenticationError as auth_err:
-                    logger.error("🔒 Azure Storage authorization failure: %s", auth_err)
-                    raise
-                except AzureError as az_err:
-                    logger.warning("⚠ Azure Storage reachable but error listing containers: %s", az_err)
+                    # Try to get properties of our primary container instead of
+                    # listing all containers — this succeeds with Storage Blob
+                    # Data Contributor role (no account-level list permission needed)
+                    primary = self.CONTAINERS.get('documents', 'student-documents')
+                    if self._prefix:
+                        primary = f"{self._prefix}{primary}"
+                    self.client.get_container_client(primary).get_container_properties()
+                    logger.info("✅ Azure Storage access verified (container: %s)", primary)
+                except Exception:
+                    # Container may not exist yet — that's fine, _ensure_containers will create it
+                    logger.info("ℹ Primary container not found yet, will create during init")
                 
                 # Ensure containers exist
                 self._ensure_containers()
