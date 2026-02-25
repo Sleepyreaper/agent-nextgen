@@ -4982,6 +4982,73 @@ def update_school_enrichment(school_id):
         return jsonify({'status': 'error', 'error': str(e)}), 500
 
 
+@app.route('/api/school/add', methods=['POST'])
+def add_school_record():
+    """Add a new school record. Dedup is handled by create_school_enriched_data."""
+    try:
+        data = request.json or {}
+        school_name = (data.get('school_name') or '').strip()
+        state_code = (data.get('state_code') or '').strip().upper()
+
+        if not school_name or not state_code:
+            return jsonify({'status': 'error', 'error': 'School name and state are required'}), 400
+        if len(state_code) != 2:
+            return jsonify({'status': 'error', 'error': 'State code must be 2 letters (e.g. GA)'}), 400
+
+        record = {
+            'school_name': school_name,
+            'school_district': (data.get('school_district') or '').strip(),
+            'state_code': state_code,
+            'county_name': (data.get('county_name') or '').strip(),
+            'school_url': (data.get('school_url') or '').strip(),
+            'opportunity_score': 0,
+            'total_students': 0,
+            'graduation_rate': 0,
+            'college_acceptance_rate': 0,
+            'free_lunch_percentage': 0,
+            'ap_course_count': 0,
+            'ap_exam_pass_rate': 0,
+            'stem_program_available': False,
+            'ib_program_available': False,
+            'dual_enrollment_available': False,
+            'analysis_status': 'pending',
+            'human_review_status': 'pending',
+            'data_confidence_score': 0,
+            'created_by': 'manual_add',
+            'school_investment_level': 'unknown',
+            'is_active': True,
+        }
+
+        # create_school_enriched_data has built-in dedup: returns existing ID if match found
+        school_id = db.create_school_enriched_data(record)
+
+        if school_id:
+            # Check if this was an existing record (dedup) or newly created
+            existing = db.get_school_enriched_data(school_id)
+            is_existing = existing and existing.get('created_by') != 'manual_add'
+
+            if is_existing:
+                logger.info(f"School '{school_name}' ({state_code}) already exists as ID {school_id}")
+                return jsonify({
+                    'status': 'exists',
+                    'message': f'"{school_name}" already exists in the database',
+                    'school_id': school_id
+                })
+
+            logger.info(f"School '{school_name}' ({state_code}) added as ID {school_id}")
+            return jsonify({
+                'status': 'success',
+                'message': f'"{school_name}" added successfully',
+                'school_id': school_id
+            })
+        else:
+            return jsonify({'status': 'error', 'error': 'Failed to create school record'}), 500
+
+    except Exception as e:
+        logger.error(f"Error adding school: {e}")
+        return jsonify({'status': 'error', 'error': str(e)}), 500
+
+
 @app.route('/api/school/<int:school_id>/delete', methods=['DELETE'])
 def delete_school_record(school_id):
     """Permanently delete a school enrichment record."""

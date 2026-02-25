@@ -465,9 +465,12 @@
 
 {% block content %}
 <div class="school-management-container">
-    <div style="margin-bottom: 2rem;">
-        <h1 style="color: #1f2937; margin-bottom: 0.5rem;">🏫 School Data Management</h1>
-        <p style="color: #6b7280;">Comprehensive school profiles, opportunity scores, and human review</p>
+    <div style="margin-bottom: 2rem; display: flex; justify-content: space-between; align-items: flex-start;">
+        <div>
+            <h1 style="color: #1f2937; margin-bottom: 0.5rem;">🏫 School Data Management</h1>
+            <p style="color: #6b7280;">Comprehensive school profiles, opportunity scores, and human review</p>
+        </div>
+        <button onclick="openAddSchoolModal()" style="padding: 0.6rem 1.2rem; background: linear-gradient(135deg, #667eea, #764ba2); color: white; border: none; border-radius: 8px; font-size: 0.9rem; font-weight: 600; cursor: pointer; white-space: nowrap;">+ Add School</button>
     </div>
 
     <!-- Statistics -->
@@ -548,6 +551,44 @@
         <div style="padding: 2rem; text-align: center; color: #6b7280;">
             Loading schools...
         </div>
+    </div>
+</div>
+
+<!-- Add School Modal -->
+<div id="addSchoolModal" class="school-detail-modal">
+    <div class="school-detail-content" style="max-width: 500px;">
+        <button class="close-modal" onclick="closeAddSchoolModal()">&times;</button>
+        <h2 style="margin-bottom: 1rem; color: #1f2937;">➕ Add New School</h2>
+        <p style="color: #6b7280; font-size: 0.85rem; margin-bottom: 1.5rem;">Add a school to the database. Duplicates are automatically prevented — if this school already exists (matched by name + state), you'll be notified.</p>
+        <form onsubmit="submitAddSchool(event)">
+            <div style="margin-bottom: 1rem;">
+                <label style="display: block; font-weight: 600; margin-bottom: 0.3rem; color: #374151;">School Name *</label>
+                <input type="text" id="addSchoolName" required placeholder="e.g. Northview High School" style="width: 100%; padding: 0.5rem; border: 1px solid #d1d5db; border-radius: 6px; font-size: 0.9rem;">
+            </div>
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-bottom: 1rem;">
+                <div>
+                    <label style="display: block; font-weight: 600; margin-bottom: 0.3rem; color: #374151;">State Code *</label>
+                    <input type="text" id="addSchoolState" required maxlength="2" placeholder="GA" value="GA" style="width: 100%; padding: 0.5rem; border: 1px solid #d1d5db; border-radius: 6px; font-size: 0.9rem; text-transform: uppercase;">
+                </div>
+                <div>
+                    <label style="display: block; font-weight: 600; margin-bottom: 0.3rem; color: #374151;">County</label>
+                    <input type="text" id="addSchoolCounty" placeholder="e.g. Fulton County" style="width: 100%; padding: 0.5rem; border: 1px solid #d1d5db; border-radius: 6px; font-size: 0.9rem;">
+                </div>
+            </div>
+            <div style="margin-bottom: 1rem;">
+                <label style="display: block; font-weight: 600; margin-bottom: 0.3rem; color: #374151;">School District</label>
+                <input type="text" id="addSchoolDistrict" placeholder="e.g. Fulton County School District" style="width: 100%; padding: 0.5rem; border: 1px solid #d1d5db; border-radius: 6px; font-size: 0.9rem;">
+            </div>
+            <div style="margin-bottom: 1.5rem;">
+                <label style="display: block; font-weight: 600; margin-bottom: 0.3rem; color: #374151;">School Website</label>
+                <input type="url" id="addSchoolUrl" placeholder="https://" style="width: 100%; padding: 0.5rem; border: 1px solid #d1d5db; border-radius: 6px; font-size: 0.9rem;">
+            </div>
+            <div id="addSchoolResult" style="display: none; margin-bottom: 1rem; padding: 0.75rem; border-radius: 6px; font-size: 0.85rem;"></div>
+            <div style="display: flex; gap: 1rem;">
+                <button type="submit" id="addSchoolBtn" style="flex: 1; padding: 0.6rem; background: #10b981; color: white; border: none; border-radius: 6px; font-weight: 600; cursor: pointer;">Add School</button>
+                <button type="button" onclick="closeAddSchoolModal()" style="padding: 0.6rem 1.2rem; background: #e5e7eb; color: #374151; border: none; border-radius: 6px; font-weight: 600; cursor: pointer;">Cancel</button>
+            </div>
+        </form>
     </div>
 </div>
 
@@ -940,6 +981,80 @@ async function submitReview(event, schoolId) {
         alert('Error submitting review: ' + error.message);
     }
 }
+
+function openAddSchoolModal() {
+    document.getElementById('addSchoolModal').classList.add('active');
+    document.getElementById('addSchoolName').focus();
+}
+
+function closeAddSchoolModal() {
+    document.getElementById('addSchoolModal').classList.remove('active');
+    document.getElementById('addSchoolResult').style.display = 'none';
+}
+
+async function submitAddSchool(event) {
+    event.preventDefault();
+    const btn = document.getElementById('addSchoolBtn');
+    const resultDiv = document.getElementById('addSchoolResult');
+    btn.disabled = true;
+    btn.textContent = 'Adding...';
+    resultDiv.style.display = 'none';
+
+    try {
+        const response = await fetch('/api/school/add', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                school_name: document.getElementById('addSchoolName').value.trim(),
+                state_code: document.getElementById('addSchoolState').value.trim().toUpperCase(),
+                county_name: document.getElementById('addSchoolCounty').value.trim(),
+                school_district: document.getElementById('addSchoolDistrict').value.trim(),
+                school_url: document.getElementById('addSchoolUrl').value.trim()
+            })
+        });
+        const data = await response.json();
+
+        if (data.status === 'success') {
+            resultDiv.style.background = '#d1fae5';
+            resultDiv.style.border = '1px solid #6ee7b7';
+            resultDiv.style.color = '#065f46';
+            resultDiv.innerHTML = `✅ ${data.message} (ID: ${data.school_id})`;
+            resultDiv.style.display = 'block';
+            loadSchools();
+            // Clear form for next entry
+            document.getElementById('addSchoolName').value = '';
+            document.getElementById('addSchoolCounty').value = '';
+            document.getElementById('addSchoolDistrict').value = '';
+            document.getElementById('addSchoolUrl').value = '';
+        } else if (data.status === 'exists') {
+            resultDiv.style.background = '#fef3c7';
+            resultDiv.style.border = '1px solid #fcd34d';
+            resultDiv.style.color = '#92400e';
+            resultDiv.innerHTML = `⚠️ ${data.message} (ID: ${data.school_id})`;
+            resultDiv.style.display = 'block';
+        } else {
+            resultDiv.style.background = '#fee2e2';
+            resultDiv.style.border = '1px solid #fca5a5';
+            resultDiv.style.color = '#991b1b';
+            resultDiv.innerHTML = `❌ ${data.error}`;
+            resultDiv.style.display = 'block';
+        }
+    } catch (error) {
+        resultDiv.style.background = '#fee2e2';
+        resultDiv.style.border = '1px solid #fca5a5';
+        resultDiv.style.color = '#991b1b';
+        resultDiv.innerHTML = `❌ Error: ${error.message}`;
+        resultDiv.style.display = 'block';
+    } finally {
+        btn.disabled = false;
+        btn.textContent = 'Add School';
+    }
+}
+
+// Close add-school modal when clicking outside
+document.getElementById('addSchoolModal').addEventListener('click', function(e) {
+    if (e.target === this) closeAddSchoolModal();
+});
 
 async function deleteSchool(schoolId, schoolName) {
     if (!confirm(`⚠️ Permanently delete "${schoolName}"?\n\nThis will remove ALL data for this school and cannot be undone.`)) return;
