@@ -8,7 +8,7 @@ import json
 import re
 import threading
 import requests
-from flask import Flask, flash, jsonify, render_template, redirect, url_for, request, Response
+from flask import Flask, flash, jsonify, render_template, redirect, url_for, request, Response, stream_with_context
 from werkzeug.utils import secure_filename
 
 from typing import Dict, Any, Optional
@@ -3525,7 +3525,7 @@ def generate_session_updates(session_id):
     """
     submission = test_submissions.get(session_id)
     if not submission:
-        yield f"data: {json.dumps({'error': 'Session not found'})}\n\n"
+        yield f"data: {json.dumps({'error': 'Session not found'}, ensure_ascii=True)}\n\n"
         return
 
     if 'queue' not in submission:
@@ -3536,7 +3536,7 @@ def generate_session_updates(session_id):
     if submission.get('students'):
         start_session_processing(session_id)
 
-    yield f"data: {json.dumps({'type': 'connected', 'message': 'Connected to test stream'})}\n\n"
+    yield f"data: {json.dumps({'type': 'connected', 'message': 'Connected to test stream'}, ensure_ascii=True)}\n\n"
 
     last_sent = time.time()
     while True:
@@ -3544,14 +3544,14 @@ def generate_session_updates(session_id):
             update = submission['queue'].get(timeout=0.5)
         except queue.Empty:
             if time.time() - last_sent >= 10:
-                yield "event: keepalive\ndata: {}\n\n"
+                yield ": keepalive\n\n"
                 last_sent = time.time()
             continue
 
         if update.get('_session_complete'):
             break
 
-        yield f"data: {json.dumps(update)}\n\n"
+        yield f"data: {json.dumps(update, ensure_ascii=True, default=str)}\n\n"
         last_sent = time.time()
 
 
@@ -3809,7 +3809,7 @@ def _process_session(session_id):
 def test_stream(session_id):
     """Server-Sent Events endpoint for real-time test status updates."""
     return Response(
-        generate_session_updates(session_id),
+        stream_with_context(generate_session_updates(session_id)),
         mimetype='text/event-stream',
         headers={
             'Cache-Control': 'no-cache',

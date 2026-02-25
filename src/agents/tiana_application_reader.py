@@ -79,6 +79,8 @@ class TianaApplicationReader(BaseAgent):
                     }
                 else:
                     data = safe_load_json(payload)
+                if not isinstance(data, dict):
+                    data = {"raw_response": str(data)}
                 data["status"] = "success"
                 data["agent"] = self.name
 

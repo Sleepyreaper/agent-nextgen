@@ -636,6 +636,20 @@ const agentEmojis = {
     'aurora': '✨'
 };
 
+// Map character names to internal agent IDs used by SSE and polling
+const agentIdMap = {
+    'smee': 'smee',
+    'belle': 'belle',
+    'tiana': 'application_reader',
+    'rapunzel': 'grade_reader',
+    'naveen': 'naveen',
+    'moana': 'school_context',
+    'mulan': 'recommendation_reader',
+    'milo': 'data_scientist',
+    'merlin': 'student_evaluator',
+    'aurora': 'aurora'
+};
+
 let students = {};
 let totalStudents = 0;
 let completedStudents = 0;
@@ -721,15 +735,47 @@ function pollStudentStatus() {
         .then(r => r.json())
         .then(data => {
             if (data.status === 'success' && data.students) {
-                // Update students dict with fresh data from database
+                // Merge database data with existing SSE-provided data (don't overwrite intermediate states)
                 data.students.forEach(student => {
-                    students[`app_${student.application_id}`] = {
-                        id: `app_${student.application_id}`,
-                        name: student.name,
-                        status: student.status,
-                        applicationId: student.application_id,
-                        agentProgress: student.agent_progress
-                    };
+                    const key = `app_${student.application_id}`;
+                    const existing = students[key];
+                    if (existing) {
+                        // Merge: prefer SSE intermediate states over polling 'pending',
+                        // but accept polling 'complete' (which means agent finished)
+                        const mergedProgress = { ...(existing.agentProgress || {}) };
+                        for (const [agentKey, pollStatus] of Object.entries(student.agent_progress || {})) {
+                            if (pollStatus === 'complete') {
+                                mergedProgress[agentKey] = 'complete';
+                            } else if (!mergedProgress[agentKey] || mergedProgress[agentKey] === 'pending') {
+                                mergedProgress[agentKey] = pollStatus;
+                            }
+                            // If SSE set 'processing'/'starting', keep that over polling 'pending'
+                        }
+                        existing.name = student.name;
+                        existing.applicationId = student.application_id;
+                        existing.agentProgress = mergedProgress;
+                        // Only upgrade status to 'complete', don't downgrade 'processing' to 'processing'
+                        if (student.status === 'complete') {
+                            existing.status = 'complete';
+                        }
+                    } else {
+                        students[key] = {
+                            id: key,
+                            name: student.name,
+                            status: student.status,
+                            applicationId: student.application_id,
+                            agentProgress: student.agent_progress || {},
+                            waitingFields: [],
+                            waitingByAgent: {}
+                        };
+                    }
+
+                    // Also update the AgentProgress panel from polling data
+                    for (const [agentKey, pollStatus] of Object.entries(student.agent_progress || {})) {
+                        if (pollStatus === 'complete') {
+                            AgentProgress.update(agentKey, 'complete', 'Complete ✓');
+                        }
+                    }
                 });
                 
                 completedStudents = data.students.filter(s => s.status === 'complete').length;
@@ -772,9 +818,15 @@ function connectStream(streamUrl) {
     };
     
     eventSource.onerror = (e) => {
-        eventSource.close();
-        status.innerHTML = '⚠️ Stream paused. Switching to polling...';
-        pollStudentStatus();
+        // Allow EventSource to auto-reconnect instead of permanently closing.
+        // Only close if the stream has been explicitly completed.
+        if (eventSource.readyState === EventSource.CLOSED) {
+            console.log('SSE stream closed by server, falling back to polling.');
+            status.innerHTML = '⚠️ Stream ended. Using polling for updates...';
+            pollStudentStatus();
+        } else {
+            console.log('SSE transient error, auto-reconnecting...');
+        }
     };
 }
 
@@ -949,7 +1001,9 @@ function renderTable() {
         
         let agentSteps = '';
         for (const agent of Object.keys(agentNames)) {
-            const rawProgress = student.agentProgress[agent];
+            // Look up progress using both the character name and internal ID
+            const internalId = agentIdMap[agent] || agent;
+            const rawProgress = student.agentProgress[internalId] || student.agentProgress[agent];
             const progress = normalizeAgentStatus(rawProgress);
             let stepClass = 'agent-step';
             if (progress === 'working') stepClass += ' working';
@@ -957,7 +1011,7 @@ function renderTable() {
             else if (progress === 'error') stepClass += ' error';
             else if (progress === 'waiting') stepClass += ' waiting';
 
-            const waitingFor = student.waitingByAgent?.[agent];
+            const waitingFor = student.waitingByAgent?.[internalId] || student.waitingByAgent?.[agent];
             const tooltip = waitingFor
                 ? `${agentNames[agent]} - ${progress} (waiting for ${waitingFor})`
                 : `${agentNames[agent]} - ${progress}`;

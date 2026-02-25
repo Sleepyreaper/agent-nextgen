@@ -51,6 +51,8 @@ class MerlinStudentEvaluator(BaseAgent):
 
                 payload = response.choices[0].message.content
                 data = safe_load_json(payload)
+                if not isinstance(data, dict):
+                    data = {"raw_response": str(data)}
                 normalized = self._normalize_score(
                     data.get("overall_score"),
                     data.get("recommendation")

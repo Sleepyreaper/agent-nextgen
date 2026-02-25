@@ -53,6 +53,8 @@ class MulanRecommendationReader(BaseAgent):
 
                 payload = response.choices[0].message.content
                 data = safe_load_json(payload)
+                if not isinstance(data, dict):
+                    data = {"raw_response": str(data)}
                 data["status"] = "success"
                 data["agent"] = self.name
 
