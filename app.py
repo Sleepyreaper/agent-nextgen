@@ -5146,6 +5146,137 @@ def trigger_school_analysis_sync(school_id):
         return jsonify({'status': 'error', 'error': str(e), 'traceback': traceback.format_exc()}), 500
 
 
+@app.route('/api/school/<int:school_id>/validate-moana', methods=['POST'])
+def validate_school_moana(school_id):
+    """Run Moana validation on a school — checks requirements and generates context summary."""
+    try:
+        school = db.get_school_enriched_data(school_id)
+        if not school:
+            return jsonify({'status': 'error', 'error': 'School not found'}), 404
+        
+        from src.school_workflow import SchoolWorkflow
+        workflow = SchoolWorkflow(db)
+        
+        # Step 1: Validate against Moana requirements
+        # Map DB column names to Moana requirement names
+        school_mapped = dict(school)
+        school_mapped['ap_courses_available'] = school.get('ap_course_count', 0)
+        school_mapped['honors_course_count'] = school.get('honors_course_count', 0)
+        
+        is_valid, missing_fields, validation_details = workflow.validate_school_requirements(school_mapped)
+        
+        # Step 2: Generate Moana's school context summary using AI
+        context_summary = None
+        if is_valid or len(missing_fields) <= 2:
+            # Enough data for Moana to build a meaningful context summary
+            try:
+                client = get_ai_client()
+                model_name = config.foundry_model_name if config.model_provider == "foundry" else config.deployment_name
+                
+                from decimal import Decimal
+                def _safe_val(v):
+                    if isinstance(v, Decimal):
+                        return float(v)
+                    if hasattr(v, 'isoformat'):
+                        return v.isoformat()
+                    return v
+                
+                school_safe = {k: _safe_val(v) for k, v in school.items() if v is not None}
+                
+                context_prompt = f"""You are Moana, the School Context Analyzer. Based on the following school enrichment data, 
+write a concise school context summary (3-5 sentences) that would help other agents understand this school's environment.
+
+School: {school.get('school_name')}
+District: {school.get('school_district', 'N/A')}
+State: {school.get('state_code', 'N/A')}
+Total Students: {school.get('total_students', 'N/A')}
+Graduation Rate: {school.get('graduation_rate', 'N/A')}%
+College Acceptance Rate: {school.get('college_acceptance_rate', 'N/A')}%
+Free/Reduced Lunch: {school.get('free_lunch_percentage', 'N/A')}%
+AP Courses: {school.get('ap_course_count', 'N/A')}
+AP Pass Rate: {school.get('ap_exam_pass_rate', 'N/A')}%
+STEM Program: {'Yes' if school.get('stem_program_available') else 'No'}
+IB Program: {'Yes' if school.get('ib_program_available') else 'No'}
+Dual Enrollment: {'Yes' if school.get('dual_enrollment_available') else 'No'}
+Opportunity Score: {school.get('opportunity_score', 'N/A')}/100
+Investment Level: {school.get('school_investment_level', 'N/A')}
+
+Provide:
+1. A brief school environment description (urban/rural, size, socioeconomic context)
+2. Academic rigor context (what programs exist, how this compares regionally)
+3. Key insight: what does attending this school tell us about a student's opportunities?
+
+Write as a cohesive paragraph that other agents can reference when evaluating students from this school."""
+
+                from src.agents.base_agent import BaseAgent
+                
+                # Create a minimal agent for the LLM call
+                class _MoanaValidator(BaseAgent):
+                    async def process(self, message): return message
+                
+                moana = _MoanaValidator(name="Moana School Context", client=client)
+                moana.model = model_name
+                
+                response = moana._create_chat_completion(
+                    operation="moana_school_validation",
+                    model=model_name,
+                    messages=[
+                        {"role": "system", "content": "You are Moana, a school context analyzer. Provide concise, insightful school context summaries."},
+                        {"role": "user", "content": context_prompt}
+                    ],
+                    temperature=0.5,
+                    max_completion_tokens=500
+                )
+                
+                if response and hasattr(response, 'choices') and response.choices:
+                    context_summary = getattr(response.choices[0].message, 'content', None) or ''
+                    context_summary = context_summary.strip()
+                    
+            except Exception as e:
+                logger.warning(f"Moana context summary generation failed: {e}")
+                context_summary = None
+        
+        # Step 3: Save validation result to DB
+        try:
+            db.mark_school_validation_complete(
+                school_name=school['school_name'],
+                state_code=school.get('state_code', ''),
+                validation_passed=is_valid
+            )
+        except Exception as e:
+            logger.warning(f"Failed to save Moana validation: {e}")
+        
+        # Step 4: Save context summary if generated
+        if context_summary:
+            try:
+                db.execute_non_query(
+                    """UPDATE school_enriched_data 
+                    SET data_source_notes = COALESCE(data_source_notes, '') || %s,
+                        updated_at = CURRENT_TIMESTAMP
+                    WHERE school_enrichment_id = %s""",
+                    (f"\n\n🌊 Moana Context Summary ({datetime.now().strftime('%Y-%m-%d %H:%M')}):\n{context_summary}", school_id)
+                )
+            except Exception as e:
+                logger.warning(f"Failed to save Moana context summary: {e}")
+        
+        return jsonify({
+            'status': 'success',
+            'validation': {
+                'is_valid': is_valid,
+                'missing_fields': missing_fields,
+                'missing_count': len(missing_fields),
+                'total_required': validation_details.get('total_required', 7),
+                'field_status': {k: v['present'] for k, v in validation_details.get('field_status', {}).items()}
+            },
+            'context_summary': context_summary,
+            'school_name': school['school_name']
+        })
+        
+    except Exception as e:
+        logger.error(f"Error in Moana validation: {e}")
+        return jsonify({'status': 'error', 'error': str(e)}), 500
+
+
 @app.route('/api/school/lookup', methods=['POST'])
 def lookup_or_create_school():
     """Auto-lookup: if a school exists, return it. If not, create a skeleton record.

@@ -500,10 +500,17 @@
 
         <!-- MOANA: Validation Status -->
         <div class="detail-section" style="border-left: 4px solid #06b6d4;">
-            <div class="section-title">🌊 Moana Validation Status <small style="font-weight: normal; color: #6b7280; font-size: 0.75rem;">(School Context Analyzer)</small></div>
+            <div class="section-title" style="display: flex; justify-content: space-between; align-items: center;">
+                <span>🌊 Moana School Context <small style="font-weight: normal; color: #6b7280; font-size: 0.75rem;">(School Context Analyzer)</small></span>
+                <button class="edit-button" onclick="triggerMoanaValidation()" id="moanaBtn" style="font-size: 0.85rem; padding: 0.5rem 1rem;">
+                    🌊 Validate with Moana
+                </button>
+            </div>
             <p style="color: #6b7280; font-size: 0.9rem; margin-bottom: 1rem;">
-                Moana uses Naveen's data to contextualize student evaluations. She needs: school name, state, AP count, honors count, STEM/IB/dual enrollment flags, graduation rate, free lunch %, and opportunity score.
+                Moana validates that Naveen's data meets requirements for student evaluations, then generates a school context summary used by all agents.
             </p>
+
+            <!-- Validation Status Row -->
             <div class="field-grid">
                 <div class="field-item">
                     <div class="field-label">Moana Requirements Met</div>
@@ -525,10 +532,16 @@
                 </div>
             </div>
             
-            <!-- Quick check of Moana's required fields -->
+            <!-- Moana Field Check Badges -->
             <div style="margin-top: 1rem; padding: 1rem; background: #f0fdfa; border-radius: 6px;">
                 <strong style="font-size: 0.85rem; color: #134e4a;">Moana Field Check:</strong>
                 <div style="display: flex; flex-wrap: wrap; gap: 0.5rem; margin-top: 0.5rem;">
+                    <span style="padding: 0.25rem 0.5rem; border-radius: 4px; font-size: 0.8rem; background: {% if school.school_name %}#d1fae5; color: #065f46{% else %}#fee2e2; color: #991b1b{% endif %};">
+                        School Name: {{ '✓' if school.school_name else '✗ missing' }}
+                    </span>
+                    <span style="padding: 0.25rem 0.5rem; border-radius: 4px; font-size: 0.8rem; background: {% if school.state_code %}#d1fae5; color: #065f46{% else %}#fee2e2; color: #991b1b{% endif %};">
+                        State: {{ '✓' if school.state_code else '✗ missing' }}
+                    </span>
                     <span style="padding: 0.25rem 0.5rem; border-radius: 4px; font-size: 0.8rem; background: {% if school.ap_course_count and school.ap_course_count|int > 0 %}#d1fae5; color: #065f46{% else %}#fee2e2; color: #991b1b{% endif %};">
                         AP Courses: {{ '✓' if school.ap_course_count and school.ap_course_count|int > 0 else '✗ missing' }}
                     </span>
@@ -546,6 +559,38 @@
                     </span>
                 </div>
             </div>
+
+            <!-- Moana Context Summary -->
+            <div id="moanaContextSection" style="margin-top: 1.5rem;">
+                {% if school.data_source_notes and '🌊 Moana Context Summary' in school.data_source_notes %}
+                <div style="padding: 1.25rem; background: linear-gradient(135deg, #e0f2fe 0%, #f0fdfa 100%); border-radius: 8px; border: 1px solid #67e8f9;">
+                    <div style="font-weight: 600; color: #0e7490; margin-bottom: 0.75rem; font-size: 0.95rem;">
+                        🌊 Moana's School Context Summary
+                    </div>
+                    <div id="moanaContextText" style="color: #374151; line-height: 1.7; font-size: 0.95rem;">
+                        {% set moana_parts = school.data_source_notes.split('🌊 Moana Context Summary') %}
+                        {% if moana_parts|length > 1 %}
+                            {% set latest_summary = moana_parts[-1] %}
+                            {% set summary_lines = latest_summary.split('\n') %}
+                            {% for line in summary_lines %}
+                                {% if line.strip() and not line.strip().startswith('(') %}
+                                {{ line.strip() }}<br>
+                                {% endif %}
+                            {% endfor %}
+                        {% endif %}
+                    </div>
+                </div>
+                {% else %}
+                <div id="moanaContextPlaceholder" style="padding: 1.25rem; background: #f9fafb; border-radius: 8px; border: 1px dashed #d1d5db; text-align: center;">
+                    <span style="color: #9ca3af; font-size: 0.95rem;">
+                        No school context summary yet. Click <strong>"Validate with Moana"</strong> to generate one.
+                    </span>
+                </div>
+                {% endif %}
+            </div>
+
+            <!-- Live validation result display area -->
+            <div id="moanaValidationResult" style="display: none; margin-top: 1rem;"></div>
         </div>
 
         <!-- Web Sources -->
@@ -863,6 +908,74 @@ async function triggerAnalysis() {
         }
     } catch (error) {
         alert('Failed to trigger analysis: ' + error.message);
+        btn.innerHTML = originalText;
+        btn.disabled = false;
+        btn.style.opacity = '1';
+    }
+}
+
+async function triggerMoanaValidation() {
+    const btn = document.getElementById('moanaBtn');
+    const originalText = btn.innerHTML;
+    const resultDiv = document.getElementById('moanaValidationResult');
+    
+    btn.disabled = true;
+    btn.innerHTML = '🌊 Validating...';
+    btn.style.opacity = '0.7';
+    resultDiv.style.display = 'none';
+    
+    try {
+        const response = await fetch('/api/school/{{ school.school_enrichment_id }}/validate-moana', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' }
+        });
+        const result = await response.json();
+        
+        if (result.status === 'success') {
+            btn.innerHTML = '✓ Validated';
+            btn.style.background = '#d1fae5';
+            btn.style.color = '#065f46';
+            
+            // Build validation result display
+            const v = result.validation;
+            let html = '<div style="padding: 1rem; border-radius: 8px; ';
+            
+            if (v.is_valid) {
+                html += 'background: #d1fae5; border: 1px solid #6ee7b7;">';
+                html += '<strong style="color: #065f46;">✓ Moana Validation Passed</strong>';
+                html += '<p style="color: #047857; margin: 0.5rem 0 0;">All ' + v.total_required + ' required fields are present.</p>';
+            } else {
+                html += 'background: #fef3c7; border: 1px solid #fcd34d;">';
+                html += '<strong style="color: #92400e;">⚠ Moana Validation: ' + v.missing_count + ' field(s) missing</strong>';
+                html += '<p style="color: #b45309; margin: 0.5rem 0 0;">Missing: ' + v.missing_fields.join(', ') + '</p>';
+            }
+            html += '</div>';
+            
+            // Show context summary if generated
+            if (result.context_summary) {
+                html += '<div style="margin-top: 1rem; padding: 1.25rem; background: linear-gradient(135deg, #e0f2fe 0%, #f0fdfa 100%); border-radius: 8px; border: 1px solid #67e8f9;">';
+                html += '<div style="font-weight: 600; color: #0e7490; margin-bottom: 0.75rem; font-size: 0.95rem;">🌊 Moana\'s School Context Summary</div>';
+                html += '<div style="color: #374151; line-height: 1.7; font-size: 0.95rem;">' + result.context_summary + '</div>';
+                html += '</div>';
+                
+                // Hide placeholder if visible
+                const placeholder = document.getElementById('moanaContextPlaceholder');
+                if (placeholder) placeholder.style.display = 'none';
+            }
+            
+            resultDiv.innerHTML = html;
+            resultDiv.style.display = 'block';
+            
+            // Reload after delay to refresh the Moana status fields
+            setTimeout(() => location.reload(), 5000);
+        } else {
+            alert('Moana validation error: ' + (result.error || 'Unknown error'));
+            btn.innerHTML = originalText;
+            btn.disabled = false;
+            btn.style.opacity = '1';
+        }
+    } catch (error) {
+        alert('Failed to run Moana validation: ' + error.message);
         btn.innerHTML = originalText;
         btn.disabled = false;
         btn.style.opacity = '1';
