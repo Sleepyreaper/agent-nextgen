@@ -5154,8 +5154,8 @@ def validate_school_moana(school_id):
         if not school:
             return jsonify({'status': 'error', 'error': 'School not found'}), 404
         
-        from src.school_workflow import SchoolWorkflow
-        workflow = SchoolWorkflow(db)
+        from src.school_workflow import SchoolDataWorkflow
+        workflow = SchoolDataWorkflow(db)
         
         # Step 1: Validate against Moana requirements
         # Map DB column names to Moana requirement names
