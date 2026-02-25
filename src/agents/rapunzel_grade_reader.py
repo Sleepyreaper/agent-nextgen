@@ -94,13 +94,37 @@ class RapunzelGradeReader(BaseAgent):
             # Two-step deep analysis: first extract structured facts (courses, grades, GPA candidates,
             # table snippets), then ask the model to synthesize a comprehensive analysis using those facts.
             query_messages = [
-                {"role": "system", "content": "You are an expert transcript extractor. From the provided transcript text, extract concise course/grade tuples, any GPAs present, and notable patterns as short bullets."},
-                {"role": "user", "content": f"Transcript excerpt:\n{transcript_text[:3000]}"}
+                {"role": "system", "content": """You are an expert transcript extractor. From the provided transcript text:
+1. IDENTIFY the transcript format (semester-based, year-long, quarter-based, block, tabular, narrative)
+2. IDENTIFY the grading scale (10-point, 7-point, plus/minus, numeric-only, pass/fail)
+3. Extract EVERY course with: year/grade-level, course name, course level (AP/Honors/DE/IB/Standard), grade received, numeric percentage if shown, credits
+4. Extract any GPAs (weighted and unweighted)
+5. Note any special markings, attendance data, test scores, or honors
+Be thorough — capture every single course entry."""},
+                {"role": "user", "content": f"Transcript text:\n{transcript_text[:4000]}"}
             ]
 
             format_template = [
                 {"role": "system", "content": self._get_system_prompt()},
-                {"role": "user", "content": "Using the extracted facts: {found}\n\nProduce a detailed transcript analysis including GPA estimation, course levels, notable patterns, summary, confidence, and a grade table where appropriate. Preserve tables and JSON-serializable fields."}
+                {"role": "user", "content": """Using the extracted facts: {found}
+
+Produce your analysis in TWO required parts:
+
+## RAPUNZEL'S PERSPECTIVE
+Your expert narrative analysis — the academic story, trajectory, patterns, strengths, concerns. Write this for a college admissions reviewer.
+
+## STANDARDIZED TRANSCRIPT
+A clean table with EXACTLY these columns, sorted by Year then Course name:
+| Year | Course | Level | Grade | Numeric | Credits |
+
+Also include:
+- Detected Format: (what transcript format/grading scale was used)
+- GPA estimation (weighted and unweighted)
+- Course Rigor Index (1-5)
+- Transcript Quality Rating
+- Confidence Level
+- Notable Patterns
+- Executive Summary"""}
             ]
 
             q_resp, response = self.two_step_query_format(
@@ -108,8 +132,8 @@ class RapunzelGradeReader(BaseAgent):
                 model=self.model,
                 query_messages=query_messages,
                 format_messages_template=format_template,
-                query_kwargs={"max_completion_tokens": 400, "temperature": 0},
-                format_kwargs={"max_completion_tokens": 3500, "temperature": 1, "refinements": 2, "refinement_instruction": "Refine the analysis to improve accuracy of GPA, course-level detection, and trend identification. Preserve format and tables."}
+                query_kwargs={"max_completion_tokens": 600, "temperature": 0},
+                format_kwargs={"max_completion_tokens": 5000, "temperature": 1, "refinements": 2, "refinement_instruction": "Refine the analysis to improve accuracy of GPA, course-level detection, grade normalization, and trend identification. Ensure the STANDARDIZED TRANSCRIPT table includes every course with Year/Course/Level/Grade/Numeric/Credits columns. Preserve format and tables."}
             )
 
             response_text = response.choices[0].message.content
@@ -136,6 +160,10 @@ class RapunzelGradeReader(BaseAgent):
                 'grade_table_markdown': parsed_data.get('grade_table_markdown'),
                 'grade_table_headers': parsed_data.get('grade_table_headers'),
                 'grade_table_rows': parsed_data.get('grade_table_rows'),
+                'rapunzel_perspective': parsed_data.get('rapunzel_perspective'),
+                'standardized_transcript': parsed_data.get('standardized_transcript'),
+                'standardized_transcript_rows': parsed_data.get('standardized_transcript_rows'),
+                'detected_format': parsed_data.get('detected_format'),
                 'full_analysis': response_text,
                 'school_context_used': bool(school_context)
             }
@@ -232,6 +260,130 @@ EVALUATION CONTEXT:
 YOUR CORE MISSION - Deep Analysis of Academic Rigor:
 You are the expert academic transcript analyst. Your job is to understand not just WHAT grades a student received, but WHY those grades matter in context. You provide the foundational academic data that all other agents depend on.
 
+═══════════════════════════════════════════════════════════════
+TRANSCRIPT FORMAT RECOGNITION GUIDE
+═══════════════════════════════════════════════════════════════
+
+High school transcripts vary WILDLY in format. You MUST recognize and adapt to
+all of these common layouts. Do NOT assume any single format.
+
+GRADING SCALES YOU WILL ENCOUNTER:
+
+1. STANDARD 10-POINT SCALE (most common in Georgia & many US states):
+   A = 90-100%  (4.0 GPA)
+   B = 80-89%   (3.0 GPA)
+   C = 70-79%   (2.0 GPA)
+   D = 60-69%   (1.0 GPA)
+   F = 0-59%    (0.0 GPA)
+
+2. PLUS/MINUS SCALE (common in many districts):
+   A+ = 97-100% (4.0)   A = 93-96% (4.0)   A- = 90-92% (3.7)
+   B+ = 87-89%  (3.3)   B = 83-86% (3.0)   B- = 80-82% (2.7)
+   C+ = 77-79%  (2.3)   C = 73-76% (2.0)   C- = 70-72% (1.7)
+   D+ = 67-69%  (1.3)   D = 63-66% (1.0)   D- = 60-62% (0.7)
+   F  = 0-59%   (0.0)
+
+3. 7-POINT SCALE (some Georgia & southern schools):
+   A = 93-100%   B = 85-92%   C = 77-84%   D = 70-76%   F = below 70%
+
+4. NUMERIC-ONLY TRANSCRIPTS: Some schools show only numbers (92, 85, 78)
+   with no letter grades. Convert using the scale above.
+
+5. PASS/FAIL or S/U: Some electives or special courses may show P/F or S/U.
+
+WEIGHTED GPA SYSTEMS:
+- AP courses:      A=5.0, B=4.0, C=3.0, D=2.0
+- Honors courses:  A=4.5, B=3.5, C=2.5, D=1.5
+- Standard:        A=4.0, B=3.0, C=2.0, D=1.0
+- Some schools use +0.5 for Honors, +1.0 for AP over standard scale
+- Some use quality points: AP=10 for A, Honors=9 for A, Standard=8 for A
+
+COURSE LEVEL INDICATORS (learn to detect these):
+- "AP" prefix or "Advanced Placement" → AP level
+- "Hon", "Honors", "H" suffix → Honors level
+- "Accel" or "Accelerated" → Honors-equivalent
+- "DE" or "Dual Enrollment" or "MOWR" (Move On When Ready) → College-level
+- "IB" or "International Baccalaureate" → IB level (treat like AP)
+- "CTAE" → Georgia Career, Technical, and Agricultural Education
+- "Gifted" → Advanced/Honors-equivalent
+- No prefix/suffix → Standard level
+- Course numbers can also indicate level (e.g., "Math III" vs "Pre-Calculus AP")
+
+TRANSCRIPT LAYOUT FORMATS:
+
+Format A - SEMESTER-BASED (most common):
+  Shows Fall and Spring grades separately per year
+  May show semester averages and final grades
+
+Format B - YEAR-LONG:
+  Shows one final grade per course per year
+  Courses listed under grade level (9th, 10th, etc.)
+
+Format C - QUARTER-BASED:
+  Shows Q1, Q2, Q3, Q4 grades with semester and final averages
+
+Format D - BLOCK SCHEDULE:
+  4 courses per semester (8 per year), each shown once
+
+Format E - TABULAR/GRID:
+  Courses in rows, semesters/quarters in columns
+  May include credits, quality points, and running GPA
+
+Format F - NARRATIVE/MIXED:
+  Combination of tables, text blocks, and embedded notes
+  Common from scanned/OCR'd transcripts
+
+GEORGIA-SPECIFIC ELEMENTS:
+- Georgia Milestones EOC (End of Course) assessment scores
+- HOPE GPA (calculated differently — uses only core academic courses)
+- Georgia graduation pathways and endorsements
+- CTAE pathway completion indicators
+- Move On When Ready (MOWR) dual enrollment program
+- Georgia High School Association (GHSA) notations
+
+SPECIAL MARKINGS TO WATCH FOR:
+- W/WP/WF = Withdrawal (Passing/Failing)
+- I/INC = Incomplete
+- AU = Audit
+- CR/NC = Credit/No Credit
+- T = Transfer credit
+- * = May indicate repeated course, grade replacement, etc.
+- # = May indicate weighted course
+
+═══════════════════════════════════════════════════════════════
+DUAL OUTPUT REQUIREMENT
+═══════════════════════════════════════════════════════════════
+
+You MUST produce TWO distinct outputs in every analysis:
+
+PART 1 — RAPUNZEL'S PERSPECTIVE (your expert interpretation):
+  Your narrative analysis of what the grades MEAN. Tell the story.
+  Include trajectory, patterns, strengths, concerns, and context.
+  This is your professional opinion as an academic analyst.
+
+PART 2 — STANDARDIZED TRANSCRIPT TABLE:
+  A clean, uniform table that ANY reader can scan quickly.
+  ALWAYS use this EXACT format with these EXACT columns:
+
+  | Year | Course | Level | Grade | Numeric | Credits |
+  |------|--------|-------|-------|---------|---------|
+  | 9    | English I | Standard | A | 95 | 1.0 |
+  | 9    | Biology | Honors | B+ | 88 | 1.0 |
+  | 10   | AP World History | AP | A- | 92 | 1.0 |
+
+  Rules for the standardized table:
+  - Year: Use 9, 10, 11, 12 (or Freshman/Sophomore/Junior/Senior)
+  - Course: Full course name as listed on transcript
+  - Level: AP | Honors | Accelerated | DE | IB | Standard
+  - Grade: Normalized letter grade (A+, A, A-, B+, B, B-, etc.)
+  - Numeric: Percentage if available, or estimated from letter grade
+  - Credits: Credit hours/units (0.5 for semester, 1.0 for full year)
+  - Sort by Year ascending, then alphabetically by Course
+  - If semester grades are shown, combine to final grade
+  - If year is unclear, use best estimate and note it
+
+═══════════════════════════════════════════════════════════════
+
 DEEP REASONING APPROACH:
 Before responding, think through:
 1. What is the OVERALL academic trajectory? (improving/declining/stable/erratic)
@@ -244,12 +396,13 @@ Before responding, think through:
 KEY INSIGHT: A B in AP Chemistry from a well-resourced school where 80% take AP classes tells a very different story than a B in AP Chemistry from a school where only 5 students take AP courses. Context is everything.
 
 EXTRACTION SPECIALIZATION:
-1. PARSE: Extract all course data - course name, level (AP/Honors/Standard), grade, percentage, credit hours, semester/year
-2. NORMALIZE: Convert to standard format (A=4.0, B+=3.3, etc.) and identify weighted multipliers
-3. STRUCTURALIZE: Organize by year, subject area, and course level
-4. CONTEXTUALIZE: Note class rank, percentile, honor roll status, attendance, honors/awards
-5. ANALYZE: Calculate subject-area performance, identify trends, assess overall rigor choices
-6. SYNTHESIZE: Create narrative that explains the academic story
+1. DETECT FORMAT: Identify the transcript layout and grading scale FIRST
+2. PARSE: Extract all course data - course name, level (AP/Honors/Standard), grade, percentage, credit hours, semester/year
+3. NORMALIZE: Convert ALL grades to standard format (A=4.0, B+=3.3, etc.) regardless of input format
+4. STRUCTURALIZE: Organize by year, subject area, and course level into the STANDARDIZED TABLE
+5. CONTEXTUALIZE: Note class rank, percentile, honor roll status, attendance, honors/awards
+6. ANALYZE: Calculate subject-area performance, identify trends, assess overall rigor choices
+7. SYNTHESIZE: Create narrative that explains the academic story (RAPUNZEL'S PERSPECTIVE)
 
 FOCUS AREAS (all required for complete analysis):
 - Cumulative GPA (both weighted and unweighted with scale noted)
@@ -265,7 +418,9 @@ FOCUS AREAS (all required for complete analysis):
 
 OUTPUT REQUIREMENTS:
 Return DETAILED, STRUCTURED analysis with:
-✓ Complete course roster with detailed specifications
+✓ RAPUNZEL'S PERSPECTIVE — narrative interpretation with evidence
+✓ STANDARDIZED TRANSCRIPT — the clean Year/Course/Level/Grade/Numeric/Credits table
+✓ Detected transcript format and grading scale used
 ✓ Subject-area performance matrices
 ✓ Trend analysis with specific evidence
 ✓ Confidence assessment for each data point
@@ -325,6 +480,15 @@ RIGOR INTERPRETATION CONTEXT:
 {'='*70}
 
 CRITICAL ANALYSIS REQUIREMENTS:
+
+STEP 0 — FORMAT DETECTION (do this FIRST):
+Before extracting any data, identify:
+- What LAYOUT is this transcript? (Semester-based / Year-long / Quarter-based / Block / Tabular / Narrative)
+- What GRADING SCALE is used? (10-point / 7-point / Plus-Minus / Numeric-only / Mixed)
+- Are grades shown as letters, numbers, or both?
+- Is there a weighted GPA system? What are the multipliers?
+- Any Georgia-specific elements? (Milestones EOC, HOPE GPA, CTAE, MOWR)
+State your findings as: "Detected Format: [layout] with [grading scale]"
 
 Use deep reasoning to understand the complete academic picture. Go beyond surface-level data extraction.
 """
@@ -472,7 +636,42 @@ CRITICAL FORMAT REQUIREMENTS:
 ✓ Provide both summary AND detailed data
 ✓ Explain any inferences you make ("Estimated percentage as X% based on B+ grade typical = 87%")
 
+=================================================================================
+SECTION 9: RAPUNZEL'S PERSPECTIVE
+=================================================================================
+
+## RAPUNZEL'S PERSPECTIVE
+
+Write a narrative analysis (not a table) that tells the STORY of this student's
+academic journey. This is YOUR expert interpretation — what do the grades MEAN?
+
+Cover: trajectory, course selection strategy, strengths, concerns, what stands out,
+and your overall impression. Write as if advising a college admissions committee.
+
+=================================================================================
+SECTION 10: STANDARDIZED TRANSCRIPT
+=================================================================================
+
+## STANDARDIZED TRANSCRIPT
+
+Create a clean, uniform table using EXACTLY these columns:
+
+| Year | Course | Level | Grade | Numeric | Credits |
+|------|--------|-------|-------|---------|---------| 
+
+Rules:
+- Year: 9, 10, 11, or 12
+- Course: Full course name from transcript
+- Level: AP | Honors | Accelerated | DE | IB | Standard
+- Grade: Normalized letter grade (A+, A, A-, B+, B, B-, C+, C, C-, D, F)
+- Numeric: Percentage (from transcript or estimated from grade)
+- Credits: 0.5 for semester courses, 1.0 for year-long
+- Sort by Year ascending, then Course name alphabetically
+- Include EVERY course — do not skip any
+- If the year is ambiguous, estimate and note with (est.)
+
 OUTPUT STRUCTURE:
+[Detected Format statement]
 [Section 1: Course Table with all detail]
 [Section 2: GPA breakdown]
 [Section 3: Trend Analysis with year-by-year details]
@@ -480,7 +679,9 @@ OUTPUT STRUCTURE:
 [Section 5: Standardized Tests - if present]
 [Section 6: Non-academic factors]
 [Section 7: Overall Assessment with detailed reasoning]
-[Section 8: Executive Summary]"""
+[Section 8: Executive Summary]
+[Section 9: RAPUNZEL'S PERSPECTIVE — narrative analysis]
+[Section 10: STANDARDIZED TRANSCRIPT — clean Year/Course/Level/Grade/Numeric/Credits table]"""
         
         return prompt
     
@@ -506,7 +707,11 @@ OUTPUT STRUCTURE:
             'grade_table_markdown': None,
             'grade_table_headers': None,
             'grade_table_rows': None,
-            'course_rigor_index': None
+            'course_rigor_index': None,
+            'rapunzel_perspective': None,
+            'standardized_transcript': None,
+            'standardized_transcript_rows': None,
+            'detected_format': None
         }
         
         # Extract GPA with regex
@@ -582,8 +787,65 @@ OUTPUT STRUCTURE:
             parsed['grade_table_markdown'] = table_data['markdown']
             parsed['grade_table_headers'] = table_data['headers']
             parsed['grade_table_rows'] = table_data['rows']
-        
+
+        # Extract Rapunzel's Perspective section
+        perspective_match = re.search(
+            r"(?:##\s*)?RAPUNZEL[''']?S\s+PERSPECTIVE[:\s]*(.+?)(?=(?:##\s*)?STANDARDIZED\s+TRANSCRIPT|$)",
+            response_text,
+            re.IGNORECASE | re.DOTALL
+        )
+        if perspective_match:
+            parsed['rapunzel_perspective'] = perspective_match.group(1).strip()
+
+        # Extract Standardized Transcript table
+        std_table = self._extract_standardized_transcript(response_text)
+        if std_table:
+            parsed['standardized_transcript'] = std_table['markdown']
+            parsed['standardized_transcript_rows'] = std_table['rows']
+
+        # Extract detected format
+        format_match = re.search(
+            r'Detected\s+Format[:\s]*([^\n]+)',
+            response_text,
+            re.IGNORECASE
+        )
+        if format_match:
+            parsed['detected_format'] = format_match.group(1).strip()
+
         return parsed
+
+    def _extract_standardized_transcript(self, response_text: str) -> Optional[Dict[str, Any]]:
+        """Extract the Standardized Transcript table specifically.
+
+        Looks for the table that appears after the STANDARDIZED TRANSCRIPT header
+        and has Year/Course/Level/Grade columns.
+        """
+        # Find the standardized transcript section
+        section_match = re.search(
+            r'(?:##\s*)?STANDARDIZED\s+TRANSCRIPT[:\s]*(.+?)(?=(?:##|\n(?:Detected|GPA|Course Rigor|Transcript Quality|Confidence|Notable|Executive|$))|$)',
+            response_text,
+            re.IGNORECASE | re.DOTALL
+        )
+        if not section_match:
+            return None
+
+        section = section_match.group(1)
+        # Extract the markdown table within this section
+        table_data = self._extract_markdown_table(section)
+        if not table_data:
+            return None
+
+        # Validate it looks like a standardized transcript table
+        headers_lower = [h.lower() for h in table_data['headers']]
+        has_year = any('year' in h for h in headers_lower)
+        has_course = any('course' in h for h in headers_lower)
+        has_grade = any('grade' in h for h in headers_lower)
+
+        if has_year and has_course and has_grade:
+            return table_data
+
+        # Even if headers don't match perfectly, return what we found
+        return table_data
 
     def _extract_markdown_table(self, response_text: str) -> Optional[Dict[str, Any]]:
         """Extract the first Markdown table from the response."""
