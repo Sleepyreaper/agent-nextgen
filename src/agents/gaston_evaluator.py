@@ -43,9 +43,9 @@ class GastonEvaluator(BaseAgent):
             GASTON_EVALUATOR_PROMPT,
             "",
             "# APPLICATION TO EVALUATE",
-            f"**Applicant:** {application.get('ApplicantName', 'Unknown')}",
-            f"**Email:** {application.get('Email', 'N/A')}",
-            f"**Student ID:** {application.get('StudentID', 'N/A')}",
+            f"**Applicant:** {application.get('applicant_name') or application.get('ApplicantName', 'Unknown')}",
+            f"**Email:** {application.get('email') or application.get('Email', 'N/A')}",
+            f"**Student ID:** {application.get('application_id') or application.get('StudentID', 'N/A')}",
             ""
         ]
         
@@ -56,13 +56,13 @@ class GastonEvaluator(BaseAgent):
             prompt_parts.append("")
             
             for idx, example in enumerate(self.training_examples[:3], 1):
-                prompt_parts.append(f"## Example {idx}: {example.get('ApplicantName', 'Anonymous')}")
-                prompt_parts.append(f"{example.get('ApplicationText', '')[:400]}...")
+                prompt_parts.append(f"## Example {idx}: {example.get('applicant_name') or example.get('ApplicantName', 'Anonymous')}")
+                prompt_parts.append(f"{(example.get('application_text') or example.get('ApplicationText', ''))[:400]}...")
                 prompt_parts.append("")
         
         prompt_parts.extend([
             "# APPLICATION CONTENT",
-            application.get('ApplicationText', ''),
+            application.get('application_text') or application.get('ApplicationText', ''),
             "",
             "# EVALUATION TASK",
             "Provide detailed evaluation in JSON format.",
@@ -103,7 +103,7 @@ class GastonEvaluator(BaseAgent):
         """
         start_time = time.time()
         
-        with agent_run("Gaston", "evaluate_application", {"application_id": str(application.get("ApplicationID", ""))}) as span:
+        with agent_run("Gaston", "evaluate_application", {"application_id": str(application.get("application_id") or application.get("ApplicationID", ""))}) as span:
             prompt = self._build_evaluation_prompt(application)
 
             try:
@@ -111,7 +111,7 @@ class GastonEvaluator(BaseAgent):
                 # final JSON evaluation using that extracted material.
                 # Use up to 8000 chars — Belle's section detection now routes
                 # focused application content here.
-                app_text_input = application.get('ApplicationText', '')[:8000]
+                app_text_input = (application.get('application_text') or application.get('ApplicationText', ''))[:8000]
                 query_messages = [
                     {"role": "system", "content": "You are an expert at extracting salient evidence and direct quotes from an application for an admissions evaluation.\n\nIMPORTANT: The text may contain page markers like '--- PAGE N of M ---'. These indicate page boundaries from a multi-page PDF. When extracting evidence and quotes, note which page they come from (e.g., 'Page 2: \"I developed a passion for genetics...\"'). Focus on application/essay content and ignore transcript or recommendation sections if present."},
                     {"role": "user", "content": f"Extract the 6 most important evidence snippets and any direct quotes from this application to support scoring:\n\n{app_text_input}"}
@@ -140,7 +140,7 @@ class GastonEvaluator(BaseAgent):
                 evaluation['processing_time_ms'] = processing_time_ms
                 evaluation['model_used'] = self.model
                 evaluation['agent_name'] = self.name
-                evaluation['application_id'] = application.get('ApplicationID')
+                evaluation['application_id'] = application.get('application_id') or application.get('ApplicationID')
                 
                 if span:
                     span.set_attribute("agent.result.score", str(evaluation.get("overall_score", "")))
