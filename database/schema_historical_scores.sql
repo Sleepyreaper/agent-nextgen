@@ -15,7 +15,7 @@ CREATE TABLE IF NOT EXISTS historical_scores (
     -- Reviewer / Status
     status VARCHAR(50),                      -- Eligible status: Accepted = met requirements (files, age, deadline). NOT who was chosen.
     was_selected BOOLEAN DEFAULT NULL,       -- Actually chosen for the program (set when 2024 apps uploaded with selection flag)
-    preliminary_score VARCHAR(50),           -- High, Medium, Low
+    preliminary_score TEXT,                  -- High, Medium, Low (or longer notes)
     quick_notes TEXT,
     reviewer_name VARCHAR(255),
     was_scored BOOLEAN DEFAULT FALSE,        -- Did the reviewer actually score? (Y/N)

@@ -933,8 +933,9 @@ class Database:
                             cohort_year INTEGER NOT NULL DEFAULT 2024,
                             applicant_name VARCHAR(255) NOT NULL,
                             applicant_name_normalized VARCHAR(255),
-                            status VARCHAR(50),
-                            preliminary_score VARCHAR(50),
+                            status TEXT,
+                            was_selected BOOLEAN DEFAULT NULL,
+                            preliminary_score TEXT,
                             quick_notes TEXT,
                             reviewer_name VARCHAR(255),
                             was_scored BOOLEAN DEFAULT FALSE,
@@ -977,6 +978,23 @@ class Database:
                     except Exception as col_err:
                         logger.warning(f"Could not add was_selected column: {col_err}")
                         conn.rollback()
+
+                    # Widen narrow VARCHAR columns that overflow with real-world data
+                    for col_name, new_type in [('status', 'TEXT'), ('preliminary_score', 'TEXT')]:
+                        try:
+                            cursor.execute(f"""
+                                SELECT data_type FROM information_schema.columns
+                                WHERE table_name = 'historical_scores' AND column_name = '{col_name}'
+                            """)
+                            row_info = cursor.fetchone()
+                            if row_info and row_info[0] == 'character varying':
+                                cursor.execute(f"ALTER TABLE historical_scores ALTER COLUMN {col_name} TYPE {new_type}")
+                                conn.commit()
+                                logger.info(f"✓ Widened historical_scores.{col_name} to {new_type}")
+                        except Exception as widen_err:
+                            logger.warning(f"Could not widen {col_name}: {widen_err}")
+                            conn.rollback()
+
                     logger.debug("historical_scores table already exists, skipping creation")
             except Exception as hs_err:
                 logger.error(f"❌ Failed to create historical_scores table: {hs_err}")
@@ -3271,6 +3289,13 @@ class Database:
     def insert_historical_score(self, score_data: Dict[str, Any]) -> Optional[int]:
         """Insert a single historical score row. Returns score_id or None."""
         try:
+            # Truncate string values to prevent VARCHAR overflow
+            def _safe_str(val, max_len=500):
+                if val is None:
+                    return None
+                s = str(val).strip()
+                return s[:max_len] if s else None
+
             query = """
                 INSERT INTO historical_scores
                 (cohort_year, applicant_name, applicant_name_normalized,
@@ -3285,12 +3310,12 @@ class Database:
             normalized = self._normalize_name(score_data.get('applicant_name', ''))
             params = (
                 score_data.get('cohort_year', 2024),
-                score_data.get('applicant_name', ''),
+                _safe_str(score_data.get('applicant_name', ''), 255),
                 normalized,
-                score_data.get('status'),
-                score_data.get('preliminary_score'),
-                score_data.get('quick_notes'),
-                score_data.get('reviewer_name'),
+                _safe_str(score_data.get('status')),
+                _safe_str(score_data.get('preliminary_score')),
+                _safe_str(score_data.get('quick_notes'), 5000),
+                _safe_str(score_data.get('reviewer_name'), 255),
                 score_data.get('was_scored', False),
                 score_data.get('academic_record'),
                 score_data.get('stem_interest'),
@@ -3298,12 +3323,12 @@ class Database:
                 score_data.get('recommendation'),
                 score_data.get('bonus'),
                 score_data.get('total_rating'),
-                score_data.get('eligibility_notes'),
-                score_data.get('previous_research_experience'),
-                score_data.get('advanced_coursework'),
-                score_data.get('overall_rating'),
-                score_data.get('column_q'),
-                score_data.get('import_source'),
+                _safe_str(score_data.get('eligibility_notes'), 5000),
+                _safe_str(score_data.get('previous_research_experience'), 5000),
+                _safe_str(score_data.get('advanced_coursework'), 5000),
+                _safe_str(score_data.get('overall_rating'), 255),
+                _safe_str(score_data.get('column_q'), 5000),
+                _safe_str(score_data.get('import_source'), 500),
                 score_data.get('row_number'),
             )
             return self.execute_scalar(query, params)
