@@ -1306,9 +1306,32 @@ def _aggregate_documents(documents: list[Dict[str, Any]]) -> Dict[str, Optional[
 
     for doc in documents:
         doc_type = doc.get('document_type') or 'unknown'
-        target_field = doc_type_map.get(doc_type)
         text = doc.get('text') or ""
         filename = doc.get('filename') or "document"
+
+        # ── Prefer Belle's section-level agent_fields over doc_type ──
+        # Belle's _detect_document_sections() routes individual pages to
+        # transcript_text / recommendation_text / application_text.  When
+        # that data is available it is more precise than the single
+        # document_type label (which is "winner-take-all" for the whole doc).
+        agent_fields = doc.get('agent_fields') or {}
+        used_agent_fields = False
+        for af_field in ('application_text', 'transcript_text', 'recommendation_text'):
+            af_val = agent_fields.get(af_field)
+            if af_val and isinstance(af_val, str) and len(af_val.strip()) > 20:
+                fields[af_field] = _merge_uploaded_text(
+                    fields.get(af_field),
+                    af_val,
+                    label_map.get(af_field, 'Document'),
+                    filename
+                )
+                used_agent_fields = True
+
+        if used_agent_fields:
+            continue
+
+        # Fallback: route whole document text by doc_type
+        target_field = doc_type_map.get(doc_type)
 
         if target_field:
             fields[target_field] = _merge_uploaded_text(
@@ -1319,6 +1342,7 @@ def _aggregate_documents(documents: list[Dict[str, Any]]) -> Dict[str, Optional[
             )
             continue
 
+        # Unknown doc_type: fill whatever is still empty
         if not fields.get('application_text'):
             fields['application_text'] = text
         elif not fields.get('recommendation_text'):

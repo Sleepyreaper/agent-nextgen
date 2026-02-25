@@ -136,6 +136,9 @@ class BelleDocumentAnalyzer(BaseAgent):
         # Map to agent-needed fields using section detection for precise routing
         agent_fields = {}
         
+        import logging as _logging
+        _af_logger = _logging.getLogger(__name__)
+        
         # Use detected sections to route specific content to each agent
         # This ensures Rapunzel gets only transcript pages, Mulan gets only
         # recommendation pages, and Tiana gets only application/essay pages
@@ -152,6 +155,18 @@ class BelleDocumentAnalyzer(BaseAgent):
         if sections.get("application_text"):
             agent_fields["application_text"] = sections["application_text"]
         elif doc_type in {"application", "personal_statement", "essay"}:
+            agent_fields["application_text"] = text_content
+        
+        # ── CRITICAL FALLBACK ──
+        # Gaston and Tiana REQUIRE application_text to function.  If section
+        # detection and doc-type routing both failed to populate it, use the
+        # full document text so downstream agents never receive nothing.
+        if not agent_fields.get("application_text") and text_content and len(text_content.strip()) > 100:
+            _af_logger.warning(
+                "⚠️ BELLE: application_text was empty after section detection and "
+                f"doc_type routing (doc_type={doc_type}).  Falling back to full "
+                f"document text ({len(text_content)} chars)."
+            )
             agent_fields["application_text"] = text_content
         
         # Store section metadata for debugging and audit
@@ -363,6 +378,10 @@ class BelleDocumentAnalyzer(BaseAgent):
             return result
         
         # Keywords for section classification (weighted by specificity)
+        # IMPORTANT: Transcript medium indicators must be specific to actual
+        # transcript/grade-listing content.  Words like 'science', 'english',
+        # 'course', 'teacher' appear just as often in student essays and MUST
+        # NOT inflate the transcript score.
         transcript_indicators = {
             # High-confidence indicators (3 points each)
             'high': [
@@ -375,12 +394,12 @@ class BelleDocumentAnalyzer(BaseAgent):
                 'college preparatory', 'graduation requirements'
             ],
             # Medium-confidence indicators (1 point each)
+            # Only terms that are SPECIFIC to transcripts, not general
+            # academic words that commonly appear in essays.
             'medium': [
                 'gpa', 'honors', 'ap ', ' ib ', 'semester', 'quarter',
-                'credits', 'grade', 'course', 'subject',
-                'english', 'mathematics', 'science', 'social studies',
-                'elective', 'physical education', 'attendance',
-                'period', 'teacher', 'room', 'mark'
+                'credits', 'elective', 'physical education',
+                'attendance', 'period', 'room', 'mark'
             ]
         }
         
@@ -398,7 +417,7 @@ class BelleDocumentAnalyzer(BaseAgent):
             'medium': [
                 'recommend', 'reference', 'endorsement', 'counselor',
                 'principal', 'dear', 'academic standing',
-                'work ethic', 'leadership', 'character'
+                'work ethic'
             ]
         }
         
@@ -410,13 +429,23 @@ class BelleDocumentAnalyzer(BaseAgent):
                 'tell us about yourself', 'describe a time',
                 'what makes you unique', 'extracurricular activities',
                 'community service', 'volunteer experience',
-                'application for admission', 'student application'
+                'application for admission', 'student application',
+                'i am passionate', 'my dream', 'i aspire',
+                'in the future', 'my experience'
             ],
             'medium': [
                 'essay', 'reflection', 'experience', 'passion',
                 'motivation', 'goals', 'leadership', 'award',
                 'scholarship', 'activities', 'involvement',
-                'challenge', 'growth', 'impact'
+                'challenge', 'growth', 'impact',
+                # General academic words that are far more likely in essays
+                # than in tabular transcript data
+                'teacher', 'course', 'science', 'mathematics',
+                'english', 'subject', 'grade', 'inspired',
+                'learned', 'developed', 'interested', 'opportunity',
+                'career', 'research', 'program', 'stem',
+                'community', 'family', 'future', 'dream', 'hope',
+                'because', 'believe', 'understand'
             ]
         }
         
@@ -451,24 +480,43 @@ class BelleDocumentAnalyzer(BaseAgent):
             a_score = sum(3 for kw in application_indicators['high'] if kw in page_lower)
             a_score += sum(1 for kw in application_indicators['medium'] if kw in page_lower)
             
-            # Additional heuristic: transcript pages often have tabular data
-            # (lots of numbers, short lines, course-grade patterns)
+            # ── Structural heuristics ──
             lines = page_text.split('\n')
-            short_lines = sum(1 for line in lines if 0 < len(line.strip()) < 60)
-            if short_lines > 10:
+            non_empty_lines = [ln for ln in lines if ln.strip()]
+            short_lines = sum(1 for ln in non_empty_lines if len(ln.strip()) < 60)
+            long_lines  = sum(1 for ln in non_empty_lines if len(ln.strip()) >= 80)
+            
+            # Prose-density: long flowing paragraphs → strong essay signal
+            if non_empty_lines:
+                avg_line_len = sum(len(ln.strip()) for ln in non_empty_lines) / len(non_empty_lines)
+            else:
+                avg_line_len = 0
+            
+            if avg_line_len >= 80 and long_lines >= 5:
+                a_score += 4  # Dense prose → very likely essay/application
+            elif avg_line_len >= 60 and long_lines >= 3:
+                a_score += 2  # Moderate prose density
+            
+            # Tabular data: many short lines → transcript-like
+            if short_lines > 10 and avg_line_len < 50:
                 t_score += 2  # Tabular data indicator
             
-            # Grade pattern: letter grades (A, B, C, D, F) or numeric grades
+            # Grade pattern: ONLY actual grade markers next to course-like context
+            # Use strict patterns that avoid matching article "A" or random numbers
             grade_pattern_count = len(re.findall(
-                r'\b[ABCDF][+-]?\b|\b\d{2,3}\b',
-                page_text
+                r'(?<!\w)[ABCDF][+-]\b'           # Letter grade with +/-  (B+, A-, etc.)
+                r'|\b\d{1,3}\.\d{1,2}\b'           # Numeric GPA / grade  (3.85, 92.5)
+                r'|\b[ABCDF]\s{2,}\d'              # Letter grade followed by spaces+digit (tabular)
+                r'|\b(?:pass|fail|incomplete)\b',   # Explicit grade words
+                page_text, re.IGNORECASE
             ))
-            if grade_pattern_count > 5:
-                t_score += 2  # Multiple grades on page
+            if grade_pattern_count >= 4:
+                t_score += 2  # Multiple grade patterns on page
             
-            logger.debug(
+            logger.info(
                 f"  Page {page_num} scores: transcript={t_score}, "
-                f"recommendation={r_score}, application={a_score}"
+                f"recommendation={r_score}, application={a_score} "
+                f"(avg_line={avg_line_len:.0f}, short={short_lines}, long={long_lines})"
             )
             
             # Determine section type based on highest score
@@ -486,11 +534,11 @@ class BelleDocumentAnalyzer(BaseAgent):
                     section_type = 'application'
                     application_pages.append(page_num)
                 else:
-                    # Tie-breaking: if transcript ties with application, lean transcript
-                    # since transcripts are commonly missed
-                    if t_score == a_score and t_score >= 3:
-                        section_type = 'transcript'
-                        transcript_pages.append(page_num)
+                    # Tie-breaking: favour APPLICATION over transcript.
+                    # Essays are the most critical content for evaluation agents.
+                    if t_score == a_score:
+                        section_type = 'application'
+                        application_pages.append(page_num)
                     else:
                         section_type = 'application'
                         application_pages.append(page_num)
