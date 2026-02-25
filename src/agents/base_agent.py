@@ -117,11 +117,11 @@ class BaseAgent(ABC):
 
         try:
             if tracer:
-                with tracer.start_as_current_span(f"chat_completion_{operation}", kind=SpanKind.CLIENT) as span:
+                with tracer.start_as_current_span(f"chat {resolved_model or 'unknown'}", kind=SpanKind.CLIENT) as span:
                     span.set_attribute("gen_ai.system", system_name)
-                    span.set_attribute("gen_ai.model", resolved_model or "")
+                    span.set_attribute("gen_ai.request.model", resolved_model or "")
                     span.set_attribute("gen_ai.operation.name", "chat")
-                    span.set_attribute("agent.name", self.name)
+                    span.set_attribute("gen_ai.agent.id", self.name.lower().replace(" ", "-"))
                     span.set_attribute("gen_ai.agent.name", self.name)
 
                     # Request parameters
@@ -333,9 +333,9 @@ class BaseAgent(ABC):
                         except Exception:
                             break
 
-                    # Telemetry: latency & usage
+                    # Telemetry: latency & usage (GenAI Semantic Conventions)
                     duration_ms = int((time.time() - start_time) * 1000)
-                    span.set_attribute("gen_ai.latency_ms", duration_ms)
+                    span.set_attribute("gen_ai.client.operation.duration_ms", duration_ms)
 
                     usage = getattr(response, "usage", None)
                     if usage:
@@ -343,9 +343,9 @@ class BaseAgent(ABC):
                         output_tokens = getattr(usage, "completion_tokens", None)
                         total_tokens = getattr(usage, "total_tokens", None)
                         if input_tokens is not None:
-                            span.set_attribute("gen_ai.usage.prompt_tokens", int(input_tokens))
+                            span.set_attribute("gen_ai.usage.input_tokens", int(input_tokens))
                         if output_tokens is not None:
-                            span.set_attribute("gen_ai.usage.completion_tokens", int(output_tokens))
+                            span.set_attribute("gen_ai.usage.output_tokens", int(output_tokens))
                         if total_tokens is not None:
                             span.set_attribute("gen_ai.usage.total_tokens", int(total_tokens))
 
@@ -357,11 +357,16 @@ class BaseAgent(ABC):
                             success=True
                         )
 
-                    # Optionally capture response
+                    # Capture response ID (GenAI Semantic Convention)
+                    response_id = getattr(response, "id", None)
+                    if response_id:
+                        span.set_attribute("gen_ai.response.id", str(response_id))
+
+                    # Optionally capture response content
                     if should_capture_sensitive_data():
                         try:
                             content = response.choices[0].message.content if getattr(response, "choices", None) else ""
-                            span.set_attribute("gen_ai.response", str(content)[:2000])
+                            span.set_attribute("gen_ai.response.text", str(content)[:2000])
                         except Exception:
                             pass
 

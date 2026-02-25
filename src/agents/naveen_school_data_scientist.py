@@ -27,7 +27,21 @@ except Exception:
 try:
     from ..observability import get_tracer
 except Exception:
-    from observability import get_tracer
+    try:
+        from observability import get_tracer
+    except Exception:
+        get_tracer = None
+
+try:
+    from .telemetry_helpers import agent_run
+except Exception:
+    try:
+        from agents.telemetry_helpers import agent_run
+    except Exception:
+        from contextlib import contextmanager
+        @contextmanager
+        def agent_run(*a, **kw):
+            yield None
 
 logger = logging.getLogger(__name__)
 
@@ -86,6 +100,14 @@ class NaveenSchoolDataScientist(BaseAgent):
         Returns:
             Enriched school data with AI-powered analysis results
         """
+        # Register agent invocation with OpenTelemetry (GenAI Semantic Convention: invoke_agent)
+        _otel_ctx = agent_run(
+            "Naveen School Data Scientist", "analyze_school",
+            context_data={"school_name": school_name, "state_code": state_code or ""},
+            agent_id="naveen-school-data-scientist",
+        )
+        _otel_span = _otel_ctx.__enter__()
+
         result = {
             "school_name": school_name,
             "school_district": school_district,
@@ -207,6 +229,9 @@ Provide structured analysis in JSON format."""
         result["agent_name"] = self.name
         result["model_used"] = self.model
         result["model_display"] = self.model_display
+
+        # Close the invoke_agent span
+        _otel_ctx.__exit__(None, None, None)
 
         return result
 

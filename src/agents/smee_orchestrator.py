@@ -16,6 +16,7 @@ from src.agents.agent_requirements import AgentRequirements
 from src.agents.belle_document_analyzer import BelleDocumentAnalyzer
 from src.agents.agent_monitor import AgentStatus, get_agent_monitor
 from src.telemetry import telemetry
+from src.agents.telemetry_helpers import agent_run
 
 logger = logging.getLogger(__name__)
 
@@ -873,6 +874,14 @@ class SmeeOrchestrator(BaseAgent):
         self._current_student_id = student_id
         self._current_applicant_name = applicant_name
         
+        # Register agent invocation with OpenTelemetry (GenAI Semantic Convention)
+        self._otel_ctx = agent_run(
+            "Smee Orchestrator", "coordinate_evaluation",
+            context_data={"application_id": str(application_id or ""), "applicant_name": applicant_name},
+            agent_id="smee-orchestrator",
+        )
+        self._otel_span = self._otel_ctx.__enter__()
+        
         logger.info(
             f"🎯 SMEE starting 8-step workflow for {applicant_name}",
             extra={'application_id': application_id, 'student_id': student_id}
@@ -1600,6 +1609,11 @@ class SmeeOrchestrator(BaseAgent):
                 logger.warning(f"Could not mark application as complete: {e}")
         
         self.workflow_state = "complete"
+        # Close the invoke_agent span
+        try:
+            self._otel_ctx.__exit__(None, None, None)
+        except Exception:
+            pass
         return self.evaluation_results
     
     async def _determine_missing_fields(

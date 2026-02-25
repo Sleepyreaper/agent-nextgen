@@ -95,16 +95,22 @@ def configure_observability(
     
     try:
         # Pattern 3 from Microsoft docs: Azure Monitor + Agent Framework
+        # https://learn.microsoft.com/en-us/agent-framework/agents/observability
         if enable_azure_monitor and configure_azure_monitor:
             connection_string = os.getenv("APPLICATIONINSIGHTS_CONNECTION_STRING")
             
             if connection_string:
                 # Configure Azure Monitor with Application Insights
                 try:
-                    resource = Resource.create({
-                        "service.name": service_name,
-                        "service.version": service_version,
-                    })
+                    # Use Agent Framework's create_resource() when available (includes
+                    # standard OTEL_SERVICE_NAME env var handling), else build manually
+                    if create_resource:
+                        resource = create_resource()
+                    else:
+                        resource = Resource.create({
+                            "service.name": service_name,
+                            "service.version": service_version,
+                        })
                     configure_azure_monitor(
                         connection_string=connection_string,
                         resource=resource,

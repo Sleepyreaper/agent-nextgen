@@ -14,6 +14,7 @@ from azure.identity import DefaultAzureCredential
 from src.agents.base_agent import BaseAgent
 from src.config import config
 from src.telemetry import get_tracer
+from src.agents.telemetry_helpers import agent_run
 from src.utils import safe_load_json
 
 
@@ -51,7 +52,11 @@ class MiloDataScientist(BaseAgent):
 
     async def analyze_training_insights(self) -> Dict[str, Any]:
         """Analyze training-only data and return selection insights."""
+        # Register agent invocation with OpenTelemetry (GenAI Semantic Convention: invoke_agent)
+        _otel_ctx = agent_run("Milo Data Scientist", "analyze_training_insights", agent_id="milo-data-scientist")
+        _otel_ctx.__enter__()
         if not self.db:
+            _otel_ctx.__exit__(None, None, None)
             return {
                 "status": "error",
                 "agent": self.name,
@@ -146,6 +151,7 @@ class MiloDataScientist(BaseAgent):
         self._cached_insights = data
         self._cached_signature = signature
         self._cached_at = time.time()
+        _otel_ctx.__exit__(None, None, None)
         return data
 
     async def compute_alignment(self, application: Dict[str, Any]) -> Dict[str, Any]:
@@ -154,7 +160,11 @@ class MiloDataScientist(BaseAgent):
         This uses the same model as other Milo calls and may hit the cache of
         analyze_training_insights to avoid redundant work.
         """
+        # Register agent invocation (GenAI Semantic Convention: invoke_agent)
+        _otel_ctx2 = agent_run("Milo Data Scientist", "compute_alignment", agent_id="milo-data-scientist")
+        _otel_ctx2.__enter__()
         if not application:
+            _otel_ctx2.__exit__(None, None, None)
             return {"status": "error", "error": "No application provided"}
 
         # ensure we have fresh insights first
@@ -193,6 +203,7 @@ class MiloDataScientist(BaseAgent):
                 "agent": self.name,
                 "error": str(e)
             }
+        _otel_ctx2.__exit__(None, None, None)
         return data
 
     async def build_and_upload_foundry_dataset(self) -> Dict[str, Any]:

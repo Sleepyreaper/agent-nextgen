@@ -75,27 +75,20 @@ class RapunzelGradeReader(BaseAgent):
         """
         self.add_to_history("user", f"Parse comprehensive grade report for {student_name or 'candidate'}")
         
-        # Log to Application Insights
-        try:
-            from src.telemetry import telemetry
-            telemetry.track_event(
-                "RapunzelTranscriptAnalysis",
-                {
-                    "student_name": student_name or "Unknown",
-                    "transcript_length": len(transcript_text),
-                    "agent": "Rapunzel Grade Reader",
-                    "model": self.model
-                }
-            )
-        except:
-            pass  # Telemetry not available
-        
         # Build specialized parsing prompt with optional school context for rigor weighting
         parsing_prompt = self._build_parsing_prompt(transcript_text, student_name, school_context)
         
         print(f"🎓 {self.name}: Analyzing transcript ({len(transcript_text)} chars) - Using deep reasoning for comprehensive analysis...")
         if school_context:
             print(f"  📍 School context provided: {school_context.get('school_name', 'Unknown school')}")
+        
+        # Register agent invocation with OpenTelemetry (GenAI Semantic Convention: invoke_agent)
+        _otel_ctx = agent_run(
+            "Rapunzel Grade Reader", "parse_grades",
+            context_data={"student_name": student_name or "Unknown", "transcript_length": str(len(transcript_text))},
+            agent_id="rapunzel-grade-reader",
+        )
+        _otel_span = _otel_ctx.__enter__()
         
         try:
             # Two-step deep analysis: first extract structured facts (courses, grades, GPA candidates,
@@ -224,6 +217,8 @@ class RapunzelGradeReader(BaseAgent):
                 'model_used': self.model,
                 'model_display': 'gpt-4'
             }
+        finally:
+            _otel_ctx.__exit__(None, None, None)
     
     def _get_system_prompt(self) -> str:
         """Get the specialized system prompt for grade parsing with deep reasoning."""
