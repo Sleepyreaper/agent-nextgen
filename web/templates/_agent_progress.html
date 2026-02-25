@@ -1,0 +1,472 @@
+<!--
+  Reusable Agent Progress Panel
+  
+  Include in any page with: {% include '_agent_progress.html' %}
+  
+  Required: call AgentProgress.init(containerId) from JS after DOM ready.
+  
+  API:
+    AgentProgress.init('my-container-id')    — render the panel
+    AgentProgress.update(agentId, status, message)  — update an agent
+    AgentProgress.reset()                    — reset all to waiting
+    AgentProgress.getProgress()              — returns {completed, total, percent}
+-->
+
+<style>
+/* ===== Agent Progress Panel ===== */
+.ap-panel {
+    background: #fff;
+    border-radius: 12px;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.06);
+    overflow: hidden;
+}
+
+.ap-header {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    padding: 1.25rem 1.5rem;
+    color: #fff;
+}
+
+.ap-header h3 {
+    margin: 0 0 0.5rem 0;
+    font-size: 1.1rem;
+    font-weight: 700;
+}
+
+.ap-progress-bar {
+    background: rgba(255,255,255,0.25);
+    border-radius: 6px;
+    height: 8px;
+    overflow: hidden;
+}
+
+.ap-progress-fill {
+    height: 100%;
+    background: #fff;
+    border-radius: 6px;
+    transition: width 0.6s cubic-bezier(0.4, 0, 0.2, 1);
+    width: 0%;
+}
+
+.ap-progress-text {
+    margin-top: 0.4rem;
+    font-size: 0.85rem;
+    opacity: 0.9;
+}
+
+.ap-body {
+    padding: 0;
+}
+
+.ap-step {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    padding: 0.9rem 1.5rem;
+    border-bottom: 1px solid #f1f5f9;
+    transition: background 0.3s, border-left 0.3s;
+    border-left: 4px solid transparent;
+}
+
+.ap-step:last-child {
+    border-bottom: none;
+}
+
+/* States */
+.ap-step[data-status="waiting"] {
+    border-left-color: #e5e7eb;
+}
+
+.ap-step[data-status="processing"] {
+    border-left-color: #667eea;
+    background: #f5f3ff;
+}
+
+.ap-step[data-status="complete"] {
+    border-left-color: #10b981;
+    background: #f0fdf4;
+}
+
+.ap-step[data-status="error"] {
+    border-left-color: #ef4444;
+    background: #fef2f2;
+}
+
+.ap-step[data-status="skipped"] {
+    border-left-color: #f59e0b;
+    background: #fffbeb;
+    opacity: 0.7;
+}
+
+.ap-step[data-status="blocked"] {
+    border-left-color: #f59e0b;
+    background: #fffbeb;
+}
+
+/* Icon */
+.ap-icon {
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.25rem;
+    flex-shrink: 0;
+    background: #f3f4f6;
+    transition: background 0.3s;
+}
+
+.ap-step[data-status="processing"] .ap-icon {
+    background: #ede9fe;
+}
+
+.ap-step[data-status="complete"] .ap-icon {
+    background: #d1fae5;
+}
+
+.ap-step[data-status="error"] .ap-icon {
+    background: #fee2e2;
+}
+
+/* Info */
+.ap-info {
+    flex: 1;
+    min-width: 0;
+}
+
+.ap-name {
+    font-weight: 600;
+    font-size: 0.95rem;
+    color: #1f2937;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.ap-role {
+    color: #6b7280;
+    font-size: 0.8rem;
+    font-weight: 400;
+}
+
+.ap-message {
+    font-size: 0.85rem;
+    color: #6b7280;
+    margin-top: 0.15rem;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.ap-step[data-status="processing"] .ap-message {
+    color: #5b21b6;
+}
+
+.ap-step[data-status="complete"] .ap-message {
+    color: #059669;
+}
+
+.ap-step[data-status="error"] .ap-message {
+    color: #dc2626;
+}
+
+/* Status badge */
+.ap-status {
+    flex-shrink: 0;
+    font-size: 0.75rem;
+    font-weight: 600;
+    padding: 0.2rem 0.6rem;
+    border-radius: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.02em;
+}
+
+.ap-step[data-status="waiting"] .ap-status {
+    background: #f3f4f6;
+    color: #9ca3af;
+}
+
+.ap-step[data-status="processing"] .ap-status {
+    background: #ede9fe;
+    color: #7c3aed;
+}
+
+.ap-step[data-status="complete"] .ap-status {
+    background: #d1fae5;
+    color: #059669;
+}
+
+.ap-step[data-status="error"] .ap-status {
+    background: #fee2e2;
+    color: #dc2626;
+}
+
+.ap-step[data-status="skipped"] .ap-status {
+    background: #fef3c7;
+    color: #d97706;
+}
+
+.ap-step[data-status="blocked"] .ap-status {
+    background: #fef3c7;
+    color: #d97706;
+}
+
+/* Spinner for processing state */
+.ap-spinner {
+    width: 18px;
+    height: 18px;
+    border: 2.5px solid #e5e7eb;
+    border-top-color: #7c3aed;
+    border-radius: 50%;
+    animation: ap-spin 0.8s linear infinite;
+    display: none;
+}
+
+.ap-step[data-status="processing"] .ap-spinner {
+    display: inline-block;
+}
+
+.ap-step[data-status="processing"] .ap-check {
+    display: none;
+}
+
+@keyframes ap-spin {
+    to { transform: rotate(360deg); }
+}
+
+/* Elapsed time */
+.ap-elapsed {
+    font-size: 0.75rem;
+    color: #9ca3af;
+    margin-left: auto;
+    flex-shrink: 0;
+    min-width: 45px;
+    text-align: right;
+}
+
+/* Pulse animation for active step */
+@keyframes ap-pulse {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(102, 126, 234, 0.3); }
+    50% { box-shadow: 0 0 0 6px rgba(102, 126, 234, 0); }
+}
+
+.ap-step[data-status="processing"] {
+    animation: ap-pulse 2s ease-in-out infinite;
+}
+
+/* Responsive */
+@media (max-width: 600px) {
+    .ap-step { padding: 0.75rem 1rem; gap: 0.75rem; }
+    .ap-icon { width: 32px; height: 32px; font-size: 1rem; }
+    .ap-name { font-size: 0.85rem; }
+    .ap-role { display: none; }
+    .ap-elapsed { display: none; }
+}
+</style>
+
+<script>
+const AgentProgress = (function() {
+    // Agent registry — order matters for display
+    const AGENTS = [
+        { id: 'belle',                 emoji: '📖', name: 'Belle',            role: 'Document Extraction' },
+        { id: 'smee',                  emoji: '🎩', name: 'Smee',             role: 'Orchestrator' },
+        { id: 'naveen',                emoji: '🧑‍🔬', name: 'Naveen',           role: 'School Enrichment' },
+        { id: 'application_reader',    emoji: '👸', name: 'Tiana',            role: 'Application Review' },
+        { id: 'grade_reader',          emoji: '👑', name: 'Rapunzel',         role: 'Transcript Analysis' },
+        { id: 'school_context',        emoji: '🌊', name: 'Moana',            role: 'School Context' },
+        { id: 'recommendation_reader', emoji: '🥋', name: 'Mulan',            role: 'Recommendation Analysis' },
+        { id: 'gaston',                emoji: '💪', name: 'Gaston',           role: 'Eligibility Evaluator' },
+        { id: 'data_scientist',        emoji: '📊', name: 'Milo',             role: 'Next Gen Match' },
+        { id: 'student_evaluator',     emoji: '🧙', name: 'Merlin',           role: 'Final Evaluation' },
+        { id: 'aurora',                emoji: '✨', name: 'Aurora',            role: 'Executive Summary' },
+    ];
+
+    // Alias map: SSE may send different names
+    const ALIASES = {
+        'tiana': 'application_reader',
+        'rapunzel': 'grade_reader',
+        'moana': 'school_context',
+        'mulan': 'recommendation_reader',
+        'milo': 'data_scientist',
+        'merlin': 'student_evaluator',
+        'school_enrichment': 'naveen',
+    };
+
+    let containerId = null;
+    let statuses = {};
+    let startTimes = {};
+    let timerInterval = null;
+
+    function resolveId(id) {
+        return ALIASES[id] || id;
+    }
+
+    function init(targetId) {
+        containerId = targetId;
+        const container = document.getElementById(targetId);
+        if (!container) return;
+
+        // Build HTML
+        let stepsHtml = '';
+        AGENTS.forEach(a => {
+            stepsHtml += `
+                <div class="ap-step" id="ap-${a.id}" data-status="waiting" data-agent="${a.id}">
+                    <div class="ap-icon">${a.emoji}</div>
+                    <div class="ap-info">
+                        <div class="ap-name">
+                            ${a.name} <span class="ap-role">— ${a.role}</span>
+                        </div>
+                        <div class="ap-message" id="ap-msg-${a.id}">Waiting...</div>
+                    </div>
+                    <div class="ap-spinner"></div>
+                    <span class="ap-status" id="ap-badge-${a.id}">WAITING</span>
+                    <span class="ap-elapsed" id="ap-time-${a.id}"></span>
+                </div>
+            `;
+        });
+
+        container.innerHTML = `
+            <div class="ap-panel">
+                <div class="ap-header">
+                    <h3>🤖 Agent Pipeline</h3>
+                    <div class="ap-progress-bar">
+                        <div class="ap-progress-fill" id="ap-progress-fill"></div>
+                    </div>
+                    <div class="ap-progress-text" id="ap-progress-text">Waiting to start...</div>
+                </div>
+                <div class="ap-body">
+                    ${stepsHtml}
+                </div>
+            </div>
+        `;
+
+        // Reset state
+        statuses = {};
+        startTimes = {};
+        AGENTS.forEach(a => { statuses[a.id] = 'waiting'; });
+
+        // Start elapsed-time timer
+        if (timerInterval) clearInterval(timerInterval);
+        timerInterval = setInterval(updateTimers, 1000);
+    }
+
+    function update(agentId, status, message) {
+        agentId = resolveId(agentId);
+
+        // Normalize status
+        const s = (status || '').toLowerCase();
+        let normalized;
+        if (['starting', 'processing', 'working', 'running'].includes(s)) normalized = 'processing';
+        else if (['completed', 'complete', 'success', 'done'].includes(s)) normalized = 'complete';
+        else if (['failed', 'error'].includes(s)) normalized = 'error';
+        else if (['skipped'].includes(s)) normalized = 'skipped';
+        else if (['blocked', 'waiting', 'asking_for_info', 'pending'].includes(s)) normalized = 'blocked';
+        else normalized = 'processing';
+
+        // Track timing
+        if (normalized === 'processing' && !startTimes[agentId]) {
+            startTimes[agentId] = Date.now();
+        }
+        if (['complete', 'error', 'skipped'].includes(normalized) && startTimes[agentId]) {
+            // Keep final time but stop counting
+            const el = document.getElementById(`ap-time-${agentId}`);
+            if (el) el.textContent = formatElapsed(Date.now() - startTimes[agentId]);
+            startTimes[agentId] = null; // null = done
+        }
+
+        statuses[agentId] = normalized;
+
+        // Update DOM
+        const step = document.getElementById(`ap-${agentId}`);
+        if (!step) return;
+
+        step.setAttribute('data-status', normalized);
+
+        const msgEl = document.getElementById(`ap-msg-${agentId}`);
+        const badgeEl = document.getElementById(`ap-badge-${agentId}`);
+
+        const STATUS_LABELS = {
+            'waiting': 'WAITING',
+            'processing': 'RUNNING',
+            'complete': 'DONE',
+            'error': 'ERROR',
+            'skipped': 'SKIPPED',
+            'blocked': 'BLOCKED'
+        };
+
+        const DEFAULT_MSGS = {
+            'waiting': 'Waiting...',
+            'processing': 'Processing...',
+            'complete': 'Complete ✓',
+            'error': 'Failed',
+            'skipped': 'Skipped',
+            'blocked': 'Waiting for dependencies...'
+        };
+
+        if (msgEl) msgEl.textContent = message || DEFAULT_MSGS[normalized] || '';
+        if (badgeEl) badgeEl.textContent = STATUS_LABELS[normalized] || normalized.toUpperCase();
+
+        updateProgressBar();
+    }
+
+    function updateProgressBar() {
+        const total = AGENTS.length;
+        const completed = Object.values(statuses).filter(s => ['complete', 'error', 'skipped'].includes(s)).length;
+        const processing = Object.values(statuses).filter(s => s === 'processing').length;
+        const pct = Math.round((completed / total) * 100);
+
+        const fill = document.getElementById('ap-progress-fill');
+        const text = document.getElementById('ap-progress-text');
+        if (fill) fill.style.width = pct + '%';
+        if (text) {
+            if (pct >= 100) {
+                text.textContent = '✅ All agents complete';
+            } else if (processing > 0) {
+                const active = AGENTS.find(a => statuses[a.id] === 'processing');
+                text.textContent = `${completed}/${total} complete — ${active ? active.name : 'Agent'} is working...`;
+            } else {
+                text.textContent = `${completed}/${total} complete`;
+            }
+        }
+    }
+
+    function updateTimers() {
+        AGENTS.forEach(a => {
+            if (startTimes[a.id] && startTimes[a.id] > 0) {
+                const el = document.getElementById(`ap-time-${a.id}`);
+                if (el) el.textContent = formatElapsed(Date.now() - startTimes[a.id]);
+            }
+        });
+    }
+
+    function formatElapsed(ms) {
+        const secs = Math.floor(ms / 1000);
+        if (secs < 60) return secs + 's';
+        const mins = Math.floor(secs / 60);
+        const rem = secs % 60;
+        return mins + 'm ' + rem + 's';
+    }
+
+    function reset() {
+        AGENTS.forEach(a => {
+            statuses[a.id] = 'waiting';
+            startTimes[a.id] = undefined;
+            update(a.id, 'waiting', 'Waiting...');
+        });
+    }
+
+    function getProgress() {
+        const total = AGENTS.length;
+        const completed = Object.values(statuses).filter(s => ['complete', 'error', 'skipped'].includes(s)).length;
+        return { completed, total, percent: Math.round((completed / total) * 100) };
+    }
+
+    function markAllComplete() {
+        updateProgressBar();
+        if (timerInterval) clearInterval(timerInterval);
+    }
+
+    return { init, update, reset, getProgress, markAllComplete, resolveId };
+})();
+</script>

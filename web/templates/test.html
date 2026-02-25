@@ -576,6 +576,10 @@
         </div>
     </div>
 
+    <!-- Agent Progress Panel (real-time) -->
+    <div id="agent-progress-container" style="display: none; margin-bottom: 2rem;"></div>
+    {% include '_agent_progress.html' %}
+
     <!-- Students Table -->
     <div class="table-section">
         <div class="table-header">
@@ -658,6 +662,11 @@ function startTest(type = 'dynamic') {
     if (pollInterval) clearInterval(pollInterval);
     
     document.getElementById('studentTableBody').innerHTML = '';
+
+    // Show and initialize the agent progress panel
+    const apContainer = document.getElementById('agent-progress-container');
+    apContainer.style.display = 'block';
+    AgentProgress.init('agent-progress-container');
     
     // Choose endpoint based on type
     const endpoint = type === 'preset' ? '/api/test/submit-preset' 
@@ -840,6 +849,11 @@ function handleStreamMessage(msg) {
             || (msg.application_id ? `app_${msg.application_id}` : null)
             || Object.keys(students).find(id => students[id].name === msg.applicant);
         
+        // Update the polished progress panel
+        if (msg.agent_id) {
+            AgentProgress.update(msg.agent_id, msg.status, msg.message);
+        }
+
         if (studentId) {
             const agent = msg.agent_id;
             const progressStatus = msg.status;
@@ -906,6 +920,7 @@ function handleStreamMessage(msg) {
         status.innerHTML = '✅ Test complete! All students processed.';
         document.getElementById('btnStartTest').disabled = false;
         document.getElementById('btnSingle').disabled = false;
+        AgentProgress.markAllComplete();
         eventSource.close();
     }
 }
@@ -1086,6 +1101,11 @@ async function uploadTestFiles() {
             totalStudents = result.count || 0;
             completedStudents = 0;
             renderTable();
+
+            // Show and initialize the agent progress panel
+            const apContainer = document.getElementById('agent-progress-container');
+            apContainer.style.display = 'block';
+            AgentProgress.init('agent-progress-container');
 
             if (result.session_id) {
                 const streamUrl = result.stream_url;

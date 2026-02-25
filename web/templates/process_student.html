@@ -8,58 +8,6 @@
         max-width: 800px;
         margin: 0 auto;
     }
-    .agent-step {
-        background: white;
-        padding: 1.5rem;
-        border-radius: 8px;
-        margin-bottom: 1rem;
-        border-left: 4px solid #e5e7eb;
-        transition: all 0.3s;
-    }
-    .agent-step.processing {
-        border-left-color: #667eea;
-        background: #f5f7fa;
-    }
-    .agent-step.complete {
-        border-left-color: #10b981;
-        background: #f0fdf4;
-    }
-    .agent-step.waiting,
-    .agent-step.blocked,
-    .agent-step.skipped {
-        border-left-color: #f59e0b;
-        background: #fffbeb;
-    }
-    .agent-step.error {
-        border-left-color: #ef4444;
-        background: #fef2f2;
-    }
-    .spinner {
-        border: 3px solid #f3f3f3;
-        border-top: 3px solid #667eea;
-        border-radius: 50%;
-        width: 40px;
-        height: 40px;
-        animation: spin 1s linear infinite;
-        display: inline-block;
-        margin-right: 1rem;
-    }
-    @keyframes spin {
-        0% { transform: rotate(0deg); }
-        100% { transform: rotate(360deg); }
-    }
-    .progress-bar {
-        background: #e5e7eb;
-        border-radius: 10px;
-        overflow: hidden;
-        height: 10px;
-        margin: 1rem 0;
-    }
-    .progress-fill {
-        background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
-        height: 100%;
-        transition: width 0.5s;
-    }
 </style>
 {% endblock %}
 
@@ -71,17 +19,9 @@
     </div>
 
     <div class="card">
-        <div id="overall-status">
-            <h2>Processing Status</h2>
-            <div class="progress-bar">
-                <div class="progress-fill" id="progress-bar" style="width: 0%;"></div>
-            </div>
-            <p id="status-text" style="text-align: center; color: #6b7280;">Initializing...</p>
-        </div>
-
-        <div id="agent-steps" style="margin-top: 2rem;">
-            <!-- Agent steps will be populated here -->
-        </div>
+        <!-- Agent Progress Panel -->
+        <div id="process-progress-panel"></div>
+        {% include '_agent_progress.html' %}
 
         <div id="error-container" style="display: none; margin-top: 2rem; padding: 1rem; background: #fef2f2; border-left: 4px solid #ef4444; border-radius: 5px;">
             <strong style="color: #991b1b;">Error:</strong>
@@ -101,102 +41,9 @@
 {% block extra_js %}
 <script>
 const APPLICATION_ID = '{{ application_id }}';
-const AGENT_NAMES = {
-    'application_reader': '👸 Tiana - Application Reader',
-    'grade_reader': '💇 Rapunzel - Grade Reader',  
-    'recommendation_reader': '🗡️ Mulan - Recommendation Reader',
-    'school_context': '🌊 Moana - School Context',
-    'data_scientist': '🔬 Milo - Data Scientist',
-    'student_evaluator': '🧙 Merlin - Final Evaluator',
-    'aurora': '✨ Aurora - Formatter',
-    'fairy_godmother': '🪄 Fairy Godmother - Document Generator',
-    'smee': '🎩 Smee - Orchestrator'
-};
-
-let currentStep = 0;
-let totalSteps = Object.keys(AGENT_NAMES).length;
-const agentStatusMap = {};
-
-function createAgentSteps() {
-    const container = document.getElementById('agent-steps');
-    container.innerHTML = '';
-    
-    Object.entries(AGENT_NAMES).forEach(([agentId, agentName]) => {
-        ensureAgentStep(agentId, agentName);
-    });
-}
-
-function ensureAgentStep(agentId, agentName) {
-    const container = document.getElementById('agent-steps');
-    const existing = document.getElementById(`step-${agentId}`);
-    if (existing) return;
-
-    const step = document.createElement('div');
-    step.className = 'agent-step';
-    step.id = `step-${agentId}`;
-    step.innerHTML = `
-        <div style="display: flex; align-items: center;">
-            <span class="status-icon" style="font-size: 1.5rem; margin-right: 1rem;">⏸️</span>
-            <div style="flex: 1;">
-                <strong>${agentName || agentId}</strong>
-                <div class="status-message" style="color: #6b7280; margin-top: 0.25rem;">Waiting...</div>
-            </div>
-        </div>
-    `;
-    container.appendChild(step);
-    if (!AGENT_NAMES[agentId]) {
-        AGENT_NAMES[agentId] = agentName || agentId;
-        totalSteps = Object.keys(AGENT_NAMES).length;
-    }
-}
-
-function updateAgentStatus(agentId, status, message) {
-    ensureAgentStep(agentId, AGENT_NAMES[agentId] || agentId);
-    const step = document.getElementById(`step-${agentId}`);
-    
-    const statusIcon = step.querySelector('.status-icon');
-    const statusMessage = step.querySelector('.status-message');
-    
-    step.className = 'agent-step ' + status;
-    agentStatusMap[agentId] = status;
-    
-    if (status === 'processing') {
-        statusIcon.innerHTML = '<div class="spinner"></div>';
-        statusMessage.textContent = message || 'Processing...';
-        statusMessage.style.color = '#4b5563';
-    } else if (status === 'complete') {
-        statusIcon.textContent = '✅';
-        statusMessage.textContent = message || 'Complete';
-        statusMessage.style.color = '#10b981';
-    } else if (status === 'waiting' || status === 'blocked' || status === 'skipped') {
-        statusIcon.textContent = status === 'skipped' ? '⏭️' : '⏳';
-        statusMessage.textContent = message || 'Waiting for requirements';
-        statusMessage.style.color = '#d97706';
-    } else if (status === 'error') {
-        statusIcon.textContent = '❌';
-        statusMessage.textContent = message || 'Error';
-        statusMessage.style.color = '#ef4444';
-    }
-}
-
-function updateProgress(percentage) {
-    document.getElementById('progress-bar').style.width = percentage + '%';
-    document.getElementById('status-text').textContent = `${Math.round(percentage)}% Complete (${currentStep}/${totalSteps} agents)`;
-}
-
-function updateProgressFromStatuses() {
-    const completed = Object.values(agentStatusMap).filter(
-        status => ['complete', 'skipped', 'error'].includes(status)
-    ).length;
-    currentStep = completed;
-    const progress = totalSteps ? (completed / totalSteps) * 100 : 0;
-    updateProgress(progress);
-}
 
 function processStudent() {
-    createAgentSteps();
-    updateProgress(0);
-    document.getElementById('status-text').textContent = 'Starting Smee orchestrator...';
+    AgentProgress.init('process-progress-panel');
 
     const eventSource = new EventSource(`/api/process/stream/${APPLICATION_ID}`);
 
@@ -208,46 +55,29 @@ function processStudent() {
             const agentId = update.agent_id || update.agent || 'unknown';
             const status = update.status || 'processing';
             const message = update.message || '';
-
-            if (status === 'starting') {
-                updateAgentStatus(agentId, 'processing', message || 'Processing...');
-            } else if (status === 'completed') {
-                updateAgentStatus(agentId, 'complete', message || 'Complete');
-            } else if (status === 'failed') {
-                updateAgentStatus(agentId, 'error', update.error || message || 'Error');
-            } else if (status === 'blocked') {
-                updateAgentStatus(agentId, 'blocked', message || 'Waiting for requirements');
-            } else if (status === 'skipped') {
-                updateAgentStatus(agentId, 'skipped', message || 'Skipped');
-            } else {
-                updateAgentStatus(agentId, 'processing', message || 'Processing...');
-            }
-
-            updateProgressFromStatuses();
+            AgentProgress.update(agentId, status, message);
         } else if (update.type === 'evaluation_paused') {
-            document.getElementById('status-text').textContent = update.message || 'Paused waiting for missing information';
+            // Nothing extra needed — individual agents already show blocked
         } else if (update.type === 'evaluation_complete' || update.type === 'orchestration_complete') {
+            AgentProgress.markAllComplete();
             if (update.result && update.result.status === 'paused') {
-                document.getElementById('status-text').textContent = update.result.message || 'Paused waiting for missing information';
+                // Paused — don't show complete screen
             } else {
-                document.getElementById('overall-status').style.display = 'none';
                 document.getElementById('complete-container').style.display = 'block';
             }
             eventSource.close();
         } else if (update.type === 'orchestration_error' || update.type === 'error') {
             document.getElementById('error-message').textContent = update.error || 'Processing failed';
             document.getElementById('error-container').style.display = 'block';
-            document.getElementById('status-text').textContent = 'Processing failed';
             eventSource.close();
         }
     };
 
     eventSource.onerror = () => {
-        document.getElementById('status-text').textContent = 'Connection lost. Retrying...';
+        // SSE will auto-reconnect
     };
 }
 
-// Start processing when page loads
 window.addEventListener('load', () => {
     processStudent();
 });
