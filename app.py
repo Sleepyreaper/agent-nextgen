@@ -5236,28 +5236,25 @@ Write as a cohesive paragraph that other agents can reference when evaluating st
                 logger.warning(f"Moana context summary generation failed: {e}")
                 context_summary = None
         
-        # Step 3: Save validation result to DB
+        # Step 3: Save validation result + context summary directly by ID
         try:
-            db.mark_school_validation_complete(
-                school_name=school['school_name'],
-                state_code=school.get('state_code', ''),
-                validation_passed=is_valid
+            summary_fragment = ''
+            if context_summary:
+                summary_fragment = f"\n\n🌊 Moana Context Summary ({datetime.now().strftime('%Y-%m-%d %H:%M')}):\n{context_summary}"
+            
+            db.execute_non_query(
+                """UPDATE school_enriched_data
+                SET moana_requirements_met = %s,
+                    last_moana_validation = CURRENT_TIMESTAMP,
+                    data_source_notes = CASE WHEN %s = '' THEN data_source_notes
+                                             ELSE COALESCE(data_source_notes, '') || %s END,
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE school_enrichment_id = %s""",
+                (is_valid, summary_fragment, summary_fragment, school_id)
             )
+            logger.info(f"Moana validation saved for school {school_id}: valid={is_valid}, summary={'yes' if context_summary else 'no'}")
         except Exception as e:
-            logger.warning(f"Failed to save Moana validation: {e}")
-        
-        # Step 4: Save context summary if generated
-        if context_summary:
-            try:
-                db.execute_non_query(
-                    """UPDATE school_enriched_data 
-                    SET data_source_notes = COALESCE(data_source_notes, '') || %s,
-                        updated_at = CURRENT_TIMESTAMP
-                    WHERE school_enrichment_id = %s""",
-                    (f"\n\n🌊 Moana Context Summary ({datetime.now().strftime('%Y-%m-%d %H:%M')}):\n{context_summary}", school_id)
-                )
-            except Exception as e:
-                logger.warning(f"Failed to save Moana context summary: {e}")
+            logger.error(f"Failed to save Moana validation for school {school_id}: {e}", exc_info=True)
         
         return jsonify({
             'status': 'success',

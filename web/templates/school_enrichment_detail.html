@@ -514,7 +514,7 @@
             <div class="field-grid">
                 <div class="field-item">
                     <div class="field-label">Moana Requirements Met</div>
-                    <div class="field-value">
+                    <div class="field-value" id="moanaReqStatus">
                         {% if school.moana_requirements_met %}
                         <span style="color: #10b981; font-weight: 600;">✓ Yes — All Required Fields Present</span>
                         {% else %}
@@ -524,7 +524,7 @@
                 </div>
                 <div class="field-item">
                     <div class="field-label">Last Moana Validation</div>
-                    <div class="field-value {% if not school.last_moana_validation %}empty{% endif %}">
+                    <div class="field-value {% if not school.last_moana_validation %}empty{% endif %}" id="moanaLastVal">
                         {% if school.last_moana_validation %}
                         <span class="timestamp">{{ school.last_moana_validation }}</span>
                         {% else %}Never validated{% endif %}
@@ -966,8 +966,17 @@ async function triggerMoanaValidation() {
             resultDiv.innerHTML = html;
             resultDiv.style.display = 'block';
             
-            // Reload after delay to refresh the Moana status fields
-            setTimeout(() => location.reload(), 5000);
+            // Update the Moana status badges inline without reloading
+            const reqMetEl = document.querySelector('#moanaReqStatus');
+            if (reqMetEl) {
+                reqMetEl.innerHTML = v.is_valid
+                    ? '<span style="color: #065f46; font-weight: 600;">✓ Yes</span>'
+                    : '<span style="color: #b45309; font-weight: 600;">⚠ Partial</span>';
+            }
+            const lastValEl = document.querySelector('#moanaLastVal');
+            if (lastValEl) {
+                lastValEl.innerHTML = '<span class="timestamp">Just now</span>';                
+            }
         } else {
             alert('Moana validation error: ' + (result.error || 'Unknown error'));
             btn.innerHTML = originalText;
