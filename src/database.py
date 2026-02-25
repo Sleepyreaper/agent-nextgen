@@ -1063,11 +1063,13 @@ class Database:
     
     def find_student_by_match(
         self, 
-        first_name: str, last_name: str, high_school: str, state_code: str
+        first_name: str, last_name: str, high_school: str, state_code: str = ""
     ) -> Optional[Dict[str, Any]]:
         """
-        Find existing student record by exact match:
-        first_name + last_name + high_school + state_code
+        Find existing student record by matching name + high school.
+        
+        Primary match keys: first_name + last_name + high_school
+        Optional refinement: state_code (used when available to narrow results)
         
         Returns application record if found, else None.
         This ensures we don't create duplicate records for same student.
@@ -1075,22 +1077,39 @@ class Database:
         try:
             conn = self.connect()
             cursor = conn.cursor()
-            cursor.execute("""
-                SELECT application_id, first_name, last_name, high_school, state_code
-                FROM applications
-                WHERE LOWER(COALESCE(first_name, '')) = LOWER(%s)
-                  AND LOWER(COALESCE(last_name, '')) = LOWER(%s)
-                  AND LOWER(COALESCE(high_school, '')) = LOWER(%s)
-                  AND UPPER(COALESCE(state_code, '')) = UPPER(%s)
-                LIMIT 1
-            """, (first_name.strip(), last_name.strip(), high_school.strip(), state_code.strip()))
+            
+            state_code_clean = state_code.strip().upper() if state_code else ""
+            
+            if state_code_clean:
+                # Match on all four fields when state is available
+                cursor.execute("""
+                    SELECT application_id, first_name, last_name, high_school, state_code
+                    FROM applications
+                    WHERE LOWER(COALESCE(first_name, '')) = LOWER(%s)
+                      AND LOWER(COALESCE(last_name, '')) = LOWER(%s)
+                      AND LOWER(COALESCE(high_school, '')) = LOWER(%s)
+                      AND UPPER(COALESCE(state_code, '')) = UPPER(%s)
+                    LIMIT 1
+                """, (first_name.strip(), last_name.strip(), high_school.strip(), state_code_clean))
+            else:
+                # Match on name + high school only (state unknown)
+                cursor.execute("""
+                    SELECT application_id, first_name, last_name, high_school, state_code
+                    FROM applications
+                    WHERE LOWER(COALESCE(first_name, '')) = LOWER(%s)
+                      AND LOWER(COALESCE(last_name, '')) = LOWER(%s)
+                      AND LOWER(COALESCE(high_school, '')) = LOWER(%s)
+                    LIMIT 1
+                """, (first_name.strip(), last_name.strip(), high_school.strip()))
+            
             row = cursor.fetchone()
             cursor.close()
             
             if row:
                 logger.info(
                     f"Found existing student record: {row[0]} "
-                    f"for {first_name} {last_name} from {high_school}, {state_code}"
+                    f"for {first_name} {last_name} from {high_school}"
+                    + (f", {state_code_clean}" if state_code_clean else "")
                 )
                 return {
                     'application_id': row[0],

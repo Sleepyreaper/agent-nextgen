@@ -242,15 +242,20 @@ class SmeeOrchestrator(BaseAgent):
         first_name: str, 
         last_name: str, 
         high_school: str, 
-        state_code: str,
-        application: Dict[str, Any]
+        state_code: str = "",
+        application: Dict[str, Any] = None
     ) -> Optional[int]:
         """
-        Match student to existing record OR create new one.
-        Uses: first_name + last_name + high_school + state_code
-        Returns: application_id (existing or newly created)
+        SMEE + BELLE collaboration: Match student to existing record OR create new.
         
-        This ensures we never create duplicate student records.
+        Primary match keys: first_name + last_name + high_school
+        Optional refinement: state_code (used when Belle extracts it)
+        
+        Belle extracts identifying info from the uploaded document;
+        Smee uses it here to verify whether the student already exists
+        in the database, preventing duplicate records.
+        
+        Returns: application_id (existing or newly created)
         """
         # If the incoming application already has an `application_id`, prefer
         # that and skip matching/creation. Also try to resolve by `student_id`
@@ -839,12 +844,12 @@ class SmeeOrchestrator(BaseAgent):
         """
         PHASE 2: 8-Step Workflow Orchestration (+ Step 2.5)
         
-        Step 1: Extract data from document using BELLE (reusable)
-        Step 2: Match or create student record (prevent duplicates)
-        Step 2.5: Check or enrich high school data (NEW)
-        Step 3: Enrich school data using NAVEEN (proactive)
+        Step 1: BELLE extracts data from document (name, school, grades, etc.)
+        Step 2: SMEE + BELLE verify student record (match by first_name + last_name + high_school)
+        Step 2.5: Check or enrich high school data (lookup cached school data)
+        Step 3: Enrich school data using NAVEEN (if not cached)
         Step 3.5: Validate school context (NAVEEN ↔ MOANA validation loop)
-        Step 4: Run core agents (TIANA, RAPUNZEL, MOANA, MULAN) with validation gates
+        Step 4: Core agents (TIANA, RAPUNZEL, MOANA, MULAN) analyze + write to student record
         Step 4.5: Per-agent validation before each agent runs
         Step 5: Run synthesis agents (MILO)
         Step 6: Run synthesis agent (MERLIN)
@@ -964,15 +969,19 @@ class SmeeOrchestrator(BaseAgent):
                      application.get('state_code') or 
                      application.get('StateCode', '')).strip()
         
-        # ===== STEP 2: Match or create student record =====
-        print(f"\nDEBUG: STEP 2 - Student matching")
+        # ===== STEP 2: SMEE + BELLE verify student record =====
+        # Belle extracted name and high school from the document.
+        # Smee now uses those fields to look up or create the student record.
+        # Primary keys: first_name + last_name + high_school
+        # Optional refinement: state_code (when Belle can extract it)
+        print(f"\nDEBUG: STEP 2 - Smee+Belle student verification")
         print(f"DEBUG: first_name={first_name}, last_name={last_name}, school={high_school}, state={state_code}")
-        logger.info("🎓 STEP 2: Matching/creating student record...")
-        print("🎓 STEP 2: Matching/creating student record...")
+        logger.info("🎓 STEP 2: SMEE + BELLE verifying student record (name + high school)...")
+        print("🎓 STEP 2: SMEE + BELLE verifying student record (name + high school)...")
         
-        if first_name and last_name and high_school and state_code:
+        if first_name and last_name and high_school:
             student_app_id = self._match_or_create_student_record(
-                first_name, last_name, high_school, state_code, application
+                first_name, last_name, high_school, state_code or "", application
             )
             if student_app_id:
                 application_id = student_app_id
@@ -986,19 +995,24 @@ class SmeeOrchestrator(BaseAgent):
                     application_id=application_id,
                     agent_name='Smee',
                     interaction_type='step_2_student_match',
-                    question_text=f"Match or create student: {first_name} {last_name} from {high_school}, {state_code}",
+                    question_text=f"Smee+Belle verify student: {first_name} {last_name} from {high_school}" + (f", {state_code}" if state_code else ""),
                     extracted_data={
                         'first_name': first_name,
                         'last_name': last_name,
                         'high_school': high_school,
-                        'state_code': state_code,
+                        'state_code': state_code or '',
+                        'match_keys': 'name+high_school' + ('+state' if state_code else ''),
                         'action': 'created' if student_app_id else 'matched'
                     }
                 )
         else:
+            missing = []
+            if not first_name: missing.append('first_name')
+            if not last_name: missing.append('last_name')
+            if not high_school: missing.append('high_school')
             logger.warning(
-                f"⚠️ Incomplete student info for matching: "
-                f"first={first_name}, last={last_name}, school={high_school}, state={state_code}"
+                f"⚠️ Belle could not extract required fields for student matching: "
+                f"missing={missing}  (first={first_name}, last={last_name}, school={high_school})"
             )
 
         # If matching didn't produce an application_id, create one now so
