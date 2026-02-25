@@ -331,7 +331,10 @@
                 {% endif %}
             </div>
         </div>
-        <div style="display: flex; gap: 0.75rem;">
+        <div style="display: flex; gap: 0.75rem; flex-wrap: wrap;">
+            <button class="edit-button" onclick="triggerAnalysis()" id="analyzeBtn">
+                🔬 Analyze with Naveen
+            </button>
             <button class="edit-button" onclick="showEditModal()">✎ Edit Data</button>
         </div>
     </div>
@@ -828,6 +831,43 @@ document.getElementById('editForm').addEventListener('submit', async function(e)
         alert('Failed to save changes: ' + error.message);
     }
 });
+
+async function triggerAnalysis() {
+    const btn = document.getElementById('analyzeBtn');
+    const originalText = btn.innerHTML;
+    
+    if (!confirm('Run Naveen school analysis? This will look up public data and populate enrichment fields.')) return;
+    
+    btn.disabled = true;
+    btn.innerHTML = '⏳ Analyzing...';
+    btn.style.opacity = '0.7';
+    
+    try {
+        const response = await fetch('/api/school/{{ school.school_enrichment_id }}/analyze', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' }
+        });
+        const result = await response.json();
+        
+        if (result.status === 'success') {
+            btn.innerHTML = '✓ Analysis Queued';
+            btn.style.background = '#d1fae5';
+            btn.style.color = '#065f46';
+            // Reload after a delay to show updated data
+            setTimeout(() => location.reload(), 15000);
+        } else {
+            alert('Error: ' + (result.error || 'Unknown error'));
+            btn.innerHTML = originalText;
+            btn.disabled = false;
+            btn.style.opacity = '1';
+        }
+    } catch (error) {
+        alert('Failed to trigger analysis: ' + error.message);
+        btn.innerHTML = originalText;
+        btn.disabled = false;
+        btn.style.opacity = '1';
+    }
+}
 
 // Close modal when clicking outside
 window.onclick = function(event) {
