@@ -1,7 +1,7 @@
-<!--
+{#
   Reusable Agent Progress Panel
   
-  Include in any page with: {% include '_agent_progress.html' %}
+  Include in any page with: include '_agent_progress.html'
   
   Required: call AgentProgress.init(containerId) from JS after DOM ready.
   
@@ -10,7 +10,7 @@
     AgentProgress.update(agentId, status, message)  — update an agent
     AgentProgress.reset()                    — reset all to waiting
     AgentProgress.getProgress()              — returns {completed, total, percent}
--->
+#}
 
 <style>
 /* ===== Agent Progress Panel ===== */

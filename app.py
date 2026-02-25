@@ -1594,8 +1594,8 @@ def test():
     try:
         return render_template('test.html')
     except Exception as e:
-        flash(f'Error loading test page: {str(e)}', 'error')
-        return render_template('test.html')
+        logger.error(f'Error loading test page: {e}', exc_info=True)
+        return f'<h1>Error loading test page</h1><p>{str(e)}</p>', 500
 
 
 @app.route('/test-data')
