@@ -67,8 +67,8 @@ class MulanRecommendationReader(BaseAgent):
                 ]
 
                 format_template = [
-                    {"role": "system", "content": "You are Mulan. Use the extracted facts to produce the final JSON with the required fields and evidence mappings. Return valid JSON only.\n\n2024 NEXTGEN SCORING RUBRIC — YOUR DIMENSION: LETTER OF RECOMMENDATION (0-2 Points)\nYou are responsible for scoring the recommendation letter dimension of the official scoring rubric.\nScoring Scale:\n  2 = Strong endorsement: recommender clearly knows the student well, provides specific examples of STEM aptitude/character, enthusiastic and detailed support, comparison to other top students.\n  1 = Adequate endorsement: positive but generic, limited specifics, or recommender does not know student deeply.\n  0 = Weak/missing: form-letter quality, no substance, concerns raised, or no recommendation provided.\n\nNOTE: The program expects TWO letters of recommendation. If only one is provided, note that. If both are present, score based on the stronger of the two but note quality of both.\nInclude a 'recommendation_score' (0-2) in your JSON output."},
-                    {"role": "user", "content": "Extracted facts: {found}\n\nNow produce the structured JSON with fields: applicant_name, recommender_name, recommender_role, relationship, duration_known, key_strengths, growth_areas, comparative_statements, evidence_examples, core_competencies, endorsement_strength, specificity_score, recommendation_score, credibility_notes, consensus_view, divergent_views, summary, eligibility_signals, confidence."}
+                    {"role": "system", "content": "You are Mulan. Use the extracted facts to produce the final JSON with the required fields and evidence mappings. Return valid JSON only.\n\n2024 NEXTGEN SCORING RUBRIC — YOUR DIMENSION: LETTER OF RECOMMENDATION (0-2 Points)\nYou are responsible for scoring the recommendation letter dimension of the official scoring rubric.\nScoring Scale:\n  2 = Strong endorsement: recommender clearly knows the student well, provides specific examples of STEM aptitude/character, enthusiastic and detailed support, comparison to other top students.\n  1 = Adequate endorsement: positive but generic, limited specifics, or recommender does not know student deeply.\n  0 = Weak/missing: form-letter quality, no substance, concerns raised, or no recommendation provided.\n\nNOTE: The program expects TWO letters of recommendation. If only one is provided, note that. If both are present, score based on the stronger of the two but note quality of both.\n\nCRITICAL — All score fields MUST be NUMERIC values, not strings:\n  - endorsement_strength: a number from 0 to 10 (NOT a word like 'Strong')\n  - specificity_score: a number from 0 to 10 (NOT a word like 'High')\n  - recommendation_score: a number from 0 to 2\n  - confidence: a string 'High', 'Medium', or 'Low' (this is the ONLY text score field)"},
+                    {"role": "user", "content": "Extracted facts: {found}\n\nNow produce the structured JSON with fields: applicant_name, recommender_name, recommender_role, relationship, duration_known, key_strengths, growth_areas, comparative_statements, evidence_examples, core_competencies, endorsement_strength (NUMBER 0-10), specificity_score (NUMBER 0-10), recommendation_score (NUMBER 0-2), credibility_notes, consensus_view, divergent_views, summary, eligibility_signals, confidence."}
                 ]
 
                 q_resp, response = self.two_step_query_format(
@@ -87,14 +87,50 @@ class MulanRecommendationReader(BaseAgent):
                 data["status"] = "success"
                 data["agent"] = self.name
 
+                # Coerce endorsement_strength and specificity_score to
+                # numeric values.  The LLM sometimes returns words like
+                # "Strong" or "High" instead of numbers.
+                def _to_numeric(val, max_val=10.0):
+                    if val is None:
+                        return None
+                    if isinstance(val, (int, float)):
+                        return float(val)
+                    if isinstance(val, str):
+                        # Try direct parse first
+                        try:
+                            return float(val)
+                        except (ValueError, TypeError):
+                            pass
+                        # Map common word responses to numbers
+                        word_map = {
+                            'strong': 8.0, 'very strong': 9.0,
+                            'high': 8.0, 'very high': 9.0,
+                            'moderate': 5.0, 'medium': 5.0, 'adequate': 5.0,
+                            'low': 2.0, 'weak': 1.0, 'very low': 1.0,
+                            'none': 0.0, 'n/a': None, 'na': None,
+                        }
+                        return word_map.get(val.strip().lower(), max_val / 2)
+                    return None
+
+                endorsement_val = _to_numeric(data.get("endorsement_strength"))
+                specificity_val = _to_numeric(data.get("specificity_score"))
+                # Also fix recommendation_score (0-2) in case it's a string
+                rec_score_raw = data.get("recommendation_score")
+                if isinstance(rec_score_raw, str):
+                    try:
+                        data["recommendation_score"] = float(rec_score_raw)
+                    except (ValueError, TypeError):
+                        word_map_rec = {'strong': 2, 'adequate': 1, 'weak': 0, 'high': 2, 'medium': 1, 'low': 0}
+                        data["recommendation_score"] = word_map_rec.get(rec_score_raw.strip().lower(), 1)
+
                 if self.db and application_id:
                     self.db.save_mulan_recommendation(
                         application_id=application_id,
                         agent_name=self.name,
                         recommender_name=data.get("recommender_name"),
                         recommender_role=data.get("recommender_role"),
-                        endorsement_strength=data.get("endorsement_strength"),
-                        specificity_score=data.get("specificity_score"),
+                        endorsement_strength=endorsement_val,
+                        specificity_score=specificity_val,
                         summary=data.get("summary"),
                         raw_text=recommendation_text,
                         parsed_json=json.dumps(data, ensure_ascii=True)
