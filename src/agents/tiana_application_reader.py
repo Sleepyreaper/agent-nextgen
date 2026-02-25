@@ -37,9 +37,12 @@ class TianaApplicationReader(BaseAgent):
             try:
                 # Two-step: first ask model to extract evidence and key facts,
                 # then ask it to format those findings into the strict JSON schema.
+                # Use up to 8000 chars — Belle's section detection now routes only
+                # application/essay pages here, so the input is focused.
+                application_input = application_text[:8000]
                 query_messages = [
-                    {"role": "system", "content": "You are a precise extractor. Read the user's application and return concise evidence bullets and facts useful for constructing a structured profile."},
-                    {"role": "user", "content": f"Extract key facts and evidence from the application for: {applicant_name}.\n\nApplication excerpt:\n{application_text[:2000]}"}
+                    {"role": "system", "content": "You are a precise extractor. Read the user's application and return concise evidence bullets and facts useful for constructing a structured profile.\n\nIMPORTANT: The text may contain page markers like '--- PAGE N of M ---'. These indicate page boundaries from a multi-page PDF. Note which page each piece of evidence comes from (e.g., 'Page 3: student describes lab experience'). Focus on application/essay content and ignore any transcript or recommendation sections if present."},
+                    {"role": "user", "content": f"Extract key facts and evidence from the application for: {applicant_name}.\n\nApplication text:\n{application_input}"}
                 ]
 
                 format_template = [
@@ -52,7 +55,7 @@ class TianaApplicationReader(BaseAgent):
                     model=self.model,
                     query_messages=query_messages,
                     format_messages_template=format_template,
-                    query_kwargs={"max_completion_tokens": 300, "temperature": 0},
+                    query_kwargs={"max_completion_tokens": 600, "temperature": 0},
                     format_kwargs={"max_completion_tokens": 1500, "temperature": 1, "refinements": 2, "refinement_instruction": "Refine the JSON output for accuracy, completeness, and strict JSON validity. If any fields are ambiguous, favor explicit nulls and add a confidence field for uncertain values.", "response_format": {"type": "json_object"}}
                 )
                 # Guard against empty or malformed model responses

@@ -95,6 +95,21 @@ class RapunzelGradeReader(BaseAgent):
         try:
             # Two-step deep analysis: first extract structured facts (courses, grades, GPA candidates,
             # table snippets), then ask the model to synthesize a comprehensive analysis using those facts.
+            
+            # Determine transcript input size:
+            # - If Belle's section detection isolated transcript pages, the input is already focused
+            #   and typically 1000-3000 chars. Use up to 12000 chars for safety.
+            # - If no section detection occurred (full document passed), use 12000 chars to capture
+            #   transcripts that may appear later in multi-page PDFs (e.g., page 8 of 12).
+            max_transcript_chars = 12000
+            transcript_input = transcript_text[:max_transcript_chars]
+            
+            # If input was truncated, log a warning
+            if len(transcript_text) > max_transcript_chars:
+                logger.warning(
+                    f"Rapunzel: transcript input truncated from {len(transcript_text)} to {max_transcript_chars} chars"
+                )
+            
             query_messages = [
                 {"role": "system", "content": """You are an expert transcript extractor. From the provided transcript text:
 1. IDENTIFY the transcript format (semester-based, year-long, quarter-based, block, tabular, narrative)
@@ -102,8 +117,12 @@ class RapunzelGradeReader(BaseAgent):
 3. Extract EVERY course with: year/grade-level, course name, course level (AP/Honors/DE/IB/Standard), grade received, numeric percentage if shown, credits
 4. Extract any GPAs (weighted and unweighted)
 5. Note any special markings, attendance data, test scores, or honors
+6. If page markers (--- PAGE N ---) are present, note which pages contain transcript data
+
+IMPORTANT: The text may contain page markers like '--- PAGE 8 of 12 ---'. Focus on sections that contain actual transcript/grade data. Ignore non-transcript content (essays, recommendations, cover pages) if present.
+
 Be thorough — capture every single course entry."""},
-                {"role": "user", "content": f"Transcript text:\n{transcript_text[:4000]}"}
+                {"role": "user", "content": f"Transcript text:\n{transcript_input}"}
             ]
 
             format_template = [
@@ -134,7 +153,7 @@ Also include:
                 model=self.model,
                 query_messages=query_messages,
                 format_messages_template=format_template,
-                query_kwargs={"max_completion_tokens": 600, "temperature": 0},
+                query_kwargs={"max_completion_tokens": 1200, "temperature": 0},
                 format_kwargs={"max_completion_tokens": 5000, "temperature": 1, "refinements": 2, "refinement_instruction": "Refine the analysis to improve accuracy of GPA, course-level detection, grade normalization, and trend identification. Ensure the STANDARDIZED TRANSCRIPT table includes every course with Year/Course/Level/Grade/Numeric/Credits columns. Preserve format and tables."}
             )
 
@@ -351,6 +370,33 @@ SPECIAL MARKINGS TO WATCH FOR:
 - T = Transfer credit
 - * = May indicate repeated course, grade replacement, etc.
 - # = May indicate weighted course
+
+═══════════════════════════════════════════════════════════════
+PAGE-AWARE MULTI-SECTION PDFs
+═══════════════════════════════════════════════════════════════
+
+Student application files are often multi-page PDFs containing MIXED content:
+application essays, personal statements, transcripts, and recommendation letters
+all in ONE file. The transcript may appear on ANY page (commonly pages 5-12).
+
+INPUT FORMAT: Text will include page markers like '--- PAGE 8 of 12 ---'.
+These markers tell you where each page begins.
+
+YOUR TASK:
+1. SCAN all pages to find transcript/grade data (it may start mid-document)
+2. IGNORE non-transcript content (essays, recommendation letters, cover pages)
+3. FOCUS your analysis on the pages containing actual academic records
+4. If the transcript spans multiple pages, combine data from all transcript pages
+5. Note which page(s) the transcript was found on in your analysis
+
+COMMON PATTERNS:
+- Pages 1-3: Application form / personal information
+- Pages 4-7: Essays / personal statements
+- Page 8+: Transcript / academic record
+- Last 1-2 pages: Recommendation letter(s)
+
+Do NOT be confused by non-transcript content. Extract grades ONLY from actual
+transcript/grade report sections.
 
 ═══════════════════════════════════════════════════════════════
 DUAL OUTPUT REQUIREMENT

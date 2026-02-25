@@ -29,9 +29,12 @@ class MulanRecommendationReader(BaseAgent):
             prompt = self._build_prompt(applicant_name, recommendation_text)
 
             try:
+                # Use up to 8000 chars — Belle's section detection now routes only
+                # recommendation pages here, so the input is focused.
+                recommendation_input = recommendation_text[:8000]
                 query_messages = [
-                    {"role": "system", "content": "You are an expert extractor of recommendation letters. Extract concise evidence snippets, recommender identity clues, and endorsement signals."},
-                    {"role": "user", "content": f"Recommendation for {applicant_name}:\n\n{recommendation_text[:2000]}"}
+                    {"role": "system", "content": "You are an expert extractor of recommendation letters. Extract concise evidence snippets, recommender identity clues, and endorsement signals.\n\nIMPORTANT: The text may contain page markers like '--- PAGE N of M ---'. These indicate page boundaries from a multi-page PDF. Note which page each recommendation or endorsement comes from. If multiple recommendation letters span different pages, identify each recommender separately. Focus on recommendation content and ignore any transcript or essay sections if present."},
+                    {"role": "user", "content": f"Recommendation for {applicant_name}:\n\n{recommendation_input}"}
                 ]
 
                 format_template = [
@@ -44,7 +47,7 @@ class MulanRecommendationReader(BaseAgent):
                     model=self.model,
                     query_messages=query_messages,
                     format_messages_template=format_template,
-                    query_kwargs={"max_completion_tokens": 200, "temperature": 0},
+                    query_kwargs={"max_completion_tokens": 600, "temperature": 0},
                     format_kwargs={"max_completion_tokens": 1200, "temperature": 1, "refinements": 2, "refinement_instruction": "Refine the JSON output to ensure clear evidence mapping and consistent endorsement strength scoring. If multiple recommenders are present, separate them explicitly.", "response_format": {"type": "json_object"}}
                 )
 

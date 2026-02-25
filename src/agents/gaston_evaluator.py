@@ -109,9 +109,12 @@ class GastonEvaluator(BaseAgent):
             try:
                 # Two-step: extract salient evidence and quotes, then synthesize the
                 # final JSON evaluation using that extracted material.
+                # Use up to 8000 chars — Belle's section detection now routes
+                # focused application content here.
+                app_text_input = application.get('ApplicationText', '')[:8000]
                 query_messages = [
-                    {"role": "system", "content": "You are an expert at extracting salient evidence and direct quotes from an application for an admissions evaluation."},
-                    {"role": "user", "content": f"Extract the 6 most important evidence snippets and any direct quotes from this application to support scoring:\n\n{application.get('ApplicationText', '')[:2500]}"}
+                    {"role": "system", "content": "You are an expert at extracting salient evidence and direct quotes from an application for an admissions evaluation.\n\nIMPORTANT: The text may contain page markers like '--- PAGE N of M ---'. These indicate page boundaries from a multi-page PDF. When extracting evidence and quotes, note which page they come from (e.g., 'Page 2: \"I developed a passion for genetics...\"'). Focus on application/essay content and ignore transcript or recommendation sections if present."},
+                    {"role": "user", "content": f"Extract the 6 most important evidence snippets and any direct quotes from this application to support scoring:\n\n{app_text_input}"}
                 ]
 
                 format_template = [
@@ -124,7 +127,7 @@ class GastonEvaluator(BaseAgent):
                     model=self.model,
                     query_messages=query_messages,
                     format_messages_template=format_template,
-                    query_kwargs={"max_completion_tokens": 300, "temperature": 0},
+                    query_kwargs={"max_completion_tokens": 600, "temperature": 0},
                     format_kwargs={"max_completion_tokens": 2000, "temperature": 0.8, "response_format": {"type": "json_object"}}
                 )
 

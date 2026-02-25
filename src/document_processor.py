@@ -11,15 +11,22 @@ class DocumentProcessor:
     
     @staticmethod
     def extract_text_from_pdf(file_path: str) -> str:
-        """Extract text from PDF file."""
+        """Extract text from PDF file with page markers.
+        
+        Inserts '--- PAGE N ---' markers between pages so downstream agents
+        (Belle, Rapunzel, etc.) can identify page boundaries and locate
+        specific sections (transcripts, recommendations, essays) within
+        multi-section PDFs.
+        """
         try:
             text = []
             with open(file_path, 'rb') as file:
                 pdf_reader = PyPDF2.PdfReader(file)
-                for page in pdf_reader.pages:
+                total_pages = len(pdf_reader.pages)
+                for i, page in enumerate(pdf_reader.pages, start=1):
                     page_text = page.extract_text()
                     if page_text:
-                        text.append(page_text)
+                        text.append(f"--- PAGE {i} of {total_pages} ---\n{page_text}")
             return "\n\n".join(text)
         except Exception as e:
             print(f"Error extracting text from PDF: {str(e)}")

@@ -2424,8 +2424,15 @@ Return only the request sentence."""
         file_name: str,
         file_text: str
     ) -> Dict[str, Any]:
-        """Route and process a single uploaded file."""
+        """Route and process a single uploaded file.
+        
+        Uses Belle's section detection to route specific document sections
+        to the appropriate agents (transcript pages to Rapunzel, recommendation
+        pages to Mulan, application/essay pages to Tiana).
+        """
         application = dict(application)
+        # Set full text as default for all fields — Belle's section detection
+        # will override these with section-specific content where detected
         application['application_text'] = file_text
         application['transcript_text'] = file_text
         application['recommendation_text'] = file_text
@@ -2435,9 +2442,32 @@ Return only the request sentence."""
             belle = BelleDocumentAnalyzer(client=self.client, model=self.model)
             analysis = belle.analyze_document(file_text, file_name)
             agent_fields = analysis.get('agent_fields', {})
+            
+            # Apply Belle's section-detected fields
+            # These override the full-text defaults with targeted content
             for key, value in agent_fields.items():
+                if key.startswith('_'):
+                    continue  # Skip internal metadata like _section_map
                 if value is not None:
                     application[key] = value
+            
+            # Log section routing for debugging
+            section_map = agent_fields.get('_section_map', {})
+            if section_map:
+                logger.info(f"📖 Belle section routing for {file_name}: {section_map}")
+                # Store section map for audit
+                application['_belle_section_map'] = section_map
+                
+                # Log what each agent will receive
+                if 'transcript_text' in agent_fields:
+                    t_len = len(agent_fields['transcript_text'])
+                    logger.info(f"  📄 Rapunzel will receive {t_len} chars of transcript-specific content")
+                if 'recommendation_text' in agent_fields:
+                    r_len = len(agent_fields['recommendation_text'])
+                    logger.info(f"  📄 Mulan will receive {r_len} chars of recommendation-specific content")
+                if 'application_text' in agent_fields:
+                    a_len = len(agent_fields['application_text'])
+                    logger.info(f"  📄 Tiana will receive {a_len} chars of application-specific content")
         except Exception as exc:
             logger.warning(f"Belle upload analysis failed: {exc}")
 

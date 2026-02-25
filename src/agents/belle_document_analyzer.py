@@ -96,6 +96,10 @@ class BelleDocumentAnalyzer(BaseAgent):
             # Step 1: Identify document type
             doc_type, confidence = self._identify_document_type(text_content, original_filename)
 
+            # Step 1.5: Detect document sections (transcript, recommendation, application pages)
+            # For multi-page PDFs, identify which pages belong to which section
+            sections = self._detect_document_sections(text_content)
+
             # Step 2: Extract type-specific data
             extracted_data = self._extract_data_by_type(text_content, doc_type)
 
@@ -129,14 +133,30 @@ class BelleDocumentAnalyzer(BaseAgent):
             if enhanced_text:
                 text_content = enhanced_text
         
-        # Map to agent-needed fields
+        # Map to agent-needed fields using section detection for precise routing
         agent_fields = {}
-        if doc_type in {"transcript", "grades", "academic_record"}:
+        
+        # Use detected sections to route specific content to each agent
+        # This ensures Rapunzel gets only transcript pages, Mulan gets only
+        # recommendation pages, and Tiana gets only application/essay pages
+        if sections.get("transcript_text"):
+            agent_fields["transcript_text"] = sections["transcript_text"]
+        elif doc_type in {"transcript", "grades", "academic_record"}:
             agent_fields["transcript_text"] = text_content
-        if doc_type in {"letter_of_recommendation", "recommendation"}:
+            
+        if sections.get("recommendation_text"):
+            agent_fields["recommendation_text"] = sections["recommendation_text"]
+        elif doc_type in {"letter_of_recommendation", "recommendation"}:
             agent_fields["recommendation_text"] = text_content
-        if doc_type in {"application", "personal_statement", "essay"}:
+            
+        if sections.get("application_text"):
+            agent_fields["application_text"] = sections["application_text"]
+        elif doc_type in {"application", "personal_statement", "essay"}:
             agent_fields["application_text"] = text_content
+        
+        # Store section metadata for debugging and audit
+        if sections.get("section_map"):
+            agent_fields["_section_map"] = sections["section_map"]
         if student_info.get("school_name"):
             agent_fields["school_name"] = student_info.get("school_name")
         if student_info.get("state_code"):
@@ -296,6 +316,199 @@ class BelleDocumentAnalyzer(BaseAgent):
         confidence = min(scores[best_type] / max(1, len(self.document_types[best_type])), 1.0)
         
         return best_type, confidence
+    
+    def _detect_document_sections(self, text: str) -> Dict[str, Any]:
+        """Detect document sections in multi-page PDFs using page markers.
+        
+        Analyzes each page to determine if it contains transcript data,
+        recommendation letter text, or application/essay content. Returns
+        the isolated text for each detected section so downstream agents
+        receive only the relevant content.
+        
+        Returns:
+            Dict with:
+            - transcript_text: Combined text from transcript pages (or None)
+            - recommendation_text: Combined text from recommendation pages (or None)
+            - application_text: Combined text from application/essay pages (or None)
+            - section_map: Dict mapping page numbers to detected section types
+        """
+        import logging
+        logger = logging.getLogger(__name__)
+        
+        result = {
+            "transcript_text": None,
+            "recommendation_text": None,
+            "application_text": None,
+            "section_map": {}
+        }
+        
+        # Split text into pages using our page markers
+        page_pattern = r'--- PAGE (\d+) of (\d+) ---'
+        page_splits = re.split(page_pattern, text)
+        
+        # If no page markers found, this is not a multi-page PDF with markers
+        if len(page_splits) <= 1:
+            return result
+        
+        # Parse pages: page_splits = [before_first_marker, page_num, total, page_text, page_num, total, page_text, ...]
+        pages = {}
+        i = 1  # Skip content before first marker (usually empty)
+        while i + 2 < len(page_splits):
+            page_num = int(page_splits[i])
+            page_text = page_splits[i + 2].strip()
+            pages[page_num] = page_text
+            i += 3
+        
+        if not pages:
+            return result
+        
+        # Keywords for section classification (weighted by specificity)
+        transcript_indicators = {
+            # High-confidence indicators (3 points each)
+            'high': [
+                'transcript', 'academic record', 'grade report', 'cumulative gpa',
+                'credit hours', 'credits earned', 'credits attempted',
+                'grade point average', 'course history', 'academic history',
+                'semester grade', 'final grade', 'grading scale',
+                'class rank', 'weighted gpa', 'unweighted gpa',
+                'high school transcript', 'official transcript',
+                'college preparatory', 'graduation requirements'
+            ],
+            # Medium-confidence indicators (1 point each)
+            'medium': [
+                'gpa', 'honors', 'ap ', ' ib ', 'semester', 'quarter',
+                'credits', 'grade', 'course', 'subject',
+                'english', 'mathematics', 'science', 'social studies',
+                'elective', 'physical education', 'attendance',
+                'period', 'teacher', 'room', 'mark'
+            ]
+        }
+        
+        recommendation_indicators = {
+            'high': [
+                'letter of recommendation', 'to whom it may concern',
+                'i am writing to recommend', 'i recommend', 'it is my pleasure',
+                'dear admissions', 'dear scholarship', 'dear selection',
+                'counselor recommendation', 'teacher recommendation',
+                'sincerely', 'respectfully submitted',
+                'i have known', 'i have had the pleasure',
+                'in my capacity as', 'as a teacher of',
+                'character reference', 'reference letter'
+            ],
+            'medium': [
+                'recommend', 'reference', 'endorsement', 'counselor',
+                'principal', 'dear', 'academic standing',
+                'work ethic', 'leadership', 'character'
+            ]
+        }
+        
+        application_indicators = {
+            'high': [
+                'personal statement', 'statement of purpose',
+                'why i want', 'my goals', 'application essay',
+                'written response', 'short answer', 'long answer',
+                'tell us about yourself', 'describe a time',
+                'what makes you unique', 'extracurricular activities',
+                'community service', 'volunteer experience',
+                'application for admission', 'student application'
+            ],
+            'medium': [
+                'essay', 'reflection', 'experience', 'passion',
+                'motivation', 'goals', 'leadership', 'award',
+                'scholarship', 'activities', 'involvement',
+                'challenge', 'growth', 'impact'
+            ]
+        }
+        
+        # Score each page
+        transcript_pages = []
+        recommendation_pages = []
+        application_pages = []
+        
+        for page_num, page_text in sorted(pages.items()):
+            page_lower = page_text.lower()
+            
+            # Calculate scores for each section type
+            t_score = sum(3 for kw in transcript_indicators['high'] if kw in page_lower)
+            t_score += sum(1 for kw in transcript_indicators['medium'] if kw in page_lower)
+            
+            r_score = sum(3 for kw in recommendation_indicators['high'] if kw in page_lower)
+            r_score += sum(1 for kw in recommendation_indicators['medium'] if kw in page_lower)
+            
+            a_score = sum(3 for kw in application_indicators['high'] if kw in page_lower)
+            a_score += sum(1 for kw in application_indicators['medium'] if kw in page_lower)
+            
+            # Additional heuristic: transcript pages often have tabular data
+            # (lots of numbers, short lines, course-grade patterns)
+            lines = page_text.split('\n')
+            short_lines = sum(1 for line in lines if 0 < len(line.strip()) < 60)
+            if short_lines > 10:
+                t_score += 2  # Tabular data indicator
+            
+            # Grade pattern: letter grades (A, B, C, D, F) or numeric grades
+            grade_pattern_count = len(re.findall(
+                r'\b[ABCDF][+-]?\b|\b\d{2,3}\b',
+                page_text
+            ))
+            if grade_pattern_count > 5:
+                t_score += 2  # Multiple grades on page
+            
+            # Determine section type based on highest score
+            max_score = max(t_score, r_score, a_score)
+            section_type = 'unknown'
+            
+            if max_score >= 3:  # Minimum threshold for classification
+                if t_score == max_score and t_score > r_score and t_score > a_score:
+                    section_type = 'transcript'
+                    transcript_pages.append(page_num)
+                elif r_score == max_score and r_score > t_score and r_score > a_score:
+                    section_type = 'recommendation'
+                    recommendation_pages.append(page_num)
+                elif a_score == max_score:
+                    section_type = 'application'
+                    application_pages.append(page_num)
+                else:
+                    # Tie-breaking: if transcript ties with application, lean transcript
+                    # since transcripts are commonly missed
+                    if t_score == a_score and t_score >= 3:
+                        section_type = 'transcript'
+                        transcript_pages.append(page_num)
+                    else:
+                        section_type = 'application'
+                        application_pages.append(page_num)
+            else:
+                # Low-confidence pages default to application/general content
+                section_type = 'application'
+                application_pages.append(page_num)
+            
+            result["section_map"][page_num] = {
+                'type': section_type,
+                'scores': {'transcript': t_score, 'recommendation': r_score, 'application': a_score}
+            }
+        
+        # Assemble section texts from detected pages
+        def _join_pages(page_nums):
+            """Join page texts with page markers preserved."""
+            parts = []
+            for pn in sorted(page_nums):
+                total = max(pages.keys()) if pages else 0
+                parts.append(f"--- PAGE {pn} of {total} ---\n{pages[pn]}")
+            return "\n\n".join(parts)
+        
+        if transcript_pages:
+            result["transcript_text"] = _join_pages(transcript_pages)
+            logger.info(f"📖 BELLE detected transcript on page(s): {transcript_pages}")
+        
+        if recommendation_pages:
+            result["recommendation_text"] = _join_pages(recommendation_pages)
+            logger.info(f"📖 BELLE detected recommendation on page(s): {recommendation_pages}")
+        
+        if application_pages:
+            result["application_text"] = _join_pages(application_pages)
+            logger.info(f"📖 BELLE detected application/essay on page(s): {application_pages}")
+        
+        logger.info(f"📖 BELLE section map: {result['section_map']}")
+        return result
     
     def _extract_student_info(self, text: str) -> Dict[str, Optional[str]]:
         """Extract student info using AI for name and school, always."""
