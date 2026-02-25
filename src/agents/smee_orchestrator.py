@@ -1041,6 +1041,13 @@ class SmeeOrchestrator(BaseAgent):
         if high_school and state_code:
             logger.info(f"🏫 STEP 2.5: Checking school enrichment for {high_school}, {state_code}")
             print(f"🏫 STEP 2.5: Checking school enrichment for {high_school}, {state_code}")
+            self._report_progress({
+                'type': 'agent_progress',
+                'agent_id': 'naveen',
+                'agent': 'Naveen',
+                'status': 'starting',
+                'message': f'🧑‍🔬 Naveen is enriching school data for {high_school}...'
+            })
             try:
                 school_enrichment = await self._check_or_enrich_high_school(
                     high_school=high_school,
@@ -1051,51 +1058,142 @@ class SmeeOrchestrator(BaseAgent):
                 if school_enrichment and not school_enrichment.get('error'):
                     logger.info(f"✅ School enrichment ready for {high_school}")
                     print(f"✅ School enrichment ready for {high_school}")
+                    self._report_progress({
+                        'type': 'agent_progress',
+                        'agent_id': 'naveen',
+                        'agent': 'Naveen',
+                        'status': 'completed',
+                        'message': f'🧑‍🔬 Naveen complete — school enrichment ready ✓'
+                    })
                 else:
                     logger.warning(f"⚠️ School enrichment incomplete: {school_enrichment.get('error', 'unknown')}")
                     print(f"⚠️ School enrichment incomplete for {high_school}")
+                    self._report_progress({
+                        'type': 'agent_progress',
+                        'agent_id': 'naveen',
+                        'agent': 'Naveen',
+                        'status': 'skipped',
+                        'message': f'School enrichment incomplete for {high_school}'
+                    })
                     school_enrichment = {}
             except Exception as e:
                 logger.error(f"❌ School enrichment failed: {e}", exc_info=True)
                 print(f"❌ School enrichment failed: {e}")
+                self._report_progress({
+                    'type': 'agent_progress',
+                    'agent_id': 'naveen',
+                    'agent': 'Naveen',
+                    'status': 'failed',
+                    'message': f'School enrichment failed: {str(e)[:80]}'
+                })
                 school_enrichment = {}
         else:
             logger.warning(f"⚠️ No high school/state info available — skipping school enrichment")
             print(f"⚠️ No high school/state — skipping enrichment")
+            self._report_progress({
+                'type': 'agent_progress',
+                'agent_id': 'naveen',
+                'agent': 'Naveen',
+                'status': 'skipped',
+                'message': 'No school/state info — skipped'
+            })
 
         self.evaluation_results['results']['school_enrichment'] = school_enrichment
         
         # ===== STEP 4: Core agents with per-agent validation =====
         print(f"\n{'='*80}")
-        print(f"DEBUG: STEP 4 - Core agents")
+        print(f"DEBUG: STEP 4 - Core agents (PARALLEL)")
         print(f"DEBUG: evaluation_steps={evaluation_steps}")
         print(f"DEBUG: Registered agents: {list(self.agents.keys())}")
-        logger.info("🤖 STEP 4: Running core agents with validation gates...")
-        print("🤖 STEP 4: Running core agents with validation gates...")
+        logger.info("🤖 STEP 4: Running core agents with PARALLEL execution...")
+        print("🤖 STEP 4: Running core agents with PARALLEL execution...")
         
         core_agents = ['application_reader', 'grade_reader', 'school_context', 'recommendation_reader', 'gaston']
         print(f"DEBUG: core_agents list={core_agents}")
         prior_results = {}
+
+        # --- Parallel Group 1: Independent document readers ---
+        # Tiana (application), Rapunzel (transcript), Mulan (recommendations)
+        # These read independent document sections and have no cross-dependencies
+        parallel_group_1 = ['application_reader', 'grade_reader', 'recommendation_reader']
+        parallel_group_1 = [a for a in parallel_group_1 if a in self.agents]
         
-        for agent_idx, agent_id in enumerate(core_agents, 1):
-            if agent_id not in self.agents:
-                logger.warning(f"Agent {agent_id} not registered - skipping")
-                print(f"⚠️  {agent_id.upper()}: NOT REGISTERED")
-                continue
+        if parallel_group_1:
+            logger.info(f"⚡ PARALLEL GROUP 1: Running {parallel_group_1} concurrently...")
+            print(f"⚡ PARALLEL GROUP 1: {[a.upper() for a in parallel_group_1]}")
             
-            # ===== STEP 4.5: Per-agent validation =====
-            logger.info(f"⚙️ STEP 4.5 ({agent_idx}/4): Validating {agent_id} readiness...")
-            print(f"🔍 VALIDATING ({agent_idx}/4): {agent_id.upper()}")
-            
-            readiness = await self._validate_agent_readiness(
-                agent_id, application, application_id, belle_data
-            )
-            
-            if not readiness.get('ready'):
-                logger.warning(f"⚠️ Agent {agent_id} not ready: {readiness.get('missing')}")
-                print(f"❌ {agent_id.upper()}: VALIDATION FAILED - Missing {readiness.get('missing', [])}")
+            async def _validate_and_run_core_agent(agent_id, shared_prior):
+                """Validate, run, and persist a single core agent. Thread-safe for parallel use."""
+                if agent_id not in self.agents:
+                    return agent_id, None, 'not_registered'
                 
-                # PHASE 5: Log initial validation failure
+                self._report_progress({
+                    'type': 'agent_progress',
+                    'agent_id': agent_id,
+                    'agent': self.agents[agent_id].name,
+                    'status': 'starting',
+                    'message': f'{self.agents[agent_id].name} is starting...'
+                })
+                
+                # Validation gate
+                readiness = await self._validate_agent_readiness(
+                    agent_id, application, application_id, belle_data
+                )
+                
+                if not readiness.get('ready'):
+                    logger.warning(f"⚠️ Agent {agent_id} not ready: {readiness.get('missing')}")
+                    print(f"❌ {agent_id.upper()}: VALIDATION FAILED - Missing {readiness.get('missing', [])}")
+                    
+                    self._log_interaction(
+                        application_id=application_id,
+                        agent_name=agent_id.title(),
+                        interaction_type='step_4_5_validation',
+                        question_text=f"Validation gate for {agent_id}",
+                        extracted_data={
+                            'agent_id': agent_id,
+                            'validation_status': 'failed_gate_1',
+                            'missing_fields': readiness.get('missing', []),
+                            'gate_number': 1
+                        }
+                    )
+                    
+                    # Reactive BELLE call
+                    logger.info(f"📖 Reactively calling BELLE to fill {agent_id} gap...")
+                    belle_retry = await self._extract_data_with_belle(
+                        document_text, document_name,
+                        context=f"Focus on {', '.join(readiness.get('missing', []))}"
+                    )
+                    belle_data.update(belle_retry)
+                    
+                    readiness = await self._validate_agent_readiness(
+                        agent_id, application, application_id, belle_data
+                    )
+                    
+                    if not readiness.get('ready'):
+                        logger.warning(f"⚠️ {agent_id} still not ready after BELLE retry. SKIPPING.")
+                        self._log_interaction(
+                            application_id=application_id,
+                            agent_name=agent_id.title(),
+                            interaction_type='skip_insufficient_data',
+                            question_text=f"Agent {agent_id} skipped - insufficient data",
+                            extracted_data={
+                                'agent_id': agent_id,
+                                'reason': 'missing_required_documents',
+                                'validation_status': 'failed_gate_2_skipping',
+                                'missing_fields': readiness.get('missing', []),
+                                'gate_number': 2,
+                                'action': 'skipped_continue_workflow'
+                            }
+                        )
+                        self._report_progress({
+                            'type': 'agent_progress',
+                            'agent_id': agent_id,
+                            'agent': self.agents[agent_id].name,
+                            'status': 'skipped',
+                            'message': f'Skipped — missing {readiness.get("missing", [])}'
+                        })
+                        return agent_id, None, 'skipped'
+                
                 self._log_interaction(
                     application_id=application_id,
                     agent_name=agent_id.title(),
@@ -1103,285 +1201,183 @@ class SmeeOrchestrator(BaseAgent):
                     question_text=f"Validation gate for {agent_id}",
                     extracted_data={
                         'agent_id': agent_id,
-                        'validation_status': 'failed_gate_1',
-                        'missing_fields': readiness.get('missing', []),
-                        'gate_number': 1
+                        'validation_status': 'passed',
+                        'ready_to_execute': True
                     }
                 )
                 
-                # Reactive BELLE call for validation gap
-                logger.info(f"📖 Reactively calling BELLE to fill {agent_id} gap...")
-                print(f"📖 BELLE RETRY for {agent_id.upper()}: Extracting {readiness.get('missing', [])}")
-                belle_retry = await self._extract_data_with_belle(
-                    document_text, document_name, 
-                    context=f"Focus on {', '.join(readiness.get('missing', []))}"
-                )
-                belle_data.update(belle_retry)
+                # Run the agent
+                logger.info(f"🚀 Running {agent_id}...")
+                print(f"▶️  RUNNING {agent_id.upper()}: {self.agents[agent_id].name}")
+                self._report_progress({
+                    'type': 'agent_progress',
+                    'agent_id': agent_id,
+                    'agent': self.agents[agent_id].name,
+                    'status': 'processing',
+                    'message': f'{self.agents[agent_id].name} is analyzing...'
+                })
                 
-                # Re-validate
-                readiness = await self._validate_agent_readiness(
-                    agent_id, application, application_id, belle_data
-                )
-                print(f"🔄 {agent_id.upper()}: RE-VALIDATION RESULT - {'PASS ✓' if readiness.get('ready') else 'STILL MISSING: ' + str(readiness.get('missing', []))}")
-                
-                if not readiness.get('ready'):
-                    logger.warning(f"⚠️ {agent_id} still not ready after BELLE retry. SKIPPING for now and continuing with other agents.")
+                try:
+                    agent_result = await self._run_agent(
+                        agent_id, application, school_enrichment, shared_prior
+                    )
+                    normalized_result = self._normalize_agent_result(agent_result)
                     
-                    # PHASE 5: Log skipping agent due to missing fields
+                    logger.info(f"✅ Agent {agent_id} completed")
+                    print(f"✅ {agent_id.upper()}: COMPLETED")
+                    self._report_progress({
+                        'type': 'agent_progress',
+                        'agent_id': agent_id,
+                        'agent': self.agents[agent_id].name,
+                        'status': 'completed',
+                        'message': f'{self.agents[agent_id].name} complete ✓'
+                    })
+                    
+                    return agent_id, normalized_result, 'completed'
+                except Exception as agent_exec_error:
+                    logger.error(f"❌ {agent_id} execution error: {agent_exec_error}")
+                    print(f"❌ {agent_id.upper()}: FAILED - {str(agent_exec_error)[:100]}")
+                    self._report_progress({
+                        'type': 'agent_progress',
+                        'agent_id': agent_id,
+                        'agent': self.agents[agent_id].name,
+                        'status': 'failed',
+                        'message': f'Error: {str(agent_exec_error)[:80]}'
+                    })
+                    return agent_id, {'error': str(agent_exec_error)}, 'error'
+            
+            # Run parallel group 1 concurrently
+            group1_tasks = [_validate_and_run_core_agent(aid, prior_results) for aid in parallel_group_1]
+            group1_results = await asyncio.gather(*group1_tasks, return_exceptions=True)
+            
+            # Collect results from parallel group 1
+            for item in group1_results:
+                if isinstance(item, Exception):
+                    logger.error(f"Parallel agent task failed: {item}")
+                    continue
+                aid, result, status = item
+                if result is not None:
+                    self.evaluation_results['results'][aid] = result
+                    prior_results[aid] = result
+            
+            logger.info(f"✅ PARALLEL GROUP 1 complete: {[a.upper() for a in parallel_group_1]}")
+            print(f"✅ PARALLEL GROUP 1 DONE")
+        
+        # --- Sequential: Moana (school_context) - depends on Rapunzel grades ---
+        if 'school_context' in self.agents:
+            logger.info("🌊 Running Moana (depends on Rapunzel grades)...")
+            print("🌊 RUNNING MOANA (sequential — needs Rapunzel grades)")
+            aid, result, status = await _validate_and_run_core_agent('school_context', prior_results)
+            if result is not None:
+                self.evaluation_results['results'][aid] = result
+                prior_results[aid] = result
+        
+        # --- Sequential: Gaston (evaluator) - benefits from all prior results ---
+        if 'gaston' in self.agents:
+            logger.info("💪 Running Gaston (needs all prior context)...")
+            print("💪 RUNNING GASTON (sequential — needs prior results)")
+            aid, result, status = await _validate_and_run_core_agent('gaston', prior_results)
+            if result is not None:
+                self.evaluation_results['results'][aid] = result
+                prior_results[aid] = result
+
+        # --- Persist all core agent results to database ---
+        for agent_id in core_agents:
+            normalized_result = self.evaluation_results['results'].get(agent_id)
+            if not normalized_result or not isinstance(normalized_result, dict):
+                continue
+            try:
+                if self.db and application_id:
+                    # Persist to agent_results column
+                    stored = {}
+                    try:
+                        existing = self.db.get_application(application_id) or {}
+                        stored = existing.get('agent_results') or {}
+                        if isinstance(stored, str):
+                            stored = safe_load_json(stored)
+                    except Exception:
+                        stored = {}
+                    canonical_map = {
+                        'student_evaluator': 'merlin',
+                        'report_generator': 'aurora'
+                    }
+                    stored_key = canonical_map.get(agent_id, agent_id)
+                    stored[stored_key] = normalized_result
+                    self.db.update_application(
+                        application_id=application_id,
+                        agent_results=json.dumps(stored)
+                    )
+                    
+                    # Save agent audit
+                    try:
+                        self.db.save_agent_audit(application_id, self.agents[agent_id].name, None)
+                    except Exception:
+                        pass
+
+                    # Extract scores for evaluation persistence
+                    overall_score = None
+                    try:
+                        overall_score = normalized_result.get('overall_score') or normalized_result.get('readiness_score') or normalized_result.get('score')
+                        if overall_score is not None:
+                            overall_score = float(overall_score)
+                    except Exception:
+                        overall_score = None
+                    
+                    model_used = getattr(self.agents[agent_id], 'model', None) or self.model
+                    processing_ms = int(normalized_result.get('processing_time_ms', 0)) if isinstance(normalized_result, dict) else 0
+                    detailed = None
+                    try:
+                        detailed = json.dumps(normalized_result, ensure_ascii=True)
+                    except Exception:
+                        try:
+                            detailed = str(normalized_result)
+                        except Exception:
+                            pass
+                    
+                    try:
+                        self.db.save_evaluation(
+                            application_id,
+                            self.agents[agent_id].name,
+                            overall_score or 0.0,
+                            0.0, 0.0, 0.0, 0.0,
+                            normalized_result.get('strengths', normalized_result.get('key_strengths', '')),
+                            normalized_result.get('weaknesses', normalized_result.get('key_risks', '')),
+                            normalized_result.get('recommendation', ''),
+                            detailed or '',
+                            '',
+                            model_used or '',
+                            processing_ms
+                        )
+                    except Exception as _eval_err:
+                        logger.warning(f"Could not persist evaluation for {agent_id}: {_eval_err}")
+                    
+                    # Log agent execution
                     self._log_interaction(
                         application_id=application_id,
                         agent_name=agent_id.title(),
-                        interaction_type='skip_insufficient_data',
-                        question_text=f"Agent {agent_id} skipped - insufficient data",
+                        interaction_type='step_4_agent_execution',
+                        question_text=f"Execute core agent: {agent_id}",
                         extracted_data={
                             'agent_id': agent_id,
-                            'reason': 'missing_required_documents',
-                            'validation_status': 'failed_gate_2_skipping',
-                            'missing_fields': readiness.get('missing', []),
-                            'gate_number': 2,
-                            'action': 'skipped_continue_workflow'
+                            'execution_status': 'completed',
+                            'result_keys': list(normalized_result.keys()) if isinstance(normalized_result, dict) else []
                         }
                     )
-                    
-                    # CHANGE: Instead of pausing, log the skip and continue to next agent
-                    logger.info(f"⏭️  Skipping {agent_id}, continuing with remaining agents...")
-                    print(f"❌ {agent_id.upper()}: SKIPPED - Missing {readiness.get('missing', [])}")
-                    continue  # Continue to next agent instead of returning
-            
-            logger.info(f"✅ Agent {agent_id} validation passed")
-            
-            # PHASE 5: Log validation gate passed
-            self._log_interaction(
-                application_id=application_id,
-                agent_name=agent_id.title(),
-                interaction_type='step_4_5_validation',
-                question_text=f"Validation gate for {agent_id}",
-                extracted_data={
-                    'agent_id': agent_id,
-                    'validation_status': 'passed',
-                    'ready_to_execute': True
-                }
-            )
-            
-            # Run the agent
-            logger.info(f"🚀 Running {agent_id}...")
-            print(f"▶️  RUNNING {agent_id.upper()}: {self.agents[agent_id].name}")
-            try:
-                agent_result = await self._run_agent(
-                    agent_id, application, school_enrichment, prior_results
-                )
+            except Exception:
+                logger.debug(f"Skipping DB persistence for {agent_id}")
 
-                # Normalize agent result into predictable JSON-serializable shape
-                normalized_result = self._normalize_agent_result(agent_result)
-                self.evaluation_results['results'][agent_id] = normalized_result
-                prior_results[agent_id] = normalized_result
-
-                # immediately persist the raw output so that the application
-                # row contains a snapshot of each agent's reasoning.  we keep
-                # everything under a single ``agent_results`` column which is
-                # created dynamically if it doesn't already exist.
-                try:
-                    if self.db and application_id:
-                        stored = {}
-                        try:
-                            existing = self.db.get_application(application_id) or {}
-                            stored = existing.get('agent_results') or {}
-                            if isinstance(stored, str):
-                                stored = safe_load_json(stored)
-                        except Exception:
-                            stored = {}
-                        # use canonical keys for certain synthesis agents
-                        canonical_map = {
-                            'student_evaluator': 'merlin',
-                            'report_generator': 'aurora'
-                        }
-                        stored_key = canonical_map.get(agent_id, agent_id)
-                        stored[stored_key] = normalized_result
-                        self.db.update_application(
-                            application_id=application_id,
-                            agent_results=json.dumps(stored)
-                        )
-                except Exception as _store_err:
-                    logger.debug(f"Could not update application agent_results: {_store_err}")
-                
-                # PHASE 5: Log STEP 4 agent execution
-                self._log_interaction(
-                    application_id=application_id,
-                    agent_name=agent_id.title(),
-                    interaction_type='step_4_agent_execution',
-                    question_text=f"Execute core agent: {agent_id}",
-                    extracted_data={
-                        'agent_id': agent_id,
-                        'agent_number': agent_idx,
-                        'execution_status': 'completed',
-                        'result_keys': list(normalized_result.keys()) if isinstance(normalized_result, dict) else [],
-                        'execution_order': f"{agent_idx}/4"
-                    }
-                )
-                
-                logger.info(f"✅ Agent {agent_id} completed")
-                print(f"✅ {agent_id.upper()}: COMPLETED")
-                # Persist agent outputs to database for auditing and downstream use
-                try:
-                    if self.db and application_id:
-                        # Agent audit entry
-                        try:
-                            self.db.save_agent_audit(application_id, self.agents[agent_id].name, None)
-                        except Exception as _audit_err:
-                            logger.debug(f"Could not save agent audit for {agent_id}: {_audit_err}")
-
-                        # Try to extract representative scores/fields from agent result
-                        overall_score = None
-                        try:
-                            if isinstance(normalized_result, dict):
-                                overall_score = normalized_result.get('overall_score') or normalized_result.get('readiness_score') or normalized_result.get('score')
-                                # Coerce numeric-like strings
-                                if overall_score is not None:
-                                    overall_score = float(overall_score)
-                        except Exception:
-                            overall_score = None
-
-                        technical = None
-                        communication = None
-                        experience = None
-                        cultural = None
-                        strengths = None
-                        weaknesses = None
-                        recommendation = None
-                        detailed = None
-                        comparison = None
-                        model_used = getattr(self.agents[agent_id], 'model', None) or self.model
-                        processing_ms = int(normalized_result.get('processing_time_ms', 0)) if isinstance(normalized_result, dict) else 0
-
-                        try:
-                            detailed = json.dumps(normalized_result, ensure_ascii=True)
-                        except Exception:
-                            try:
-                                detailed = str(normalized_result)
-                            except Exception:
-                                detailed = None
-
-                        try:
-                            self.db.save_evaluation(
-                                application_id,
-                                self.agents[agent_id].name,
-                                overall_score or 0.0,
-                                technical or 0.0,
-                                communication or 0.0,
-                                experience or 0.0,
-                                cultural or 0.0,
-                                strengths or '',
-                                weaknesses or '',
-                                recommendation or '',
-                                detailed or '',
-                                comparison or '',
-                                model_used or '',
-                                processing_ms
-                            )
-                        except Exception as _eval_err:
-                            logger.warning(f"Could not persist evaluation for {agent_id}: {_eval_err}")
-                        # If the agent result does not include a `human_summary`,
-                        # generate a concise, exactly-3-sentence human-friendly
-                        # summary using the model and persist it.  Apply to any
-                        # agent so older rows without summaries will get one when
-                        # the orchestrator runs.
-                        try:
-                            needs_summary = False
-                            if isinstance(normalized_result, dict):
-                                if not normalized_result.get('human_summary'):
-                                    needs_summary = True
-                            else:
-                                # non-dict results should get wrapped with a summary
-                                needs_summary = True
-
-                            if needs_summary:
-                                logger.info(
-                                    "Attempting to generate human_summary for agent=%s application_id=%s",
-                                    agent_id,
-                                    application_id,
-                                )
-                                ctx = normalized_result if isinstance(normalized_result, (dict, list, str)) else str(normalized_result)
-                                ctx_text = json.dumps(ctx, ensure_ascii=False) if not isinstance(ctx, str) else ctx
-                                prompt = [
-                                    {
-                                        "role": "user",
-                                        "content": (
-                                            f"You are given the output from the agent '{self.agents[agent_id].name}'. "
-                                            "Produce exactly three concise sentences that summarize the agent's output for a non-technical audience. "
-                                            "Keep the tone neutral and factual. If the agent included a recommendation or a key risk, include that in one of the sentences.\n\n"
-                                            "Agent output (JSON):\n" + str(ctx_text)
-                                        )
-                                    }
-                                ]
-
-                                try:
-                                    logger.debug("Summarization prompt length=%d for agent=%s", len(str(prompt)), agent_id)
-                                    resp = await asyncio.to_thread(
-                                        self._create_chat_completion,
-                                        f"{agent_id}.summary",
-                                        None,
-                                        prompt,
-                                        max_completion_tokens=200,
-                                        refinements=0,
-                                    )
-
-                                    summ = self._normalize_agent_result(resp)
-                                    if isinstance(summ, (dict, list)):
-                                        try:
-                                            summ_text = json.dumps(summ, ensure_ascii=False)
-                                        except Exception:
-                                            summ_text = str(summ)
-                                    else:
-                                        summ_text = str(summ)
-                                except Exception as e:
-                                    logger.exception(
-                                        "Agent summarization failed for %s (application_id=%s): %s",
-                                        agent_id,
-                                        application_id,
-                                        e,
-                                    )
-                                    summ_text = None
-
-                                if summ_text:
-                                    logger.info("Generated human_summary for agent=%s application_id=%s", agent_id, application_id)
-                                    if isinstance(normalized_result, dict):
-                                        normalized_result['human_summary'] = summ_text
-                                    else:
-                                        normalized_result = {
-                                            'result': normalized_result,
-                                            'human_summary': summ_text
-                                        }
-
-                                    if self.db and application_id:
-                                        try:
-                                            rec = self.db.get_application(application_id) or {}
-                                            stored = rec.get('agent_results') or {}
-                                            if isinstance(stored, str):
-                                                stored = safe_load_json(stored)
-                                        except Exception:
-                                            stored = {}
-                                        stored_key = canonical_map.get(agent_id, agent_id)
-                                        stored[stored_key] = normalized_result
-                                        try:
-                                            self.db.update_application(application_id=application_id, agent_results=json.dumps(stored))
-                                            logger.debug("Persisted human_summary for agent=%s application_id=%s", agent_id, application_id)
-                                        except Exception:
-                                            logger.exception("Could not persist agent human_summary for %s application_id=%s", agent_id, application_id)
-                        except Exception:
-                            # swallow any summarization errors to avoid failing the
-                            # overall orchestration flow
-                            pass
-                except Exception:
-                    logger.debug(f"Skipping DB persistence for {agent_id} due to missing DB or application_id")
-            except Exception as agent_exec_error:
-                logger.error(f"❌ {agent_id} execution error: {agent_exec_error}")
-                print(f"❌ {agent_id.upper()}: FAILED - {str(agent_exec_error)[:100]}")
-                self.evaluation_results['results'][agent_id] = {'error': str(agent_exec_error)}
         
         # ===== STEP 5: MILO - training analysis =====
         logger.info("📊 STEP 5: Running Milo training analysis...")
         if 'data_scientist' in evaluation_steps and 'data_scientist' in self.agents:
             milo = self.agents['data_scientist']
+            self._report_progress({
+                'type': 'agent_progress',
+                'agent_id': 'data_scientist',
+                'agent': 'Milo',
+                'status': 'starting',
+                'message': '📊 Milo is analyzing training data patterns...'
+            })
             try:
                 milo_result = await milo.analyze_training_insights()
                 self.evaluation_results['results']['data_scientist'] = milo_result
@@ -1407,6 +1403,14 @@ class SmeeOrchestrator(BaseAgent):
                             logger.debug('Could not persist milo to agent_results')
                 except Exception:
                     pass
+
+                self._report_progress({
+                    'type': 'agent_progress',
+                    'agent_id': 'data_scientist',
+                    'agent': 'Milo',
+                    'status': 'completed',
+                    'message': '📊 Milo complete — training patterns analyzed ✓'
+                })
 
                 # Log STEP 5 MILO analysis
                 self._log_interaction(
@@ -1446,6 +1450,13 @@ class SmeeOrchestrator(BaseAgent):
             except Exception as e:
                 logger.error(f"❌ MILO analysis failed: {e}")
                 self.evaluation_results['results']['data_scientist'] = {'error': str(e)}
+                self._report_progress({
+                    'type': 'agent_progress',
+                    'agent_id': 'data_scientist',
+                    'agent': 'Milo',
+                    'status': 'failed',
+                    'message': f'Milo failed: {str(e)[:80]}'
+                })
                 # still log failure for auditing
                 self._log_interaction(
                     application_id=application_id,
@@ -1470,6 +1481,13 @@ class SmeeOrchestrator(BaseAgent):
         
         if 'student_evaluator' in evaluation_steps and 'student_evaluator' in self.agents:
             merlin = self.agents['student_evaluator']
+            self._report_progress({
+                'type': 'agent_progress',
+                'agent_id': 'student_evaluator',
+                'agent': 'Merlin',
+                'status': 'starting',
+                'message': '🧙 Merlin is synthesizing all agent evaluations...'
+            })
             try:
                 merlin_result = await merlin.evaluate_student(
                     application, self.evaluation_results['results']
@@ -1534,8 +1552,22 @@ class SmeeOrchestrator(BaseAgent):
                 )
                 
                 logger.info("✅ MERLIN synthesis complete")
+                self._report_progress({
+                    'type': 'agent_progress',
+                    'agent_id': 'student_evaluator',
+                    'agent': 'Merlin',
+                    'status': 'completed',
+                    'message': '🧙 Merlin complete — final evaluation ready ✓'
+                })
             except Exception as e:
                 logger.error(f"❌ MERLIN synthesis failed: {e}")
+                self._report_progress({
+                    'type': 'agent_progress',
+                    'agent_id': 'student_evaluator',
+                    'agent': 'Merlin',
+                    'status': 'failed',
+                    'message': f'Merlin failed: {str(e)[:80]}'
+                })
                 # PHASE 5: Log STEP 6 MERLIN failure
                 self._log_interaction(
                     application_id=application_id,
@@ -1557,6 +1589,13 @@ class SmeeOrchestrator(BaseAgent):
         
         if 'aurora' in evaluation_steps and 'aurora' in self.agents:
             aurora = self.agents['aurora']
+            self._report_progress({
+                'type': 'agent_progress',
+                'agent_id': 'aurora',
+                'agent': 'Aurora',
+                'status': 'starting',
+                'message': '✨ Aurora is formatting the executive summary...'
+            })
             try:
                 aurora_result = await asyncio.to_thread(
                     aurora.format_evaluation_report,
@@ -1632,8 +1671,22 @@ class SmeeOrchestrator(BaseAgent):
                         logger.warning(f"Could not save Aurora evaluation: {e}")
                 
                 logger.info("✅ AURORA report generation complete")
+                self._report_progress({
+                    'type': 'agent_progress',
+                    'agent_id': 'aurora',
+                    'agent': 'Aurora',
+                    'status': 'completed',
+                    'message': '✨ Aurora complete — executive summary ready ✓'
+                })
             except Exception as e:
                 logger.error(f"❌ AURORA report generation failed: {e}")
+                self._report_progress({
+                    'type': 'agent_progress',
+                    'agent_id': 'aurora',
+                    'agent': 'Aurora',
+                    'status': 'failed',
+                    'message': f'Aurora failed: {str(e)[:80]}'
+                })
                 # PHASE 5: Log STEP 7 AURORA failure
                 self._log_interaction(
                     application_id=application_id,

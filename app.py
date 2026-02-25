@@ -294,8 +294,7 @@ def get_orchestrator():
             NaveenSchoolDataScientist(
                 name="Naveen School Data Scientist",
                 client=client_mini,
-                model=config.deployment_name_mini or config.foundry_model_name,
-                db_connection=db
+                model=config.deployment_name_mini or config.foundry_model_name
             )
         )
         orchestrator_agent.register_agent(
