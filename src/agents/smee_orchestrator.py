@@ -1022,10 +1022,34 @@ class SmeeOrchestrator(BaseAgent):
             except Exception as e:
                 logger.warning(f"Could not create application record after matching: {e}")
 
-        # Simplified: skip NAVEEN/MOANA enrichment and validation in streamlined flow
-        logger.info("⚠️ Simplified workflow: skipping NAVEEN and MOANA school enrichment/validation")
+        # ===== STEP 2.5/3/3.5: School enrichment via NAVEEN + MOANA =====
         school_enrichment = {}
-        self.evaluation_results['results']['school_enrichment'] = {}
+        if high_school and state_code:
+            logger.info(f"🏫 STEP 2.5: Checking school enrichment for {high_school}, {state_code}")
+            print(f"🏫 STEP 2.5: Checking school enrichment for {high_school}, {state_code}")
+            try:
+                school_enrichment = await self._check_or_enrich_high_school(
+                    high_school=high_school,
+                    state_code=state_code,
+                    school_district=application.get('school_district'),
+                    application_id=application_id
+                )
+                if school_enrichment and not school_enrichment.get('error'):
+                    logger.info(f"✅ School enrichment ready for {high_school}")
+                    print(f"✅ School enrichment ready for {high_school}")
+                else:
+                    logger.warning(f"⚠️ School enrichment incomplete: {school_enrichment.get('error', 'unknown')}")
+                    print(f"⚠️ School enrichment incomplete for {high_school}")
+                    school_enrichment = {}
+            except Exception as e:
+                logger.error(f"❌ School enrichment failed: {e}", exc_info=True)
+                print(f"❌ School enrichment failed: {e}")
+                school_enrichment = {}
+        else:
+            logger.warning(f"⚠️ No high school/state info available — skipping school enrichment")
+            print(f"⚠️ No high school/state — skipping enrichment")
+
+        self.evaluation_results['results']['school_enrichment'] = school_enrichment
         
         # ===== STEP 4: Core agents with per-agent validation =====
         print(f"\n{'='*80}")
@@ -1035,7 +1059,7 @@ class SmeeOrchestrator(BaseAgent):
         logger.info("🤖 STEP 4: Running core agents with validation gates...")
         print("🤖 STEP 4: Running core agents with validation gates...")
         
-        core_agents = ['application_reader', 'grade_reader', 'recommendation_reader', 'gaston']
+        core_agents = ['application_reader', 'grade_reader', 'school_context', 'recommendation_reader', 'gaston']
         print(f"DEBUG: core_agents list={core_agents}")
         prior_results = {}
         

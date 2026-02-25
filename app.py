@@ -62,6 +62,8 @@ from src.agents.gaston_evaluator import GastonEvaluator
 from src.agents.bashful_agent import BashfulAgent
 from src.agents.belle_document_analyzer import BelleDocumentAnalyzer
 from src.agents.milo_data_scientist import MiloDataScientist
+from src.agents.naveen_school_data_scientist import NaveenSchoolDataScientist
+from src.agents.moana_school_context import MoanaSchoolContextAnalyzer
 from src.agents.feedback_triage_agent import ScuttleFeedbackTriageAgent, FeedbackTriageAgent
 
 # Initialize Flask app
@@ -251,7 +253,15 @@ def get_orchestrator():
                 db_connection=db
             )
         )
-        # Note: Moana school context agent removed from simplified workflow
+        orchestrator_agent.register_agent(
+            "school_context",
+            MoanaSchoolContextAnalyzer(
+                name="Moana School Context Analyzer",
+                client=client,
+                model=model_name,
+                db_connection=db
+            )
+        )
         orchestrator_agent.register_agent(
             "recommendation_reader",
             MulanRecommendationReader(
@@ -270,11 +280,19 @@ def get_orchestrator():
                 db_connection=db
             )
         )
-        # Note: Milo (data_scientist) and Naveen removed from simplified workflow
         orchestrator_agent.register_agent(
             "data_scientist",
             MiloDataScientist(
                 name="Milo Data Scientist",
+                client=client_mini,
+                model=config.deployment_name_mini or config.foundry_model_name,
+                db_connection=db
+            )
+        )
+        orchestrator_agent.register_agent(
+            "naveen",
+            NaveenSchoolDataScientist(
+                name="Naveen School Data Scientist",
                 client=client_mini,
                 model=config.deployment_name_mini or config.foundry_model_name,
                 db_connection=db
