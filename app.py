@@ -4973,19 +4973,66 @@ def trigger_school_analysis(school_id):
                     existing_data=school
                 )
                 
-                # Update database with results
+                logger.info(f"Naveen result keys for school {school_id}: {list(result.keys())}")
+                
+                # Extract enriched data — Naveen puts detailed fields in enriched_data dict
+                enriched = result.get('enriched_data', {})
+                
+                # Build comprehensive UPDATE with all available fields
+                opp_score = result.get('opportunity_score', 0) or 0
+                conf_score = result.get('confidence_score', 0) or 0
+                analysis_status = result.get('analysis_status', 'complete')
+                
+                # Extract school metrics from enriched_data or top-level result
+                total_students = enriched.get('enrollment_size') or enriched.get('total_students') or result.get('enrollment_size') or 0
+                graduation_rate = enriched.get('graduation_rate') or result.get('graduation_rate') or 0
+                college_rate = enriched.get('college_placement_rate') or enriched.get('college_acceptance_rate') or result.get('college_placement_rate') or 0
+                free_lunch = enriched.get('free_lunch_percentage') or result.get('free_lunch_percentage') or 0
+                ap_count = enriched.get('ap_classes_count') or enriched.get('ap_course_count') or result.get('ap_classes_count') or 0
+                ap_pass = enriched.get('ap_exam_pass_rate') or result.get('ap_exam_pass_rate') or 0
+                stem = enriched.get('stem_programs') or enriched.get('stem_program_available') or False
+                ib = enriched.get('ib_offerings') or enriched.get('ib_program_available') or False
+                dual = enriched.get('honors_programs') or enriched.get('dual_enrollment_available') or False
+                invest_level = enriched.get('school_investment_level') or result.get('school_investment_level') or 'medium'
+                
+                # Ensure numeric types
+                try:
+                    total_students = int(float(total_students)) if total_students else 0
+                except (ValueError, TypeError):
+                    total_students = 0
+                try:
+                    graduation_rate = float(graduation_rate) if graduation_rate else 0
+                except (ValueError, TypeError):
+                    graduation_rate = 0
+                try:
+                    college_rate = float(college_rate) if college_rate else 0
+                except (ValueError, TypeError):
+                    college_rate = 0
+                
+                # Update database with ALL enrichment fields
                 db.execute_non_query(
-                    "UPDATE school_enriched_data SET opportunity_score = %s, analysis_status = %s, "
-                    "data_confidence_score = %s, updated_at = CURRENT_TIMESTAMP WHERE school_enrichment_id = %s",
+                    """UPDATE school_enriched_data 
+                    SET opportunity_score = %s, analysis_status = %s, data_confidence_score = %s,
+                        total_students = %s, graduation_rate = %s, college_acceptance_rate = %s,
+                        free_lunch_percentage = %s, ap_course_count = %s, ap_exam_pass_rate = %s,
+                        stem_program_available = %s, ib_program_available = %s, dual_enrollment_available = %s,
+                        school_investment_level = %s, updated_at = CURRENT_TIMESTAMP
+                    WHERE school_enrichment_id = %s""",
                     (
-                        result.get('opportunity_metrics', {}).get('overall_opportunity_score'),
-                        result.get('analysis_status'),
-                        result.get('confidence_score'),
-                        school_id
+                        opp_score, analysis_status, conf_score,
+                        total_students, graduation_rate, college_rate,
+                        free_lunch, ap_count, ap_pass,
+                        bool(stem), bool(ib), bool(dual),
+                        invest_level, school_id
                     )
                 )
                 
-                logger.info(f"School {school_id} re-analysis completed by {result.get('agent_name')} using {result.get('model_display')}")
+                logger.info(
+                    f"School {school_id} re-analysis completed by {result.get('agent_name')} "
+                    f"using {result.get('model_display')}: "
+                    f"score={opp_score}, confidence={conf_score}, students={total_students}, "
+                    f"grad_rate={graduation_rate}"
+                )
             except Exception as e:
                 logger.error(f"Error in background analysis for school {school_id}: {e}")
         
