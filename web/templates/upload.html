@@ -11,7 +11,7 @@
 </div>
 
 <div class="card">
-    <form method="POST" enctype="multipart/form-data" style="margin-top: 1.5rem;">
+    <form method="POST" enctype="multipart/form-data" style="margin-top: 1.5rem;" id="uploadForm">
         <!-- File Upload -->
         <div id="applicationTypeSection" style="margin-bottom: 2rem;">
             <label style="display: block; font-weight: 600; margin-bottom: 0.75rem; color: #1f2937;">
@@ -32,10 +32,21 @@
                     Drag & drop or click to select files
                 </p>
                 <p style="color: #6b7280; font-size: 0.9rem;">
-                    Supported: PDF, DOCX, DOC, TXT, MP4 (Max 16MB each)
+                    Supported: PDF, DOCX, DOC, TXT, MP4
                 </p>
                 <p id="fileName" style="color: #10b981; font-weight: 600; margin-top: 1rem; display: none;"></p>
+                <p id="videoSizeHint" style="color: #667eea; font-size: 0.85rem; margin-top: 0.5rem; display: none;"></p>
             </div>
+
+            <!-- Video upload progress bar (shown during chunked upload) -->
+            <div id="videoProgress" style="display: none; margin-top: 1rem;">
+                <p id="videoProgressText" style="color: #1e40af; font-weight: 600; margin-bottom: 0.5rem;">Uploading video…</p>
+                <div style="background: #e5e7eb; border-radius: 8px; overflow: hidden; height: 24px;">
+                    <div id="videoProgressBar" style="background: linear-gradient(90deg, #667eea, #764ba2); height: 100%; width: 0%; transition: width 0.3s; color: #fff; font-size: 0.8rem; line-height: 24px; text-align: center; border-radius: 8px;">0%</div>
+                </div>
+            </div>
+
+            <input type="hidden" id="videoBlobInfo" name="video_blob_info" value="">
         </div>
 
         <!-- Application Type Selection -->
@@ -247,6 +258,19 @@ function handleDrop(e) {
 }
 
 applyTrainingPreset();
+</script>
+
+<script src="{{ url_for('static', filename='js/video-upload.js') }}"></script>
+<script>
+VideoUpload.init({
+    fileInputId:   'fileInput',
+    formId:        'uploadForm',
+    progressId:    'videoProgress',
+    progressBarId: 'videoProgressBar',
+    progressTextId:'videoProgressText',
+    hiddenFieldId: 'videoBlobInfo',
+    appTypeGetter: () => (document.querySelector('input[name="app_type"]:checked') || {}).value || '2026'
+});
 </script>
 
 {% endblock %}

@@ -263,6 +263,86 @@ class StorageManager:
             logger.error(f"Error deleting files: {e}")
             return False
 
+    # ── Chunked Video Upload (Block Blob staging) ─────────────────────
+
+    def _video_blob_client(self, upload_id: str, filename: str,
+                           application_type: str = "2026"):
+        """Return (blob_client, blob_path, container_name) for a video upload."""
+        if not self.client:
+            return None
+        container_name = self._get_container_name(application_type)
+        blob_path = f"video-uploads/{upload_id}/{filename}"
+        container_client = self.client.get_container_client(container_name)
+        return container_client.get_blob_client(blob_path), blob_path, container_name
+
+    def stage_video_chunk(self, upload_id: str, filename: str,
+                          chunk_index: int, chunk_data: bytes,
+                          application_type: str = "2026") -> bool:
+        """Stage one block of a chunked video upload."""
+        info = self._video_blob_client(upload_id, filename, application_type)
+        if not info:
+            return False
+        blob_client, _, _ = info
+        import base64
+        block_id = base64.b64encode(f"block-{chunk_index:06d}".encode()).decode()
+        blob_client.stage_block(block_id=block_id, data=chunk_data)
+        logger.debug("Staged video block %d for upload %s", chunk_index, upload_id)
+        return True
+
+    def commit_video_upload(self, upload_id: str, filename: str,
+                            total_chunks: int,
+                            application_type: str = "2026") -> Dict[str, Any]:
+        """Commit all staged blocks, finalising the video blob."""
+        info = self._video_blob_client(upload_id, filename, application_type)
+        if not info:
+            return {'success': False, 'error': 'Storage not available'}
+        blob_client, blob_path, container_name = info
+
+        import base64
+        from azure.storage.blob import BlobBlock, ContentSettings
+
+        block_list = [
+            BlobBlock(block_id=base64.b64encode(
+                f"block-{i:06d}".encode()).decode())
+            for i in range(total_chunks)
+        ]
+        blob_client.commit_block_list(
+            block_list=block_list,
+            content_settings=ContentSettings(content_type="video/mp4")
+        )
+        blob_url = (
+            f"https://{self.account_name}.blob.core.windows.net/"
+            f"{container_name}/{blob_path}"
+        )
+        logger.info("✅ Video upload committed: %s (%d chunks)", blob_path, total_chunks)
+        return {
+            'success': True,
+            'blob_path': blob_path,
+            'blob_url': blob_url,
+            'container': container_name,
+            'upload_id': upload_id,
+            'filename': filename,
+        }
+
+    def download_video_to_file(self, blob_path: str, local_path: str,
+                               application_type: str = "2026") -> bool:
+        """Stream a video blob to a local file (for Mirabel processing)."""
+        if not self.client:
+            return False
+        try:
+            container_name = self._get_container_name(application_type)
+            container_client = self.client.get_container_client(container_name)
+            blob_client = container_client.get_blob_client(blob_path)
+            downloader = blob_client.download_blob()
+            with open(local_path, 'wb') as fh:
+                for chunk in downloader.chunks():
+                    fh.write(chunk)
+            logger.info("Downloaded video blob %s → %s", blob_path, local_path)
+            return True
+        except Exception as e:
+            logger.error("Error downloading video blob %s: %s", blob_path, e)
+            return False
+
 
 # Global storage manager instance
 storage = StorageManager()

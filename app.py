@@ -976,6 +976,116 @@ def upload():
                     'agent_fields': doc_analysis.get('agent_fields', {})
                 })
 
+            # ── Process pre-uploaded video blobs (chunked upload) ─────
+            video_blob_info_raw = request.form.get('video_blob_info', '').strip()
+            if video_blob_info_raw:
+                import json as _json
+                try:
+                    video_blobs = _json.loads(video_blob_info_raw)
+                except Exception:
+                    video_blobs = []
+
+                for vblob in video_blobs:
+                    blob_path = vblob.get('blob_path')
+                    vfilename = secure_filename(vblob.get('filename', 'video.mp4'))
+                    if not blob_path:
+                        continue
+
+                    temp_id = uuid.uuid4().hex
+                    temp_path = os.path.join(
+                        app.config['UPLOAD_FOLDER'],
+                        f"temp_{temp_id}_{vfilename}"
+                    )
+
+                    try:
+                        ok = storage.download_video_to_file(
+                            blob_path=blob_path,
+                            local_path=temp_path,
+                            application_type=app_type,
+                        )
+                        if not ok:
+                            flash(f"Could not retrieve video {vfilename} from storage", 'error')
+                            continue
+
+                        valid_files += 1
+
+                        # Read file content for later storage.upload_file()
+                        with open(temp_path, 'rb') as handle:
+                            file_content = handle.read()
+
+                        try:
+                            mirabel = get_mirabel()
+                            doc_analysis = mirabel.analyze_video(temp_path, vfilename)
+                            application_text = doc_analysis.get('agent_fields', {}).get('application_text', '')
+                            file_type = 'mp4'
+                        except Exception as e:
+                            logger.warning("Mirabel video analysis (blob) failed: %s", e)
+                            doc_analysis = {
+                                "document_type": "video_submission",
+                                "confidence": 0,
+                                "student_info": {},
+                                "extracted_data": {},
+                                "agent_fields": {}
+                            }
+                            application_text = ""
+                            file_type = 'mp4'
+                    finally:
+                        try:
+                            os.remove(temp_path)
+                        except Exception:
+                            pass
+
+                    belle_student_info = doc_analysis.get('student_info', {})
+                    extracted_name = belle_student_info.get('name') or extract_student_name(application_text)
+                    first_name = belle_student_info.get('first_name')
+                    last_name = belle_student_info.get('last_name')
+                    if extracted_name and not (first_name and last_name):
+                        first_name, last_name = _split_name_parts(extracted_name)
+
+                    student_email = belle_student_info.get('email') or extract_student_email(application_text) or ""
+                    school_name = (doc_analysis.get('agent_fields') or {}).get('school_name') or belle_student_info.get('school_name')
+
+                    identity_key = _build_identity_key(
+                        first_name=first_name,
+                        last_name=last_name,
+                        school_name=school_name,
+                        email=student_email,
+                        full_name=extracted_name,
+                        filename=vfilename
+                    )
+
+                    if identity_key not in grouped_uploads:
+                        grouped_uploads[identity_key] = {
+                            'first_name': first_name,
+                            'last_name': last_name,
+                            'student_name': extracted_name,
+                            'student_email': student_email,
+                            'school_name': school_name,
+                            'files': []
+                        }
+
+                    group = grouped_uploads[identity_key]
+                    if first_name and not group.get('first_name'):
+                        group['first_name'] = first_name
+                    if last_name and not group.get('last_name'):
+                        group['last_name'] = last_name
+                    if extracted_name and not group.get('student_name'):
+                        group['student_name'] = extracted_name
+                    if student_email and not group.get('student_email'):
+                        group['student_email'] = student_email
+                    if school_name and not group.get('school_name'):
+                        group['school_name'] = school_name
+
+                    group['files'].append({
+                        'filename': vfilename,
+                        'text': application_text,
+                        'file_type': file_type,
+                        'file_content': file_content,
+                        'document_type': doc_analysis.get('document_type', 'video_submission'),
+                        'student_info': belle_student_info,
+                        'agent_fields': doc_analysis.get('agent_fields', {})
+                    })
+
             if valid_files == 0:
                 flash('No valid files uploaded.', 'error')
                 return redirect(request.url)
@@ -1966,6 +2076,84 @@ def process_student(application_id):
     except Exception as e:
         flash(f'Error: {str(e)}', 'error')
         return redirect(url_for('students'))
+
+
+# ── Chunked Video Upload API ─────────────────────────────────────────
+@app.route('/api/video/upload-chunk', methods=['POST'])
+def video_upload_chunk():
+    """Accept a chunk of video data and stage it in Azure Blob Storage.
+
+    Each chunk is a small (≤4 MB) multipart POST that is individually
+    well below the nginx / App Service request-body limit, so even very
+    large MP4 files can be uploaded without hitting the 413 error.
+
+    The client sends:
+      - chunk      : the binary chunk (file part)
+      - upload_id  : UUID generated client-side (same for all chunks)
+      - chunk_index: 0-based index of this chunk
+      - total_chunks: total number of chunks
+      - filename   : original file name
+      - app_type   : "2026" | "training" | "test"
+
+    On the final chunk the staged blocks are committed and the response
+    includes ``blob_path`` and ``container`` for use in the form POST.
+    """
+    chunk = request.files.get('chunk')
+    if not chunk:
+        return jsonify({'error': 'No chunk data'}), 400
+
+    upload_id = request.form.get('upload_id', '')
+    chunk_index = int(request.form.get('chunk_index', 0))
+    total_chunks = int(request.form.get('total_chunks', 1))
+    filename = secure_filename(request.form.get('filename', 'video.mp4'))
+    app_type = request.form.get('app_type', '2026')
+
+    if not filename.lower().endswith('.mp4'):
+        return jsonify({'error': 'Only MP4 files are supported'}), 400
+    if not upload_id:
+        return jsonify({'error': 'upload_id is required'}), 400
+
+    try:
+        ok = storage.stage_video_chunk(
+            upload_id=upload_id,
+            filename=filename,
+            chunk_index=chunk_index,
+            chunk_data=chunk.read(),
+            application_type=app_type,
+        )
+        if not ok:
+            return jsonify({'error': 'Storage not available – could not stage chunk'}), 500
+    except Exception as e:
+        logger.error("Video chunk %d upload failed: %s", chunk_index, e)
+        return jsonify({'error': str(e)}), 500
+
+    result = {
+        'upload_id': upload_id,
+        'chunk_index': chunk_index,
+        'total_chunks': total_chunks,
+        'progress': round((chunk_index + 1) / total_chunks * 100, 1),
+    }
+
+    # Last chunk → commit all blocks
+    if chunk_index == total_chunks - 1:
+        try:
+            commit = storage.commit_video_upload(
+                upload_id=upload_id,
+                filename=filename,
+                total_chunks=total_chunks,
+                application_type=app_type,
+            )
+            if commit.get('success'):
+                result['complete'] = True
+                result['blob_path'] = commit['blob_path']
+                result['container'] = commit['container']
+            else:
+                return jsonify({'error': 'Failed to commit video upload'}), 500
+        except Exception as e:
+            logger.error("Video commit failed for %s: %s", upload_id, e)
+            return jsonify({'error': str(e)}), 500
+
+    return jsonify(result)
 
 
 @app.route('/api/process/<int:application_id>', methods=['POST'])

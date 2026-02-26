@@ -36,6 +36,18 @@ else
     apt-get update -qq && apt-get install -y -qq ffmpeg 2>&1 | tail -3 || echo "  ffmpeg install failed (audio transcription unavailable)"
 fi
 
+# Increase nginx client_max_body_size so chunked video upload endpoint
+# is not blocked even if a single chunk somehow exceeds the default limit.
+# (Each chunk is ≤4 MB but this adds a safety margin.)
+NGINX_CONF="/etc/nginx/sites-available/default"
+if [ -f "$NGINX_CONF" ]; then
+    if ! grep -q 'client_max_body_size 100M' "$NGINX_CONF" 2>/dev/null; then
+        echo "[$(date '+%Y-%m-%d %H:%M:%S')] Increasing nginx client_max_body_size to 100 MB..."
+        sed -i '/server {/a\    client_max_body_size 100M;' "$NGINX_CONF" 2>/dev/null || true
+        nginx -s reload 2>/dev/null || true
+    fi
+fi
+
 export PYTHONUNBUFFERED=1
 
 # Start gunicorn
