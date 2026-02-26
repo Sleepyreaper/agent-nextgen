@@ -3561,6 +3561,85 @@ class Database:
             logger.error(f"Error linking historical score {score_id} to application {application_id}: {e}")
             return False
 
+    def get_unmatched_training_students(self) -> List[Dict[str, Any]]:
+        """Get training students that have no linked historical score record."""
+        try:
+            applications_table = self.get_table_name("applications") or "applications"
+            app_id_col = self.get_applications_column("application_id") or "application_id"
+            applicant_col = self.get_applications_column("applicant_name") or "applicant_name"
+            email_col = self.get_applications_column("email") or "email"
+            training_col = self.get_training_example_column() or "is_training_example"
+            test_col = self.get_test_data_column() or "is_test_data"
+
+            extra_cols = []
+            for col in ('first_name', 'last_name'):
+                if self.has_applications_column(col):
+                    extra_cols.append(f"a.{col}")
+            extra_fragment = (", " + ", ".join(extra_cols)) if extra_cols else ""
+
+            query = f"""
+                SELECT a.{app_id_col} AS application_id,
+                       a.{applicant_col} AS applicant_name,
+                       a.{email_col} AS email
+                       {extra_fragment}
+                FROM {applications_table} a
+                LEFT JOIN historical_scores hs ON hs.application_id = a.{app_id_col}
+                WHERE a.{training_col} = TRUE
+                  AND (a.{test_col} = FALSE OR a.{test_col} IS NULL)
+                  AND hs.score_id IS NULL
+                ORDER BY LOWER(a.{applicant_col}) ASC
+            """
+            rows = self.execute_query(query)
+            results = []
+            for r in rows:
+                name = r.get('applicant_name', '')
+                parts = name.strip().split() if name else []
+                results.append({
+                    'application_id': r.get('application_id'),
+                    'applicant_name': name,
+                    'first_name': r.get('first_name') or (parts[0] if parts else ''),
+                    'last_name': r.get('last_name') or (parts[-1] if len(parts) > 1 else ''),
+                    'email': r.get('email'),
+                })
+            return results
+        except Exception as e:
+            logger.error(f"Error getting unmatched training students: {e}")
+            return []
+
+    def search_unlinked_historical_scores(self, search: str, cohort_year: int = 2024) -> List[Dict[str, Any]]:
+        """Search historical scores that are NOT yet linked to any application."""
+        try:
+            if not search or not search.strip():
+                # Return all unlinked scores
+                query = """
+                    SELECT score_id, applicant_name, status, was_selected, was_scored,
+                           total_rating, academic_record, stem_interest, essay_video,
+                           recommendation, bonus
+                    FROM historical_scores
+                    WHERE cohort_year = %s AND application_id IS NULL
+                    ORDER BY applicant_name
+                    LIMIT 50
+                """
+                return self.execute_query(query, (cohort_year,))
+
+            normalized = self._normalize_name(search)
+            query = """
+                SELECT score_id, applicant_name, status, was_selected, was_scored,
+                       total_rating, academic_record, stem_interest, essay_video,
+                       recommendation, bonus
+                FROM historical_scores
+                WHERE cohort_year = %s
+                  AND application_id IS NULL
+                  AND (applicant_name_normalized ILIKE %s OR applicant_name ILIKE %s)
+                ORDER BY applicant_name
+                LIMIT 20
+            """
+            pattern = f"%{normalized}%"
+            return self.execute_query(query, (cohort_year, pattern, f"%{search.strip()}%"))
+        except Exception as e:
+            logger.error(f"Error searching unlinked historical scores: {e}")
+            return []
+
     def get_historical_stats(self, cohort_year: int = 2024) -> Dict[str, Any]:
         """Get aggregate stats for a cohort year's historical scores.
         

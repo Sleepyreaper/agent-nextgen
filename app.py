@@ -3988,6 +3988,68 @@ def api_clear_historical_scores():
     return jsonify({'status': 'success', 'deleted': deleted})
 
 
+@app.route('/api/training/unmatched')
+def api_unmatched_training():
+    """Get training students with no linked historical XLSX score."""
+    try:
+        students = db.get_unmatched_training_students()
+        return jsonify({'status': 'success', 'students': students, 'count': len(students)})
+    except Exception as e:
+        logger.error(f"Error getting unmatched training students: {e}", exc_info=True)
+        return jsonify({'status': 'error', 'error': str(e)}), 500
+
+
+@app.route('/api/historical-scores/unlinked')
+def api_unlinked_historical_scores():
+    """Search historical scores not yet linked to an application."""
+    try:
+        search = request.args.get('search', '').strip()
+        cohort_year = int(request.args.get('cohort_year', 2024))
+        scores = db.search_unlinked_historical_scores(search, cohort_year)
+        # Convert Decimal values for JSON serialization
+        from decimal import Decimal
+        serializable = []
+        for row in scores:
+            entry = {}
+            for k, v in row.items():
+                entry[k] = float(v) if isinstance(v, Decimal) else v
+            serializable.append(entry)
+        return jsonify({'status': 'success', 'scores': serializable, 'count': len(serializable)})
+    except Exception as e:
+        logger.error(f"Error searching unlinked historical scores: {e}", exc_info=True)
+        return jsonify({'status': 'error', 'error': str(e)}), 500
+
+
+@app.route('/api/training/link-score', methods=['POST'])
+def api_link_training_score():
+    """Manually link a historical score record to a training application."""
+    try:
+        data = request.get_json(force=True)
+        application_id = data.get('application_id')
+        score_id = data.get('score_id')
+        if not application_id or not score_id:
+            return jsonify({'status': 'error', 'error': 'application_id and score_id are required'}), 400
+
+        # Verify the application is a training record
+        application = db.get_application(application_id)
+        if not application:
+            return jsonify({'status': 'error', 'error': 'Application not found'}), 404
+        if not application.get('is_training_example'):
+            return jsonify({'status': 'error', 'error': 'Application is not a training record'}), 400
+
+        was_selected = application.get('was_selected')
+        success = db.link_historical_score_to_application(score_id, application_id, was_selected=was_selected)
+        if success:
+            return jsonify({
+                'status': 'success',
+                'message': f'Linked score {score_id} to application {application_id}'
+            })
+        return jsonify({'status': 'error', 'error': 'Failed to link records'}), 500
+    except Exception as e:
+        logger.error(f"Error linking training score: {e}", exc_info=True)
+        return jsonify({'status': 'error', 'error': str(e)}), 500
+
+
 # ============================================================================
 # REAL-TIME TEST SYSTEM WITH SERVER-SENT EVENTS (SSE)
 # ============================================================================

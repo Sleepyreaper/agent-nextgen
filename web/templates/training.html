@@ -69,6 +69,9 @@
             <button type="button" class="btn" style="background:#ef4444; color:white;" onclick="findDuplicates()">
                 🔍 Find Duplicates
             </button>
+            <button type="button" class="btn" style="background:#f59e0b; color:#78350f;" onclick="openXlsxResolver()">
+                🔗 Resolve XLSX Matches
+            </button>
             <button type="button" class="btn btn-info" onclick="fetchMiloInsights()">
                 📊 Milo Insights
             </button>
@@ -152,6 +155,22 @@
 
 <!-- Info Card -->
 <div class="card" style="background: #f0f9ff; border-left: 4px solid #3b82f6; margin-top: 2rem;">
+
+<!-- XLSX Resolver Modal -->
+<div id="xlsxModal" style="display:none; position:fixed; top:0; left:0; right:0; bottom:0; background:rgba(0,0,0,0.6); z-index:9999; justify-content:center; align-items:center;">
+    <div style="background:white; border-radius:12px; padding:2rem; max-width:900px; width:95%; max-height:85vh; overflow-y:auto; box-shadow:0 20px 60px rgba(0,0,0,0.3);">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1.5rem;">
+            <h3 style="margin:0; color:#78350f;">🔗 Resolve XLSX Matches</h3>
+            <button onclick="closeXlsxModal()" style="background:none; border:none; font-size:1.5rem; cursor:pointer;">✕</button>
+        </div>
+        <p style="color:#6b7280; margin-bottom:1rem;">
+            These training students have no linked historical XLSX score. Search and link them manually.
+        </p>
+        <div id="xlsxContent">
+            <p style="text-align:center; color:#6b7280;">Loading unmatched students...</p>
+        </div>
+    </div>
+</div>
     <h3 style="color: #1e40af; margin-bottom: 1rem;">💡 About Training Data</h3>
     <div style="color: #1e3a8a; line-height: 1.8;">
         <p style="margin-bottom: 1rem;">
@@ -345,6 +364,131 @@ if (hasProcessing) {
     setInterval(() => {
         window.location.reload();
     }, 12000);
+}
+
+// ---- XLSX Resolver Feature ----
+function closeXlsxModal() {
+    document.getElementById('xlsxModal').style.display = 'none';
+}
+document.getElementById('xlsxModal').addEventListener('click', function(e) {
+    if (e.target === this) closeXlsxModal();
+});
+document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape') closeXlsxModal();
+});
+
+async function openXlsxResolver() {
+    const modal = document.getElementById('xlsxModal');
+    const content = document.getElementById('xlsxContent');
+    modal.style.display = 'flex';
+    content.innerHTML = '<p style="text-align:center; color:#6b7280;">🔍 Loading unmatched students...</p>';
+
+    try {
+        const r = await fetch('/api/training/unmatched');
+        const data = await r.json();
+        if (data.status !== 'success') {
+            content.innerHTML = '<p style="color:#ef4444;">Error: ' + (data.error || 'Unknown') + '</p>';
+            return;
+        }
+        if (!data.students || data.students.length === 0) {
+            content.innerHTML = '<div style="text-align:center; padding:2rem;"><div style="font-size:3rem;">✅</div><h3 style="color:#059669; margin:0.5rem 0;">All Students Matched!</h3><p style="color:#6b7280;">Every training student has a linked XLSX score record.</p></div>';
+            return;
+        }
+
+        let html = '<p style="margin-bottom:1rem; color:#92400e; font-weight:600;">Found <strong>' + data.students.length + '</strong> unmatched student(s). Click "Search" to find matching XLSX records.</p>';
+
+        data.students.forEach(function(student) {
+            const displayName = (student.first_name && student.last_name)
+                ? student.first_name + ' ' + student.last_name
+                : student.applicant_name || 'Unknown';
+            html += '<div id="resolver-' + student.application_id + '" style="margin-bottom:1.25rem; border:1px solid #e5e7eb; border-radius:8px; overflow:hidden;">';
+            html += '<div style="background:#fef3c7; padding:0.75rem 1rem; display:flex; justify-content:space-between; align-items:center;">';
+            html += '<div><strong style="color:#92400e;">👤 ' + displayName + '</strong>';
+            if (student.email) html += ' <span style="color:#6b7280; font-size:0.85rem;">(' + student.email + ')</span>';
+            html += '</div>';
+            html += '<div style="display:flex; gap:0.5rem; align-items:center;">';
+            html += '<input type="text" id="search-' + student.application_id + '" placeholder="Search XLSX by name..." value="' + displayName + '" style="padding:0.4rem 0.6rem; border:1px solid #d1d5db; border-radius:4px; font-size:0.85rem; width:200px;">';
+            html += '<button onclick="searchXlsxFor(' + student.application_id + ')" class="btn btn-primary" style="padding:0.4rem 0.8rem; font-size:0.85rem;">🔍 Search</button>';
+            html += '</div></div>';
+            html += '<div id="results-' + student.application_id + '" style="padding:0.5rem 1rem; color:#6b7280; font-size:0.9rem;">Click Search to find matching XLSX records.</div>';
+            html += '</div>';
+        });
+
+        content.innerHTML = html;
+    } catch (err) {
+        content.innerHTML = '<p style="color:#ef4444;">Network error: ' + err.message + '</p>';
+    }
+}
+
+async function searchXlsxFor(appId) {
+    const searchInput = document.getElementById('search-' + appId);
+    const resultsDiv = document.getElementById('results-' + appId);
+    const query = searchInput.value.trim();
+    resultsDiv.innerHTML = '<p style="color:#6b7280;">Searching...</p>';
+
+    try {
+        const r = await fetch('/api/historical-scores/unlinked?search=' + encodeURIComponent(query));
+        const data = await r.json();
+        if (data.status !== 'success') {
+            resultsDiv.innerHTML = '<p style="color:#ef4444;">Error: ' + (data.error || 'Unknown') + '</p>';
+            return;
+        }
+        if (!data.scores || data.scores.length === 0) {
+            resultsDiv.innerHTML = '<p style="color:#9ca3af;">No unlinked XLSX records found for "' + query + '". Try a different search.</p>';
+            return;
+        }
+
+        let html = '<table style="width:100%; border-collapse:collapse; font-size:0.85rem; margin-top:0.25rem;">';
+        html += '<tr style="background:#f9fafb;"><th style="padding:0.4rem; text-align:left;">Name</th><th style="padding:0.4rem; text-align:left;">Status</th><th style="padding:0.4rem; text-align:center;">Total Rating</th><th style="padding:0.4rem; text-align:center;">Acad</th><th style="padding:0.4rem; text-align:center;">STEM</th><th style="padding:0.4rem; text-align:center;">Essay</th><th style="padding:0.4rem; text-align:center;">Rec</th><th style="padding:0.4rem; text-align:center;">Action</th></tr>';
+
+        data.scores.forEach(function(score) {
+            const selected = score.was_selected === true ? '✓ Selected' : (score.was_selected === false ? '✗ Not Selected' : '—');
+            const selColor = score.was_selected === true ? '#059669' : (score.was_selected === false ? '#dc2626' : '#6b7280');
+            html += '<tr style="border-top:1px solid #f3f4f6;">';
+            html += '<td style="padding:0.4rem;">' + (score.applicant_name || '—') + '</td>';
+            html += '<td style="padding:0.4rem;"><span style="color:' + selColor + '; font-weight:600; font-size:0.8rem;">' + selected + '</span></td>';
+            html += '<td style="padding:0.4rem; text-align:center; font-weight:600;">' + (score.total_rating != null ? score.total_rating : '—') + '</td>';
+            html += '<td style="padding:0.4rem; text-align:center;">' + (score.academic_record != null ? score.academic_record : '—') + '</td>';
+            html += '<td style="padding:0.4rem; text-align:center;">' + (score.stem_interest != null ? score.stem_interest : '—') + '</td>';
+            html += '<td style="padding:0.4rem; text-align:center;">' + (score.essay_video != null ? score.essay_video : '—') + '</td>';
+            html += '<td style="padding:0.4rem; text-align:center;">' + (score.recommendation != null ? score.recommendation : '—') + '</td>';
+            html += '<td style="padding:0.4rem; text-align:center;"><button onclick="linkScore(' + appId + ', ' + score.score_id + ', this)" class="btn btn-success" style="padding:0.3rem 0.6rem; font-size:0.8rem;">🔗 Link</button></td>';
+            html += '</tr>';
+        });
+        html += '</table>';
+        resultsDiv.innerHTML = html;
+    } catch (err) {
+        resultsDiv.innerHTML = '<p style="color:#ef4444;">Network error: ' + err.message + '</p>';
+    }
+}
+
+async function linkScore(appId, scoreId, btn) {
+    btn.textContent = 'Linking...';
+    btn.disabled = true;
+
+    try {
+        const r = await fetch('/api/training/link-score', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({application_id: appId, score_id: scoreId})
+        });
+        const data = await r.json();
+        if (data.status === 'success') {
+            const card = document.getElementById('resolver-' + appId);
+            if (card) {
+                card.style.background = '#f0fdf4';
+                card.innerHTML = '<div style="padding:1rem; color:#059669; font-weight:600;">✅ Linked successfully — score ' + scoreId + ' → application ' + appId + '</div>';
+            }
+        } else {
+            alert('Error: ' + (data.error || 'Unknown'));
+            btn.textContent = '🔗 Link';
+            btn.disabled = false;
+        }
+    } catch (err) {
+        alert('Network error: ' + err.message);
+        btn.textContent = '🔗 Link';
+        btn.disabled = false;
+    }
 }
 </script>
 <script src="{{ url_for('static', filename='js/video-upload.js') }}"></script>

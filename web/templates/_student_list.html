@@ -210,7 +210,13 @@
         {% for student in students %}
         <tr>
             <td>
-                <div class="student-name">{{ student.first_name }} {{ student.last_name }}</div>
+                {% if student.first_name or student.last_name %}
+                <div class="student-name">{{ student.first_name or '' }} {{ student.last_name or '' }}</div>
+                {% elif student.applicant_name %}
+                <div class="student-name">{{ student.applicant_name }}</div>
+                {% else %}
+                <div class="student-name">Unknown Student</div>
+                {% endif %}
                 <div class="student-details">
                     📧 {{ student.email or 'N/A' }}<br>
                     📅 {{ student.uploaded_date.strftime('%b %d, %Y') if student.uploaded_date else 'N/A' }}
@@ -222,7 +228,7 @@
                 {% endif %}
             </td>
             <td>
-                <div class="high-school">{{ student.high_school }}</div>
+                <div class="high-school">{{ student.high_school or '—' }}</div>
             </td>
             <td>
                 {% if student.merlin_score %}
@@ -285,7 +291,8 @@
                         ▶️ Evaluate
                     </a>
                     {% endif %}
-                    <button onclick="confirmDeleteStudent({{ student.application_id }}, '{{ student.first_name }} {{ student.last_name }}')"
+                    {% set del_name = (student.first_name ~ ' ' ~ student.last_name) if (student.first_name or student.last_name) else (student.applicant_name or 'Unknown') %}
+                    <button onclick="confirmDeleteStudent({{ student.application_id }}, '{{ del_name }}')"
                             class="btn btn-danger" title="Delete student record">
                         🗑️
                     </button>
