@@ -72,6 +72,13 @@ class Database:
         for extra_col in ('first_name', 'last_name', 'high_school'):
             if self.has_applications_column(extra_col):
                 select_cols.append(f"a.{extra_col}")
+        # Fallback school name from student_school_context (Moana) when
+        # applications.high_school is NULL.  Use subquery to avoid duplicates.
+        select_cols.append(
+            "(SELECT ssc.school_name FROM student_school_context ssc"
+            " WHERE ssc.application_id = a." + app_id_col +
+            " ORDER BY ssc.context_id DESC LIMIT 1) AS moana_school_name"
+        )
         # pull in agent_results as well so callers (including list view) can
         # compute a temporary merlin_score if necessary.  The field might be
         # JSONB or TEXT depending on migration state.
@@ -114,6 +121,19 @@ class Database:
                     row['agent_results'] = safe_load_json(row['agent_results'])
                 except Exception:
                     pass
+
+            # Resolve high_school: prefer applications column, fall back to
+            # student_school_context (Moana), then agent_results JSON.
+            if not row.get('high_school'):
+                moana_name = row.pop('moana_school_name', None)
+                if moana_name:
+                    row['high_school'] = moana_name
+                elif row.get('agent_results') and isinstance(row['agent_results'], dict):
+                    moana = row['agent_results'].get('moana') or row['agent_results'].get('school_context') or {}
+                    if isinstance(moana, dict):
+                        row['high_school'] = moana.get('school_name') or moana.get('school')
+            else:
+                row.pop('moana_school_name', None)
 
             # give the UI something to render in the main table
             score = None
