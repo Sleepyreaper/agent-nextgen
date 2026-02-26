@@ -2098,9 +2098,10 @@ def process_student(application_id):
 def video_upload_chunk():
     """Accept a chunk of video data and stage it in Azure Blob Storage.
 
-    Each chunk is a small (≤4 MB) multipart POST that is individually
-    well below the nginx / App Service request-body limit, so even very
-    large MP4 files can be uploaded without hitting the 413 error.
+    Each chunk is a small (≤100 KB) multipart POST that is individually
+    well below the Azure Front Door WAF request body inspection limit
+    (128 KB), so even very large MP4 files can be uploaded without
+    being blocked by the WAF.
 
     The client sends:
       - chunk      : the binary chunk (file part)

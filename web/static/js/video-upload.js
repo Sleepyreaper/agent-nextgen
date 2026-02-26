@@ -23,7 +23,7 @@
  *   </script>
  */
 const VideoUpload = (() => {
-  const CHUNK_SIZE = 4 * 1024 * 1024; // 4 MB per chunk
+  const CHUNK_SIZE = 100 * 1024; // 100 KB per chunk (must stay under Front Door WAF 128 KB body inspection limit)
 
   let _cfg = {};
   let _pendingVideos = []; // [{file, uploadId, blobPath, container, status}]
@@ -69,11 +69,20 @@ const VideoUpload = (() => {
       }
 
       if (!resp || !resp.ok) {
-        const errText = resp ? await resp.text() : 'Network error';
-        throw new Error(`Chunk ${i}/${totalChunks} failed: ${errText}`);
+        let errText = 'Network error';
+        if (resp) {
+          const raw = await resp.text();
+          errText = resp.status === 403 ? 'Request blocked by firewall (chunk too large)' : raw.substring(0, 200);
+        }
+        throw new Error(`Chunk ${i + 1}/${totalChunks} failed (HTTP ${resp ? resp.status : '?'}): ${errText}`);
       }
 
-      const data = await resp.json();
+      let data;
+      const contentType = resp.headers.get('content-type') || '';
+      if (!contentType.includes('application/json')) {
+        throw new Error(`Chunk ${i + 1}/${totalChunks}: unexpected response type "${contentType}"`);
+      }
+      data = await resp.json();
       onProgress(data.progress || 0);
 
       if (data.complete) {
