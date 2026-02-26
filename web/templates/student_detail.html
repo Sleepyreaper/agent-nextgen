@@ -115,7 +115,7 @@
         <div class="section-title">Agent Insights</div>
         <div class="agent-cards">
             {% for agent_id, agent in agent_results.items() %}
-                {% if agent_id != 'gaston' and agent.human_summary %}
+                {% if agent.human_summary %}
                 <div class="agent-card">
                     <h3>{{ agent_id|capitalize }} {% if agent.overall_score %}<span class="score-badge">{{ agent.overall_score }}</span>{% endif %}</h3>
                     <div class="agent-summary">{{ agent.human_summary }}</div>
