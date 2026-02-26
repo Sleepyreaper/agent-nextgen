@@ -3816,6 +3816,79 @@ def clear_training_data():
         }), 500
 
 
+@app.route('/api/training-data/duplicates', methods=['GET'])
+def get_training_duplicates():
+    """Find duplicate training records grouped by student name."""
+    try:
+        groups = db.find_training_duplicates()
+        total_duplicates = sum(g['count'] - 1 for g in groups)  # extras beyond 1 per group
+        return jsonify({
+            'status': 'success',
+            'groups': groups,
+            'total_groups': len(groups),
+            'total_duplicates': total_duplicates
+        })
+    except Exception as e:
+        logger.error(f"Error finding training duplicates: {e}", exc_info=True)
+        return jsonify({'status': 'error', 'error': str(e)}), 500
+
+
+@app.route('/api/training-data/bulk-delete', methods=['POST'])
+def bulk_delete_training():
+    """Delete multiple training records by application_id list.
+
+    Expects JSON body: {"application_ids": [1, 2, 3]}
+    Uses the cascading delete_student() for each record.
+    """
+    try:
+        data = request.get_json(force=True)
+        app_ids = data.get('application_ids', [])
+        if not app_ids or not isinstance(app_ids, list):
+            return jsonify({'status': 'error', 'error': 'application_ids list required'}), 400
+
+        deleted_count = 0
+        errors = []
+        for app_id in app_ids:
+            try:
+                # Verify it's a training record before deleting
+                application = db.get_application(app_id)
+                if not application:
+                    errors.append(f"ID {app_id}: not found")
+                    continue
+                if not application.get('is_training_example'):
+                    errors.append(f"ID {app_id}: not a training record")
+                    continue
+
+                # Also try to clean blob storage
+                try:
+                    from src.storage import StorageManager
+                    storage = StorageManager()
+                    storage.delete_student_files(str(app_id))
+                except Exception:
+                    pass
+
+                db.delete_student(app_id)
+                deleted_count += 1
+            except Exception as e:
+                errors.append(f"ID {app_id}: {str(e)}")
+
+        if deleted_count > 0:
+            refresh_foundry_dataset_async("training_bulk_delete")
+            global evaluator_agent
+            evaluator_agent = None
+
+        logger.info(f"Bulk deleted {deleted_count} training records (errors: {len(errors)})")
+        return jsonify({
+            'status': 'success',
+            'deleted': deleted_count,
+            'errors': errors,
+            'message': f'Deleted {deleted_count} duplicate training record(s)'
+        })
+    except Exception as e:
+        logger.error(f"Error in bulk delete: {e}", exc_info=True)
+        return jsonify({'status': 'error', 'error': str(e)}), 500
+
+
 # ============================================================================
 # HISTORICAL SCORES IMPORT
 # ============================================================================

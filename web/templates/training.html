@@ -66,6 +66,9 @@
             <button type="button" class="btn btn-secondary" onclick="clearTrainingData()">
                 🧹 Clear Training Data
             </button>
+            <button type="button" class="btn" style="background:#ef4444; color:white;" onclick="findDuplicates()">
+                🔍 Find Duplicates
+            </button>
             <button type="button" class="btn btn-info" onclick="fetchMiloInsights()">
                 📊 Milo Insights
             </button>
@@ -127,6 +130,26 @@
     {% include '_student_list.html' %}
 </div>
 
+<!-- Duplicates Modal -->
+<div id="dupModal" style="display:none; position:fixed; top:0; left:0; right:0; bottom:0; background:rgba(0,0,0,0.6); z-index:9999; justify-content:center; align-items:center;">
+    <div style="background:white; border-radius:12px; padding:2rem; max-width:720px; width:95%; max-height:80vh; overflow-y:auto; box-shadow:0 20px 60px rgba(0,0,0,0.3);">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1.5rem;">
+            <h3 style="margin:0; color:#991b1b;">🔍 Duplicate Training Records</h3>
+            <button onclick="closeDupModal()" style="background:none; border:none; font-size:1.5rem; cursor:pointer;">✕</button>
+        </div>
+        <div id="dupContent">
+            <p style="text-align:center; color:#6b7280;">Loading...</p>
+        </div>
+        <div id="dupActions" style="display:none; margin-top:1.5rem; padding-top:1rem; border-top:1px solid #e5e7eb; text-align:right;">
+            <span id="dupSelectedCount" style="color:#6b7280; margin-right:1rem;">0 selected</span>
+            <button onclick="closeDupModal()" class="btn btn-secondary" style="margin-right:0.5rem;">Cancel</button>
+            <button onclick="bulkDeleteSelected()" id="dupDeleteBtn" class="btn" style="background:#ef4444; color:white;" disabled>
+                🗑️ Delete Selected
+            </button>
+        </div>
+    </div>
+</div>
+
 <!-- Info Card -->
 <div class="card" style="background: #f0f9ff; border-left: 4px solid #3b82f6; margin-top: 2rem;">
     <h3 style="color: #1e40af; margin-bottom: 1rem;">💡 About Training Data</h3>
@@ -170,6 +193,114 @@ async function clearTrainingData() {
         location.reload();
     } catch (error) {
         alert(`Error: ${error.message}`);
+    }
+}
+
+// ---- Duplicates Feature ----
+function closeDupModal() {
+    document.getElementById('dupModal').style.display = 'none';
+}
+
+async function findDuplicates() {
+    const modal = document.getElementById('dupModal');
+    const content = document.getElementById('dupContent');
+    const actions = document.getElementById('dupActions');
+    modal.style.display = 'flex';
+    actions.style.display = 'none';
+    content.innerHTML = '<p style="text-align:center; color:#6b7280;">🔍 Scanning for duplicates...</p>';
+
+    try {
+        const r = await fetch('/api/training-data/duplicates');
+        const data = await r.json();
+        if (data.status !== 'success') {
+            content.innerHTML = '<p style="color:#ef4444;">Error: ' + (data.error || 'Unknown') + '</p>';
+            return;
+        }
+        if (!data.groups || data.groups.length === 0) {
+            content.innerHTML = '<div style="text-align:center; padding:2rem;"><div style="font-size:3rem;">✅</div><h3 style="color:#059669; margin:0.5rem 0;">No Duplicates Found</h3><p style="color:#6b7280;">All training records are unique.</p></div>';
+            return;
+        }
+
+        // Build grouped UI
+        let html = '<p style="margin-bottom:1rem; color:#92400e; font-weight:600;">Found <strong>' + data.total_duplicates + '</strong> duplicate record(s) across <strong>' + data.total_groups + '</strong> student(s). Check the duplicates you want to remove — the oldest record in each group is unmarked by default.</p>';
+
+        data.groups.forEach((group, gi) => {
+            html += '<div style="margin-bottom:1rem; border:1px solid #e5e7eb; border-radius:8px; overflow:hidden;">';
+            html += '<div style="background:#fef3c7; padding:0.75rem 1rem; font-weight:600; color:#92400e;">';
+            html += '👤 ' + (group.first_name || '') + ' ' + (group.last_name || '') + ' — ' + group.count + ' records';
+            html += '</div>';
+            html += '<table style="width:100%; border-collapse:collapse; font-size:0.9rem;">';
+            html += '<tr style="background:#f9fafb;"><th style="padding:0.5rem; text-align:left; width:40px;">Del</th><th style="padding:0.5rem; text-align:left;">ID</th><th style="padding:0.5rem; text-align:left;">Name</th><th style="padding:0.5rem; text-align:left;">School</th><th style="padding:0.5rem; text-align:left;">Status</th><th style="padding:0.5rem; text-align:left;">Uploaded</th></tr>';
+
+            group.records.forEach((rec, ri) => {
+                const isOldest = (ri === 0);  // keep oldest by default
+                const uploaded = rec.uploaded_date ? new Date(rec.uploaded_date).toLocaleDateString() : 'N/A';
+                const rowBg = isOldest ? '#f0fdf4' : '#fff';
+                html += '<tr style="background:' + rowBg + '; border-top:1px solid #f3f4f6;">';
+                html += '<td style="padding:0.5rem; text-align:center;"><input type="checkbox" class="dup-check" value="' + rec.application_id + '" ' + (isOldest ? '' : 'checked') + ' onchange="updateDupCount()"></td>';
+                html += '<td style="padding:0.5rem;">' + rec.application_id + '</td>';
+                html += '<td style="padding:0.5rem;">' + (rec.first_name || '') + ' ' + (rec.last_name || '') + (isOldest ? ' <span style="background:#dcfce7;color:#166534;padding:0.1rem 0.4rem;border-radius:4px;font-size:0.75rem;">keep</span>' : '') + '</td>';
+                html += '<td style="padding:0.5rem;">' + (rec.high_school || 'N/A') + '</td>';
+                html += '<td style="padding:0.5rem;">' + (rec.status || '') + '</td>';
+                html += '<td style="padding:0.5rem;">' + uploaded + '</td>';
+                html += '</tr>';
+            });
+            html += '</table></div>';
+        });
+
+        content.innerHTML = html;
+        actions.style.display = 'block';
+        updateDupCount();
+    } catch (err) {
+        content.innerHTML = '<p style="color:#ef4444;">Network error: ' + err.message + '</p>';
+    }
+}
+
+// Listen for Escape key
+document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape') closeDupModal();
+});
+document.getElementById('dupModal').addEventListener('click', function(e) {
+    if (e.target === this) closeDupModal();
+});
+
+function updateDupCount() {
+    const checked = document.querySelectorAll('.dup-check:checked');
+    document.getElementById('dupSelectedCount').textContent = checked.length + ' selected';
+    document.getElementById('dupDeleteBtn').disabled = checked.length === 0;
+}
+
+async function bulkDeleteSelected() {
+    const checked = document.querySelectorAll('.dup-check:checked');
+    const ids = Array.from(checked).map(cb => parseInt(cb.value));
+    if (ids.length === 0) return;
+
+    if (!confirm('Permanently delete ' + ids.length + ' duplicate training record(s)? This cannot be undone.')) return;
+
+    const btn = document.getElementById('dupDeleteBtn');
+    btn.textContent = 'Deleting...';
+    btn.disabled = true;
+
+    try {
+        const r = await fetch('/api/training-data/bulk-delete', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({application_ids: ids})
+        });
+        const data = await r.json();
+        if (data.status === 'success') {
+            alert('Deleted ' + data.deleted + ' duplicate record(s).' + (data.errors.length ? '\nErrors: ' + data.errors.join(', ') : ''));
+            closeDupModal();
+            location.reload();
+        } else {
+            alert('Error: ' + (data.error || 'Unknown'));
+            btn.textContent = '🗑️ Delete Selected';
+            btn.disabled = false;
+        }
+    } catch (err) {
+        alert('Network error: ' + err.message);
+        btn.textContent = '🗑️ Delete Selected';
+        btn.disabled = false;
     }
 }
 

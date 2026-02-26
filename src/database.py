@@ -68,6 +68,10 @@ class Database:
             f"a.{training_col} as is_training_example",
             f"a.{test_col} as is_test_data"
         ]
+        # Include first_name, last_name, high_school for the list template
+        for extra_col in ('first_name', 'last_name', 'high_school'):
+            if self.has_applications_column(extra_col):
+                select_cols.append(f"a.{extra_col}")
         # pull in agent_results as well so callers (including list view) can
         # compute a temporary merlin_score if necessary.  The field might be
         # JSONB or TEXT depending on migration state.
@@ -1668,6 +1672,60 @@ class Database:
             f"Deleted student {application_id}: {total} total rows across {len(deleted)} tables"
         )
         return {"deleted": deleted, "total": total}
+
+    def find_training_duplicates(self) -> List[Dict[str, Any]]:
+        """Find duplicate training records grouped by name.
+
+        Returns groups where LOWER(first_name) + LOWER(last_name) appear
+        more than once among training examples (is_training_example = TRUE).
+        Each group contains the list of matching application records so the
+        caller can decide which to keep and which to delete.
+        """
+        training_col = self.get_training_example_column() or "is_training_example"
+        test_col = self.get_test_data_column() or "is_test_data"
+
+        # Step 1: find duplicate name combos
+        dup_query = f"""
+            SELECT LOWER(COALESCE(first_name, '')) AS fn,
+                   LOWER(COALESCE(last_name, ''))  AS ln,
+                   COUNT(*) AS cnt
+            FROM applications
+            WHERE {training_col} = TRUE
+              AND ({test_col} = FALSE OR {test_col} IS NULL)
+            GROUP BY fn, ln
+            HAVING COUNT(*) > 1
+            ORDER BY COUNT(*) DESC, ln, fn
+        """
+        dup_groups = self.execute_query(dup_query)
+
+        if not dup_groups:
+            return []
+
+        # Step 2: for each group, fetch the individual records
+        results = []
+        for group in dup_groups:
+            fn = group["fn"]
+            ln = group["ln"]
+            detail_query = f"""
+                SELECT application_id, applicant_name, email, first_name, last_name,
+                       high_school, status, uploaded_date, was_selected,
+                       {training_col} AS is_training_example
+                FROM applications
+                WHERE {training_col} = TRUE
+                  AND ({test_col} = FALSE OR {test_col} IS NULL)
+                  AND LOWER(COALESCE(first_name, '')) = %s
+                  AND LOWER(COALESCE(last_name, ''))  = %s
+                ORDER BY uploaded_date ASC
+            """
+            records = self.execute_query(detail_query, (fn, ln))
+            results.append({
+                "first_name": records[0].get("first_name", fn) if records else fn,
+                "last_name": records[0].get("last_name", ln) if records else ln,
+                "count": group["cnt"],
+                "records": records,
+            })
+
+        return results
 
     def update_application_status(self, application_id: int, status: str) -> None:
         """Update a student's application status safely across schema variants."""
