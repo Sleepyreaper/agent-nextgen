@@ -81,3 +81,6 @@ opentelemetry-exporter-otlp-proto-grpc==1.28.2
 # Excel spreadsheet parsing for historical score import
 openpyxl>=3.1.0
 
+# Video frame extraction for Mirabel Video Analyzer
+opencv-python-headless>=4.8.0
+

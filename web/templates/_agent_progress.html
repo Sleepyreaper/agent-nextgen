@@ -270,6 +270,7 @@ const AgentProgress = (function() {
     // Agent registry — order matters for display
     const AGENTS = [
         { id: 'belle',                 emoji: '📖', name: 'Belle',            role: 'Document Extraction' },
+        { id: 'mirabel',               emoji: '🔮', name: 'Mirabel',          role: 'Video Analysis' },
         { id: 'smee',                  emoji: '🎩', name: 'Smee',             role: 'Orchestrator' },
         { id: 'naveen',                emoji: '🧑‍🔬', name: 'Naveen',           role: 'School Enrichment' },
         { id: 'application_reader',    emoji: '👸', name: 'Tiana',            role: 'Application Review' },
@@ -290,6 +291,8 @@ const AgentProgress = (function() {
         'milo': 'data_scientist',
         'merlin': 'student_evaluator',
         'school_enrichment': 'naveen',
+        'mirabel_video': 'mirabel',
+        'video_analyzer': 'mirabel',
     };
 
     let containerId = null;

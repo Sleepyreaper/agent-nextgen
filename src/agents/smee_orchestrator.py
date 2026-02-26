@@ -956,6 +956,14 @@ class SmeeOrchestrator(BaseAgent):
         print(f"DEBUG STEP1: _original_document_text set to {len(application.get('_original_document_text', ''))} chars")
         
         document_name = application.get('file_name', 'application_document')
+        # Check if this application was sourced from a video (Mirabel extraction)
+        is_video_source = (
+            document_name.lower().endswith('.mp4') or
+            application.get('_source') == 'mirabel_video'
+        )
+        if is_video_source:
+            logger.info("🔮 SMEE: Processing video-sourced application (Mirabel extraction)")
+            application['_is_video_source'] = True
         # NOTE: avoid creating a placeholder application record here. We need
         # BELLE extraction to perform reliable student matching. Creating a
         # placeholder before matching can lead to two inserts (placeholder +

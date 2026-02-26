@@ -26,6 +26,15 @@ fi
 echo "[$(date '+%Y-%m-%d %H:%M:%S')] Verifying key packages..."
 python -c "import requests; print('  requests OK')" || echo "  requests MISSING"
 python -c "import flask; print('  flask OK')" || echo "  flask MISSING"
+python -c "import cv2; print('  opencv OK')" || echo "  opencv MISSING (video analysis unavailable)"
+
+# Ensure ffmpeg is available for Mirabel video audio extraction
+if command -v ffmpeg &>/dev/null; then
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] ffmpeg available: $(ffmpeg -version 2>&1 | head -1)"
+else
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] ffmpeg not found — installing..."
+    apt-get update -qq && apt-get install -y -qq ffmpeg 2>&1 | tail -3 || echo "  ffmpeg install failed (audio transcription unavailable)"
+fi
 
 export PYTHONUNBUFFERED=1
 

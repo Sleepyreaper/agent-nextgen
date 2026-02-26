@@ -61,6 +61,7 @@ from src.agents.merlin_student_evaluator import MerlinStudentEvaluator
 from src.agents.gaston_evaluator import GastonEvaluator
 from src.agents.bashful_agent import BashfulAgent
 from src.agents.belle_document_analyzer import BelleDocumentAnalyzer
+from src.agents.mirabel_video_analyzer import MirabelVideoAnalyzer
 from src.agents.milo_data_scientist import MiloDataScientist
 from src.agents.naveen_school_data_scientist import NaveenSchoolDataScientist
 from src.agents.moana_school_context import MoanaSchoolContext
@@ -268,6 +269,7 @@ def get_ai_client_mini():
 evaluator_agent = None
 orchestrator_agent = None
 belle_analyzer = None
+mirabel_analyzer = None
 feedback_agent = None
 
 def get_evaluator():
@@ -321,6 +323,20 @@ def get_belle():
             model=model_name
         )
     return belle_analyzer
+
+
+def get_mirabel():
+    """Get or create Mirabel video analyzer."""
+    global mirabel_analyzer
+    if not mirabel_analyzer:
+        client = get_ai_client()
+        # Mirabel uses the vision model (GPT-4o) for frame analysis
+        vision_model = config.foundry_vision_model_name or 'gpt-4o'
+        mirabel_analyzer = MirabelVideoAnalyzer(
+            client=client,
+            model=vision_model
+        )
+    return mirabel_analyzer
 
 
 def get_feedback_agent():
@@ -845,7 +861,7 @@ def upload():
                     continue
 
                 if not DocumentProcessor.validate_file_type(file.filename):
-                    flash(f"Invalid file type: {file.filename}. Please upload PDF, DOCX, or TXT files.", 'error')
+                    flash(f"Invalid file type: {file.filename}. Please upload PDF, DOCX, TXT, or MP4 files.", 'error')
                     continue
 
                 valid_files += 1
@@ -854,24 +870,54 @@ def upload():
                 temp_path = os.path.join(app.config['UPLOAD_FOLDER'], f"temp_{temp_id}_{filename}")
                 file.save(temp_path)
 
-                # Use AI vision OCR for image-based PDF pages (e.g., scanned transcripts)
-                ocr_callback = _make_ocr_callback()
-                application_text, file_type = DocumentProcessor.process_document(
-                    temp_path, ocr_callback=ocr_callback
-                )
+                # ── Route: Video files → Mirabel, Documents → Belle ──
+                is_video = DocumentProcessor.is_video_file(filename)
 
-                with open(temp_path, 'rb') as handle:
-                    file_content = handle.read()
+                if is_video:
+                    # Video file: use Mirabel Video Analyzer
+                    with open(temp_path, 'rb') as handle:
+                        file_content = handle.read()
 
-                try:
-                    os.remove(temp_path)
-                except Exception:
-                    pass
+                    try:
+                        mirabel = get_mirabel()
+                        doc_analysis = mirabel.analyze_video(temp_path, filename)
+                        application_text = doc_analysis.get('agent_fields', {}).get('application_text', '')
+                        file_type = 'mp4'
+                    except Exception as e:
+                        logger.warning(f"Mirabel video analysis failed: {e}")
+                        doc_analysis = {
+                            "document_type": "video_submission",
+                            "confidence": 0,
+                            "student_info": {},
+                            "extracted_data": {},
+                            "agent_fields": {}
+                        }
+                        application_text = ""
+                        file_type = 'mp4'
+                    finally:
+                        try:
+                            os.remove(temp_path)
+                        except Exception:
+                            pass
+                else:
+                    # Document file: use Belle Document Analyzer
+                    ocr_callback = _make_ocr_callback()
+                    application_text, file_type = DocumentProcessor.process_document(
+                        temp_path, ocr_callback=ocr_callback
+                    )
 
-                try:
-                    doc_analysis = belle.analyze_document(application_text, filename)
-                except Exception as e:
-                    logger.warning(f"Belle analysis failed: {e}")
+                    with open(temp_path, 'rb') as handle:
+                        file_content = handle.read()
+
+                    try:
+                        os.remove(temp_path)
+                    except Exception:
+                        pass
+
+                    try:
+                        doc_analysis = belle.analyze_document(application_text, filename)
+                    except Exception as e:
+                        logger.warning(f"Belle analysis failed: {e}")
                     doc_analysis = {
                         "document_type": "unknown",
                         "confidence": 0,
@@ -1327,6 +1373,7 @@ def _aggregate_documents(documents: list[Dict[str, Any]]) -> Dict[str, Optional[
         'application': 'application_text',
         'personal_statement': 'application_text',
         'essay': 'application_text',
+        'video_submission': 'application_text',
         'transcript': 'transcript_text',
         'grades': 'transcript_text',
         'letter_of_recommendation': 'recommendation_text'

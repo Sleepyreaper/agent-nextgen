@@ -172,6 +172,11 @@ class Config:
             "foundry-vision-model-name",
             "FOUNDRY_VISION_MODEL_NAME"
         ) or os.getenv("FOUNDRY_VISION_MODEL_NAME") or "gpt-4o"
+        # Whisper model deployment name (for audio transcription in video analysis)
+        self.foundry_whisper_model_name: Optional[str] = self._get_secret(
+            "foundry-whisper-model-name",
+            "FOUNDRY_WHISPER_MODEL_NAME"
+        ) or os.getenv("FOUNDRY_WHISPER_MODEL_NAME")
         # Foundry API version (allow explicit override from Key Vault or env)
         self.foundry_api_version: Optional[str] = self._get_secret(
             "foundry-api-version",

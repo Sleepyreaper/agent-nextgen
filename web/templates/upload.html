@@ -21,7 +21,7 @@
                  onmouseover="this.style.background='#f0f9ff'; this.style.borderColor='#3b82f6'"
                  onmouseout="this.style.background=''; this.style.borderColor='#667eea'"
                  onclick="document.getElementById('fileInput').click()">
-                  <input type="file" id="fileInput" name="file" required multiple accept=".pdf,.docx,.doc,.txt,.text"
+                  <input type="file" id="fileInput" name="file" required multiple accept=".pdf,.docx,.doc,.txt,.text,.mp4"
                        style="display: none;" onchange="updateFileName(this)">
                 <svg style="width: 48px; height: 48px; margin-bottom: 1rem;" viewBox="0 0 24 24" fill="none" stroke="#667eea" stroke-width="2">
                     <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
@@ -32,7 +32,7 @@
                     Drag & drop or click to select files
                 </p>
                 <p style="color: #6b7280; font-size: 0.9rem;">
-                    Supported: PDF, DOCX, DOC, TXT (Max 16MB each)
+                    Supported: PDF, DOCX, DOC, TXT, MP4 (Max 16MB each)
                 </p>
                 <p id="fileName" style="color: #10b981; font-weight: 600; margin-top: 1rem; display: none;"></p>
             </div>
