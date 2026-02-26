@@ -177,6 +177,16 @@ class Config:
             "foundry-whisper-model-name",
             "FOUNDRY_WHISPER_MODEL_NAME"
         ) or os.getenv("FOUNDRY_WHISPER_MODEL_NAME")
+        # Whisper endpoint (separate Azure OpenAI account — Whisper requires specific regions)
+        self.whisper_endpoint: Optional[str] = self._get_secret(
+            "whisper-endpoint",
+            "WHISPER_ENDPOINT"
+        ) or os.getenv("WHISPER_ENDPOINT")
+        # Whisper API key (if using key-based auth; leave empty for Entra ID / Managed Identity)
+        self.whisper_api_key: Optional[str] = self._get_secret(
+            "whisper-api-key",
+            "WHISPER_API_KEY"
+        ) or os.getenv("WHISPER_API_KEY")
         # Foundry API version (allow explicit override from Key Vault or env)
         self.foundry_api_version: Optional[str] = self._get_secret(
             "foundry-api-version",

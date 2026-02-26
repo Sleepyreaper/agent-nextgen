@@ -87,6 +87,8 @@ class MirabelVideoAnalyzer(BaseAgent):
         self.vision_model = model or config.foundry_vision_model_name or "gpt-4o"
         # Use whisper model for audio transcription if available
         self.whisper_model = getattr(config, 'foundry_whisper_model_name', None)
+        # Whisper may live on a separate Azure OpenAI endpoint (different region)
+        self.whisper_client = self._create_whisper_client()
         self.db_connection = db_connection
         self.emoji = "🔮"
         self.description = "Analyzes video submissions and extracts applicant information"
@@ -104,6 +106,43 @@ class MirabelVideoAnalyzer(BaseAgent):
                 "Video frame extraction will be unavailable. "
                 "Install with: pip install opencv-python-headless"
             )
+
+    def _create_whisper_client(self):
+        """Create a separate Azure OpenAI client for Whisper if configured.
+
+        Whisper may be deployed to a different Azure region/account than the
+        main Foundry endpoint. When ``WHISPER_ENDPOINT`` is set we build a
+        dedicated client; otherwise we fall back to the main AI client.
+        """
+        whisper_endpoint = getattr(config, 'whisper_endpoint', None)
+        if not whisper_endpoint:
+            # No separate endpoint — use main client for Whisper calls
+            return self.client
+
+        try:
+            whisper_api_key = getattr(config, 'whisper_api_key', None)
+            if whisper_api_key:
+                # Key-based auth
+                from openai import AzureOpenAI
+                return AzureOpenAI(
+                    azure_endpoint=whisper_endpoint,
+                    api_key=whisper_api_key,
+                    api_version="2024-06-01",
+                )
+            else:
+                # Entra ID / Managed Identity auth
+                from azure.identity import DefaultAzureCredential
+                from openai import AzureOpenAI
+                credential = DefaultAzureCredential()
+                token = credential.get_token("https://cognitiveservices.azure.com/.default")
+                return AzureOpenAI(
+                    azure_endpoint=whisper_endpoint,
+                    api_key=token.token,
+                    api_version="2024-06-01",
+                )
+        except Exception as e:
+            logger.warning("MIRABEL: Failed to create Whisper client: %s", e)
+            return self.client
 
     async def process(self, message: str) -> str:
         """Process a message (required by BaseAgent ABC)."""
@@ -372,12 +411,13 @@ class MirabelVideoAnalyzer(BaseAgent):
         3. Return None (frames-only analysis)
         """
         # Method 1: OpenAI Whisper API
-        if self.whisper_model and self.client:
+        whisper_client = self.whisper_client or self.client
+        if self.whisper_model and whisper_client:
             try:
                 with open(audio_path, "rb") as audio_file:
                     with tool_call(self.name, "whisper_transcription"):
                         # The Azure OpenAI / Foundry client supports audio.transcriptions
-                        response = self.client.audio.transcriptions.create(
+                        response = whisper_client.audio.transcriptions.create(
                             model=self.whisper_model,
                             file=audio_file,
                             response_format="text",
