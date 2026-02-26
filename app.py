@@ -296,7 +296,7 @@ def get_evaluator():
                 client_type = None
             candidate_attrs = []
         training_examples = db.get_training_examples()
-        model_name = config.foundry_model_name if config.model_provider == "foundry" else config.deployment_name
+        model_name = config.model_tier_workhorse  # Tier 2: structured evaluation scoring
         evaluator_agent = GastonEvaluator(
             name="GastonEvaluator",
             client=client,
@@ -317,7 +317,7 @@ def get_belle():
         client_type = None
         candidate_attrs = []
         client = get_ai_client()
-        model_name = config.foundry_model_name if config.model_provider == "foundry" else config.deployment_name
+        model_name = config.model_tier_lightweight  # Tier 3: document classification
         belle_analyzer = BelleDocumentAnalyzer(
             client=client,
             model=model_name
@@ -344,7 +344,7 @@ def get_feedback_agent():
     global feedback_agent
     if not feedback_agent:
         client = get_ai_client()
-        model_name = config.foundry_model_name if config.model_provider == "foundry" else config.deployment_name
+        model_name = config.model_tier_lightweight  # Tier 3: feedback triage
         # Use alias so callers don't need to know the renamed class
         feedback_agent = FeedbackTriageAgent(
             name="Scuttle Feedback Triage",
@@ -360,11 +360,19 @@ def get_orchestrator():
     if not orchestrator_agent:
         client = get_ai_client()
         client_mini = get_ai_client_mini()
-        model_name = config.foundry_model_name if config.model_provider == "foundry" else config.deployment_name
+        # Tiered model selection — see config.py for deployment name mappings
+        # Tier 1 (Premium): gpt-4.1 — complex reasoning (Rapunzel, Milo)
+        # Tier 1+ (Merlin): MerlinGPT5Mini — final evaluator on GPT-5-mini
+        # Tier 2 (Workhorse): WorkForce4.1mini — structured extraction
+        # Tier 3 (Lightweight): LightWork5Nano — classification/triage
+        model_premium = config.model_tier_premium
+        model_merlin = config.model_tier_merlin
+        model_workhorse = config.model_tier_workhorse
+        model_lightweight = config.model_tier_lightweight
         orchestrator_agent = SmeeOrchestrator(
             name="Smee",
             client=client,
-            model=model_name,
+            model=model_workhorse,  # Tier 2: orchestration & human summaries
             db_connection=db
         )
 
@@ -374,7 +382,7 @@ def get_orchestrator():
             TianaApplicationReader(
                 name="Tiana Application Reader",
                 client=client,
-                model=model_name,
+                model=model_workhorse,  # Tier 2: structured profile extraction
                 db_connection=db
             )
         )
@@ -383,7 +391,7 @@ def get_orchestrator():
             RapunzelGradeReader(
                 name="Rapunzel Grade Reader",
                 client=client,
-                model=model_name,
+                model=model_premium,  # Tier 1: complex transcript parsing
                 db_connection=db
             )
         )
@@ -392,7 +400,7 @@ def get_orchestrator():
             MoanaSchoolContext(
                 name="Moana School Context Analyzer",
                 client=client,
-                model=model_name,
+                model=model_workhorse,  # Tier 2: school analysis
                 db_connection=db
             )
         )
@@ -401,7 +409,7 @@ def get_orchestrator():
             MulanRecommendationReader(
                 name="Mulan Recommendation Reader",
                 client=client,
-                model=model_name,
+                model=model_workhorse,  # Tier 2: recommendation extraction
                 db_connection=db
             )
         )
@@ -410,7 +418,7 @@ def get_orchestrator():
             MerlinStudentEvaluator(
                 name="Merlin Student Evaluator",
                 client=client,
-                model=model_name,
+                model=model_merlin,  # Tier 1+: GPT-5-mini final evaluator
                 db_connection=db
             )
         )
@@ -418,8 +426,8 @@ def get_orchestrator():
             "data_scientist",
             MiloDataScientist(
                 name="Milo Data Scientist",
-                client=client_mini,
-                model=config.deployment_name_mini or config.foundry_model_name,
+                client=client,
+                model=model_premium,  # Tier 1: historical pattern analysis
                 db_connection=db
             )
         )
@@ -427,8 +435,8 @@ def get_orchestrator():
             "naveen",
             NaveenSchoolDataScientist(
                 name="Naveen School Data Scientist",
-                client=client_mini,
-                model=config.deployment_name_mini or config.foundry_model_name
+                client=client,
+                model=model_workhorse  # Tier 2: school enrichment
             )
         )
         orchestrator_agent.register_agent(
@@ -449,7 +457,7 @@ def get_orchestrator():
             BashfulAgent(
                 name="Bashful Agent",
                 client=client,
-                model=model_name,
+                model=model_workhorse,  # Tier 2: general assistant
                 system_prompt="You are Bashful, a helpful assistant in the evaluation system."
             )
         )
@@ -458,7 +466,7 @@ def get_orchestrator():
             BelleDocumentAnalyzer(
                 name="Belle Document Analyzer",
                 client=client,
-                model=model_name,
+                model=model_lightweight,  # Tier 3: classification & entity extraction
                 db_connection=db
             )
         )
@@ -467,7 +475,7 @@ def get_orchestrator():
             ScuttleFeedbackTriageAgent(
                 name="Scuttle Feedback Triage",
                 client=client,
-                model=model_name
+                model=model_lightweight  # Tier 3: feedback triage
             )
         )
 
@@ -5758,12 +5766,12 @@ def trigger_school_analysis(school_id):
             _start = time.time()
             try:
                 from src.agents.naveen_school_data_scientist import NaveenSchoolDataScientist
-                # Use Naveen School Data Scientist agent with mini model and client
+                # Use Naveen School Data Scientist agent with workhorse model
                 client_mini = get_ai_client_mini()
                 scientist = NaveenSchoolDataScientist(
                     name="Naveen School Data Scientist",
                     client=client_mini,
-                    model=config.deployment_name_mini
+                    model=config.model_tier_workhorse  # Tier 2
                 )
                 
                 # Get web sources
@@ -5888,7 +5896,7 @@ def trigger_school_analysis(school_id):
                 )
                 telemetry.log_agent_execution(
                     agent_name='Naveen School Data Scientist',
-                    model=config.deployment_name_mini or 'o4MiniAgent',
+                    model=config.model_tier_workhorse,
                     success=analysis_status != 'error',
                     processing_time_ms=(time.time() - _start) * 1000,
                     result_summary={'school_id': school_id, 'opportunity_score': opp_score}
@@ -5897,7 +5905,7 @@ def trigger_school_analysis(school_id):
                 logger.error(f"Error in background analysis for school {school_id}: {e}", exc_info=True)
                 telemetry.log_agent_execution(
                     agent_name='Naveen School Data Scientist',
-                    model=config.deployment_name_mini or 'o4MiniAgent',
+                    model=config.model_tier_workhorse,
                     success=False,
                     processing_time_ms=(time.time() - _start) * 1000,
                     result_summary={'school_id': school_id, 'error': str(e)}
@@ -5938,7 +5946,7 @@ def trigger_school_analysis_sync(school_id):
         scientist = NaveenSchoolDataScientist(
             name="Naveen School Data Scientist",
             client=client_mini,
-            model=config.deployment_name_mini
+            model=config.model_tier_workhorse  # Tier 2
         )
         
         web_sources = school.get('web_sources_analyzed', [])
@@ -6198,7 +6206,7 @@ def enrich_pending_schools():
                 scientist = NaveenSchoolDataScientist(
                     name="Naveen School Data Scientist",
                     client=client_mini,
-                    model=config.deployment_name_mini
+                    model=config.model_tier_workhorse  # Tier 2
                 )
                 workflow = SchoolDataWorkflow(db)
                 
@@ -6302,7 +6310,7 @@ def batch_naveen_moana():
             scientist = NaveenSchoolDataScientist(
                 name='Naveen School Data Scientist',
                 client=client_mini,
-                model=config.deployment_name_mini
+                model=config.model_tier_workhorse  # Tier 2
             )
             workflow = SchoolDataWorkflow(db)
 
@@ -6836,6 +6844,13 @@ def get_telemetry_status():
                 'api_version': getattr(config, 'api_version', None),
                 'api_version_mini': getattr(config, 'api_version_mini', None),
                 'endpoint_host': endpoint_hint,
+                'model_tiers': {
+                    'premium': getattr(config, 'model_tier_premium', None),
+                    'merlin': getattr(config, 'model_tier_merlin', None),
+                    'workhorse': getattr(config, 'model_tier_workhorse', None),
+                    'lightweight': getattr(config, 'model_tier_lightweight', None),
+                    'vision': getattr(config, 'foundry_vision_model_name', None),
+                }
             }
         })
     except Exception as e:

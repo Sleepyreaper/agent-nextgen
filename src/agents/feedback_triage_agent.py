@@ -23,7 +23,7 @@ class ScuttleFeedbackTriageAgent(BaseAgent):
     def __init__(self, name: str = "Scuttle Feedback Triage", client: Any = None, model: Optional[str] = None):
         super().__init__(name, client)
         # use configured model if none provided
-        self.model = model or config.foundry_model_name or config.deployment_name
+        self.model = model or config.model_tier_lightweight or config.foundry_model_name or config.deployment_name
         self.model_display = self.model or "gpt-4"  # Default display model
 
     async def analyze_feedback(

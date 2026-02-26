@@ -83,7 +83,7 @@ class NaveenSchoolDataScientist(BaseAgent):
         """Initialize Naveen with AI client."""
         super().__init__(name=name, client=client)
         # resolve default model from configuration (FOUNDRY_MODEL_NAME or deployment)
-        self.model = model or config.foundry_model_name or config.deployment_name
+        self.model = model or config.model_tier_workhorse or config.foundry_model_name or config.deployment_name
         self.model_display = self.model or "unknown"  # Display-friendly name
 
     def analyze_school(

@@ -30,7 +30,7 @@ class GastonEvaluator(BaseAgent):
             training_examples: List of excellent application examples
         """
         super().__init__(name, client)
-        self.model = model or config.foundry_model_name or config.deployment_name
+        self.model = model or config.model_tier_workhorse or config.foundry_model_name or config.deployment_name
         self.training_examples = training_examples or []
     
     def set_training_examples(self, examples: List[Dict[str, Any]]):

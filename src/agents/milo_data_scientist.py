@@ -45,7 +45,7 @@ class MiloDataScientist(BaseAgent):
     ):
         super().__init__(name, client)
         # default to configured Foundry model or deployment name
-        self.model = model or config.foundry_model_name or config.deployment_name
+        self.model = model or config.model_tier_premium or config.foundry_model_name or config.deployment_name
         self.model_display = self.model or "unknown"
         self.db = db_connection
         self.max_samples_per_group = max_samples_per_group

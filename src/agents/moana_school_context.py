@@ -50,7 +50,7 @@ class MoanaSchoolContext(BaseAgent):
         """
         super().__init__(name, client)
         # use configured model if none specified
-        self.model = model or config.foundry_model_name or config.deployment_name
+        self.model = model or config.model_tier_workhorse or config.foundry_model_name or config.deployment_name
         self.db = db_connection
         
         # Cache for school lookups to avoid redundant API calls

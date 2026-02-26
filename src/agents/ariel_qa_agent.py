@@ -35,7 +35,8 @@ class ArielQAAgent(BaseAgent):
         """
         super().__init__("ARIEL", "Q&A Agent")
         # resolved model name for transparency/telemetry
-        self.model = model or config.foundry_model_name or config.deployment_name
+        # Ariel is Tier 2 (workhorse) — conversational Q&A with 30s latency target
+        self.model = model or config.model_tier_workhorse or config.foundry_model_name or config.deployment_name
         # Use the module-level `db` singleton to ensure we share the same
         # database connection used by the Flask app and upload endpoints.
         from src.database import db as shared_db

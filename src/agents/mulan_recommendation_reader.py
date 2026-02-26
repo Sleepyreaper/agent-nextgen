@@ -20,7 +20,7 @@ class MulanRecommendationReader(BaseAgent):
 
     def __init__(self, name: str, client: AzureOpenAI, model: Optional[str] = None, db_connection=None):
         super().__init__(name, client)
-        self.model = model or config.foundry_model_name or config.deployment_name
+        self.model = model or config.model_tier_workhorse or config.foundry_model_name or config.deployment_name
         self.db = db_connection
 
     async def parse_recommendation(self, recommendation_text: str, applicant_name: str = "Unknown", application_id: Optional[int] = None) -> Dict[str, Any]:

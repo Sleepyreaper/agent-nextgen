@@ -99,7 +99,25 @@ class Config:
         # Load configuration
         self.azure_openai_endpoint: str = self._get_secret("azure-openai-endpoint", "AZURE_OPENAI_ENDPOINT")
         self.deployment_name: str = self._get_secret("azure-deployment-name", "AZURE_DEPLOYMENT_NAME")
-        self.deployment_name_mini: str = self._get_secret("azure-deployment-name-mini", "AZURE_DEPLOYMENT_NAME_MINI") or "o4MiniAgent"
+        self.deployment_name_mini: str = self._get_secret("azure-deployment-name-mini", "AZURE_DEPLOYMENT_NAME_MINI") or "WorkForce4.1mini"
+
+        # Tiered model deployments — see MODEL_AGENT_CONFIGURATION.md for rationale
+        # Tier 1 (Premium): complex reasoning — Merlin, Rapunzel, Milo
+        self.model_tier_premium: str = self._get_secret(
+            "model-tier-premium", "MODEL_TIER_PREMIUM"
+        ) or os.getenv("MODEL_TIER_PREMIUM") or "gpt-4.1"
+        # Tier 1+ (Experimental): GPT-5-mini for Merlin final evaluator
+        self.model_tier_merlin: str = self._get_secret(
+            "model-tier-merlin", "MODEL_TIER_MERLIN"
+        ) or os.getenv("MODEL_TIER_MERLIN") or "MerlinGPT5Mini"
+        # Tier 2 (Workhorse): structured extraction — Tiana, Mulan, Moana, Gaston, Smee, Naveen, Ariel
+        self.model_tier_workhorse: str = self._get_secret(
+            "model-tier-workhorse", "MODEL_TIER_WORKHORSE"
+        ) or os.getenv("MODEL_TIER_WORKHORSE") or "WorkForce4.1mini"
+        # Tier 3 (Lightweight): classification/triage — Belle, Scuttle
+        self.model_tier_lightweight: str = self._get_secret(
+            "model-tier-lightweight", "MODEL_TIER_LIGHTWEIGHT"
+        ) or os.getenv("MODEL_TIER_LIGHTWEIGHT") or "LightWork5Nano"
         self.api_version: str = self._get_secret("azure-api-version", "AZURE_API_VERSION") or "2025-04-14"
         self.api_version_mini: str = self._get_secret("azure-api-version-mini", "AZURE_API_VERSION_MINI") or "2025-04-16"
         self.azure_openai_api_key: Optional[str] = self._get_secret("azure-openai-api-key", "AZURE_OPENAI_API_KEY")

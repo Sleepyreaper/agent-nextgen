@@ -41,7 +41,7 @@ class RapunzelGradeReader(BaseAgent):
             db_connection: Database connection for saving results
         """
         super().__init__(name, client)
-        self.model = model or config.foundry_model_name or config.deployment_name
+        self.model = model or config.model_tier_premium or config.foundry_model_name or config.deployment_name
         self.db = db_connection
         self.extraction_focus = [
             "GPA/Grade Point Average",

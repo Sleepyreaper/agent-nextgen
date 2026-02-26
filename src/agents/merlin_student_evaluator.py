@@ -16,7 +16,7 @@ class MerlinStudentEvaluator(BaseAgent):
 
     def __init__(self, name: str, client: AzureOpenAI, model: Optional[str] = None, db_connection=None):
         super().__init__(name, client)
-        self.model = model or config.foundry_model_name or config.deployment_name
+        self.model = model or config.model_tier_merlin or config.foundry_model_name or config.deployment_name
         self.db = db_connection
 
     async def evaluate_student(

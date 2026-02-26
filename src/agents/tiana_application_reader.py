@@ -22,7 +22,7 @@ class TianaApplicationReader(BaseAgent):
     def __init__(self, name: str, client: AzureOpenAI, model: Optional[str] = None, db_connection=None):
         super().__init__(name, client)
         # allow model override; otherwise use global config
-        self.model = model or config.foundry_model_name or config.deployment_name
+        self.model = model or config.model_tier_workhorse or config.foundry_model_name or config.deployment_name
         self.db = db_connection
 
     async def parse_application(self, application: Dict[str, Any]) -> Dict[str, Any]:

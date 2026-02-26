@@ -44,7 +44,7 @@ class BelleDocumentAnalyzer(BaseAgent):
             db_connection: Database connection (optional)
         """
         super().__init__(name=name, client=client)
-        self.model = model or config.foundry_model_name or config.deployment_name
+        self.model = model or config.model_tier_lightweight or config.foundry_model_name or config.deployment_name
         self.db_connection = db_connection
         self.emoji = "📖"
         self.description = "Analyzes documents and extracts structured data"
