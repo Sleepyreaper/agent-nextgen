@@ -2837,6 +2837,9 @@ def student_detail(application_id):
                         agent_results[k] = v
         except Exception as e:
             logger.debug(f"Failed to merge application.agent_results: {e}")
+
+        # Remove gaston from agent_results — agent was removed from workflow
+        agent_results.pop('gaston', None)
         
         # Get document download info
         document_path = application.get('evaluation_document_path')
