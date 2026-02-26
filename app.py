@@ -79,6 +79,16 @@ def inject_app_metadata():
         'app_version': config.app_version
     }
 
+
+@app.after_request
+def add_no_cache_headers(response):
+    """Prevent browser caching of HTML pages so template changes take effect immediately."""
+    if response.content_type and 'text/html' in response.content_type:
+        response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
+        response.headers['Pragma'] = 'no-cache'
+        response.headers['Expires'] = '0'
+    return response
+
 # Initialize telemetry FIRST so the TracerProvider is set before instrumentors run.
 # When Azure Monitor is configured, configure_azure_monitor() auto-instruments
 # Flask, requests, psycopg2, and urllib — so manual instrumentors are a safe no-op.
