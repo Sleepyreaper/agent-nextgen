@@ -83,6 +83,22 @@ ALTER TABLE school_enriched_data ADD COLUMN IF NOT EXISTS
 ALTER TABLE school_enriched_data ADD COLUMN IF NOT EXISTS 
   last_moana_validation TIMESTAMP;
 
+-- NAEP (Nation's Report Card) state-level assessment data
+ALTER TABLE school_enriched_data ADD COLUMN IF NOT EXISTS
+  naep_state_data JSONB;           -- Full NAEP profile returned by NAEPDataClient
+ALTER TABLE school_enriched_data ADD COLUMN IF NOT EXISTS
+  naep_math_mean_grade8 NUMERIC(6,2);  -- State grade-8 math composite mean
+ALTER TABLE school_enriched_data ADD COLUMN IF NOT EXISTS
+  naep_reading_mean_grade8 NUMERIC(6,2); -- State grade-8 reading composite mean
+ALTER TABLE school_enriched_data ADD COLUMN IF NOT EXISTS
+  naep_proficient_pct_math NUMERIC(5,2); -- % at or above proficient (math g8)
+ALTER TABLE school_enriched_data ADD COLUMN IF NOT EXISTS
+  naep_proficient_pct_reading NUMERIC(5,2); -- % at or above proficient (reading g8)
+ALTER TABLE school_enriched_data ADD COLUMN IF NOT EXISTS
+  naep_data_year INTEGER;           -- NAEP assessment year
+ALTER TABLE school_enriched_data ADD COLUMN IF NOT EXISTS
+  naep_fetched_at TIMESTAMP;
+
 -- Web sources and links for each school
 CREATE TABLE IF NOT EXISTS school_web_sources (
     source_id SERIAL PRIMARY KEY,

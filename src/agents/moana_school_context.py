@@ -4,6 +4,15 @@ from typing import Dict, List, Any, Optional, Tuple
 from openai import AzureOpenAI
 from src.agents.base_agent import BaseAgent
 from src.agents.telemetry_helpers import agent_run
+
+try:
+    from src.services.naep_data_client import get_naep_client
+except Exception:
+    try:
+        from services.naep_data_client import get_naep_client
+    except Exception:
+        get_naep_client = None
+
 import re
 import json
 
@@ -260,6 +269,38 @@ class MoanaSchoolContext(BaseAgent):
                 student_name
             )
             
+            # Fetch live NAEP state-level data for additional context
+            naep_context = {}
+            state_code = school_enrichment.get('state_code', '').upper()
+            if state_code and get_naep_client:
+                try:
+                    naep_client = get_naep_client()
+                    naep_profile = naep_client.get_state_education_profile(state_code)
+                    if not naep_profile.get('error'):
+                        naep_context = {
+                            'naep_source': 'Nation\'s Report Card (NAEP)',
+                            'naep_year': naep_profile.get('year'),
+                            'naep_state_profile': naep_profile,
+                        }
+                        # Extract headline numbers for easy access
+                        math_g8 = (naep_profile.get('subjects', {})
+                                   .get('mathematics', {})
+                                   .get('grade_8', {}))
+                        reading_g8 = (naep_profile.get('subjects', {})
+                                      .get('reading', {})
+                                      .get('grade_8', {}))
+                        naep_context['state_math_mean_g8'] = (
+                            math_g8.get('state_mean', {}).get('All students'))
+                        naep_context['national_math_mean_g8'] = (
+                            math_g8.get('national_mean', {}).get('All students'))
+                        naep_context['state_reading_mean_g8'] = (
+                            reading_g8.get('state_mean', {}).get('All students'))
+                        naep_context['national_reading_mean_g8'] = (
+                            reading_g8.get('national_mean', {}).get('All students'))
+                        print(f"  📊 NAEP data loaded for {state_code}")
+                except Exception as naep_err:
+                    print(f"  ⚠ NAEP data unavailable: {naep_err}")
+
             # Build school profile from enrichment
             school_profile = {
                 'school_name': school_enrichment.get('school_name'),
@@ -316,12 +357,14 @@ class MoanaSchoolContext(BaseAgent):
                 'program_participation': program_participation,
                 'school_resources': school_resources,
                 'opportunity_scores': scores,
+                'naep_state_data': naep_context if naep_context else None,
                 'contextual_summary': self._build_summary_from_enrichment(
                     student_name,
                     school_enrichment,
                     program_participation,
                     scores,
-                    rapunzel_grades_data
+                    rapunzel_grades_data,
+                    naep_context=naep_context,
                 ),
                 'model_used': self.model,
                 'data_source': 'enriched_aurora'  # Track that this used Aurora data
@@ -434,7 +477,8 @@ class MoanaSchoolContext(BaseAgent):
         school_enrichment: Dict[str, Any],
         program_participation: Dict[str, Any],
         scores: Dict[str, float],
-        rapunzel_grades_data: Optional[Dict[str, Any]] = None
+        rapunzel_grades_data: Optional[Dict[str, Any]] = None,
+        naep_context: Optional[Dict[str, Any]] = None,
     ) -> str:
         """Build contextual summary using enriched school data."""
         school_name = school_enrichment.get('school_name', 'their school')
@@ -476,6 +520,29 @@ class MoanaSchoolContext(BaseAgent):
                 f"{student_name} shows strong academic performance within their school context."
             )
         
+        # NAEP state benchmarks
+        if naep_context:
+            state_math = naep_context.get('state_math_mean_g8')
+            nat_math = naep_context.get('national_math_mean_g8')
+            state_read = naep_context.get('state_reading_mean_g8')
+            nat_read = naep_context.get('national_reading_mean_g8')
+            sc = school_enrichment.get('state_code', 'the state')
+            if state_math and nat_math:
+                diff = round(state_math - nat_math, 1)
+                direction = 'above' if diff >= 0 else 'below'
+                parts.append(
+                    f"NAEP data shows {sc} grade-8 math scores are "
+                    f"{abs(diff)} points {direction} the national mean "
+                    f"({state_math} vs {nat_math})."
+                )
+            if state_read and nat_read:
+                diff = round(state_read - nat_read, 1)
+                direction = 'above' if diff >= 0 else 'below'
+                parts.append(
+                    f"In reading, {sc} scores {abs(diff)} points {direction} "
+                    f"the national mean ({state_read} vs {nat_read})."
+                )
+
         return " ".join(parts)
     
     async def _legacy_school_analysis(

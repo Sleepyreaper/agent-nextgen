@@ -25,6 +25,14 @@ except Exception:
     from agents.base_agent import BaseAgent
 
 try:
+    from src.services.naep_data_client import get_naep_client
+except Exception:
+    try:
+        from services.naep_data_client import get_naep_client
+    except Exception:
+        get_naep_client = None
+
+try:
     from ..observability import get_tracer
 except Exception:
     try:
@@ -142,6 +150,22 @@ class NaveenSchoolDataScientist(BaseAgent):
             )
             result["web_sources"] = enriched_sources
 
+            # ── Fetch live NAEP state data from Nation's Report Card ──
+            naep_summary = ""
+            naep_profile = None
+            if inferred_state and get_naep_client:
+                try:
+                    naep_client = get_naep_client()
+                    naep_profile = naep_client.get_state_education_profile(inferred_state)
+                    if not naep_profile.get("error"):
+                        naep_summary = naep_client.get_state_summary_for_prompt(inferred_state)
+                        result["naep_state_profile"] = naep_profile
+                        logger.info("📊 NAEP data retrieved for %s", inferred_state)
+                    else:
+                        logger.info("NAEP data not available for %s", inferred_state)
+                except Exception as naep_err:
+                    logger.warning("NAEP data fetch failed for %s: %s", inferred_state, naep_err)
+
             # Build comprehensive school research prompt for AI
             research_prompt = self._build_research_prompt(
                 school_name,
@@ -149,7 +173,8 @@ class NaveenSchoolDataScientist(BaseAgent):
                 inferred_state,
                 enriched_sources,
                 existing_data,
-                enrichment_focus=enrichment_focus
+                enrichment_focus=enrichment_focus,
+                naep_summary=naep_summary,
             )
             
             # Use AI to analyze school comprehensively
@@ -201,6 +226,7 @@ Use these benchmarks to contextualize every school analysis:
 Always compare school metrics against these benchmarks. A school with 84% graduation rate may look average nationally but could be exceptional given its demographics.
 
 Provide structured analysis in JSON format."""
+                    + (f"\n\nLIVE NAEP DATA FOR THIS STATE (from Nation's Report Card API):\n{naep_summary}" if naep_summary else "")
                     },
                     {
                         "role": "user",
@@ -554,10 +580,13 @@ Demographics:
         school_district: Optional[str],
         state_code: Optional[str],
         web_sources: Optional[List[str]],
-        existing_data: Optional[Dict[str, Any]]
-        , enrichment_focus: Optional[str] = None
+        existing_data: Optional[Dict[str, Any]],
+        enrichment_focus: Optional[str] = None,
+        naep_summary: Optional[str] = None,
     ) -> str:
         """Build comprehensive research prompt for AI to analyze school."""
+        naep_block = ("LIVE NAEP STATE DATA (from Nation's Report Card API):\n" + naep_summary
+                      if naep_summary else "No NAEP data available for this state.")
         prompt = f"""Analyze the school '{school_name}' {'in ' + school_district if school_district else ''} {'(' + state_code + ')' if state_code else ''}.
 
 Based on available sources and data, provide a comprehensive JSON analysis including:
@@ -609,6 +638,14 @@ Available web sources to analyze (including a search query hint if provided): {j
 Existing data from other agents: {json.dumps(_sanitize_for_json(existing_data)) if existing_data else 'None provided'}
 
 Focus guidance: {enrichment_focus if enrichment_focus else 'General enrichment requested'}
+
+{naep_block}
+
+IMPORTANT: Use the NAEP data above as ground-truth benchmarks when evaluating this school.
+Compare the school's state performance to national averages. A school in a state scoring
+below the national mean faces structural headwinds; a student who excels in that context
+deserves more credit. Conversely, a school in a high-performing state may benefit from
+systemic advantages. Factor this into your opportunity score and analysis.
 
 Return your analysis as a single JSON object with keys: academic_courses, academic_programs, stem_programs, honors_programs, 
 college_acceptance_rate, graduation_rate, test_scores, funding_level, facility_quality, teacher_quality_indicators, 
