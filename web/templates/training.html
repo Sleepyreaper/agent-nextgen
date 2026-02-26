@@ -28,13 +28,14 @@
         <div style="width:100%; margin-top:1rem;">
             <!-- inline upload form for training files -->
             <div class="card" style="padding:1rem; background:#f9fafb;">
-                <h3 style="margin-top:0;">➕ Upload Training File</h3>
+                <h3 style="margin-top:0;">➕ Upload Training Files</h3>
                 <form method="POST" action="{{ url_for('upload') }}" enctype="multipart/form-data" id="trainingUploadForm">
                     <input type="hidden" name="app_type" value="training" />
                     <div style="border:2px dashed #f59e0b; border-radius:8px; padding:1.5rem; text-align:center; cursor:pointer;" 
                          onclick="document.getElementById('trainingFileInput').click()">
-                        <input type="file" id="trainingFileInput" name="file" required accept=".pdf,.docx,.doc,.txt,.text" style="display:none;" onchange="updateTrainingFileName(this)">
-                        <p style="color:#92400e; font-weight:600;">Drag & drop or click to select training file</p>
+                        <input type="file" id="trainingFileInput" name="file" required accept=".pdf,.docx,.doc,.txt,.text" multiple style="display:none;" onchange="updateTrainingFileName(this)">
+                        <p style="color:#92400e; font-weight:600;">Drag & drop or click to select training files</p>
+                        <p style="color:#b45309; font-size:0.8rem; margin-top:0.25rem;">You can select multiple files at once</p>
                         <p id="trainingFileName" style="color:#92400e; font-weight:600; display:none;"></p>
                     </div>
                     <div id="trainingSelectionStatus" style="margin-top:1rem; display:flex; gap:1.5rem; align-items:center;">
@@ -165,7 +166,11 @@ async function clearTrainingData() {
 function updateTrainingFileName(input) {
     const fileName = document.getElementById('trainingFileName');
     if (input.files && input.files.length > 0) {
-        fileName.textContent = '✓ ' + input.files[0].name;
+        if (input.files.length === 1) {
+            fileName.textContent = '✓ ' + input.files[0].name;
+        } else {
+            fileName.textContent = '✓ ' + input.files.length + ' files selected';
+        }
         fileName.style.display = 'block';
     }
 }
