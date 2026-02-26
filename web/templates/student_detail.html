@@ -240,7 +240,7 @@
         var btn = document.getElementById('detailDeleteBtn');
         btn.textContent = 'Deleting...';
         btn.disabled = true;
-        fetch('/api/student/{{ application.application_id }}/delete', { method: 'DELETE' })
+        fetch('/api/student/{{ summary.application_id }}/delete', { method: 'DELETE' })
             .then(function(r) { return r.json(); })
             .then(function(data) {
                 if (data.status === 'success') {
