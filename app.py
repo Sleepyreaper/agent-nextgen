@@ -94,6 +94,38 @@ RequestsInstrumentor().instrument()
 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 logger.info("Flask app initialized", extra={'upload_folder': app.config['UPLOAD_FOLDER']})
 
+# One-time DB migration: strip gaston data from all stored agent_results & student_summary
+try:
+    _gaston_cleaned = db.execute_non_query(
+        "UPDATE applications SET agent_results = agent_results - 'gaston' "
+        "WHERE agent_results::jsonb ? 'gaston'"
+    )
+    if _gaston_cleaned:
+        logger.info(f"Startup migration: cleaned gaston from {_gaston_cleaned} agent_results rows")
+except Exception:
+    # SQLite fallback or no rows — safe to ignore
+    try:
+        import json as _json
+        _rows = db.execute_query(
+            "SELECT application_id, agent_results FROM applications "
+            "WHERE agent_results LIKE '%gaston%'"
+        )
+        for _row in _rows:
+            _ar = _row.get('agent_results')
+            if isinstance(_ar, str):
+                try:
+                    _ar = _json.loads(_ar)
+                except Exception:
+                    continue
+            if isinstance(_ar, dict) and 'gaston' in _ar:
+                _ar.pop('gaston', None)
+                db.execute_non_query(
+                    "UPDATE applications SET agent_results = %s WHERE application_id = %s",
+                    (_json.dumps(_ar), _row['application_id'])
+                )
+    except Exception:
+        pass
+
 # Initialize Azure OpenAI client
 def _make_ocr_callback():
     """Create an OCR callback that uses the Azure AI vision model (GPT-4o).
@@ -3031,6 +3063,14 @@ def student_detail(application_id):
         except Exception:
             nextgen_match = None
 
+        # Also strip gaston from the application dict itself (passed as summary=)
+        try:
+            app_ar = application.get('agent_results')
+            if isinstance(app_ar, dict):
+                app_ar.pop('gaston', None)
+        except Exception:
+            pass
+
         return render_template('student_detail.html', 
                      summary=application,
                      agent_results=agent_results,
@@ -3258,6 +3298,14 @@ def student_summary_json(application_id):
         # Remove gaston from agent_results — agent was removed from workflow
         agent_results.pop('gaston', None)
 
+        # Also strip gaston from the application dict
+        try:
+            app_ar = application.get('agent_results')
+            if isinstance(app_ar, dict):
+                app_ar.pop('gaston', None)
+        except Exception:
+            pass
+
         return render_template('student_summary_json.html',
                                application=application,
                                agent_results=agent_results,
@@ -3355,7 +3403,23 @@ def view_training_detail(application_id):
         if not application or not application.get('is_training_example'):
             flash('Training example not found', 'error')
             return redirect(url_for('training'))
-        
+
+        # Strip gaston from stored agent_results in application dict
+        try:
+            app_ar = application.get('agent_results')
+            if isinstance(app_ar, dict):
+                app_ar.pop('gaston', None)
+            ss = application.get('student_summary')
+            if isinstance(ss, dict):
+                ad = ss.get('agent_details')
+                if isinstance(ad, dict):
+                    ad.pop('gaston', None)
+                ac = ss.get('agents_completed')
+                if isinstance(ac, list) and 'gaston' in ac:
+                    ac.remove('gaston')
+        except Exception:
+            pass
+
         return render_template('application.html', 
                              application=application,
                              is_training=True)
