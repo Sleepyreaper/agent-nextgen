@@ -1605,6 +1605,70 @@ class Database:
 
         return result
 
+    def delete_student(self, application_id: int) -> Dict[str, Any]:
+        """Delete a student and all related records across all agent tables.
+
+        Cascades deletes through every child table that references ApplicationID.
+
+        Args:
+            application_id: The application ID to delete
+
+        Returns:
+            Dict with 'deleted' counts per table and 'total' count
+        """
+        applications_table = self.get_table_name("applications")
+        app_id_col = self.get_applications_column("application_id") or "application_id"
+
+        # All child tables that reference application_id
+        child_tables = [
+            "agent_audit_logs",
+            "tiana_applications",
+            "rapunzel_grades",
+            "mulan_recommendations",
+            "merlin_evaluations",
+            "aurora_evaluations",
+            "student_school_context",
+            "ai_evaluations",
+            "selection_decisions",
+            "training_feedback",
+            "grades",
+        ]
+
+        deleted: Dict[str, int] = {}
+        total = 0
+
+        for table in child_tables:
+            table_name = self.get_table_name(table)
+            if not table_name:
+                continue
+            try:
+                count = self.execute_non_query(
+                    f"DELETE FROM {table_name} WHERE application_id = %s",
+                    (application_id,),
+                )
+                if count and count > 0:
+                    deleted[table] = count
+                    total += count
+            except Exception as e:
+                logger.debug(f"Skipping child table {table}: {e}")
+
+        # Delete the application itself
+        try:
+            count = self.execute_non_query(
+                f"DELETE FROM {applications_table} WHERE {app_id_col} = %s",
+                (application_id,),
+            )
+            deleted["applications"] = count or 0
+            total += count or 0
+        except Exception as e:
+            logger.error(f"Error deleting application {application_id}: {e}")
+            raise
+
+        logger.info(
+            f"Deleted student {application_id}: {total} total rows across {len(deleted)} tables"
+        )
+        return {"deleted": deleted, "total": total}
+
     def update_application_status(self, application_id: int, status: str) -> None:
         """Update a student's application status safely across schema variants."""
         applications_table = self.get_table_name("applications")

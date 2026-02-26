@@ -3713,6 +3713,38 @@ def delete_training(application_id):
         return redirect(url_for('training'))
 
 
+@app.route('/api/student/<int:application_id>/delete', methods=['DELETE'])
+def delete_student_record(application_id):
+    """Permanently delete a student and all related agent data."""
+    try:
+        application = db.get_application(application_id)
+        if not application:
+            return jsonify({'status': 'error', 'error': 'Student not found'}), 404
+
+        student_name = application.get('applicant_name', 'Unknown')
+
+        # Also delete blob storage files if configured
+        try:
+            from src.storage import StorageManager
+            storage = StorageManager()
+            storage.delete_student_files(str(application_id))
+        except Exception as e:
+            logger.debug(f"Could not delete blob files for {application_id}: {e}")
+
+        result = db.delete_student(application_id)
+
+        logger.info(f"Student {application_id} ({student_name}) permanently deleted: {result}")
+        return jsonify({
+            'status': 'success',
+            'message': f'Student "{student_name}" and all related data have been permanently deleted',
+            'application_id': application_id,
+            'details': result
+        })
+    except Exception as e:
+        logger.error(f"Error deleting student {application_id}: {e}")
+        return jsonify({'status': 'error', 'error': str(e)}), 500
+
+
 # API endpoint to clear all training data (excluding test data)
 @app.route('/api/training-data/clear', methods=['POST'])
 def clear_training_data():

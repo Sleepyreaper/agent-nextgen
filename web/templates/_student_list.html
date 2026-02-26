@@ -129,6 +129,56 @@
         background-color: #0284c7;
     }
     
+    .btn-danger {
+        background-color: #ef4444;
+        color: white;
+        border: none;
+        text-decoration: none;
+        border-radius: 4px;
+        cursor: pointer;
+        transition: background-color 0.2s ease;
+    }
+    
+    .btn-danger:hover {
+        background-color: #dc2626;
+    }
+
+    /* Delete confirmation modal */
+    .delete-modal-overlay {
+        display: none;
+        position: fixed;
+        top: 0; left: 0; right: 0; bottom: 0;
+        background: rgba(0,0,0,0.5);
+        z-index: 9999;
+        justify-content: center;
+        align-items: center;
+    }
+    .delete-modal-overlay.active {
+        display: flex;
+    }
+    .delete-modal {
+        background: white;
+        border-radius: 12px;
+        padding: 2rem;
+        max-width: 440px;
+        width: 90%;
+        box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+        text-align: center;
+    }
+    .delete-modal h3 {
+        color: #991b1b;
+        margin-bottom: 1rem;
+    }
+    .delete-modal p {
+        color: #4b5563;
+        margin-bottom: 1.5rem;
+    }
+    .delete-modal-actions {
+        display: flex;
+        gap: 1rem;
+        justify-content: center;
+    }
+    
     .empty-state {
         text-align: center;
         padding: 3rem;
@@ -235,6 +285,10 @@
                         ▶️ Evaluate
                     </a>
                     {% endif %}
+                    <button onclick="confirmDeleteStudent({{ student.application_id }}, '{{ student.first_name }} {{ student.last_name }}')"
+                            class="btn btn-danger" title="Delete student record">
+                        🗑️
+                    </button>
                 </div>
             </td>
         </tr>
@@ -247,6 +301,63 @@
     {% set evaluated = students|selectattr('merlin_score')|list %}
     ✅ <strong>Evaluated:</strong> {{ evaluated|length }}
 </div>
+
+<!-- Delete Confirmation Modal -->
+<div id="deleteModal" class="delete-modal-overlay">
+    <div class="delete-modal">
+        <h3>⚠️ Delete Student Record</h3>
+        <p>Are you sure you want to permanently delete <strong id="deleteStudentName"></strong> and all agent evaluations? This cannot be undone.</p>
+        <div class="delete-modal-actions">
+            <button onclick="closeDeleteModal()" class="btn btn-secondary">Cancel</button>
+            <button onclick="executeDelete()" class="btn btn-danger" id="deleteConfirmBtn">🗑️ Delete Permanently</button>
+        </div>
+    </div>
+</div>
+
+<script>
+let pendingDeleteId = null;
+
+function confirmDeleteStudent(appId, studentName) {
+    pendingDeleteId = appId;
+    document.getElementById('deleteStudentName').textContent = studentName;
+    document.getElementById('deleteModal').classList.add('active');
+}
+
+function closeDeleteModal() {
+    document.getElementById('deleteModal').classList.remove('active');
+    pendingDeleteId = null;
+}
+
+function executeDelete() {
+    if (!pendingDeleteId) return;
+    const btn = document.getElementById('deleteConfirmBtn');
+    btn.textContent = 'Deleting...';
+    btn.disabled = true;
+
+    fetch('/api/student/' + pendingDeleteId + '/delete', { method: 'DELETE' })
+        .then(r => r.json())
+        .then(data => {
+            if (data.status === 'success') {
+                window.location.reload();
+            } else {
+                alert('Error: ' + (data.error || 'Unknown error'));
+                btn.textContent = '🗑️ Delete Permanently';
+                btn.disabled = false;
+            }
+        })
+        .catch(err => {
+            alert('Network error: ' + err);
+            btn.textContent = '🗑️ Delete Permanently';
+            btn.disabled = false;
+        });
+}
+
+// Close modal on Escape key or clicking overlay background
+document.addEventListener('keydown', e => { if (e.key === 'Escape') closeDeleteModal(); });
+document.getElementById('deleteModal').addEventListener('click', function(e) {
+    if (e.target === this) closeDeleteModal();
+});
+</script>
 
 {% else %}
 <div class="empty-state">

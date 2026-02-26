@@ -214,6 +214,52 @@
         {% endif %}
     </div>
 
+    {# ════════════════════  ACTIONS  ════════════════════ #}
+    <div class="section" style="display:flex; justify-content:flex-end; gap:1rem;">
+        <a href="{{ url_for('students') }}" class="btn btn-secondary" style="padding:0.6rem 1.2rem;">← Back to Students</a>
+        <button onclick="confirmDeleteThisStudent()" class="btn" style="padding:0.6rem 1.2rem; background:#ef4444; color:white; border:none; border-radius:4px; cursor:pointer;">🗑️ Delete Student</button>
+    </div>
+
+    <!-- Delete Confirmation Modal -->
+    <div id="detailDeleteModal" style="display:none; position:fixed; top:0; left:0; right:0; bottom:0; background:rgba(0,0,0,0.5); z-index:9999; justify-content:center; align-items:center;">
+        <div style="background:white; border-radius:12px; padding:2rem; max-width:440px; width:90%; box-shadow:0 20px 60px rgba(0,0,0,0.3); text-align:center;">
+            <h3 style="color:#991b1b; margin-bottom:1rem;">⚠️ Delete Student Record</h3>
+            <p style="color:#4b5563; margin-bottom:1.5rem;">Permanently delete <strong>{{ summary.name }}</strong> and all agent evaluations? This cannot be undone.</p>
+            <div style="display:flex; gap:1rem; justify-content:center;">
+                <button onclick="document.getElementById('detailDeleteModal').style.display='none'" class="btn btn-secondary">Cancel</button>
+                <button onclick="deleteThisStudent()" id="detailDeleteBtn" class="btn" style="background:#ef4444; color:white; border:none; border-radius:4px; cursor:pointer;">🗑️ Delete Permanently</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+    function confirmDeleteThisStudent() {
+        document.getElementById('detailDeleteModal').style.display = 'flex';
+    }
+    function deleteThisStudent() {
+        var btn = document.getElementById('detailDeleteBtn');
+        btn.textContent = 'Deleting...';
+        btn.disabled = true;
+        fetch('/api/student/{{ application.application_id }}/delete', { method: 'DELETE' })
+            .then(function(r) { return r.json(); })
+            .then(function(data) {
+                if (data.status === 'success') {
+                    window.location.href = '{{ url_for("students") }}';
+                } else {
+                    alert('Error: ' + (data.error || 'Unknown error'));
+                    btn.textContent = '🗑️ Delete Permanently';
+                    btn.disabled = false;
+                }
+            })
+            .catch(function(err) {
+                alert('Network error: ' + err);
+                btn.textContent = '🗑️ Delete Permanently';
+                btn.disabled = false;
+            });
+    }
+    document.addEventListener('keydown', function(e) { if (e.key === 'Escape') document.getElementById('detailDeleteModal').style.display='none'; });
+    </script>
+
     {# ════════════════════  APPLICATION CONTENT  ════════════════════ #}
     <div class="section">
         <div class="section-title">Application Content</div>
