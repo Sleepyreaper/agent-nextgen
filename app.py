@@ -515,6 +515,13 @@ def refresh_foundry_dataset_async(reason: str) -> None:
     threading.Thread(target=run, daemon=True).start()
 
 
+@app.route('/healthz')
+def healthz():
+    """Health check endpoint for Azure Front Door probes.
+    Excluded from EasyAuth — returns 200 with no sensitive data."""
+    return jsonify({"status": "ok"}), 200
+
+
 @app.route('/')
 def index():
     """Home page - Dashboard."""
