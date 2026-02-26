@@ -29,8 +29,17 @@
 </style>
 {% endblock %}
 
+{# ── Resolve each agent explicitly so stale/unknown keys never leak through ── #}
+{% set merlin  = agent_results.get('merlin')  if agent_results else None %}
+{% set aurora  = agent_results.get('aurora')  if agent_results else None %}
+{% set tiana   = agent_results.get('tiana')   if agent_results else None %}
+{% set rapunzel = agent_results.get('rapunzel') if agent_results else None %}
+{% set mulan   = agent_results.get('mulan')   if agent_results else None %}
+{% set moana   = agent_results.get('moana')   if agent_results else None %}
+
 {% block content %}
 <div class="dashboard-container">
+    {# ════════════════════  HEADER  ════════════════════ #}
     <div class="dashboard-header">
         <div class="student-info">
             <h1>{{ summary.name }}</h1>
@@ -46,6 +55,8 @@
             {% endif %}
         </div>
     </div>
+
+    {# ════════════════════  SCORE CARDS  ════════════════════ #}
     <div class="dashboard-stats">
         <div class="stat-card" style="{% if nextgen_match is defined and nextgen_match is not none %}{% if nextgen_match >= 60 %}background:linear-gradient(135deg,#d1fae5,#a7f3d0); border:2px solid #10b981;{% elif nextgen_match >= 30 %}background:linear-gradient(135deg,#fef9c3,#fde68a); border:2px solid #f59e0b;{% else %}background:linear-gradient(135deg,#fee2e2,#fecaca); border:2px solid #ef4444;{% endif %}{% endif %}">
             <div class="stat-value" style="font-size:2.6rem;">
@@ -59,97 +70,115 @@
             <div style="font-size:0.8rem; color:#64748b; margin-top:0.3rem;">~30 spots / 1,000+ applicants</div>
         </div>
         <div class="stat-card">
-            <div class="stat-value">{{ agent_results.merlin.overall_score if agent_results and agent_results.merlin and agent_results.merlin.overall_score else 'N/A' }}</div>
+            <div class="stat-value">{{ merlin.overall_score if merlin and merlin.overall_score else 'N/A' }}</div>
             <div class="stat-label">Overall Score</div>
         </div>
         <div class="stat-card">
-            <div class="stat-value">{{ agent_results.merlin.recommendation if agent_results and agent_results.merlin and agent_results.merlin.recommendation else 'N/A' }}</div>
+            <div class="stat-value">{{ merlin.recommendation if merlin and merlin.recommendation else 'N/A' }}</div>
             <div class="stat-label">Recommendation</div>
         </div>
     </div>
 
+    {# ════════════════════  MERLIN EXECUTIVE SUMMARY  ════════════════════ #}
     <div class="section">
-        <div class="section-title">Executive Summary</div>
-        {% set merlin = agent_results.get('merlin') if agent_results else None %}
-        {% set aurora = agent_results.get('aurora') if agent_results else None %}
-        {% set merlin_summary = None %}
-        {% set aurora_summary = None %}
+        <div class="section-title">🧙 Merlin Executive Summary</div>
+        {% set merlin_text = None %}
         {% if merlin %}
             {% if merlin.human_summary %}
-                {% set merlin_summary = merlin.human_summary %}
+                {% set merlin_text = merlin.human_summary %}
             {% elif merlin.executive_summary %}
-                {% set merlin_summary = merlin.executive_summary %}
-            {% elif merlin.summary %}
-                {% set merlin_summary = merlin.summary %}
+                {% set merlin_text = merlin.executive_summary %}
             {% elif merlin.rationale %}
-                {% set merlin_summary = merlin.rationale %}
+                {% set merlin_text = merlin.rationale %}
+            {% elif merlin.summary %}
+                {% set merlin_text = merlin.summary %}
             {% endif %}
         {% endif %}
-        {% if aurora %}
-            {% if aurora.human_summary %}
-                {% set aurora_summary = aurora.human_summary %}
-            {% elif aurora.summary %}
-                {% set aurora_summary = aurora.summary %}
-            {% endif %}
-        {% endif %}
-        {% set exec_summary = None %}
-        {% if merlin_summary and aurora_summary %}
-            {% set exec_summary = aurora_summary ~ '\n---\n' ~ merlin_summary %}
-        {% elif aurora_summary %}
-            {% set exec_summary = aurora_summary %}
-        {% elif merlin_summary %}
-            {% set exec_summary = merlin_summary %}
-        {% elif summary and summary.human_summary %}
-            {% set exec_summary = summary.human_summary %}
-        {% endif %}
-        {% if exec_summary %}
-            <div class="agent-summary" style="font-size:1.25rem; font-style:italic; background:#f1f5f9; border-radius:8px; padding:1.2rem; margin-bottom:1.5rem; border-left:4px solid #38bdf8; color:#334155;">
-                {{ exec_summary | replace('\n', '<br>') | safe }}
+        {% if merlin_text %}
+            <div style="font-size:1.15rem; background:#f1f5f9; border-radius:8px; padding:1.2rem; border-left:4px solid #6366f1; color:#334155; line-height:1.7;">
+                {{ merlin_text | replace('\n', '<br>') | safe }}
             </div>
+            {% if merlin and merlin.confidence %}
+            <div style="margin-top:0.5rem; color:#64748b; font-size:0.9rem;">
+                <strong>Confidence:</strong> {{ merlin.confidence }}
+                {% if merlin.key_strengths %} · <strong>Strengths:</strong> {{ merlin.key_strengths }}{% endif %}
+                {% if merlin.key_risks %} · <strong>Risks:</strong> {{ merlin.key_risks }}{% endif %}
+            </div>
+            {% endif %}
         {% else %}
-            <div class="agent-summary">No summary available.</div>
+            <div class="agent-summary" style="color:#94a3b8;">Merlin has not evaluated this student yet.</div>
         {% endif %}
     </div>
 
+    {# ════════════════════  AGENT SUMMARIES  ════════════════════ #}
     <div class="section">
-        <div class="section-title">Agent Insights</div>
+        <div class="section-title">Agent Summaries</div>
         <div class="agent-cards">
-            {% for agent_id, agent in agent_results.items() %}
-                {% if agent.human_summary %}
+
+            {# ── Tiana (Application/Essay Reader) ── #}
+            {% if tiana and (tiana.human_summary or tiana.essay_summary or tiana.essaysummary) %}
+            <div class="agent-card">
+                <h3>👸 Tiana {% if tiana.readiness_score or tiana.readinessscore %}<span class="score-badge">{{ tiana.readiness_score or tiana.readinessscore }}</span>{% endif %}</h3>
+                <div class="agent-summary">{{ tiana.human_summary or tiana.essay_summary or tiana.essaysummary }}</div>
+            </div>
+            {% endif %}
+
+            {# ── Rapunzel (Grade Reader) ── #}
+            {% if rapunzel and (rapunzel.human_summary or rapunzel.summary) %}
+            <div class="agent-card">
+                <h3>💇 Rapunzel {% if rapunzel.gpa %}<span class="score-badge">GPA: {{ rapunzel.gpa }}</span>{% endif %}</h3>
+                <div class="agent-summary">{{ rapunzel.human_summary or rapunzel.summary }}</div>
+                <div class="agent-details">
+                    {% if rapunzel.academic_strength %}<strong>Academic Strength:</strong> {{ rapunzel.academic_strength }}<br>{% endif %}
+                    {% if rapunzel.course_rigor_index %}<strong>Course Rigor:</strong> {{ rapunzel.course_rigor_index }}<br>{% endif %}
+                </div>
+            </div>
+            {% endif %}
+
+            {# ── Mulan (Recommendation Reader) ── #}
+            {% if mulan %}
+                {% if mulan is mapping and (mulan.human_summary or mulan.summary) %}
                 <div class="agent-card">
-                    <h3>{{ agent_id|capitalize }} {% if agent.overall_score %}<span class="score-badge">{{ agent.overall_score }}</span>{% endif %}</h3>
-                    <div class="agent-summary">{{ agent.human_summary }}</div>
-                    <div class="agent-details">
-                        {% if agent.gpa %}
-                            <strong>GPA:</strong> {{ agent.gpa }}<br>
-                        {% endif %}
-                        {% if agent.academic_strength %}
-                            <strong>Academic Strength:</strong> {{ agent.academic_strength }}<br>
-                        {% endif %}
-                        {% if agent.course_rigor_index %}
-                            <strong>Course Rigor:</strong> {{ agent.course_rigor_index }}<br>
-                        {% endif %}
-                        {% if agent.key_strengths %}
-                            <strong>Strengths:</strong> {{ agent.key_strengths }}<br>
-                        {% endif %}
-                        {% if agent.key_risks %}
-                            <strong>Risks:</strong> {{ agent.key_risks }}<br>
-                        {% endif %}
-                        {% if agent.recommendation %}
-                            <strong>Recommendation:</strong> {{ agent.recommendation }}<br>
-                        {% endif %}
-                        {% if agent.confidence %}
-                            <strong>Confidence:</strong> {{ agent.confidence }}<br>
-                        {% endif %}
+                    <h3>🗡️ Mulan {% if mulan.endorsement_strength or mulan.endorsementstrength %}<span class="score-badge">{{ mulan.endorsement_strength or mulan.endorsementstrength }}/100</span>{% endif %}</h3>
+                    <div class="agent-summary">{{ mulan.human_summary or mulan.summary }}</div>
+                </div>
+                {% elif mulan is sequence and mulan | length > 0 %}
+                <div class="agent-card">
+                    <h3>🗡️ Mulan <span class="score-badge">{{ mulan | length }} rec{{ 's' if mulan | length > 1 }}</span></h3>
+                    {% for rec in mulan %}
+                    <div class="agent-summary" style="{% if not loop.last %}border-bottom:1px solid #e2e8f0; padding-bottom:0.5rem; margin-bottom:0.5rem;{% endif %}">
+                        <strong>{{ rec.recommender_name or rec.recommendername or 'Recommender' }}</strong>
+                        {% if rec.recommender_role or rec.recommenderrole %}<span style="color:#64748b;"> ({{ rec.recommender_role or rec.recommenderrole }})</span>{% endif %}
+                        {% if rec.endorsement_strength or rec.endorsementstrength %} · Strength: {{ rec.endorsement_strength or rec.endorsementstrength }}/100{% endif %}
+                        {% if rec.summary %}<br>{{ rec.summary }}{% endif %}
                     </div>
+                    {% endfor %}
                 </div>
                 {% endif %}
-            {% endfor %}
+            {% endif %}
+
+            {# ── Moana (School Context) ── #}
+            {% if moana and (moana.human_summary or moana.comparison_notes or moana.comparisonnotes or moana.context) %}
+            <div class="agent-card">
+                <h3>🌊 Moana</h3>
+                <div class="agent-summary">{{ moana.human_summary or moana.comparison_notes or moana.comparisonnotes or moana.context }}</div>
+            </div>
+            {% endif %}
+
+            {# ── Aurora (Report Formatter) ── #}
+            {% if aurora and aurora.human_summary %}
+            <div class="agent-card">
+                <h3>🌅 Aurora</h3>
+                <div class="agent-summary">{{ aurora.human_summary }}</div>
+            </div>
+            {% endif %}
+
         </div>
     </div>
 
+    {# ════════════════════  MILO TRAINING INSIGHTS  ════════════════════ #}
     <div class="section">
-        <div class="section-title">Milo Training Insights</div>
+        <div class="section-title">📊 Milo Training Insights</div>
         {% if milo_insights and milo_insights.status == 'success' %}
             {% if milo_insights.summary %}
                 <p><strong>Summary:</strong> {{ milo_insights.summary }}</p>
@@ -185,6 +214,7 @@
         {% endif %}
     </div>
 
+    {# ════════════════════  APPLICATION CONTENT  ════════════════════ #}
     <div class="section">
         <div class="section-title">Application Content</div>
         <div style="background: #f1f5f9; padding: 1.2rem; border-radius: 8px;">
@@ -193,11 +223,6 @@
                 <p style="color: #64748b; font-size: 0.95rem; margin-top: 1rem; font-style: italic;">... [{{ summary['word_count'] - 250 }} more words]</p>
             {% endif %}
         </div>
-    </div>
-
-    <div class="section">
-        <div class="section-title">Full Agent Data (Advanced)</div>
-        <pre style="background: #f8fafc; color: #64748b; padding: 1rem; border-radius: 8px; font-size: 0.97rem; overflow-x: auto;">{{ agent_results | tojson(indent=2) }}</pre>
     </div>
 </div>
 {% endblock %}
