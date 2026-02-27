@@ -43,6 +43,7 @@
     <div class="dashboard-header">
         <div class="student-info">
             <h1>{{ summary.name }}</h1>
+            <p style="color: #64748b; font-size: 0.95rem; margin-bottom: 0.5rem;">Student evaluation dashboard — scores, agent results, and assessment details</p>
             <p>📧 {{ summary.email }}</p>
             <p>📅 Uploaded: {{ summary.uploaded_date.strftime('%B %d, %Y') if summary.uploaded_date else 'Unknown' }}</p>
         </div>

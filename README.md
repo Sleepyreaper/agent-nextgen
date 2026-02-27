@@ -1,97 +1,187 @@
 # NextGen Multi-Agent Student Evaluation System
 
-> **Production-Ready AI Evaluation Pipeline** with comprehensive audit trails, intelligent student matching, and fairness-aware assessment.
+> **Version 1.0.33** · Production-ready AI evaluation pipeline with 15+ Disney-themed agents, 4-tier model architecture, and enterprise security via Azure Front Door + WAF.
 
-An intelligent multi-agent system that evaluates student applications using specialized Disney-themed agents working in a coordinated 9-step workflow.
+An intelligent multi-agent system that evaluates high school internship applications using specialized Disney-themed agents coordinated in a 9-step workflow. Built on Azure AI Foundry with comprehensive audit trails, fairness-aware assessment, and school context enrichment.
+
+---
 
 ## 🎯 Features
 
-- **9-Step Intelligent Workflow**: Orchestrated multi-agent evaluation with decision gates and remediation loops
-- **Smart Student Matching**: Composite key matching (name + school + state) prevents duplicates
-- **AI-Powered Extraction**: BELLE extracts structured data from any document format
-- **School Context Analysis**: NAVEEN + MOANA bidirectional validation for fair assessment
-- **Contextual Rigor Weighting**: RAPUNZEL calculates academic rigor adjusted by school opportunity (0-5 scale)
-- **Comprehensive Audit Trail**: 14 interaction types logged to database for compliance verification
-- **File Upload Matching**: AI-based student identification with confidence scoring (0-1 scale)
-- **Unlimited Re-Evaluations**: More data sources = more accurate assessments
-- **Concise Student Summaries**: Each application row now includes a
-  `student_summary` payload (score, recommendation, rationale, strengths/risks)
-  that can be displayed in the UI and backfilled for historical records
-  using `scripts/backfill_summaries.py`.
-- **Validation Gates**: Per-agent readiness verification with reactive BELLE extraction
-- **Web Interface**: Modern Flask app for uploads and result visualization
-- **Secure by Default**: All credentials stored in Azure Key Vault
-- **Azure Integration**: Uses Azure OpenAI, PostgreSQL, and Managed Identity
+- **9-Step Intelligent Workflow** — Orchestrated evaluation: Extract → Match → Enrich → Validate → Evaluate → Synthesize → Report
+- **15+ Specialized Agents** — Disney-themed AI agents each handling a focused evaluation aspect
+- **4-Tier Model Architecture** — Premium, Merlin, Workhorse, and Lightweight tiers for cost/quality optimization
+- **Smart Student Matching** — Composite key matching (name + school + state) prevents duplicates
+- **School Context Enrichment** — NAVEEN + MOANA bidirectional validation loop for fair assessment
+- **Contextual Rigor Weighting** — RAPUNZEL calculates academic rigor adjusted by school opportunity (0–5 scale)
+- **Video Application Support** — MIRABEL analyzes video submissions with chunked upload (100KB for WAF compatibility)
+- **Interactive Q&A** — ARIEL answers natural language questions about any evaluated student
+- **Historical Score Import** — Upload XLSX scoring spreadsheets and link to training applications
+- **XLSX Resolution UI** — Search and link unmatched historical scores to training records
+- **Comprehensive Audit Trail** — 14 interaction types logged to database for compliance
+- **Feedback System** — User-submitted issues auto-create GitHub issues
+- **Telemetry & Observability** — OpenTelemetry + Application Insights for agent performance monitoring
+- **Azure Front Door + WAF** — Enterprise DDoS protection, SSL termination, and bot management
+- **Secure by Default** — Azure Key Vault credentials, no plaintext secrets, managed identity
 
-## 🦸 Disney Agent Team - 9-Step Workflow
+---
+
+## 🦸 Disney Agent Team
+
+### 9-Step Workflow
 
 ```
-1️⃣ BELLE (Document Analyzer)
-   │  Extracts structured data from documents
-   │
-2️⃣ Student Matching
-   │  Prevents duplicates via composite key (name + school + state)
-   │
+1️⃣  BELLE (Document Analyzer)
+    │  Extracts structured data from PDF, DOCX, TXT, MP4
+    │
+2️⃣  Student Matching
+    │  Composite key lookup prevents duplicates
+    │
 2️⃣➕ High School Pre-Enrichment
-   │  Proactively validates/enriches school data before validation loop
-   │
-3️⃣ NAVEEN (School Data Scientist)
-   │  Enriches school context (AP/Honors availability, opportunity score)
-   │
+    │  Proactively validates/enriches school data
+    │
+3️⃣  NAVEEN (School Data Scientist)
+    │  Enriches school context (AP courses, demographics, opportunity score)
+    │
 3️⃣➕ School Validation Loop (MOANA ↔ NAVEEN)
-   │  Bidirectional validation with up to 2 remediation attempts
-   │
-4️⃣ Core Agents (with per-agent validation gates):
-   ├─ TIANA (Application Reader)
-   ├─ RAPUNZEL (Grade Reader with contextual rigor weighting)
-   ├─ MOANA (School Context & Fairness Weighting)
-   └─ MULAN (Recommendation Reader)
-   │
-5️⃣ MILO (Data Scientist)
-   │  Pattern analysis across student profile
-   │
-6️⃣ MERLIN (Student Evaluator)
-   │  Synthesizes all results into comprehensive assessment
-   │
-7️⃣ AURORA (Results Formatter)
-   └─ Generates polished evaluation report with executive summary
+    │  Bidirectional validation with up to 2 remediation attempts
+    │
+4️⃣  Core Agents (parallel, with per-agent validation gates):
+    ├─ TIANA (Application Reader)
+    ├─ RAPUNZEL (Grade Reader with contextual rigor weighting)
+    ├─ MOANA (School Context & Fairness Weighting)
+    └─ MULAN (Recommendation Reader)
+    │
+5️⃣  MILO (Data Scientist)
+    │  Pattern analysis against training data
+    │
+6️⃣  MERLIN (Student Evaluator)
+    │  Synthesizes all results into comprehensive assessment
+    │
+7️⃣  AURORA (Results Formatter)
+    └─ Generates executive summary and evaluation report
 ```
 
-### **Agent Specializations**
+### All Agents
 
-- **📖 Belle**: Document understanding & information extraction
-- **👸 TIANA**: Application essay analysis & communication assessment
-- **👑 RAPUNZEL**: Academic performance with **contextual rigor scoring (0-5 scale based on school resources)**
-- **🌊 MOANA**: School opportunity analysis & **fairness-aware weighting**
-- **🥋 MULAN**: Recommendation letter synthesis
-- **📊 MILO**: Training data insights & pattern detection
-- **🧑‍🔬 NAVEEN**: School enrichment & demographic research
-- **🧙 MERLIN**: Overall recommendation & rationale synthesis
-- **✨ AURORA**: Executive summary & report formatting
+| Agent | File | Role | Model Tier |
+|-------|------|------|------------|
+| 📖 **BELLE** | `belle_document_analyzer.py` | Document extraction (PDF, DOCX, TXT, MP4) | Lightweight |
+| 👸 **TIANA** | `tiana_application_reader.py` | Application essay & communication analysis | Workhorse |
+| 👑 **RAPUNZEL** | `rapunzel_grade_reader.py` | Academic rigor with contextual weighting (0–5) | Premium |
+| 🌊 **MOANA** | `moana_school_context.py` | School validation & fairness-aware weighting | Workhorse |
+| 🥋 **MULAN** | `mulan_recommendation_reader.py` | Recommendation letter synthesis | Workhorse |
+| 📊 **MILO** | `milo_data_scientist.py` | Training data insights & pattern detection | Premium |
+| 🧑‍🔬 **NAVEEN** | `naveen_school_data_scientist.py` | School enrichment & demographic research | Workhorse |
+| 🧙 **MERLIN** | `merlin_student_evaluator.py` | Overall recommendation & rationale synthesis | Merlin |
+| ✨ **AURORA** | `aurora_agent.py` | Executive summary & report formatting | Workhorse |
+| 🎬 **MIRABEL** | `mirabel_video_analyzer.py` | Video application analysis (frame extraction) | Vision (gpt-4o) |
+| 🧜 **ARIEL** | `ariel_qa_agent.py` | Interactive Q&A about evaluated students | Workhorse |
+| ⚔️ **GASTON** | `gaston_evaluator.py` | Evaluation validation & quality checks | Workhorse |
+| 🐚 **BASHFUL** | `bashful_agent.py` | Supporting classification tasks | Lightweight |
+| 🧚 **FAIRY GODMOTHER** | `fairy_godmother_document_generator.py` | Document generation | Workhorse |
+| 📋 **FEEDBACK TRIAGE** | `feedback_triage_agent.py` | User feedback classification & GitHub issue creation | Workhorse |
+
+**Orchestrator:** **SMEE** (`smee_orchestrator.py`) — Coordinates the full 9-step pipeline.
+
+---
+
+## 🏗️ 4-Tier Model Architecture
+
+Models are configured in `src/config.py` and overridable via Key Vault or environment variables:
+
+| Tier | Deployment Name | Base Model | Used By | Env Var |
+|------|----------------|------------|---------|---------|
+| **Premium** | `gpt-4.1` | GPT-4.1 | Rapunzel, Milo (complex reasoning) | `MODEL_TIER_PREMIUM` |
+| **Merlin** | `MerlinGPT5Mini` | GPT-5-mini | Merlin (final evaluation) | `MODEL_TIER_MERLIN` |
+| **Workhorse** | `WorkForce4.1mini` | GPT-4.1-mini | Tiana, Mulan, Moana, Gaston, Smee, Naveen, Ariel, Aurora | `MODEL_TIER_WORKHORSE` |
+| **Lightweight** | `LightWork5Nano` | GPT-5-nano | Belle, Bashful (classification/triage) | `MODEL_TIER_LIGHTWEIGHT` |
+| **Vision** | `gpt-4o` | GPT-4o | Mirabel (video analysis) | — |
+
+Additional deployment: `text-embedding-ada-002` for embeddings.
+
+---
+
+## 🌐 Web Interface — All Pages
+
+The application provides a full-featured web UI built with Flask and Jinja2 templates.
+
+### Navigation Menu (8 pages)
+
+| Nav Item | Route | Description |
+|----------|-------|-------------|
+| 📊 Dashboard | `/` | Home page showing pending/evaluated/total counts and recent applications |
+| 👥 2026 Applicants | `/students` | Searchable list of all 2026 applicants sorted by last name with status badges |
+| 🧪 Test Data | `/test-data` | Students created via Quick Test for development and testing |
+| 📚 Training | `/training` | Historical training applications with upload, import scores, XLSX resolution, and Milo insights |
+| 🗄️ Data Management | `/data-management` | Central hub for schools, training data, and database operations |
+| 📤 Upload Application | `/upload` | Upload student documents (PDF, DOCX, TXT, MP4) to trigger the evaluation pipeline |
+| 📝 Feedback | `/feedback` | Report issues or request features — auto-creates GitHub issues |
+| ⚡ Quick Test | `/test` | Real-time 9-step pipeline test with live agent progress tracking |
+
+### Additional Pages (not in nav)
+
+| Page | Route | Description |
+|------|-------|-------------|
+| Student Detail | `/student/<id>` | Full student dashboard with score cards and all agent results (Merlin, Aurora, Tiana, Rapunzel, Mulan, Moana) |
+| Application Detail | `/application/<id>` | Comprehensive evaluation view with executive summary, agent evaluations, audit trail, and ARIEL Q&A |
+| Import Historical Scores | `/import-scores` | Upload XLSX scoring spreadsheets for Milo calibration data |
+| School Management | `/schools` | School database with filters, batch enrichment (Naveen + Moana), add/edit schools |
+| School Enrichment Detail | `/schools/<id>` | Individual school's demographics, resources, and opportunity scores |
+| Process Student | `/process/<id>` | Real-time processing view showing agent progress during evaluation |
+| Telemetry Dashboard | `/telemetry` | Agent performance metrics, Application Insights status, school pipeline status |
+| Agent Monitor | `/agent-monitor` | Standalone dark-terminal UI for real-time agent debugging |
+| Feedback Admin | `/feedback/admin` | Admin view of all user feedback with GitHub issue tracking |
+| Test Detail | `/test/<id>` | Individual test run details |
+
+---
 
 ## 🏗️ Azure Architecture
 
-**Primary Components:**
+### Production Infrastructure
 
-- **Azure OpenAI**: GPT models for intelligent evaluation (gpt-4, gpt-35-turbo, etc.)
-- **PostgreSQL Database**: Application data, student records, audit trails (14 interaction types)
-- **Azure Key Vault**: Secure credential management (never exposed in code)
-- **Azure Blob Storage**: Document uploads and storage integration
-- **Azure App Service**: Production web application hosting
-- **Application Insights**: Agent telemetry, usage tracking, performance monitoring
+| Component | Resource | Details |
+|-----------|----------|---------|
+| **Azure Front Door** | `nextgen-frontdoor` (Premium) | DDoS protection, SSL termination, global load balancing |
+| **WAF Policy** | `nextgenWAFPolicy` | Prevention mode, DRS 2.1, BotManager 1.1, 128KB body inspection |
+| **Web App** | `nextgen-agents-web` | Python 3.9 on Linux App Service with staging slot |
+| **AI Foundry** | `nextgenagentfoundry` (West US 3) | 7 model deployments across 4 tiers |
+| **PostgreSQL** | Flexible Server | Application data, audit trails, training records |
+| **Key Vault** | Secure credential store | All secrets managed via Azure AD / Managed Identity |
+| **Blob Storage** | Document storage | Student uploads with managed identity access |
+| **Application Insights** | Telemetry | Agent performance, token usage, request tracing |
+
+### Endpoints
+
+| Environment | URL |
+|-------------|-----|
+| **Production** | `https://nextgen-app-h7hvaybqd4grd0b2.b02.azurefd.net` |
+| **Staging** | `https://nextgen-staging-acfvbrd4g2cud9cs.b02.azurefd.net` |
+
+### Security Architecture (7 Phases — All Complete)
+
+1. **Key Vault Integration** — All credentials stored in Azure Key Vault
+2. **Managed Identity** — App authenticates via Azure AD, no API keys in code
+3. **Network Security** — SCM basic auth disabled, access restricted to Front Door
+4. **Front Door + WAF** — Enterprise edge security with bot protection
+5. **Audit Logging** — 14 interaction types for compliance verification
+6. **Storage Security** — Blob access via managed identity with RBAC
+7. **Deployment Security** — ARM-based zip deploy, SCM lock/unlock pattern
+
+---
 
 ## 🚀 Quick Start
 
-### 1. Prerequisites
+### Prerequisites
 
 - Python 3.9+
-- Azure CLI
-- Azure account with Key Vault access
+- Azure CLI (`az login`)
+- Azure subscription with Key Vault + OpenAI access
 
-### 2. Setup
+### Setup
 
 ```bash
-# Clone and navigate to repository
+# Clone and navigate
 cd "Agent NextGen"
 
 # Activate virtual environment
@@ -100,737 +190,443 @@ source .venv/bin/activate
 # Install dependencies
 pip install -r requirements.txt
 
-# Authenticate with Azure (required for Key Vault and OpenAI)
+# Authenticate with Azure
 az login
-
-# Configure Azure Key Vault secrets (one-time setup)
-./setup_keyvault.sh
 
 # Initialize database
 python scripts/init/init_database.py
-```
 
-### 3. Configure Environment
-
-#### Option A: Azure Key Vault (Production - Recommended)
-
-```bash
-# One-time setup - Interactive configuration
-./scripts/setup/keyvault_setup.sh
-
-# This creates all required secrets in your Key Vault:
-# - Azure OpenAI credentials
-# - PostgreSQL connection info
-# - Flask secret key
-# - Content processing endpoint details
-```
-
-#### Option B: Local Development (.env.local)
-
-For offline development when Key Vault isn't accessible:
-
-```bash
-# Copy template
-cp .env.example .env.local
-
-# Edit with your values (development-only)
-nano .env.local
-
-# Key variables needed:
-# AZURE_OPENAI_ENDPOINT=<your-endpoint>
-# AZURE_OPENAI_API_KEY=<your-key>
-# POSTGRES_HOST=localhost
-# POSTGRES_PASSWORD=<dev-password>
-# FLASK_SECRET_KEY=<random-string>
-```
-
-> ⚠️ **Important**: Never commit `.env.local` to Git. It's only for local development.
-
-### 4. Initialize Database
-
-```bash
-# Create all required tables (runs schema migrations)
-python scripts/init/init_database.py
-
-# Verify database is ready
-python -c "from src.database import Database; db = Database(); print('Database ready!')"
-```
-
-### 5. Run the Web Application
-
-```bash
+# Start the application
 python app.py
 ```
 
-**Access the application:**
-- 🌐 Dashboard: http://localhost:5001
-- 📝 Upload Documents: http://localhost:5001/upload
-- 🧪 Test System: http://localhost:5001/test
-- 📊 Student List: http://localhost:5001/students
+### Local URLs
 
-> **Note**: The application automatically retrieves credentials from Key Vault (or .env.local). No additional configuration needed!
+| Page | URL |
+|------|-----|
+| Dashboard | http://localhost:5001 |
+| Upload | http://localhost:5001/upload |
+| Students | http://localhost:5001/students |
+| Test System | http://localhost:5001/test |
+| Training | http://localhost:5001/training |
+| Schools | http://localhost:5001/schools |
 
-## 🌍 Environment Variables Reference
+### Configuration
 
-### Azure OpenAI Configuration
-- `AZURE_OPENAI_ENDPOINT` - Azure OpenAI API endpoint URL
-- `AZURE_OPENAI_API_KEY` - API key for authentication
-- `AZURE_OPENAI_DEPLOYMENT_NAME` - GPT model deployment name (gpt-4, gpt-35-turbo)
-- `AZURE_OPENAI_API_VERSION` - API version (e.g., 2024-12-01-preview)
+**Primary (Production):** Azure Key Vault — secrets retrieved via `DefaultAzureCredential`.
 
-### PostgreSQL Database
-- `POSTGRES_HOST` - Database server hostname
-- `POSTGRES_PORT` - Port (default: 5432)
-- `POSTGRES_DATABASE` - Database name (ApplicationsDB)
-- `POSTGRES_USERNAME` - Connection username
-- `POSTGRES_PASSWORD` - Connection password
+```bash
+# One-time setup
+./scripts/setup/keyvault_setup.sh
+```
 
-### Application Configuration
-- `FLASK_SECRET_KEY` - Secret key for session management
-- `FLASK_ENV` - Environment (development/production)
-- `APPLICATIONINSIGHTS_CONNECTION_STRING` - Azure Application Insights (optional)
-- `NEXTGEN_CAPTURE_PROMPTS` - Enable/disable prompt logging (true/false)
+**Fallback (Development only):** `.env.local` file for offline development.
 
-### Content Processing (Optional)
-- `CONTENT_PROCESSING_ENDPOINT` - Content processing service URL
-- `CONTENT_PROCESSING_API_KEY` - API key for content service
-- `CONTENT_PROCESSING_API_KEY_HEADER` - Header name for API key
-- `CONTENT_PROCESSING_ENABLED` - Enable/disable feature (true/false)
+```bash
+cp .env.example .env.local
+nano .env.local  # Add your credentials (never commit this file)
+```
 
-### Azure Container Resources
-- `AZURE_SUBSCRIPTION_ID` - Your Azure subscription ID
-- `AZURE_RESOURCE_GROUP` - Azure resource group name
-- `AZURE_STORAGE_ACCOUNT_NAME` - Blob storage account name
+---
+
+## 🌍 Environment Variables
+
+### Azure OpenAI
+| Variable | Description |
+|----------|-------------|
+| `AZURE_OPENAI_ENDPOINT` | Azure OpenAI API endpoint |
+| `AZURE_OPENAI_API_KEY` | API key (or use managed identity) |
+| `AZURE_OPENAI_DEPLOYMENT_NAME` | Default model deployment name |
+| `AZURE_OPENAI_API_VERSION` | API version (e.g., `2024-12-01-preview`) |
+
+### Model Tiers
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `MODEL_TIER_PREMIUM` | Complex reasoning (Rapunzel, Milo) | `gpt-4.1` |
+| `MODEL_TIER_MERLIN` | Final evaluation (Merlin) | `MerlinGPT5Mini` |
+| `MODEL_TIER_WORKHORSE` | Structured extraction (most agents) | `WorkForce4.1mini` |
+| `MODEL_TIER_LIGHTWEIGHT` | Classification/triage (Belle, Bashful) | `LightWork5Nano` |
+
+### PostgreSQL
+| Variable | Description |
+|----------|-------------|
+| `POSTGRES_HOST` | Database server hostname |
+| `POSTGRES_PORT` | Port (default: 5432) |
+| `POSTGRES_DATABASE` | Database name (`ApplicationsDB`) |
+| `POSTGRES_USERNAME` | Connection username |
+| `POSTGRES_PASSWORD` | Connection password |
+
+### Application
+| Variable | Description |
+|----------|-------------|
+| `FLASK_SECRET_KEY` | Session management secret |
+| `FLASK_ENV` | `development` or `production` |
+| `APPLICATIONINSIGHTS_CONNECTION_STRING` | Application Insights telemetry |
+| `NEXTGEN_CAPTURE_PROMPTS` | Enable/disable prompt logging (`true`/`false`) |
+
+---
 
 ## 📊 Database Schema
 
-### **Core Tables**
+### Core Tables
 
-- **applications** - Student applications with demographics, documents, status
-- **student_school_context** - School enrichment data (AP courses, demographics, opportunity scores)
-- **rapunzel_grades** - Academic data with contextual rigor weighting (0-5 scale)
-- **ai_evaluations** - Agent outputs from all 9 steps
+| Table | Purpose |
+|-------|---------|
+| `applications` | Student applications with demographics, documents, status |
+| `student_school_context` | School enrichment data (AP courses, demographics, opportunity scores) |
+| `rapunzel_grades` | Academic data with contextual rigor weighting (0–5 scale) |
+| `ai_evaluations` | Agent outputs from all 9 workflow steps |
+| `agent_results` | Structured agent evaluation results |
+| `historical_scores` | Imported XLSX scoring data for Milo calibration |
 
-### **Audit & Compliance Tables (Phase 5)**
+### Audit & Compliance Tables
 
-- **agent_interactions** - Comprehensive logging of all agent executions
-  - 14 interaction types covering entire 9-step workflow
-  - Full JSONB output from each agent
-  - Timestamps for chronological tracking
-  - Used for compliance verification and debugging
+| Table | Purpose |
+|-------|---------|
+| `agent_interactions` | 14 interaction types covering the full 9-step workflow (JSONB output, timestamps) |
+| `file_upload_audit` | AI-based student matching decisions with confidence scores and human review fields |
 
-- **file_upload_audit** - AI-based student matching audit trail
-  - Extracted student info from uploaded files
-  - AI confidence scores (0-1 scale)
-  - Matching decisions (new_student / matched_existing / low_confidence)
-  - Human review fields for administrator verification
-  - 16 columns for complete traceability
+---
 
-## 🤖 How It Works - The 9-Step Workflow
+## 🤖 The 9-Step Workflow in Detail
 
-### **Step 1️⃣ - BELLE Extraction**
-- Uploads trigger BELLE to extract student data from documents
-- Extracts: name, school, grades, test scores, achievements
+### Step 1 — BELLE Extraction
+Upload triggers BELLE to extract structured data (name, school, grades, test scores, achievements) from any supported document format.
 
-### **Step 2️⃣ - Smart Student Matching**
-- Composite key lookup: `first_name + last_name + high_school + state_code`
-- Matches to existing student OR creates new record
-- Prevents duplicates while enabling re-evaluation with new files
+### Step 2 — Smart Student Matching
+Composite key lookup: `first_name + last_name + high_school + state_code`. Matches existing student or creates new record. Prevents duplicates while enabling re-evaluation with additional files.
 
-### **Step 2️⃣➕ - High School Pre-Enrichment**
-- Validates school record exists in database
-- If not found: NAVEEN is called to proactively enrich before validation loop
-- Reduces downstream validation failures
+### Step 2+ — High School Pre-Enrichment
+Validates school record exists. If missing, NAVEEN proactively enriches before the validation loop begins.
 
-### **Step 3️⃣ - School Enrichment (NAVEEN)**
-- Enriches school record with:
-  - AP courses available (count + list)
-  - Honors programs available  
-  - Community opportunity score (0-100)
-  - Free/reduced lunch percentage
-  - Total enrollment & demographics
+### Step 3 — School Enrichment (NAVEEN)
+Enriches school record with AP course counts, honors programs, community opportunity score (0–100), free/reduced lunch %, enrollment, and demographics.
 
-### **Step 3️⃣➕ - School Validation Loop**
-- **MOANA validates** school against 7 required fields
-- If validation fails:
-  - **NAVEEN remediates** (up to 2 attempts) with targeted research
-  - MOANA re-validates
-- Outcome: Either school meets requirements ✅ OR workflow pauses for user docs
+### Step 3+ — School Validation Loop (MOANA ↔ NAVEEN)
+MOANA validates school against 7 required fields. On failure, NAVEEN remediates (up to 2 attempts). Outcome: school meets requirements or workflow pauses for additional data.
 
-### **Step 4️⃣ - Core Agent Evaluation**
-Four agents run in parallel, each with per-agent validation gates:
+### Step 4 — Core Agent Evaluation (Parallel)
+Four agents run simultaneously with per-agent validation gates:
+1. **TIANA** — Application essays and communication
+2. **RAPUNZEL** — Grades with contextual rigor (base rigor × AP availability × opportunity score)
+3. **MOANA** — School context and fairness factor
+4. **MULAN** — Recommendation letter synthesis
 
-1. **TIANA** - Analyzes application essays and communication
-2. **RAPUNZEL** - Grades & rigor analysis with **contextual weighting (0-5 scale)**
-   - Base rigor from GPA and course difficulty
-   - Adjusted by school's AP/Honors availability  
-   - Weighted by student's opportunity score
-   - Fair assessment accounts for school resources
-3. **MOANA** - School context & fairness factor application
-4. **MULAN** - Synthesizes recommendation letters
+### Step 5 — Pattern Analysis (MILO)
+Analyzes performance against training data. Identifies selection indicators and historical patterns.
 
-### **Step 5️⃣ - Pattern Analysis (MILO)**
-- Analyzes performance against training data
-- Identifies selection indicators and patterns
-- Provides contextual insights
+### Step 6 — Comprehensive Evaluation (MERLIN)
+Synthesizes all agent outputs, applies fairness adjustments, produces overall score and recommendation with strengths/considerations.
 
-### **Step 6️⃣ - Comprehensive Evaluation (MERLIN)**
-- Synthesizes all agent outputs
-- Applies fairness adjustments from MOANA
-- Produces overall score and recommendation
-- Detailed strengths/considerations analysis
+### Step 7 — Results Formatting (AURORA)
+Generates executive summary and formatted evaluation report for human review.
 
-### **Step 7️⃣ - Results Formatting (AURORA)**
-- Generates executive summary
-- Formats evaluation report for human review
-- Provides clear rationale for recommendation
+---
+
+## 📤 File Upload & Re-Evaluation
+
+### Supported Formats
+PDF, DOCX, DOC, TXT, MP4 (video with chunked upload at 100KB for WAF compatibility)
+
+### Upload Types
+- **2026 Applicant** — Real admissions: full 9-step pipeline
+- **Training Data** — Historical examples for Milo calibration
+- **Test Upload** — Isolated test environment, clearable without affecting real data
+
+### Re-Evaluation
+When a student already exists, new files are added to the same record and the full 9-step workflow re-runs with all available documents. More data = more accurate assessment.
+
+### Status Badges
+- 📋 **Pending** — Waiting for evaluation
+- 🔄 **Processing** — Workflow in progress
+- ✅ **Complete** — All steps finished
+- ⚠️ **Waiting** — Additional documents needed
+
+---
 
 ## 📁 Project Structure
 
 ```
 .
-├── app.py                             # Flask web application
-├── main.py                            # CLI interface (optional)
-├── requirements.txt                   # Python dependencies
+├── app.py                              # Flask web application (~7000 lines)
+├── main.py                             # CLI interface
+├── requirements.txt                    # Python dependencies
+├── VERSION                             # Current version (1.0.33)
+├── Dockerfile                          # Container configuration
+├── Procfile                            # Process configuration
+├── startup.sh / startup.py             # App Service startup
+├── wsgi.py                             # WSGI entry point
 ├── database/
-│   ├── schema_postgresql.sql          # Core database schema
-│   ├── schema_school_enrichment.sql   # School context tables
-│   ├── schema_azure_sql.sql           # Azure SQL variant
-│   └── add_transcript_recommendation_columns.sql  # Migrations
+│   ├── schema_postgresql.sql           # Core PostgreSQL schema
+│   ├── schema_school_enrichment.sql    # School context tables
+│   ├── schema_azure_sql.sql            # Azure SQL variant
+│   └── *.sql                           # Migration scripts
 ├── src/
-│   ├── config.py                      # Configuration management
-│   ├── database.py                    # PostgreSQL operations + audit logging
-│   ├── logger.py                      # Logging utilities
-│   ├── storage.py                     # Blob storage operations
-│   ├── test_data_generator.py         # Synthetic test data with realistic birthdates
-│   ├── file_upload_handler.py         # AI-based student matching & file upload orchestration
+│   ├── config.py                       # Configuration (Key Vault + env vars + 4-tier models)
+│   ├── database.py                     # PostgreSQL operations + audit logging
+│   ├── logger.py                       # Logging utilities
+│   ├── storage.py                      # Blob storage operations
+│   ├── test_data_generator.py          # Synthetic test data generation
+│   ├── file_upload_handler.py          # AI-based student matching & upload orchestration
 │   └── agents/
-│       ├── base_agent.py              # Base agent class
-│       ├── smee_orchestrator.py       # 9-step workflow orchestrator
-│       ├── belle_document_analyzer.py # Document extraction
-│       ├── tiana_application_reader.py
-│       ├── rapunzel_grade_reader.py   # Grade analysis with contextual rigor weighting
-│       ├── naveen_school_data_scientist.py  # School enrichment
-│       ├── moana_school_context.py    # School validation & fairness weighting
-│       ├── mulan_recommendation_reader.py
-│       ├── milo_data_scientist.py     # Pattern analysis
-│       ├── merlin_student_evaluator.py
-│       ├── aurora_agent.py            # Results formatting
-│       └── system_prompts.py          # Shared agent prompts
+│       ├── smee_orchestrator.py        # 9-step workflow orchestrator
+│       ├── belle_document_analyzer.py  # Step 1: Document extraction
+│       ├── naveen_school_data_scientist.py  # Step 3: School enrichment
+│       ├── moana_school_context.py     # Step 3+: School validation & fairness
+│       ├── tiana_application_reader.py # Step 4: Application analysis
+│       ├── rapunzel_grade_reader.py    # Step 4: Grade analysis + rigor weighting
+│       ├── mulan_recommendation_reader.py   # Step 4: Recommendation synthesis
+│       ├── milo_data_scientist.py      # Step 5: Pattern analysis
+│       ├── merlin_student_evaluator.py # Step 6: Overall evaluation
+│       ├── aurora_agent.py             # Step 7: Report formatting
+│       ├── mirabel_video_analyzer.py   # Video application analysis
+│       ├── ariel_qa_agent.py           # Interactive Q&A
+│       ├── ariel_adapter.py            # Ariel adapter layer
+│       ├── gaston_evaluator.py         # Evaluation validation
+│       ├── bashful_agent.py            # Classification support
+│       ├── fairy_godmother_document_generator.py  # Document generation
+│       ├── feedback_triage_agent.py    # Feedback → GitHub issues
+│       ├── agent_monitor.py            # Real-time agent monitoring
+│       ├── agent_requirements.py       # Agent validation gates
+│       ├── foundry_client.py           # Azure AI Foundry client
+│       ├── telemetry_helpers.py        # OpenTelemetry integration
+│       ├── system_prompts.py           # Shared agent prompts
+│       └── base_agent.py              # Base agent class
 ├── web/
-│   └── templates/
-│       ├── base.html                  # Base template
-│       ├── index.html                 # Dashboard
-│       ├── upload.html                # File upload
-│       ├── test.html                  # Test system (9-step workflow reporter)
-│       ├── students.html              # Student list
-│       ├── application.html           # Application details & AURORA report
-│       └── training.html              # Training data management
+│   └── templates/                      # 22 Jinja2 HTML templates
+│       ├── base.html                   # Shared layout with nav menu
+│       ├── index.html                  # Dashboard
+│       ├── students.html               # 2026 Applicants list
+│       ├── student_detail.html         # Individual student dashboard
+│       ├── application.html            # Full evaluation detail + ARIEL Q&A
+│       ├── upload.html                 # File upload (PDF/DOCX/TXT/MP4)
+│       ├── training.html               # Training data management
+│       ├── test.html                   # Real-time pipeline test
+│       ├── test_data.html              # Test data students
+│       ├── test_detail.html            # Individual test detail
+│       ├── import_scores.html          # XLSX historical score import
+│       ├── school_management.html      # School database management
+│       ├── school_enrichment_detail.html  # Individual school detail
+│       ├── data_management.html        # Central data management hub
+│       ├── process_student.html        # Live processing progress
+│       ├── feedback.html               # User feedback form
+│       ├── feedback_admin.html         # Feedback admin panel
+│       ├── telemetry_dashboard.html    # Telemetry & observability
+│       ├── agent_monitor.html          # Agent debugging terminal
+│       ├── student_summary_json.html   # Student summary JSON view
+│       ├── _student_list.html          # Reusable student list component
+│       └── debug_dataset.html          # Debug dataset viewer
 ├── scripts/
-│   ├── setup/                         # Setup scripts
-│   ├── init/                          # Database initialization
-│   ├── migrate/                       # Migration scripts
-│   ├── verify/                        # Verification scripts
-│   └── audit/                         # Audit scripts
-├── documents/                         # Documentation
-│   ├── setup/                         # Setup guides
-│   ├── deployment/                    # Deployment documentation
-│   ├── security/                      # Security guidelines
-│   └── verification/                  # Verification checklists
-├── testing/                           # Test scripts
-├── uploads/                           # Temporary upload storage
-└── logs/                              # Application logs
+│   ├── setup/                          # Setup and provisioning scripts
+│   ├── init/                           # Database initialization
+│   ├── migrate/                        # Database migrations
+│   ├── verify/                         # Verification scripts
+│   ├── audit/                          # Audit scripts
+│   ├── check/                          # Health checks
+│   ├── fix/                            # Fix scripts
+│   ├── git-hooks/                      # Git hooks
+│   ├── backfill_summaries.py           # Backfill student summaries
+│   ├── seed_schools.py                 # Seed school database
+│   └── bump_version.py                 # Version management
+├── documents/                          # Documentation
+│   ├── setup/                          # Setup guides
+│   ├── deployment/                     # Deployment docs
+│   ├── security/                       # Security guidelines
+│   ├── verification/                   # Verification checklists
+│   ├── debugging/                      # Debug guides
+│   └── migration/                      # Migration docs
+├── testing/                            # Test utilities
+├── uploads/                            # Temporary upload storage
+├── student_documents/                  # Student document storage
+└── logs/                               # Application logs
 ```
 
-## 🔧 Configuration
+---
 
-### Primary: Azure Key Vault (Recommended)
+## 🚢 Deployment
 
-All configuration is stored in **Azure Key Vault** (`your-keyvault-name`) by default.
+### Method: ARM-Based Zip Deploy
 
-**Setup once:**
-```bash
-./setup_keyvault.sh
-```
+SCM basic auth is disabled and Azure Front Door is in front of the SCM endpoint. Deployment uses `az webapp deploy --type zip` which goes through the ARM management plane.
 
-The application automatically retrieves all secrets using `DefaultAzureCredential` (your Azure AD login).
-
-**Stored secrets:**
-- PostgreSQL: `postgres-host`, `postgres-port`, `postgres-database`, `postgres-username`, `postgres-password`
-- Azure OpenAI: `azure-openai-endpoint`, `azure-deployment-name`, `azure-api-version`
-- Azure config: `azure-subscription-id`, `azure-resource-group`
-- Flask: `flask-secret-key` (auto-generated)
-- Content Processing: `content-processing-endpoint`, `content-processing-api-key`, `content-processing-api-key-header`, `content-processing-enabled`
-
-### Fallback: Local Development Only
-
-If you cannot access Key Vault (e.g., offline development), create a `.env.local` file:
+### Deployment Pattern
 
 ```bash
-# Copy template
-cp .env.example .env.local
+# 1. Create deployment zip (excludes dev files)
+zip -r /tmp/nextgen-deploy.zip . \
+  -x '.git/*' '.venv/*' '__pycache__/*' '*/__pycache__/*' \
+     '*.pyc' '.env' '.env.*' 'node_modules/*' 'logs/*' \
+     '.DS_Store' 'student_documents/*' 'uploads/*' 'testing/*'
 
-# Edit with your values (never commit this file!)
-nano .env.local
+# 2. Deploy to Production
+# Unlock SCM
+az webapp update -g NextGen_Agents -n nextgen-agents-web \
+  --set siteConfig.scmIpSecurityRestrictionsUseMain=false
+sleep 15
+
+# Deploy
+az webapp deploy -g NextGen_Agents -n nextgen-agents-web \
+  --src-path /tmp/nextgen-deploy.zip --type zip --async true
+
+# Re-lock SCM
+az webapp update -g NextGen_Agents -n nextgen-agents-web \
+  --set siteConfig.scmIpSecurityRestrictionsUseMain=true
+
+# 3. Deploy to Staging (same pattern with --slot staging)
+az webapp update -g NextGen_Agents -n nextgen-agents-web --slot staging \
+  --set siteConfig.scmIpSecurityRestrictionsUseMain=false
+sleep 15
+az webapp deploy -g NextGen_Agents -n nextgen-agents-web --slot staging \
+  --src-path /tmp/nextgen-deploy.zip --type zip --async true
+az webapp update -g NextGen_Agents -n nextgen-agents-web --slot staging \
+  --set siteConfig.scmIpSecurityRestrictionsUseMain=true
 ```
 
-**Note**: `.env.local` is gitignored and should **never** be committed. It's only for local development when Key Vault is unavailable.
+### CI/CD
 
-### Verifying Configuration
+GitHub Actions workflow at `.github/workflows/deploy-to-azure.yml` uses Azure OIDC authentication. Required GitHub Secrets: `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, `AZURE_SUBSCRIPTION_ID`.
 
-```bash
-python -c "from src.config import config; print('Configuration loaded successfully')"
-```
-
-## 📋 Key Features Explained
-
-### **Audit Logging (Phase 5a)**
-Every workflow step is logged to the `agent_interactions` table with:
-- **14 interaction types** covering all 9 steps
-- Step 1: BELLE extraction
-- Step 2: Student matching  
-- Step 2.5: High school enrichment
-- Steps 3-3.5: School validation & remediation
-- Steps 4-4.5: Core agent execution & validation gates
-- Steps 5-7: Synthesis & reporting
-- Plus pause/resume interactions
-
-Query audit trail:
-```sql
-SELECT * FROM agent_interactions 
-WHERE application_id = 'student-id'
-ORDER BY created_at;
-```
-
-### **File Upload Handler (Phase 5b)**
-Intelligent student matching for new file uploads:
-- **AI Extraction**: Extracts student info from uploaded documents
-- **Fuzzy Matching**: 8-tier relevance scoring
-- **Confidence Threshold**: 0.8 for positive matches
-- **Smart Decision**:
-  - ✅ If confidence ≥ 0.8: Adds file to existing student, triggers re-evaluation
-  - ❌ If confidence < 0.8: Creates new student record
-- **Audit Trail**: Every matching decision logged with human review fields
-
-Query file upload decisions:
-```sql
-SELECT * FROM file_upload_audit 
-WHERE human_reviewed = FALSE
-ORDER BY uploaded_at DESC;
-```
-
-## 🌐 Deployment to Azure Web App
-
-Deploy your Flask application to Azure for production hosting with automatic scaling and monitoring.
-
-### Quick Deploy
-
-```bash
-# 1. Create App Service Plan (adjust SKU as needed)
-az appservice plan create \
-  --name your-appservice-plan \
-  --resource-group your-resource-group \
-  --sku B2 \
-  --is-linux
-
-# 2. Create Web App
-az webapp create \
-  --resource-group your-resource-group \
-  --plan your-appservice-plan \
-  --name your-webapp-name \
-  --runtime "PYTHON|3.9"
-
-# 3. See documents/deployment/AZURE_WEBAPP_DEPLOY.md for complete setup instructions
-```
-
-**Complete Deployment Guide:** See [documents/deployment/AZURE_WEBAPP_DEPLOY.md](documents/deployment/AZURE_WEBAPP_DEPLOY.md)
-
-**CI/CD Notes:** The active workflow is [/.github/workflows/deploy-to-azure.yml](.github/workflows/deploy-to-azure.yml) and uses Azure OIDC. Set GitHub Secrets `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, and `AZURE_SUBSCRIPTION_ID`. The legacy publish profile workflow is no longer required.
-
-### Features When Deployed
-- ✅ Automatic HTTPS/SSL
-- ✅ Key Vault integration via Managed Identity
-- ✅ Gunicorn WSGI server with multiple workers
-- ✅ Continuous deployment via GitHub Actions
-- ✅ Production-ready configuration
-- ✅ Automatic scaling (higher plans)
+---
 
 ## 🧪 Testing
 
-### **Real-Time Test System**
-The web application includes a dedicated test page (`/test`) that allows you to:
+### Real-Time Test System (`/test`)
+Run the full 9-step pipeline with live agent progress tracking:
+- 🚀 **Random Students** — Generate synthetic data each run
+- ⚡ **Preset Students** — Fixed test data (Alice, Brian, Carol)
+- ⚡ **Single Student** — Quick single-student test
+- 🗑️ **Clear Test Data** — Remove all test students
 
-1. **Run 9-Step Workflows** - Watch real-time agent execution
-2. **Test Modes**:
-   - 🚀 **Random Students**: Generate new synthetic data each run
-   - ⚡ **Preset Students**: Use fixed test data (Alice, Brian, Carol)
-   - ⚡ **Single Student**: Quick test with one student
-   - 🗑️ **Clear Test Data**: Delete all test students for fresh runs
-
-3. **Real-Time Monitoring** - Watch agents execute as:
-   - BELLE extracts student data
-   - Student records are matched/created
-   - School context is validated
-   - Core agents evaluate applications
-   - Results are synthesized and reported
-
-### **Realistic Test Data**
-Test data generator creates students with:
-- ✅ Realistic birthdates based on grade level
-  - Sophomores: Born 2009-2010 (ages 15-16 in June 2026)
-  - Juniors: Born 2008-2009 (ages 16-17 in June 2026)
-  - Seniors: Born 2007-2008 (ages 17-18 in June 2026)
-- ✅ Full 4-year academic history with 5-8 courses per semester
-- ✅ Realistic GPA, AP courses, and test scores
-- ✅ Diverse school contexts (public, magnet, private)
-- ✅ Quality tiers: High, Medium, Low (for variety)
-
-Generate test batch:
+### Test Data Generator
 ```python
 from src.test_data_generator import test_data_generator
 
-# Generate 5 random students
+# Generate batch
 students = test_data_generator.generate_batch(count=5)
 
-# Generate specific grade levels
-senior = test_data_generator.generate_student(grade_level=12)
-junior = test_data_generator.generate_student(grade_level=11)
-sophomore = test_data_generator.generate_student(grade_level=10)
+# Specific grade levels (realistic birthdates for June 2026)
+senior = test_data_generator.generate_student(grade_level=12)   # Born 2007-2008
+junior = test_data_generator.generate_student(grade_level=11)   # Born 2008-2009
+sophomore = test_data_generator.generate_student(grade_level=10) # Born 2009-2010
 ```
 
-### **Command-Line Testing**
+### Command-Line Testing
 ```bash
-# Test file upload handler
-python testing/test_agent.py
-
-# Test orchestrator
-python testing/test_smee.py
+python testing/test_smee.py       # Test orchestrator
+python testing/test_agent.py      # Test file upload handler
 ```
 
-## 📤 Upload & Evaluation Flow
+---
 
-### **File Upload Triggers 9-Step Workflow**
-
-**For 2026 Applicants (Real Admissions):**
-1. Upload document (PDF, DOCX, TXT, etc.)
-2. BELLE extracts student info + documents
-3. Student matching (composite key lookup)
-4. High school enrichment check
-5. NAVEEN enriches schools data
-6. MOANA validates school (with remediation if needed)
-7. Core agents evaluate (TIANA, RAPUNZEL, MOANA, MULAN)
-8. MILO pattern analysis
-9. MERLIN synthesis + AURORA report generation
-
-**For Test Uploads:**
-- Same 9-step pipeline but isolated in test data
-- Monitor agent execution on Test page (`/test`)
-- Clear test data without affecting real applicants
-
-**For Training Data:**
-- Historical excellent examples
-- Used to calibrate MILO pattern detection
-- Supports re-evaluation analysis
-
-### **Re-Evaluation with Additional Files**
-If a student already exists in the system:
-- New files are added to the same student record
-- Student is marked for re-evaluation
-- Full 9-step workflow runs with all available documents
-- More data sources = more accurate assessment
-
-Progress is tracked via status badges:
-- 📋 Pending: Waiting for evaluation
-- 🔄 Processing: Workflow in progress  
-- ✅ Complete: All steps finished
-- ⚠️ Waiting: Additional documents needed for next steps
-
-## 🔐 Azure Storage Access
-
-Storage uploads use Azure AD authentication via the App Service managed identity. Ensure the web app identity has the **Storage Blob Data Contributor** role on the storage account, and that storage network access allows the app to reach Blob endpoints.
-
-## 📈 Application Insights (Agents View)
-
-Telemetry is enabled when `APPLICATIONINSIGHTS_CONNECTION_STRING` is set. Prompt capture is controlled by `NEXTGEN_CAPTURE_PROMPTS`.
-Agent runs, model usage, and token counts appear in the Agents view once telemetry is flowing.
-
-## 💡 Usage Tips
-
-### Training the AI
-- Upload 5-10 examples of excellent applications
-- Mark them as "Training Examples"
-- Indicate if they were selected
-- The AI learns what excellence looks like
-- Use the Training page to clear legacy training data when you need a fresh baseline.
-
-### Best Practices
-- Provide detailed applications for better evaluation  
-- Include relevant experience and skills
-- Review AI recommendations before final decisions
-- Give feedback to improve accuracy
-
-## 🔐 Security - Secure by Default
+## 🔐 Security
 
 ### Zero Plaintext Credentials
+- ✅ All secrets in Azure Key Vault with enterprise-grade encryption
+- ✅ No `.env` files in Git (`.gitignore` enforced)
+- ✅ No hardcoded credentials anywhere in code
+- ✅ Managed Identity for Azure service authentication
+- ✅ TLS/SSL everywhere via Front Door
+- ✅ SCM basic auth disabled — deployments use ARM management plane
+- ✅ WAF policy in Prevention mode with DRS 2.1 + Bot Manager 1.1
+- ✅ Front Door ID validation on App Service (rejects direct access)
+- ✅ Audit trail for all operations
 
-This application is designed to **never expose credentials**:
+### Key Vault Secrets
+| Category | Secrets |
+|----------|---------|
+| PostgreSQL | `postgres-host`, `postgres-port`, `postgres-database`, `postgres-username`, `postgres-password` |
+| Azure OpenAI | `azure-openai-endpoint`, `azure-deployment-name`, `azure-api-version` |
+| Application | `flask-secret-key` (auto-generated) |
+| Azure | `azure-subscription-id`, `azure-resource-group` |
 
-✅ **All secrets in Azure Key Vault** - Enterprise-grade encryption  
-✅ **No .env files in Git** - `.gitignore` configured properly  
-✅ **No hardcoded credentials** - Code only references config variables  
-✅ **Managed Identity** - Application authenticates via Azure AD  
-✅ **TLS/SSL everywhere** - All connections encrypted  
-✅ **Audit trail** - All operations logged for compliance
+---
 
-**First-Time Setup:**
-```bash
-./scripts/setup/keyvault_setup.sh
-```
+## 📈 Observability
 
-**Stored in Key Vault:**
-- PostgreSQL: `postgres-host`, `postgres-password`, etc.
-- Azure OpenAI: `azure-openai-endpoint`, `azure-deployment-name`
-- Application: `flask-secret-key` (auto-generated)
+### OpenTelemetry Integration
+The application uses `azure-monitor-opentelemetry` for automatic instrumentation of Flask, requests, and psycopg2. Agent-level telemetry tracks:
+- Token usage per agent per request
+- Agent execution duration
+- Model deployment utilization
+- Error rates and retry counts
 
-For complete security guidelines, see [documents/security/SECURITY_GUIDE.md](documents/security/SECURITY_GUIDE.md).
+### Telemetry Dashboard (`/telemetry`)
+Real-time metrics with 30-second auto-refresh: Application Insights connection status, agent performance, and school pipeline status.
 
-## 📚 Additional Resources
+### Agent Monitor (`/agent-monitor`)
+Standalone terminal-style debugging interface for real-time agent execution monitoring.
 
-### Core Documentation
-- **[WORKFLOW_MAP.md](WORKFLOW_MAP.md)** - Complete 9-step workflow visualization with data flows
-- **[README_WORKFLOW.md](README_WORKFLOW.md)** - User-focused workflow guide with examples
-- **[PHASE_5_SUMMARY.md](PHASE_5_SUMMARY.md)** - Audit logging & file upload implementation details
-- **[AGENT_ARCHITECTURE_DETAILED.md](AGENT_ARCHITECTURE_DETAILED.md)** - Agent implementation details and specializations
+---
+
+## 📚 Additional Documentation
+
+### Core
+- [WORKFLOW_MAP.md](WORKFLOW_MAP.md) — 9-step workflow visualization with data flows
+- [README_WORKFLOW.md](README_WORKFLOW.md) — User-focused workflow guide
+- [AGENT_ARCHITECTURE_DETAILED.md](AGENT_ARCHITECTURE_DETAILED.md) — Agent implementation details
 
 ### Setup & Configuration
-- **[documents/setup/SETUP_GUIDE_MANUAL.md](documents/setup/SETUP_GUIDE_MANUAL.md)** - Step-by-step manual setup
-- **[documents/setup/KEY_VAULT_SETUP.md](documents/setup/KEY_VAULT_SETUP.md)** - Key Vault configuration guide
-- **[documents/setup/POSTGRESQL_KEYVAULT_SETUP.md](documents/setup/POSTGRESQL_KEYVAULT_SETUP.md)** - PostgreSQL + Key Vault integration
-- **[documents/setup/LOCAL_TEST_AND_AZURE_SETUP.md](documents/setup/LOCAL_TEST_AND_AZURE_SETUP.md)** - Local vs Azure setup comparison
+- [documents/setup/SETUP_GUIDE_MANUAL.md](documents/setup/SETUP_GUIDE_MANUAL.md) — Manual setup guide
+- [documents/setup/KEY_VAULT_SETUP.md](documents/setup/KEY_VAULT_SETUP.md) — Key Vault configuration
+- [documents/setup/POSTGRESQL_KEYVAULT_SETUP.md](documents/setup/POSTGRESQL_KEYVAULT_SETUP.md) — PostgreSQL + Key Vault
 
-### Deployment Documentation
-- **[documents/deployment/AZURE_WEBAPP_DEPLOY.md](documents/deployment/AZURE_WEBAPP_DEPLOY.md)** - Production deployment guide
-- **[documents/deployment/DEPLOYMENT_CHECKLIST.md](documents/deployment/DEPLOYMENT_CHECKLIST.md)** - Pre-deployment verification
-- **[documents/deployment/DEPLOYMENT_SUCCESS.md](documents/deployment/DEPLOYMENT_SUCCESS.md)** - Current deployment status
+### Deployment
+- [documents/deployment/AZURE_WEBAPP_DEPLOY.md](documents/deployment/AZURE_WEBAPP_DEPLOY.md) — Production deployment guide
+- [documents/deployment/DEPLOYMENT_CHECKLIST.md](documents/deployment/DEPLOYMENT_CHECKLIST.md) — Pre-deployment verification
 
-### Data & Security
-- **[documents/migration/POSTGRES_MIGRATION.md](documents/migration/POSTGRES_MIGRATION.md)** - Database migration guide
-- **[documents/security/SECURITY_GUIDE.md](documents/security/SECURITY_GUIDE.md)** - Security best practices
-- **[documents/security/SECURITY_AND_EFFICIENCY_AUDIT.md](documents/security/SECURITY_AND_EFFICIENCY_AUDIT.md)** - Compliance audit results
+### Security
+- [documents/security/SECURITY_GUIDE.md](documents/security/SECURITY_GUIDE.md) — Security best practices
+- [documents/security/SECURITY_AND_EFFICIENCY_AUDIT.md](documents/security/SECURITY_AND_EFFICIENCY_AUDIT.md) — Compliance audit
 
-### Verification & Testing
-- **[documents/verification/AGENT_STATUS_TRACKING.md](documents/verification/AGENT_STATUS_TRACKING.md)** - Agent status monitoring
-- **[documents/verification/AGENT_GPT_VERIFICATION.md](documents/verification/AGENT_GPT_VERIFICATION.md)** - Agent output verification
-
-## 🎯 Quick Reference
-
-### Common Commands
-
-```bash
-# Start development
-source .venv/bin/activate && python app.py
-
-# Run tests
-python testing/test_smee.py
-python testing/test_agent.py
-
-# Check database
-python testing/show_database_structure.py
-
-# Clear test data
-python testing/clear_database.py
-
-# Deploy to Azure
-az webapp deployment source config-zip --resource-group your-rg --name your-app --src app.zip
-```
-
-### Key URLs (Local Development)
-- Dashboard: http://localhost:5001
-- Upload: http://localhost:5001/upload
-- Test System: http://localhost:5001/test
-- Students: http://localhost:5001/students
-- Application Details: http://localhost:5001/application/{id}
-
-### Key Directories
-- **src/agents/** - Agent implementations (BELLE, TIANA, RAPUNZEL, etc.)
-- **src/services/** - Business logic and processing
-- **web/templates/** - HTML templates for web interface
-- **database/** - SQL schema definitions
-- **scripts/** - Automation scripts (setup, init, migrate, verify)
-- **testing/** - Test utilities and debugging tools
-- **documents/** - Comprehensive documentation
-
-### Performance Tips
-- **Batch Processing**: Use test data generator for 5+ students at once
-- **Caching**: Agent outputs are cached in ai_evaluations table
-- **Parallel Execution**: Core agents (TIANA, RAPUNZEL, MOANA, MULAN) run simultaneously
-- **Database Indices**: Ensure school_lookup_index exists for fast matching
-- **Content Processing**: Enable only when needed (CONTENT_PROCESSING_ENABLED)
-
-## 🎓 Architecture Decision Records
-
-### Why 9-Step Workflow?
-- **Stages agents by dependency**: Extract → Match → Enrich → Validate → Evaluate → Synthesize → Report
-- **Enables validation gates**: Each agent validates input before processing
-- **Supports remediation loops**: Validation failures trigger targeted re-processing (e.g., NAVEEN ↔ MOANA)
-- **Audit-friendly**: Each step logs separately for compliance
-
-### Why Composite Key Matching?
-- **Prevents duplicates**: Same student → Same records (no data fragmentation)
-- **Enables re-evaluation**: New files added to existing student record
-- **Fair assessment**: All available data considered in final evaluation
-- **Multi-school scenarios**: Students who moved between schools are correctly identified
-
-### Why RAPUNZEL Contextual Rigor Weighting?
-- **Fair assessment across school types**: Private school vs public school grade distributions differ significantly
-- **Opportunity-adjusted scoring**: Considers AP/Honors availability, not just GPA
-- **Demographic awareness**: Accounts for school free/reduced lunch rates
-- **0-5 scale clarity**: Easy to interpret in reports and decisions
-
-### Why Fairness Factor (MOANA)?
-- **Systemic bias reduction**: Adjusts for documented school resource disparities
-- **Evidence-based**: Weights derived from public school data
-- **Transparent**: All weighting factors documented in outputs
-- **Reviewable**: Human evaluators can see and question adjustments
-
-## 🚀 Project Roadmap
-
-**Current Phase (5):** ✅ Complete
-- 9-step orchestration
-- Audit logging (14 types)
-- File upload handler with AI matching
-
-**Future Enhancements:**
-- [ ] API endpoints for integration
-- [ ] Email notifications for applicants
-- [ ] Advanced analytics dashboard
-- [ ] Custom evaluation criteria per program
-- [ ] Multi-language support
-- [ ] Batch import from SFTP/S3
-- [ ] Scheduled re-evaluations
-- [ ] Stakeholder feedback loop
-
-## 📝 License & Support
-
-This project is built with Azure AI services and requires:
-- ✅ Azure subscription (OpenAI, Key Vault, PostgreSQL)
-- ✅ GitHub account (for CI/CD)
-- ✅ Python 3.9+
-
-For support, refer to deployment documentation and security guides in the `/documents` directory.
-
-## �‍💻 Development Workflow
-
-### Local Development Setup
-
-**Every development session:**
-```bash
-# Activate virtual environment
-source .venv/bin/activate
-
-# Verify environment setup
-python -c "from src.config import config; print('✅ Configuration loaded')"
-
-# Start development server (auto-reloads on file changes)
-python app.py
-```
-
-**Running tests:**
-```bash
-# Test agent orchestration
-python testing/test_smee.py
-
-# Test file upload handler
-python testing/test_agent.py
-
-# Generate test data
-python testing/test_data_generator.py
-```
-
-### Code Structure for New Agents
-
-To create a custom agent:
-
-1. **Create agent file** in `src/agents/`:
-   ```python
-   from src.agents.base_agent import BaseAgent
-   
-   class MyAgent(BaseAgent):
-       async def process(self, data):
-           # Your agent logic
-           return result
-   ```
-
-2. **Register in orchestrator** (`src/agents/smee_orchestrator.py`):
-   ```python
-   my_agent = MyAgent()
-   result = await my_agent.process(application_data)
-   ```
-
-3. **Add audit logging**:
-   ```python
-   await self._log_interaction(
-       application_id=application_id,
-       agent_name="my_agent",
-       step=8,  # Your step number
-       action="analyze",
-       output=result
-   )
-   ```
-
-### Database Debugging
-
-**Connect directly to PostgreSQL:**
-```bash
-psql "postgresql://user:password@host:5432/ApplicationsDB"
-
-# View recent agent interactions
-SELECT * FROM agent_interactions 
-ORDER BY created_at DESC LIMIT 10;
-
-# View file uploads and matching decisions
-SELECT * FROM file_upload_audit 
-ORDER BY uploaded_at DESC LIMIT 10;
-
-# Check application status
-SELECT id, first_name, status FROM applications LIMIT 5;
-```
-
-**Database Reset for Development:**
-```bash
-# ⚠️ WARNING: This deletes all data
-python testing/clear_database.py
-
-# Reinitialize schema
-python scripts/init/init_database.py
-```
+---
 
 ## 🛠️ Troubleshooting
 
-**Database Connection Issues:**
+**Database connection issues:**
 - Verify PostgreSQL credentials in Key Vault or `.env.local`
-- Check PostgreSQL is running: `az container show --resource-group your-resource-group --name your-postgres-container`
-- Test connection: `psql "postgresql://user:password@host:5432/ApplicationsDB"`
-- Common fix: Ensure firewall rules allow your IP
+- Test: `python -c "from src.database import Database; db = Database(); print('OK')"`
 
-**AI Evaluation Errors:**
+**AI evaluation errors:**
 - Ensure Azure OpenAI resource is accessible
-- Check deployment name matches environment variable (gpt-4, gpt-35-turbo)
-- Verify you have "Cognitive Services OpenAI User" role assigned
-- Check token limits: Some models have different max token counts
+- Check deployment names match tier config in `src/config.py`
+- Verify `Cognitive Services OpenAI User` role is assigned
 
-**Import Errors:**
-- Make sure virtual environment is activated: `source .venv/bin/activate`
-- Reinstall dependencies: `pip install -r requirements.txt`
-- Check Python version: `python --version` (requires 3.9+)
+**Key Vault access:**
+- Run `az login` to authenticate
+- Verify `Reader` + `Key Vault Secrets User` roles
+- Check: `az keyvault show --name your-keyvault-name`
 
-**Key Vault Access Issues:**
-- Run `az login` to authenticate with Azure
-- Verify Key Vault permissions: `Reader` + `Key Vault Secrets User` role
-- Check Key Vault name matches config: `az keyvault show --name your-keyvault-name`
+**Application Insights not showing data:**
+- Ensure `APPLICATIONINSIGHTS_CONNECTION_STRING` is set
+- Wait 5–10 minutes for telemetry propagation
+- Set `NEXTGEN_CAPTURE_PROMPTS=true` for detailed logging
 
-**Application Insights Not Showing Data:**
-- Ensure `APPLICATIONINSIGHTS_CONNECTION_STRING` is set in Key Vault
-- Check Application Insights resource exists in Azure Portal
-- Wait 5-10 minutes for telemetry to appear
-- Verify `NEXTGEN_CAPTURE_PROMPTS=true` if you want detailed logging
+**Video upload fails:**
+- Upload uses 100KB chunked transfer (WAF 128KB body limit)
+- Check Front Door WAF logs for blocked requests
+- Ensure `opencv-python-headless` is installed for Mirabel
+
+---
+
+## 🏗️ Architecture Decisions
+
+| Decision | Rationale |
+|----------|-----------|
+| **9-Step Workflow** | Stages agents by dependency, enables validation gates, supports remediation loops, audit-friendly |
+| **Composite Key Matching** | Prevents duplicates, enables re-evaluation, handles multi-school scenarios |
+| **Contextual Rigor (RAPUNZEL)** | Fair assessment across school types — adjusts for AP/Honors availability and opportunity |
+| **Fairness Factor (MOANA)** | Evidence-based bias reduction using public school data, transparent and reviewable |
+| **4-Tier Models** | Cost optimization — use expensive models only for complex tasks, lightweight for simple extraction |
+| **Front Door + WAF** | Enterprise DDoS protection without EasyAuth complexity |
+| **ARM Zip Deploy** | Works with SCM basic auth disabled and Front Door blocking SCM |
+
+---
+
+## 📝 License & Support
+
+Requires:
+- Azure subscription (OpenAI, Key Vault, PostgreSQL, Front Door)
+- GitHub account (CI/CD, feedback issues)
+- Python 3.9+
+
+For support, see documentation in the `/documents` directory.
