@@ -174,11 +174,12 @@ const VideoUpload = (() => {
     if (!hidden) {
       hidden = document.createElement('input');
       hidden.type = 'hidden';
-      hidden.name = 'chunked_blob_info';
       hidden.id = _cfg.hiddenFieldId;
       const form = document.getElementById(_cfg.formId);
       if (form) form.appendChild(hidden);
     }
+    // Always set the name to chunked_blob_info (templates may use legacy name)
+    hidden.name = 'chunked_blob_info';
     const info = _pendingFiles
       .filter(v => v.status === 'done')
       .map(v => ({

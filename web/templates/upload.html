@@ -46,7 +46,7 @@
                 </div>
             </div>
 
-            <input type="hidden" id="videoBlobInfo" name="video_blob_info" value="">
+            <input type="hidden" id="videoBlobInfo" name="chunked_blob_info" value="">
         </div>
 
         <!-- Application Type Selection -->
@@ -260,7 +260,7 @@ function handleDrop(e) {
 applyTrainingPreset();
 </script>
 
-<script src="{{ url_for('static', filename='js/video-upload.js') }}"></script>
+<script src="{{ url_for('static', filename='js/video-upload.js') }}?v={{ app_version }}"></script>
 <script>
 VideoUpload.init({
     fileInputId:   'fileInput',

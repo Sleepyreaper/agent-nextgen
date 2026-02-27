@@ -46,7 +46,7 @@
                             <div id="trainingVideoProgressBar" style="background:linear-gradient(90deg,#667eea,#764ba2); height:100%; width:0%; transition:width 0.3s; color:#fff; font-size:0.8rem; line-height:24px; text-align:center; border-radius:8px;">0%</div>
                         </div>
                     </div>
-                    <input type="hidden" id="trainingVideoBlobInfo" name="video_blob_info" value="">
+                    <input type="hidden" id="trainingVideoBlobInfo" name="chunked_blob_info" value="">
                     </div>
                     <div id="trainingSelectionStatus" style="margin-top:1rem; display:flex; gap:1.5rem; align-items:center;">
                         <label style="display:flex; align-items:center; cursor:pointer; font-weight:600;">
@@ -491,7 +491,7 @@ async function linkScore(appId, scoreId, btn) {
     }
 }
 </script>
-<script src="{{ url_for('static', filename='js/video-upload.js') }}"></script>
+<script src="{{ url_for('static', filename='js/video-upload.js') }}?v={{ app_version }}"></script>
 <script>
 VideoUpload.init({
     fileInputId:   'trainingFileInput',
