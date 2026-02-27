@@ -510,7 +510,8 @@ class Database:
                 FROM information_schema.columns
                 WHERE table_name = 'applications' AND column_name IN (
                     'first_name', 'last_name', 'high_school', 'state_code',
-                    'is_test_data', 'student_summary', 'agent_results'
+                    'is_test_data', 'student_summary', 'agent_results',
+                    'file_content_hash'
                 )
             """)
             existing_columns = {row[0] for row in cursor.fetchall()}
@@ -539,6 +540,11 @@ class Database:
                 cursor.execute("ALTER TABLE applications ADD COLUMN is_test_data BOOLEAN DEFAULT FALSE")
                 conn.commit()
                 logger.info("✓ Added is_test_data column to applications")
+
+            if 'file_content_hash' not in existing_columns:
+                cursor.execute("ALTER TABLE applications ADD COLUMN file_content_hash VARCHAR(64)")
+                conn.commit()
+                logger.info("✓ Added file_content_hash column to applications")
             
             # add student_summary JSON column so we can store a concise
             # precomputed summary of what the agents have reasoned about this
@@ -1481,12 +1487,40 @@ class Database:
         except Exception as e:
             logger.error(f"Error marking for re-evaluation: {e}")
             return False
-    
+
+    def check_duplicate_file(self, file_content_hash: str,
+                             is_training: bool = False) -> Optional[Dict[str, Any]]:
+        """Check if a file with the same content hash already exists.
+
+        Returns the matching application row (dict) if found, else ``None``.
+        """
+        if not file_content_hash:
+            return None
+        if not self.has_applications_column('file_content_hash'):
+            return None
+        training_col = self.get_training_example_column()
+        try:
+            query = f"""
+                SELECT application_id, applicant_name, original_file_name
+                FROM Applications
+                WHERE file_content_hash = %s
+                  AND {training_col} = %s
+                ORDER BY application_id DESC
+                LIMIT 1
+            """
+            rows = self.execute_query(query, (file_content_hash, is_training))
+            if rows:
+                return rows[0]
+        except Exception as e:
+            logger.warning("check_duplicate_file failed: %s", e)
+        return None
+
     def create_application(self, applicant_name: str, email: str, application_text: str,
                           file_name: str, file_type: str, is_training: bool = False,
                           is_test_data: bool = False,
                           was_selected: Optional[bool] = None,
-                          student_id: Optional[str] = None) -> int:
+                          student_id: Optional[str] = None,
+                          file_content_hash: Optional[str] = None) -> int:
         """Create a new application record."""
         training_col = self.get_training_example_column()
         test_col = self.get_test_data_column()
@@ -1525,6 +1559,11 @@ class Database:
             columns.insert(6, test_col)
             values.insert(6, is_test_data)
         # Defensive: if test_col is None, skip test_col in columns/values
+
+        # Store file content hash for duplicate detection
+        if file_content_hash and self.has_applications_column("file_content_hash"):
+            columns.append("file_content_hash")
+            values.append(file_content_hash)
 
         placeholders = ", ".join(["%s"] * len(columns))
         column_list = ", ".join(columns)

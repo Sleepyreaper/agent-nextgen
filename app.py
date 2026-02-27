@@ -6,6 +6,7 @@ import time
 import uuid
 import json
 import re
+import hashlib
 import threading
 import requests
 from flask import Flask, flash, jsonify, render_template, redirect, url_for, request, Response, stream_with_context
@@ -991,35 +992,38 @@ def upload():
                     'agent_fields': doc_analysis.get('agent_fields', {})
                 })
 
-            # ── Process pre-uploaded video blobs (chunked upload) ─────
-            video_blob_info_raw = request.form.get('video_blob_info', '').strip()
-            if video_blob_info_raw:
+            # ── Process pre-uploaded blobs (chunked upload for all file types) ─
+            blob_info_raw = (
+                request.form.get('chunked_blob_info', '').strip()
+                or request.form.get('video_blob_info', '').strip()   # backward compat
+            )
+            if blob_info_raw:
                 import json as _json
                 try:
-                    video_blobs = _json.loads(video_blob_info_raw)
+                    chunked_blobs = _json.loads(blob_info_raw)
                 except Exception:
-                    video_blobs = []
+                    chunked_blobs = []
 
-                for vblob in video_blobs:
-                    blob_path = vblob.get('blob_path')
-                    vfilename = secure_filename(vblob.get('filename', 'video.mp4'))
+                for cblob in chunked_blobs:
+                    blob_path = cblob.get('blob_path')
+                    cfilename = secure_filename(cblob.get('filename', 'file.bin'))
                     if not blob_path:
                         continue
 
                     temp_id = uuid.uuid4().hex
                     temp_path = os.path.join(
                         app.config['UPLOAD_FOLDER'],
-                        f"temp_{temp_id}_{vfilename}"
+                        f"temp_{temp_id}_{cfilename}"
                     )
 
                     try:
-                        ok = storage.download_video_to_file(
+                        ok = storage.download_blob_to_file(
                             blob_path=blob_path,
                             local_path=temp_path,
                             application_type=app_type,
                         )
                         if not ok:
-                            flash(f"Could not retrieve video {vfilename} from storage", 'error')
+                            flash(f"Could not retrieve {cfilename} from storage", 'error')
                             continue
 
                         valid_files += 1
@@ -1028,22 +1032,42 @@ def upload():
                         with open(temp_path, 'rb') as handle:
                             file_content = handle.read()
 
-                        try:
-                            mirabel = get_mirabel()
-                            doc_analysis = mirabel.analyze_video(temp_path, vfilename)
-                            application_text = doc_analysis.get('agent_fields', {}).get('application_text', '')
-                            file_type = 'mp4'
-                        except Exception as e:
-                            logger.warning("Mirabel video analysis (blob) failed: %s", e)
-                            doc_analysis = {
-                                "document_type": "video_submission",
-                                "confidence": 0,
-                                "student_info": {},
-                                "extracted_data": {},
-                                "agent_fields": {}
-                            }
-                            application_text = ""
-                            file_type = 'mp4'
+                        is_video = DocumentProcessor.is_video_file(cfilename)
+
+                        if is_video:
+                            # Video → Mirabel
+                            try:
+                                mirabel = get_mirabel()
+                                doc_analysis = mirabel.analyze_video(temp_path, cfilename)
+                                application_text = doc_analysis.get('agent_fields', {}).get('application_text', '')
+                                file_type = 'mp4'
+                            except Exception as e:
+                                logger.warning("Mirabel video analysis (blob) failed: %s", e)
+                                doc_analysis = {
+                                    "document_type": "video_submission",
+                                    "confidence": 0,
+                                    "student_info": {},
+                                    "extracted_data": {},
+                                    "agent_fields": {}
+                                }
+                                application_text = ""
+                                file_type = 'mp4'
+                        else:
+                            # Document → Belle
+                            ocr_callback = _make_ocr_callback()
+                            application_text, file_type = DocumentProcessor.process_document(
+                                temp_path, ocr_callback=ocr_callback
+                            )
+                            try:
+                                doc_analysis = belle.analyze_document(application_text, cfilename)
+                            except Exception as e:
+                                logger.warning("Belle analysis failed for chunked blob %s: %s", cfilename, e)
+                                doc_analysis = {
+                                    "document_type": "unknown",
+                                    "confidence": 0,
+                                    "student_info": {},
+                                    "extracted_data": {}
+                                }
                     finally:
                         try:
                             os.remove(temp_path)
@@ -1066,7 +1090,7 @@ def upload():
                         school_name=school_name,
                         email=student_email,
                         full_name=extracted_name,
-                        filename=vfilename
+                        filename=cfilename
                     )
 
                     if identity_key not in grouped_uploads:
@@ -1092,11 +1116,11 @@ def upload():
                         group['school_name'] = school_name
 
                     group['files'].append({
-                        'filename': vfilename,
+                        'filename': cfilename,
                         'text': application_text,
                         'file_type': file_type,
                         'file_content': file_content,
-                        'document_type': doc_analysis.get('document_type', 'video_submission'),
+                        'document_type': doc_analysis.get('document_type', 'unknown'),
                         'student_info': belle_student_info,
                         'agent_fields': doc_analysis.get('agent_fields', {})
                     })
@@ -1198,7 +1222,32 @@ def upload():
                         'match_score': match.get('match_score')
                     })
                     continue
-            
+
+                # ── Duplicate file detection (SHA-256 content hash) ──
+                hash_obj = hashlib.sha256()
+                for fe in group['files']:
+                    hash_obj.update(fe.get('file_content') or b'')
+                file_content_hash = hash_obj.hexdigest()
+
+                dup = db.check_duplicate_file(
+                    file_content_hash, is_training=(is_training or is_test)
+                )
+                if dup:
+                    dup_name = dup.get('applicant_name', 'Unknown')
+                    dup_file = dup.get('original_file_name', '')
+                    dup_id = dup.get('application_id')
+                    flash(
+                        f"Duplicate file skipped — this file was already uploaded "
+                        f"for {dup_name} (application #{dup_id}, file: {dup_file}).",
+                        'warning'
+                    )
+                    results.append({
+                        'application_id': dup_id,
+                        'action': 'duplicate_skipped',
+                        'applicant_name': dup_name,
+                    })
+                    continue
+
                 student_id = storage.generate_student_id()
                 for file_entry in group['files']:
                     storage_result = storage.upload_file(
@@ -1227,7 +1276,8 @@ def upload():
                     is_training=(is_training or is_test),
                     is_test_data=is_test,
                     was_selected=was_selected,
-                    student_id=student_id
+                    student_id=student_id,
+                    file_content_hash=file_content_hash
                 )
 
                 additional_fields = {}
@@ -2094,14 +2144,14 @@ def process_student(application_id):
 
 
 # ── Chunked Video Upload API ─────────────────────────────────────────
-@app.route('/api/video/upload-chunk', methods=['POST'])
-def video_upload_chunk():
-    """Accept a chunk of video data and stage it in Azure Blob Storage.
+@app.route('/api/file/upload-chunk', methods=['POST'])
+@app.route('/api/video/upload-chunk', methods=['POST'])  # backward compat
+def file_upload_chunk():
+    """Accept a chunk of file data and stage it in Azure Blob Storage.
 
-    Each chunk is a small (≤100 KB) multipart POST that is individually
-    well below the Azure Front Door WAF request body inspection limit
-    (128 KB), so even very large MP4 files can be uploaded without
-    being blocked by the WAF.
+    ALL file types (PDF, DOCX, TXT, MP4, etc.) are uploaded in small
+    chunks (≤100 KB) that stay under the Azure Front Door WAF 128 KB
+    body inspection limit.
 
     The client sends:
       - chunk      : the binary chunk (file part)
@@ -2121,16 +2171,14 @@ def video_upload_chunk():
     upload_id = request.form.get('upload_id', '')
     chunk_index = int(request.form.get('chunk_index', 0))
     total_chunks = int(request.form.get('total_chunks', 1))
-    filename = secure_filename(request.form.get('filename', 'video.mp4'))
+    filename = secure_filename(request.form.get('filename', 'file.bin'))
     app_type = request.form.get('app_type', '2026')
 
-    if not filename.lower().endswith('.mp4'):
-        return jsonify({'error': 'Only MP4 files are supported'}), 400
     if not upload_id:
         return jsonify({'error': 'upload_id is required'}), 400
 
     try:
-        ok = storage.stage_video_chunk(
+        ok = storage.stage_chunked_upload(
             upload_id=upload_id,
             filename=filename,
             chunk_index=chunk_index,
@@ -2140,7 +2188,7 @@ def video_upload_chunk():
         if not ok:
             return jsonify({'error': 'Storage not available – could not stage chunk'}), 500
     except Exception as e:
-        logger.error("Video chunk %d upload failed: %s", chunk_index, e)
+        logger.error("File chunk %d upload failed: %s", chunk_index, e)
         return jsonify({'error': str(e)}), 500
 
     result = {
@@ -2153,7 +2201,7 @@ def video_upload_chunk():
     # Last chunk → commit all blocks
     if chunk_index == total_chunks - 1:
         try:
-            commit = storage.commit_video_upload(
+            commit = storage.commit_chunked_upload(
                 upload_id=upload_id,
                 filename=filename,
                 total_chunks=total_chunks,
@@ -2164,9 +2212,9 @@ def video_upload_chunk():
                 result['blob_path'] = commit['blob_path']
                 result['container'] = commit['container']
             else:
-                return jsonify({'error': 'Failed to commit video upload'}), 500
+                return jsonify({'error': 'Failed to commit file upload'}), 500
         except Exception as e:
-            logger.error("Video commit failed for %s: %s", upload_id, e)
+            logger.error("File commit failed for %s: %s", upload_id, e)
             return jsonify({'error': str(e)}), 500
 
     return jsonify(result)

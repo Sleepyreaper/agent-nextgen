@@ -263,37 +263,61 @@ class StorageManager:
             logger.error(f"Error deleting files: {e}")
             return False
 
-    # ── Chunked Video Upload (Block Blob staging) ─────────────────────
+    # ── Chunked File Upload (Block Blob staging) ──────────────────────
 
-    def _video_blob_client(self, upload_id: str, filename: str,
-                           application_type: str = "2026"):
-        """Return (blob_client, blob_path, container_name) for a video upload."""
+    _CONTENT_TYPES = {
+        '.pdf': 'application/pdf',
+        '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        '.doc': 'application/msword',
+        '.txt': 'text/plain',
+        '.text': 'text/plain',
+        '.mp4': 'video/mp4',
+        '.xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    }
+
+    def _chunked_blob_client(self, upload_id: str, filename: str,
+                             application_type: str = "2026"):
+        """Return (blob_client, blob_path, container_name) for a chunked upload."""
         if not self.client:
             return None
         container_name = self._get_container_name(application_type)
-        blob_path = f"video-uploads/{upload_id}/{filename}"
+        blob_path = f"chunked-uploads/{upload_id}/{filename}"
         container_client = self.client.get_container_client(container_name)
         return container_client.get_blob_client(blob_path), blob_path, container_name
 
-    def stage_video_chunk(self, upload_id: str, filename: str,
-                          chunk_index: int, chunk_data: bytes,
-                          application_type: str = "2026") -> bool:
-        """Stage one block of a chunked video upload."""
-        info = self._video_blob_client(upload_id, filename, application_type)
+    # Keep old name as alias for backward compat
+    def _video_blob_client(self, upload_id, filename, application_type="2026"):
+        return self._chunked_blob_client(upload_id, filename, application_type)
+
+    def stage_chunked_upload(self, upload_id: str, filename: str,
+                             chunk_index: int, chunk_data: bytes,
+                             application_type: str = "2026") -> bool:
+        """Stage one block of a chunked file upload (any file type)."""
+        info = self._chunked_blob_client(upload_id, filename, application_type)
         if not info:
             return False
         blob_client, _, _ = info
         import base64
         block_id = base64.b64encode(f"block-{chunk_index:06d}".encode()).decode()
         blob_client.stage_block(block_id=block_id, data=chunk_data)
-        logger.debug("Staged video block %d for upload %s", chunk_index, upload_id)
+        logger.debug("Staged block %d for upload %s (%s)", chunk_index, upload_id, filename)
         return True
 
-    def commit_video_upload(self, upload_id: str, filename: str,
-                            total_chunks: int,
-                            application_type: str = "2026") -> Dict[str, Any]:
-        """Commit all staged blocks, finalising the video blob."""
-        info = self._video_blob_client(upload_id, filename, application_type)
+    # Keep old name as alias
+    def stage_video_chunk(self, *a, **kw):
+        return self.stage_chunked_upload(*a, **kw)
+
+    def _content_type_for(self, filename: str) -> str:
+        """Infer MIME content type from file extension."""
+        import os
+        ext = os.path.splitext(filename)[1].lower()
+        return self._CONTENT_TYPES.get(ext, 'application/octet-stream')
+
+    def commit_chunked_upload(self, upload_id: str, filename: str,
+                              total_chunks: int,
+                              application_type: str = "2026") -> Dict[str, Any]:
+        """Commit all staged blocks, finalising the blob (any file type)."""
+        info = self._chunked_blob_client(upload_id, filename, application_type)
         if not info:
             return {'success': False, 'error': 'Storage not available'}
         blob_client, blob_path, container_name = info
@@ -308,13 +332,15 @@ class StorageManager:
         ]
         blob_client.commit_block_list(
             block_list=block_list,
-            content_settings=ContentSettings(content_type="video/mp4")
+            content_settings=ContentSettings(
+                content_type=self._content_type_for(filename)
+            )
         )
         blob_url = (
             f"https://{self.account_name}.blob.core.windows.net/"
             f"{container_name}/{blob_path}"
         )
-        logger.info("✅ Video upload committed: %s (%d chunks)", blob_path, total_chunks)
+        logger.info("✅ Chunked upload committed: %s (%d chunks)", blob_path, total_chunks)
         return {
             'success': True,
             'blob_path': blob_path,
@@ -324,9 +350,13 @@ class StorageManager:
             'filename': filename,
         }
 
-    def download_video_to_file(self, blob_path: str, local_path: str,
-                               application_type: str = "2026") -> bool:
-        """Stream a video blob to a local file (for Mirabel processing)."""
+    # Keep old name as alias
+    def commit_video_upload(self, *a, **kw):
+        return self.commit_chunked_upload(*a, **kw)
+
+    def download_blob_to_file(self, blob_path: str, local_path: str,
+                              application_type: str = "2026") -> bool:
+        """Stream a blob to a local file (any file type)."""
         if not self.client:
             return False
         try:
@@ -337,11 +367,15 @@ class StorageManager:
             with open(local_path, 'wb') as fh:
                 for chunk in downloader.chunks():
                     fh.write(chunk)
-            logger.info("Downloaded video blob %s → %s", blob_path, local_path)
+            logger.info("Downloaded blob %s → %s", blob_path, local_path)
             return True
         except Exception as e:
-            logger.error("Error downloading video blob %s: %s", blob_path, e)
+            logger.error("Error downloading blob %s: %s", blob_path, e)
             return False
+
+    # Keep old name as alias
+    def download_video_to_file(self, *a, **kw):
+        return self.download_blob_to_file(*a, **kw)
 
 
 # Global storage manager instance

@@ -1,12 +1,17 @@
 /**
- * video-upload.js – Chunked MP4 upload to Azure Blob Storage
+ * video-upload.js – Chunked file upload to Azure Blob Storage
  *
- * When a user selects (or drags) an .mp4 file the uploader:
- *   1. Slices the file into ≤4 MB chunks
- *   2. POSTs each chunk to /api/video/upload-chunk
- *   3. After the last chunk the server commits the block list
- *   4. The blob path is stored in a hidden <input> so the regular
- *      form POST can tell the server where to find the video.
+ * ALL files are uploaded in small chunks (≤100 KB) to stay under the
+ * Azure Front Door WAF 128 KB body inspection limit.  This applies to
+ * every file type — PDF, DOCX, TXT, MP4, etc.
+ *
+ * Flow:
+ *   1. User selects files via <input type=file>
+ *   2. On form submit, files are sliced into ≤100 KB chunks
+ *   3. Each chunk is POSTed to /api/file/upload-chunk
+ *   4. After the last chunk the server commits the block list
+ *   5. Blob paths are stored in a hidden <input> so the regular
+ *      form POST carries references (not raw bytes)
  *
  * Usage (in the template):
  *   <script src="{{ url_for('static', filename='js/video-upload.js') }}"></script>
@@ -26,7 +31,7 @@ const VideoUpload = (() => {
   const CHUNK_SIZE = 100 * 1024; // 100 KB per chunk (must stay under Front Door WAF 128 KB body inspection limit)
 
   let _cfg = {};
-  let _pendingVideos = []; // [{file, uploadId, blobPath, container, status}]
+  let _pendingFiles = []; // [{file, uploadId, blobPath, container, status}]
 
   function _uuid() {
     return 'xxxxxxxxxxxx4xxxyxxxxxxxxxxxxxxx'.replace(/[xy]/g, c => {
@@ -35,8 +40,8 @@ const VideoUpload = (() => {
     });
   }
 
-  /* ── Upload a single video file in chunks ────────────────────── */
-  async function _uploadVideo(entry, onProgress) {
+  /* ── Upload a single file in chunks ──────────────────────────── */
+  async function _uploadFile(entry, onProgress) {
     const file = entry.file;
     const totalChunks = Math.ceil(file.size / CHUNK_SIZE);
     const appType = _cfg.appTypeGetter ? _cfg.appTypeGetter() : '2026';
@@ -58,7 +63,7 @@ const VideoUpload = (() => {
       let resp;
       while (retries > 0) {
         try {
-          resp = await fetch('/api/video/upload-chunk', {
+          resp = await fetch('/api/file/upload-chunk', {
             method: 'POST',
             body: fd,
           });
@@ -93,28 +98,30 @@ const VideoUpload = (() => {
     }
   }
 
-  /* ── Upload ALL pending videos sequentially ──────────────────── */
-  async function _uploadAllVideos() {
-    if (_pendingVideos.length === 0) return true;
+  /* ── Upload ALL pending files sequentially ───────────────────── */
+  async function _uploadAllFiles() {
+    if (_pendingFiles.length === 0) return true;
 
     const progressEl = document.getElementById(_cfg.progressId);
     const barEl = document.getElementById(_cfg.progressBarId);
     const textEl = document.getElementById(_cfg.progressTextId);
     if (progressEl) progressEl.style.display = 'block';
 
-    for (let idx = 0; idx < _pendingVideos.length; idx++) {
-      const entry = _pendingVideos[idx];
-      const label = _pendingVideos.length > 1
-        ? `Video ${idx + 1}/${_pendingVideos.length}: ${entry.file.name}`
+    for (let idx = 0; idx < _pendingFiles.length; idx++) {
+      const entry = _pendingFiles[idx];
+      const label = _pendingFiles.length > 1
+        ? `File ${idx + 1}/${_pendingFiles.length}: ${entry.file.name}`
         : entry.file.name;
 
       if (textEl) textEl.textContent = `Uploading ${label}…`;
 
       try {
-        await _uploadVideo(entry, pct => {
+        await _uploadFile(entry, pct => {
+          // Calculate overall progress across all files
+          const filePct = (idx / _pendingFiles.length) * 100 + (pct / _pendingFiles.length);
           if (barEl) {
-            barEl.style.width = `${pct}%`;
-            barEl.textContent = `${Math.round(pct)}%`;
+            barEl.style.width = `${filePct}%`;
+            barEl.textContent = `${Math.round(filePct)}%`;
           }
         });
       } catch (err) {
@@ -123,18 +130,19 @@ const VideoUpload = (() => {
       }
     }
 
-    if (textEl) textEl.textContent = '✅ Video uploaded – submitting form…';
+    if (textEl) textEl.textContent = '✅ Files uploaded – submitting form…';
     return true;
   }
 
   /* ── Intercept form submit ───────────────────────────────────── */
   function _onSubmit(e) {
-    if (_pendingVideos.length === 0) return; // no videos → normal submit
+    if (_pendingFiles.length === 0) return; // no files → normal submit (shouldn't happen)
 
-    // If any video is not yet uploaded, block and upload first
-    const allDone = _pendingVideos.every(v => v.status === 'done');
+    // If all files are already uploaded (e.g. re-submit), let it go
+    const allDone = _pendingFiles.every(v => v.status === 'done');
     if (allDone) {
       _injectHiddenField();
+      _stripAllFiles();
       return; // let the form submit normally
     }
 
@@ -143,13 +151,13 @@ const VideoUpload = (() => {
     const submitBtn = form.querySelector('button[type="submit"]');
     if (submitBtn) {
       submitBtn.disabled = true;
-      submitBtn.innerHTML = '⏳ Uploading video…';
+      submitBtn.innerHTML = '⏳ Uploading files…';
     }
 
-    _uploadAllVideos().then(ok => {
+    _uploadAllFiles().then(ok => {
       if (ok) {
         _injectHiddenField();
-        _stripVideoFiles();
+        _stripAllFiles();
         form.submit();
       } else {
         if (submitBtn) {
@@ -166,12 +174,12 @@ const VideoUpload = (() => {
     if (!hidden) {
       hidden = document.createElement('input');
       hidden.type = 'hidden';
-      hidden.name = 'video_blob_info';
+      hidden.name = 'chunked_blob_info';
       hidden.id = _cfg.hiddenFieldId;
       const form = document.getElementById(_cfg.formId);
       if (form) form.appendChild(hidden);
     }
-    const info = _pendingVideos
+    const info = _pendingFiles
       .filter(v => v.status === 'done')
       .map(v => ({
         upload_id: v.uploadId,
@@ -182,46 +190,43 @@ const VideoUpload = (() => {
     hidden.value = JSON.stringify(info);
   }
 
-  /* ── Remove video files from the <input type=file> ───────────── */
-  function _stripVideoFiles() {
+  /* ── Remove ALL files from the <input type=file> ─────────────── */
+  function _stripAllFiles() {
     const input = document.getElementById(_cfg.fileInputId);
-    if (!input || !input.files) return;
+    if (!input) return;
     const dt = new DataTransfer();
-    for (const f of input.files) {
-      if (!f.name.toLowerCase().endsWith('.mp4')) {
-        dt.items.add(f);
-      }
-    }
-    input.files = dt.files;
+    input.files = dt.files; // empty
   }
 
-  /* ── Detect video files on input change ──────────────────────── */
+  /* ── Detect files on input change ────────────────────────────── */
   function _onFileChange() {
     const input = document.getElementById(_cfg.fileInputId);
     if (!input || !input.files) return;
 
-    _pendingVideos = [];
+    _pendingFiles = [];
     const progressEl = document.getElementById(_cfg.progressId);
     if (progressEl) progressEl.style.display = 'none';
 
     for (const f of input.files) {
-      if (f.name.toLowerCase().endsWith('.mp4')) {
-        _pendingVideos.push({
-          file: f,
-          uploadId: _uuid(),
-          blobPath: null,
-          container: null,
-          status: 'pending',
-        });
-      }
+      _pendingFiles.push({
+        file: f,
+        uploadId: _uuid(),
+        blobPath: null,
+        container: null,
+        status: 'pending',
+      });
     }
 
-    // Update the size hint when videos are present
-    if (_pendingVideos.length > 0) {
-      const totalMB = _pendingVideos.reduce((s, v) => s + v.file.size, 0) / (1024 * 1024);
-      const hint = document.getElementById('videoSizeHint');
+    // Update the size hint
+    if (_pendingFiles.length > 0) {
+      const totalMB = _pendingFiles.reduce((s, v) => s + v.file.size, 0) / (1024 * 1024);
+      const isVideo = _pendingFiles.some(v => v.file.name.toLowerCase().endsWith('.mp4'));
+      // Check for page-specific hint elements
+      const hint = document.getElementById('videoSizeHint')
+                || document.getElementById(_cfg.fileInputId + 'SizeHint');
       if (hint) {
-        hint.textContent = `🎬 ${_pendingVideos.length} video${_pendingVideos.length > 1 ? 's' : ''} (${totalMB.toFixed(1)} MB) – will upload to cloud storage`;
+        const icon = isVideo ? '🎬' : '📄';
+        hint.textContent = `${icon} ${_pendingFiles.length} file${_pendingFiles.length > 1 ? 's' : ''} (${totalMB.toFixed(1)} MB) – will upload via secure chunked transfer`;
         hint.style.display = 'block';
       }
     }
