@@ -194,8 +194,16 @@ const VideoUpload = (() => {
   function _stripAllFiles() {
     const input = document.getElementById(_cfg.fileInputId);
     if (!input) return;
-    const dt = new DataTransfer();
-    input.files = dt.files; // empty
+    // Belt-and-suspenders: clear multiple ways for cross-browser safety
+    try { input.value = ''; } catch (_) { /* IE security exception */ }
+    try {
+      const dt = new DataTransfer();
+      input.files = dt.files;
+    } catch (_) { /* older browsers */ }
+    // Remove name so multipart body doesn't include any file part at all
+    input.removeAttribute('name');
+    // Remove required so programmatic submit doesn't get blocked
+    input.removeAttribute('required');
   }
 
   /* ── Detect files on input change ────────────────────────────── */

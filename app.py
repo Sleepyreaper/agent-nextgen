@@ -848,13 +848,18 @@ def upload():
     """
     if request.method == 'POST':
         try:
-            if 'file' not in request.files:
-                flash('No file uploaded', 'error')
-                return redirect(request.url)
+            # Check for files from either direct upload OR chunked blob upload
+            has_direct_files = (
+                'file' in request.files
+                and any(f.filename for f in request.files.getlist('file'))
+            )
+            has_chunked_blobs = bool(
+                (request.form.get('chunked_blob_info') or '').strip()
+                or (request.form.get('video_blob_info') or '').strip()
+            )
 
-            files = request.files.getlist('file')
-            if not files or all(not f.filename for f in files):
-                flash('No file selected', 'error')
+            if not has_direct_files and not has_chunked_blobs:
+                flash('No file uploaded', 'error')
                 return redirect(request.url)
             
             # Determine application type from radio buttons
@@ -872,6 +877,7 @@ def upload():
             grouped_uploads: Dict[str, Dict[str, Any]] = {}
             valid_files = 0
 
+            files = request.files.getlist('file') if 'file' in request.files else []
             for file in files:
                 if not file.filename:
                     continue
