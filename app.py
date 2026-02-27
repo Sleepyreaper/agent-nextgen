@@ -857,6 +857,18 @@ def upload():
                 (request.form.get('chunked_blob_info') or '').strip()
                 or (request.form.get('video_blob_info') or '').strip()
             )
+            # Also accept base64-encoded blob info for WAF compatibility
+            _raw_blob_check = (
+                (request.form.get('chunked_blob_info') or '').strip()
+                or (request.form.get('video_blob_info') or '').strip()
+            )
+            if _raw_blob_check:
+                import base64 as _b64_check
+                try:
+                    _decoded_check = _b64_check.b64decode(_raw_blob_check).decode('utf-8')
+                    has_chunked_blobs = _decoded_check.strip() not in ('', '[]')
+                except Exception:
+                    has_chunked_blobs = _raw_blob_check.strip() not in ('', '[]')
 
             if not has_direct_files and not has_chunked_blobs:
                 flash('No file uploaded', 'error')
@@ -1005,8 +1017,15 @@ def upload():
             )
             if blob_info_raw:
                 import json as _json
+                import base64 as _b64
+                # The JS client Base64-encodes the JSON to avoid WAF
+                # false positives on JSON patterns in form data.
                 try:
-                    chunked_blobs = _json.loads(blob_info_raw)
+                    decoded = _b64.b64decode(blob_info_raw).decode('utf-8')
+                except Exception:
+                    decoded = blob_info_raw  # fallback: raw JSON
+                try:
+                    chunked_blobs = _json.loads(decoded)
                 except Exception:
                     chunked_blobs = []
 
