@@ -10,7 +10,9 @@ import difflib
 import hashlib
 import threading
 import requests
-from flask import Flask, flash, jsonify, render_template, redirect, url_for, request, Response, stream_with_context
+from datetime import datetime, timedelta, timezone
+from flask import Flask, flash, jsonify, render_template, redirect, url_for, request, Response, session, stream_with_context
+from werkzeug.security import check_password_hash
 from werkzeug.utils import secure_filename
 
 from typing import Dict, Any, Optional
@@ -74,6 +76,82 @@ app = Flask(__name__, template_folder='web/templates', static_folder='web/static
 app.secret_key = config.flask_secret_key or os.urandom(32).hex()
 app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB max file size
 app.config['UPLOAD_FOLDER'] = 'uploads'
+
+
+# ---------------------------------------------------------------------------
+# Session lifetime
+# ---------------------------------------------------------------------------
+app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(hours=config.auth_session_hours)
+
+
+# ---------------------------------------------------------------------------
+# Authentication - simple Key Vault-backed username / password
+# ---------------------------------------------------------------------------
+_AUTH_WHITELIST = {
+    'login',                 # login page itself
+    'static',                # CSS / JS / images
+    'health_check',          # optional health probe endpoint
+}
+
+
+@app.before_request
+def require_login():
+    """Redirect unauthenticated requests to the login page."""
+    # Skip auth check if credentials are not configured (local dev / not yet set up)
+    if not config.auth_username or not config.auth_password_hash:
+        return  # auth disabled
+
+    # Allow whitelisted endpoints through
+    if request.endpoint in _AUTH_WHITELIST:
+        return
+
+    # Check session
+    if session.get('authenticated'):
+        login_time = session.get('login_time')
+        if login_time:
+            elapsed = datetime.now(timezone.utc) - datetime.fromisoformat(login_time)
+            if elapsed < timedelta(hours=config.auth_session_hours):
+                return  # session still valid
+        # Session expired
+        session.clear()
+
+    # Not authenticated - redirect HTML requests, return 401 for API calls
+    if request.path.startswith('/api/'):
+        return jsonify({'error': 'Authentication required'}), 401
+    return redirect(url_for('login', next=request.path))
+
+
+@app.route('/login', methods=['GET', 'POST'])
+def login():
+    """Login page and form handler."""
+    error = None
+    if request.method == 'POST':
+        username = request.form.get('username', '').strip()
+        password = request.form.get('password', '')
+
+        if (username == config.auth_username and
+                check_password_hash(config.auth_password_hash, password)):
+            session.permanent = True
+            session['authenticated'] = True
+            session['username'] = username
+            session['login_time'] = datetime.now(timezone.utc).isoformat()
+            logger.info("User '%s' logged in successfully", username)
+            next_url = request.args.get('next') or url_for('index')
+            return redirect(next_url)
+        else:
+            error = 'Invalid username or password.'
+            logger.warning("Failed login attempt for user '%s'", username)
+
+    return render_template('login.html', error=error, app_version=config.app_version)
+
+
+@app.route('/logout')
+def logout():
+    """Clear the session and redirect to login."""
+    username = session.get('username', 'unknown')
+    session.clear()
+    logger.info("User '%s' logged out", username)
+    return redirect(url_for('login'))
 
 
 @app.context_processor

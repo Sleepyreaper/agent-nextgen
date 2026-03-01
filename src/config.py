@@ -276,6 +276,11 @@ class Config:
         # Flask configuration
         self.flask_secret_key: str = self._get_secret("flask-secret-key", "FLASK_SECRET_KEY")
 
+        # App authentication (simple username/password stored in Key Vault)
+        self.auth_username: Optional[str] = self._get_secret("app-auth-username", "APP_AUTH_USERNAME")
+        self.auth_password_hash: Optional[str] = self._get_secret("app-auth-password-hash", "APP_AUTH_PASSWORD_HASH")
+        self.auth_session_hours: int = int(os.getenv("AUTH_SESSION_HOURS", "8"))
+
         # App metadata
         self.app_version: str = self._read_env_version() or self._read_version_file() or "0.1"
 
