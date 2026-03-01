@@ -1031,12 +1031,13 @@ def upload():
                         doc_analysis = belle.analyze_document(application_text, filename)
                     except Exception as e:
                         logger.warning(f"Belle analysis failed: {e}")
-                    doc_analysis = {
-                        "document_type": "unknown",
-                        "confidence": 0,
-                        "student_info": {},
-                        "extracted_data": {}
-                    }
+                        doc_analysis = {
+                            "document_type": "unknown",
+                            "confidence": 0,
+                            "student_info": {},
+                            "extracted_data": {},
+                            "agent_fields": {}
+                        }
 
                 belle_student_info = doc_analysis.get('student_info', {})
                 extracted_name = belle_student_info.get('name') or extract_student_name(application_text)
@@ -4238,6 +4239,205 @@ def api_clear_historical_scores():
     cohort_year = int(request.form.get('cohort_year', 2024))
     deleted = db.clear_historical_scores(cohort_year)
     return jsonify({'status': 'success', 'deleted': deleted})
+
+
+@app.route('/api/training/reprocess', methods=['POST'])
+def api_reprocess_training():
+    """Re-extract document fields for training records.
+
+    Re-downloads every file from blob storage for each training student,
+    re-runs DocumentProcessor + Belle section detection, and updates
+    application_text / transcript_text / recommendation_text in the DB.
+
+    This is essential after improving the extraction pipeline so that
+    existing training data benefits from the fixes.
+
+    Optional JSON body:
+        application_ids: list of ints — restrict to specific records
+    """
+    import threading
+
+    try:
+        data = request.get_json(silent=True) or {}
+        requested_ids = data.get('application_ids')
+
+        training_col = db.get_training_example_column() or 'is_training_example'
+        test_col = db.get_test_data_column() or 'is_test_data'
+
+        where = f"{training_col} = TRUE AND ({test_col} = FALSE OR {test_col} IS NULL)"
+        if requested_ids:
+            placeholders = ', '.join(['%s'] * len(requested_ids))
+            where += f" AND application_id IN ({placeholders})"
+            rows = db.execute_query(
+                f"SELECT application_id, student_id, applicant_name FROM applications WHERE {where}",
+                tuple(requested_ids)
+            )
+        else:
+            rows = db.execute_query(
+                f"SELECT application_id, student_id, applicant_name FROM applications WHERE {where}"
+            )
+
+        if not rows:
+            return jsonify({'status': 'success', 'message': 'No training records found', 'count': 0})
+
+        # Return immediately, run in background
+        results_file = os.path.join(app.config.get('UPLOAD_FOLDER', '/tmp'), 'reprocess_state.json')
+        state = {
+            'status': 'running',
+            'total': len(rows),
+            'processed': 0,
+            'updated': 0,
+            'errors': [],
+            'started_at': datetime.now(timezone.utc).isoformat()
+        }
+        with open(results_file, 'w') as f:
+            json.dump(state, f)
+
+        def _background_reprocess(records, state_path):
+            try:
+                belle = BelleDocumentAnalyzer(
+                    client=get_ai_client(),
+                    model=config.model_tier_lightweight or config.foundry_model_name,
+                    db_connection=db
+                )
+                for rec in records:
+                    app_id = rec['application_id']
+                    student_id = rec.get('student_id')
+                    name = rec.get('applicant_name', f'ID#{app_id}')
+                    try:
+                        if not student_id:
+                            logger.warning(f"Reprocess: skipping {name} — no student_id")
+                            state['errors'].append({'application_id': app_id, 'error': 'no student_id'})
+                            state['processed'] += 1
+                            continue
+
+                        # Re-download and re-analyze files from blob storage
+                        documents = _collect_documents_from_storage(student_id, 'training', belle)
+                        if not documents:
+                            documents = _collect_documents_from_storage(student_id, 'application', belle)
+                        if not documents:
+                            logger.warning(f"Reprocess: no files in storage for {name}")
+                            state['errors'].append({'application_id': app_id, 'error': 'no files in storage'})
+                            state['processed'] += 1
+                            continue
+
+                        aggregated = _aggregate_documents(documents)
+                        updates = {}
+                        for field in ['application_text', 'transcript_text', 'recommendation_text']:
+                            val = aggregated.get(field)
+                            if val:
+                                updates[field] = val
+
+                        if updates:
+                            db.update_application_fields(app_id, updates)
+                            state['updated'] += 1
+                            logger.info(
+                                f"Reprocess: updated {name} (app={app_id}) — "
+                                f"fields: {list(updates.keys())}, "
+                                f"sizes: {', '.join(f'{k}={len(v)}' for k, v in updates.items())}"
+                            )
+
+                            # Update missing_fields marker
+                            missing_fields = []
+                            if not updates.get('transcript_text'):
+                                missing_fields.append('transcript')
+                            if not updates.get('recommendation_text'):
+                                missing_fields.append('letters_of_recommendation')
+                            db.set_missing_fields(app_id, missing_fields)
+
+                    except Exception as exc:
+                        logger.error(f"Reprocess error for {name}: {exc}", exc_info=True)
+                        state['errors'].append({'application_id': app_id, 'error': str(exc)})
+
+                    state['processed'] += 1
+                    # Persist progress
+                    with open(state_path, 'w') as f:
+                        json.dump(state, f)
+
+                state['status'] = 'completed'
+                state['completed_at'] = datetime.now(timezone.utc).isoformat()
+            except Exception as exc:
+                state['status'] = 'error'
+                state['error'] = str(exc)
+            finally:
+                with open(state_path, 'w') as f:
+                    json.dump(state, f)
+
+        thread = threading.Thread(target=_background_reprocess, args=(rows, results_file), daemon=True)
+        thread.start()
+
+        return jsonify({
+            'status': 'success',
+            'message': f'Reprocessing {len(rows)} training records in background. '
+                       f'GET /api/training/reprocess to check progress.',
+            'total': len(rows)
+        })
+
+    except Exception as e:
+        logger.error(f"Error starting reprocess: {e}", exc_info=True)
+        return jsonify({'status': 'error', 'error': str(e)}), 500
+
+
+@app.route('/api/training/reprocess', methods=['GET'])
+def api_reprocess_training_status():
+    """Check progress of a running reprocess job."""
+    results_file = os.path.join(app.config.get('UPLOAD_FOLDER', '/tmp'), 'reprocess_state.json')
+    if not os.path.exists(results_file):
+        return jsonify({'status': 'idle', 'message': 'No reprocess job has been started.'})
+    try:
+        with open(results_file) as f:
+            state = json.load(f)
+        return jsonify(state)
+    except Exception as e:
+        return jsonify({'status': 'error', 'error': str(e)}), 500
+
+
+@app.route('/api/training/diagnostic', methods=['GET'])
+def api_training_diagnostic():
+    """Return field sizes and section detection info for training records.
+
+    Shows application_text, transcript_text, recommendation_text lengths
+    for each training student so you can quickly find records with missing data.
+    """
+    try:
+        training_col = db.get_training_example_column() or 'is_training_example'
+        test_col = db.get_test_data_column() or 'is_test_data'
+        selected_col = db.get_applications_column('was_selected') or 'was_selected'
+
+        rows = db.execute_query(f"""
+            SELECT application_id, applicant_name, first_name, last_name,
+                   {selected_col} AS was_selected,
+                   COALESCE(LENGTH(application_text), 0) AS app_text_len,
+                   COALESCE(LENGTH(transcript_text), 0) AS transcript_len,
+                   COALESCE(LENGTH(recommendation_text), 0) AS rec_len,
+                   status, high_school
+            FROM applications
+            WHERE {training_col} = TRUE
+              AND ({test_col} = FALSE OR {test_col} IS NULL)
+            ORDER BY {selected_col} DESC NULLS LAST, applicant_name
+        """)
+
+        summary = {
+            'total': len(rows),
+            'has_application': sum(1 for r in rows if r.get('app_text_len', 0) > 50),
+            'has_transcript': sum(1 for r in rows if r.get('transcript_len', 0) > 50),
+            'has_recommendation': sum(1 for r in rows if r.get('rec_len', 0) > 50),
+            'missing_all': sum(1 for r in rows if (
+                r.get('app_text_len', 0) < 50 and
+                r.get('transcript_len', 0) < 50 and
+                r.get('rec_len', 0) < 50
+            ))
+        }
+
+        return jsonify({
+            'status': 'success',
+            'summary': summary,
+            'students': rows
+        })
+
+    except Exception as e:
+        logger.error(f"Training diagnostic error: {e}", exc_info=True)
+        return jsonify({'status': 'error', 'error': str(e)}), 500
 
 
 @app.route('/api/training/unmatched')

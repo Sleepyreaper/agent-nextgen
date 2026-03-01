@@ -78,6 +78,9 @@
             <button type="button" class="btn" style="background:#8b5cf6; color:white;" onclick="openValidationModal()">
                 🧪 Validate Model
             </button>
+            <button type="button" class="btn" style="background:#059669; color:white;" onclick="openReprocessModal()">
+                🔄 Reprocess Documents
+            </button>
             <a id="trainingUploadLink" href="{{ url_for('upload', app_type='training') }}" class="btn btn-primary">
                 ➕ Add Training Example
             </a>
@@ -235,6 +238,44 @@
             <li>👸 <strong>Application review</strong> identifies essay qualities that correlate with success</li>
             <li>🗡️ <strong>Recommendation analysis</strong> weights recommendation attributes from past winners</li>
         </ul>
+    </div>
+</div>
+
+<!-- Reprocess Documents Modal -->
+<div id="reprocessModal" style="display:none; position:fixed; top:0; left:0; right:0; bottom:0; background:rgba(0,0,0,0.6); z-index:9999; justify-content:center; align-items:center;">
+    <div style="background:white; border-radius:12px; padding:2rem; max-width:700px; width:90%; max-height:85vh; overflow-y:auto;">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1rem;">
+            <h3 style="margin:0;">🔄 Reprocess Training Documents</h3>
+            <button onclick="closeReprocessModal()" style="background:none; border:none; font-size:1.5rem; cursor:pointer;">✕</button>
+        </div>
+        <div style="background:#ecfdf5; border:1px solid #a7f3d0; border-radius:8px; padding:1rem; margin-bottom:1rem;">
+            <p style="margin:0; font-size:0.9rem; color:#065f46;">
+                <strong>What this does:</strong> Re-downloads every PDF/document from storage for each training student,
+                re-runs the text extraction and Belle section detection pipeline, and updates the
+                <code>application_text</code>, <code>transcript_text</code>, and <code>recommendation_text</code>
+                fields in the database. Use this after fixing the document processor to re-extract data
+                from existing training records.
+            </p>
+        </div>
+        <div id="reprocessStatus" style="display:none; margin-bottom:1rem;">
+            <div style="display:flex; justify-content:space-between; margin-bottom:0.5rem;">
+                <span id="reprocessStatusText">Starting...</span>
+                <span id="reprocessProgressText">0 / 0</span>
+            </div>
+            <div style="background:#e5e7eb; border-radius:4px; height:20px; overflow:hidden;">
+                <div id="reprocessProgressBar" style="background:linear-gradient(90deg,#059669,#10b981); height:100%; width:0%; transition:width 0.3s;"></div>
+            </div>
+            <div id="reprocessDetails" style="margin-top:1rem; font-size:0.85rem; color:#6b7280;"></div>
+        </div>
+        <div id="reprocessDiagnostic" style="display:none; margin-bottom:1rem;"></div>
+        <div style="display:flex; gap:0.5rem; flex-wrap:wrap;">
+            <button onclick="startReprocess()" id="reprocessStartBtn" class="btn" style="background:#059669; color:white;">
+                🔄 Start Reprocessing
+            </button>
+            <button onclick="loadDiagnostic()" class="btn" style="background:#3b82f6; color:white;">
+                📊 Show Diagnostic
+            </button>
+        </div>
     </div>
 </div>
 {% endblock %}
@@ -769,5 +810,143 @@ VideoUpload.init({
     hiddenFieldId: 'trainingVideoBlobInfo',
     appTypeGetter: () => 'training'
 });
+</script>
+<script>
+// ── Reprocess Documents ──
+function openReprocessModal() {
+    document.getElementById('reprocessModal').style.display = 'flex';
+}
+function closeReprocessModal() {
+    document.getElementById('reprocessModal').style.display = 'none';
+}
+(function() {
+    const rModal = document.getElementById('reprocessModal');
+    if (rModal) rModal.addEventListener('click', function(e) { if (e.target === this) closeReprocessModal(); });
+})();
+
+let reprocessPollTimer = null;
+
+async function startReprocess() {
+    const btn = document.getElementById('reprocessStartBtn');
+    btn.disabled = true;
+    btn.textContent = '⏳ Starting...';
+    document.getElementById('reprocessStatus').style.display = 'block';
+    document.getElementById('reprocessStatusText').textContent = 'Starting reprocess...';
+
+    try {
+        const resp = await fetch('/api/training/reprocess', { method: 'POST', headers: {'Content-Type': 'application/json'} });
+        const data = await resp.json();
+        if (data.status === 'success') {
+            document.getElementById('reprocessStatusText').textContent = `Processing ${data.total} records...`;
+            document.getElementById('reprocessProgressText').textContent = `0 / ${data.total}`;
+            pollReprocessStatus();
+        } else {
+            document.getElementById('reprocessStatusText').textContent = `Error: ${data.error || 'Unknown'}`;
+            btn.disabled = false;
+            btn.textContent = '🔄 Start Reprocessing';
+        }
+    } catch (err) {
+        document.getElementById('reprocessStatusText').textContent = `Error: ${err.message}`;
+        btn.disabled = false;
+        btn.textContent = '🔄 Start Reprocessing';
+    }
+}
+
+function pollReprocessStatus() {
+    if (reprocessPollTimer) clearInterval(reprocessPollTimer);
+    reprocessPollTimer = setInterval(async () => {
+        try {
+            const resp = await fetch('/api/training/reprocess');
+            const data = await resp.json();
+            const pct = data.total > 0 ? Math.round((data.processed / data.total) * 100) : 0;
+            document.getElementById('reprocessProgressBar').style.width = pct + '%';
+            document.getElementById('reprocessProgressText').textContent = `${data.processed} / ${data.total}`;
+
+            if (data.status === 'completed') {
+                clearInterval(reprocessPollTimer);
+                document.getElementById('reprocessStatusText').textContent =
+                    `✅ Complete! Updated ${data.updated} of ${data.total} records.`;
+                if (data.errors && data.errors.length > 0) {
+                    document.getElementById('reprocessDetails').innerHTML =
+                        `<strong>${data.errors.length} errors:</strong><br>` +
+                        data.errors.map(e => `• App #${e.application_id}: ${e.error}`).join('<br>');
+                }
+                document.getElementById('reprocessStartBtn').disabled = false;
+                document.getElementById('reprocessStartBtn').textContent = '🔄 Start Reprocessing';
+            } else if (data.status === 'error') {
+                clearInterval(reprocessPollTimer);
+                document.getElementById('reprocessStatusText').textContent = `❌ Error: ${data.error}`;
+                document.getElementById('reprocessStartBtn').disabled = false;
+                document.getElementById('reprocessStartBtn').textContent = '🔄 Start Reprocessing';
+            } else {
+                document.getElementById('reprocessStatusText').textContent =
+                    `Processing... (${data.updated} updated, ${data.errors ? data.errors.length : 0} errors)`;
+            }
+        } catch (err) {
+            // Network glitch, keep polling
+        }
+    }, 3000);
+}
+
+async function loadDiagnostic() {
+    const container = document.getElementById('reprocessDiagnostic');
+    container.style.display = 'block';
+    container.innerHTML = '<p>Loading diagnostic...</p>';
+    try {
+        const resp = await fetch('/api/training/diagnostic');
+        const data = await resp.json();
+        if (data.status !== 'success') {
+            container.innerHTML = `<p style="color:red;">Error: ${data.error}</p>`;
+            return;
+        }
+        const s = data.summary;
+        let html = `
+            <div style="display:grid; grid-template-columns:repeat(5,1fr); gap:0.5rem; margin-bottom:1rem;">
+                <div style="background:#f3f4f6; padding:0.5rem; border-radius:4px; text-align:center;">
+                    <div style="font-size:1.2rem; font-weight:bold;">${s.total}</div><div style="font-size:0.75rem;">Total</div>
+                </div>
+                <div style="background:#d1fae5; padding:0.5rem; border-radius:4px; text-align:center;">
+                    <div style="font-size:1.2rem; font-weight:bold;">${s.has_application}</div><div style="font-size:0.75rem;">Has App Text</div>
+                </div>
+                <div style="background:#dbeafe; padding:0.5rem; border-radius:4px; text-align:center;">
+                    <div style="font-size:1.2rem; font-weight:bold;">${s.has_transcript}</div><div style="font-size:0.75rem;">Has Transcript</div>
+                </div>
+                <div style="background:#fef3c7; padding:0.5rem; border-radius:4px; text-align:center;">
+                    <div style="font-size:1.2rem; font-weight:bold;">${s.has_recommendation}</div><div style="font-size:0.75rem;">Has Rec Letter</div>
+                </div>
+                <div style="background:#fecaca; padding:0.5rem; border-radius:4px; text-align:center;">
+                    <div style="font-size:1.2rem; font-weight:bold;">${s.missing_all}</div><div style="font-size:0.75rem;">Missing All</div>
+                </div>
+            </div>
+            <table style="width:100%; font-size:0.8rem; border-collapse:collapse;">
+                <thead><tr style="border-bottom:2px solid #e5e7eb;">
+                    <th style="text-align:left; padding:4px;">Name</th>
+                    <th style="text-align:left; padding:4px;">Selected</th>
+                    <th style="text-align:right; padding:4px;">App</th>
+                    <th style="text-align:right; padding:4px;">Transcript</th>
+                    <th style="text-align:right; padding:4px;">Rec</th>
+                </tr></thead>
+                <tbody>`;
+        for (const st of data.students) {
+            const name = st.applicant_name || `${st.first_name || ''} ${st.last_name || ''}`.trim() || `#${st.application_id}`;
+            const sel = st.was_selected ? '✅' : '❌';
+            const appLen = st.app_text_len || 0;
+            const tLen = st.transcript_len || 0;
+            const rLen = st.rec_len || 0;
+            const color = (appLen < 50 && tLen < 50 && rLen < 50) ? '#fef2f2' : '';
+            html += `<tr style="border-bottom:1px solid #f3f4f6; ${color ? 'background:'+color : ''}">
+                <td style="padding:4px;">${name}</td>
+                <td style="padding:4px; text-align:center;">${sel}</td>
+                <td style="padding:4px; text-align:right; ${appLen < 50 ? 'color:red;font-weight:bold;' : ''}">${appLen.toLocaleString()}</td>
+                <td style="padding:4px; text-align:right; ${tLen < 50 ? 'color:red;font-weight:bold;' : ''}">${tLen.toLocaleString()}</td>
+                <td style="padding:4px; text-align:right; ${rLen < 50 ? 'color:red;font-weight:bold;' : ''}">${rLen.toLocaleString()}</td>
+            </tr>`;
+        }
+        html += '</tbody></table>';
+        container.innerHTML = html;
+    } catch (err) {
+        container.innerHTML = `<p style="color:red;">Error: ${err.message}</p>`;
+    }
+}
 </script>
 {% endblock %}
