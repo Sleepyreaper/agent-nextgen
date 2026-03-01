@@ -5665,6 +5665,61 @@ def milo_insights():
         return jsonify({'status': 'error', 'error': str(e)}), 500
 
 
+@app.route('/api/milo/rank', methods=['POST'])
+def milo_rank_candidates():
+    """Trigger Milo to rank all 2026 candidates and return Top 50 / Top 25.
+
+    POST body (optional):
+        {"force_refresh": true}  -- bypass cache
+    """
+    try:
+        orchestrator = get_orchestrator()
+        milo = orchestrator.agents.get('data_scientist') if orchestrator else None
+        if not milo:
+            return jsonify({'status': 'error', 'error': 'Milo agent not available'}), 500
+        if not hasattr(milo, 'rank_all_candidates'):
+            return jsonify({'status': 'error', 'error': 'Milo does not support ranking (upgrade required)'}), 500
+
+        body = request.get_json(silent=True) or {}
+        force_refresh = body.get('force_refresh', False)
+
+        result = asyncio.run(milo.rank_all_candidates(force_refresh=force_refresh))
+        return jsonify(result)
+    except Exception as e:
+        logger.error(f"Milo ranking error: {e}", exc_info=True)
+        return jsonify({'status': 'error', 'error': str(e)}), 500
+
+
+@app.route('/api/milo/ranking', methods=['GET'])
+def milo_get_ranking():
+    """Return the cached ranking without triggering a new evaluation.
+
+    Query params:
+        top=50  -- how many to return (default 50)
+    """
+    try:
+        orchestrator = get_orchestrator()
+        milo = orchestrator.agents.get('data_scientist') if orchestrator else None
+        if not milo:
+            return jsonify({'status': 'error', 'error': 'Milo agent not available'}), 500
+
+        # Check if we have a cached ranking
+        if hasattr(milo, '_cached_ranking') and milo._cached_ranking:
+            top_n = request.args.get('top', 50, type=int)
+            ranking = dict(milo._cached_ranking)
+            ranking['top_n'] = ranking.get('all_ranked', [])[:top_n]
+            ranking['cached'] = True
+            return jsonify(ranking)
+
+        return jsonify({
+            'status': 'no_ranking',
+            'message': 'No ranking available yet. POST to /api/milo/rank to generate one.'
+        })
+    except Exception as e:
+        logger.error(f"Milo get ranking error: {e}", exc_info=True)
+        return jsonify({'status': 'error', 'error': str(e)}), 500
+
+
 # ==================== DATA MANAGEMENT ROUTES ====================
 
 @app.route('/data-management')
