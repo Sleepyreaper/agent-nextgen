@@ -97,13 +97,24 @@ class Database:
 
         column_fragment = ",\n                ".join(select_cols)
 
+        # Sort by last_name, first_name when those columns exist;
+        # fall back to full applicant_name for legacy data.
+        has_ln = self.has_applications_column('last_name')
+        has_fn = self.has_applications_column('first_name')
+        if has_ln and has_fn:
+            order_clause = f"LOWER(COALESCE(a.last_name, '')), LOWER(COALESCE(a.first_name, '')), LOWER(a.{applicant_col})"
+        elif has_ln:
+            order_clause = f"LOWER(COALESCE(a.last_name, '')), LOWER(a.{applicant_col})"
+        else:
+            order_clause = f"LOWER(a.{applicant_col})"
+
         query = f"""
             SELECT
                 {column_fragment}
             FROM {applications_table} a
             {join_clause}
             WHERE {where_clause}
-            ORDER BY LOWER(a.{applicant_col}) ASC
+            ORDER BY {order_clause} ASC
         """
         rows = self.execute_query(query, tuple(params))
 
@@ -145,10 +156,19 @@ class Database:
             if score is None and row.get('agent_results'):
                 ar = row.get('agent_results')
                 if isinstance(ar, dict):
-                    mer = ar.get('merlin') or {}
-                    score = mer.get('overall_score') or mer.get('overallscore')
+                    mer = ar.get('merlin') or ar.get('student_evaluator') or {}
+                    if isinstance(mer, dict):
+                        score = mer.get('overall_score') or mer.get('overallscore') or mer.get('score')
+                    # also try milo_alignment as a fallback signal
+                    if score is None:
+                        milo = ar.get('milo_alignment') or ar.get('data_scientist') or {}
+                        if isinstance(milo, dict):
+                            score = milo.get('match_score') or milo.get('nextgen_match')
             if score is not None:
-                row['merlin_score'] = score
+                try:
+                    row['merlin_score'] = float(score)
+                except (TypeError, ValueError):
+                    pass
 
         return rows
     """Database connection and operations manager for PostgreSQL."""

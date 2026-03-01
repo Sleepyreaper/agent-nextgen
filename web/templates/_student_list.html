@@ -233,6 +233,8 @@
             <td>
                 {% if student.merlin_score %}
                     <div class="merlin-score">{{ student.merlin_score|round|int }}/100</div>
+                {% elif is_training_view %}
+                    <div class="merlin-score pending">— Not Scored</div>
                 {% else %}
                     <div class="merlin-score pending">⏳ Pending</div>
                 {% endif %}
@@ -292,6 +294,10 @@
                     </a>
                     {% endif %}
                     {% set del_name = (student.first_name ~ ' ' ~ student.last_name) if (student.first_name or student.last_name) else (student.applicant_name or 'Unknown') %}
+                    <button onclick="openEditModal({{ student.application_id }}, '{{ student.first_name or '' }}', '{{ student.last_name or '' }}', '{{ student.high_school or '' }}', '{{ student.email or '' }}', {{ 'true' if student.was_selected else 'false' }})"
+                            class="btn btn-info" title="Edit student record" style="background:#f59e0b; color:#78350f;">
+                        ✏️
+                    </button>
                     <button onclick="confirmDeleteStudent({{ student.application_id }}, '{{ del_name }}')"
                             class="btn btn-danger" title="Delete student record">
                         🗑️
@@ -317,6 +323,43 @@
         <div class="delete-modal-actions">
             <button onclick="closeDeleteModal()" class="btn btn-secondary">Cancel</button>
             <button onclick="executeDelete()" class="btn btn-danger" id="deleteConfirmBtn">🗑️ Delete Permanently</button>
+        </div>
+    </div>
+</div>
+
+<!-- Edit Student Modal -->
+<div id="editModal" class="delete-modal-overlay">
+    <div class="delete-modal" style="max-width:520px; text-align:left;">
+        <h3 style="color:#1e40af; margin-bottom:1.25rem;">✏️ Edit Student Record</h3>
+        <input type="hidden" id="editAppId" value="">
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:0.75rem;">
+            <div>
+                <label style="font-weight:600; font-size:0.85rem; color:#374151;">First Name</label>
+                <input type="text" id="editFirstName" style="width:100%; padding:0.5rem; border:1px solid #d1d5db; border-radius:5px; margin-top:0.25rem;">
+            </div>
+            <div>
+                <label style="font-weight:600; font-size:0.85rem; color:#374151;">Last Name</label>
+                <input type="text" id="editLastName" style="width:100%; padding:0.5rem; border:1px solid #d1d5db; border-radius:5px; margin-top:0.25rem;">
+            </div>
+        </div>
+        <div style="margin-top:0.75rem;">
+            <label style="font-weight:600; font-size:0.85rem; color:#374151;">High School</label>
+            <input type="text" id="editHighSchool" style="width:100%; padding:0.5rem; border:1px solid #d1d5db; border-radius:5px; margin-top:0.25rem;">
+        </div>
+        <div style="margin-top:0.75rem;">
+            <label style="font-weight:600; font-size:0.85rem; color:#374151;">Email</label>
+            <input type="email" id="editEmail" style="width:100%; padding:0.5rem; border:1px solid #d1d5db; border-radius:5px; margin-top:0.25rem;">
+        </div>
+        <div style="margin-top:0.75rem;">
+            <label style="font-weight:600; font-size:0.85rem; color:#374151;">Was Selected (2024)?</label>
+            <select id="editWasSelected" style="width:100%; padding:0.5rem; border:1px solid #d1d5db; border-radius:5px; margin-top:0.25rem;">
+                <option value="true">Yes — Selected</option>
+                <option value="false">No — Not Selected</option>
+            </select>
+        </div>
+        <div style="display:flex; gap:1rem; justify-content:flex-end; margin-top:1.5rem;">
+            <button onclick="closeEditModal()" class="btn btn-secondary">Cancel</button>
+            <button onclick="saveStudentEdit()" class="btn btn-primary" id="editSaveBtn">💾 Save Changes</button>
         </div>
     </div>
 </div>
@@ -360,10 +403,64 @@ function executeDelete() {
 }
 
 // Close modal on Escape key or clicking overlay background
-document.addEventListener('keydown', e => { if (e.key === 'Escape') closeDeleteModal(); });
+document.addEventListener('keydown', e => { if (e.key === 'Escape') { closeDeleteModal(); closeEditModal(); } });
 document.getElementById('deleteModal').addEventListener('click', function(e) {
     if (e.target === this) closeDeleteModal();
 });
+document.getElementById('editModal').addEventListener('click', function(e) {
+    if (e.target === this) closeEditModal();
+});
+
+// ── Edit Modal ──
+function openEditModal(appId, firstName, lastName, highSchool, email, wasSelected) {
+    document.getElementById('editAppId').value = appId;
+    document.getElementById('editFirstName').value = firstName;
+    document.getElementById('editLastName').value = lastName;
+    document.getElementById('editHighSchool').value = highSchool;
+    document.getElementById('editEmail').value = email;
+    document.getElementById('editWasSelected').value = wasSelected ? 'true' : 'false';
+    document.getElementById('editModal').classList.add('active');
+}
+
+function closeEditModal() {
+    document.getElementById('editModal').classList.remove('active');
+}
+
+function saveStudentEdit() {
+    const appId = document.getElementById('editAppId').value;
+    const btn = document.getElementById('editSaveBtn');
+    btn.textContent = 'Saving...';
+    btn.disabled = true;
+
+    const payload = {
+        first_name: document.getElementById('editFirstName').value.trim(),
+        last_name: document.getElementById('editLastName').value.trim(),
+        high_school: document.getElementById('editHighSchool').value.trim(),
+        email: document.getElementById('editEmail').value.trim(),
+        was_selected: document.getElementById('editWasSelected').value === 'true'
+    };
+
+    fetch('/api/student/' + appId + '/edit', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (data.status === 'success') {
+            window.location.reload();
+        } else {
+            alert('Error: ' + (data.error || 'Unknown error'));
+            btn.textContent = '💾 Save Changes';
+            btn.disabled = false;
+        }
+    })
+    .catch(err => {
+        alert('Network error: ' + err);
+        btn.textContent = '💾 Save Changes';
+        btn.disabled = false;
+    });
+}
 </script>
 
 {% else %}

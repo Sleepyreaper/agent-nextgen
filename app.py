@@ -3840,6 +3840,56 @@ def delete_training(application_id):
         return redirect(url_for('training'))
 
 
+@app.route('/api/student/<int:application_id>/edit', methods=['PATCH'])
+def edit_student_record(application_id):
+    """Update editable fields on a student record (name, school, email, was_selected)."""
+    try:
+        application = db.get_application(application_id)
+        if not application:
+            return jsonify({'status': 'error', 'error': 'Student not found'}), 404
+
+        body = request.get_json(silent=True) or {}
+        if not body:
+            return jsonify({'status': 'error', 'error': 'No fields provided'}), 400
+
+        # Whitelist of editable fields
+        editable = {
+            'first_name', 'last_name', 'high_school', 'email',
+            'applicant_name', 'was_selected',
+        }
+        updates = {}
+        for key, value in body.items():
+            if key in editable:
+                # Coerce was_selected to boolean
+                if key == 'was_selected':
+                    if isinstance(value, str):
+                        value = value.lower() in ('true', '1', 'yes')
+                    else:
+                        value = bool(value)
+                updates[key] = value
+
+        if not updates:
+            return jsonify({'status': 'error', 'error': 'No valid editable fields provided'}), 400
+
+        # If first_name or last_name changed, also update applicant_name for consistency
+        if 'first_name' in updates or 'last_name' in updates:
+            fn = updates.get('first_name') or application.get('first_name') or ''
+            ln = updates.get('last_name') or application.get('last_name') or ''
+            updates['applicant_name'] = f"{fn} {ln}".strip()
+
+        db.update_application(application_id, **updates)
+
+        logger.info(f"Student {application_id} updated: {list(updates.keys())}")
+        return jsonify({
+            'status': 'success',
+            'message': f'Student record updated',
+            'updated_fields': list(updates.keys())
+        })
+    except Exception as e:
+        logger.error(f"Error editing student {application_id}: {e}")
+        return jsonify({'status': 'error', 'error': str(e)}), 500
+
+
 @app.route('/api/student/<int:application_id>/delete', methods=['DELETE'])
 def delete_student_record(application_id):
     """Permanently delete a student and all related agent data."""
