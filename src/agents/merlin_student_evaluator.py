@@ -1,18 +1,30 @@
-"""Merlin Student Evaluator - Produces overall recommendation using all agent outputs."""
+"""Merlin Student Evaluator — GPT-5-mini final synthesis agent.
+
+Produces an overall recommendation, rubric scores, and a concise
+applicant summary written for Emory faculty reviewers.
+"""
 
 import json
+import logging
 from typing import Dict, Any, Optional
 from openai import AzureOpenAI
 from src.agents.base_agent import BaseAgent
 from src.agents.telemetry_helpers import agent_run
 from src.utils import safe_load_json
 
+logger = logging.getLogger(__name__)
+
 
 class MerlinStudentEvaluator(BaseAgent):
+    """Merlin — final-stage evaluator powered by GPT-5-mini.
+
+    Synthesises outputs from every upstream agent (Rapunzel, Tiana, Mulan,
+    Moana, Gaston, Milo) into a single authoritative recommendation and a
+    5-to-8-sentence applicant summary suitable for faculty review.
     """
-    Specialized agent (Merlin) that synthesizes all other agent outputs into
-    a final student recommendation.
-    """
+
+    EMOJI = "🧙"
+    DESCRIPTION = "Final Evaluator — GPT-5-mini deep synthesis"
 
     def __init__(self, name: str, client: AzureOpenAI, model: Optional[str] = None, db_connection=None):
         super().__init__(name, client)
@@ -29,23 +41,28 @@ class MerlinStudentEvaluator(BaseAgent):
         application_id = application.get("application_id", application.get("ApplicationID"))
 
         with agent_run("Merlin", "evaluate_student", {"applicant": applicant_name, "application_id": str(application_id or "")}) as span:
-            prompt = self._build_prompt(applicant_name, application, agent_outputs)
+            system_prompt = self._system_prompt()
+            user_prompt = self._build_prompt(applicant_name, application, agent_outputs)
 
             try:
                 response = self._create_chat_completion(
                     operation="merlin.evaluate_student",
                     model=self.model,
                     messages=[
-                        {
-                            "role": "system",
-                            "content": "You are Merlin, part of an NIH Department of Genetics review panel evaluating Emory NextGen applicants. Apply the requirements: rising junior or senior in high school, must be 16 years old by June 1, 2026, and must demonstrate interest in advancing STEM education to groups from a variety of backgrounds. PROGRAM CONTEXT: There are approximately 30 openings and over 1,000 applicants — selection is extremely competitive (roughly 3% acceptance rate).\n\n═══════════════════════════════════════════════════════════════\n2024 NEXTGEN OFFICIAL SCORING RUBRIC (0-12 Points + Bonus)\n═══════════════════════════════════════════════════════════════\nYou MUST compute and include these rubric scores in your final evaluation,\nusing data from Rapunzel, Tiana, Mulan, and Gaston:\n\n1. Academic Record (0-3 Points) — from Rapunzel's academic_record_score\n   3=Exceptional, 2=Solid, 1=Adequate, 0=Weak\n\n2. Interest/Enthusiasm for STEM Career (0-3 Points) — from Tiana's stem_interest_score\n   3=Deep passion with specifics, 2=Clear interest, 1=Vague, 0=None\n\n3. Personal Essay/Video (0-3 Points) — from Tiana's essay_score\n   3=Exceptional effort and quality, 2=Good, 1=Minimal effort, 0=Missing/weak\n\n4. Letter of Recommendation (0-2 Points) — from Mulan's recommendation_score\n   2=Strong specific endorsement, 1=Adequate/generic, 0=Weak/missing\n\n5. Bonus (0-1 Points) — award for exceptional circumstances:\n   Previous research experience, overcoming significant adversity,\n   extraordinary STEM achievement, or exceptional community impact\n\nTotal Rubric Score = Academic + STEM Interest + Essay + Recommendation + Bonus (0-12)\n\nADDITIONAL FACTORS (from Gaston):\n- Quick Pass: Did the application pass initial screening?\n- Age Eligibility: Must be 16 by June 1st\n- Underrepresented/Under-resourced Background (SES criteria — priority, not strict)\n- Previous Research Experience\n- Advanced Coursework\n\nOVERALL RATING: Based on ALL evidence, provide your overall_rating as one of:\n  STRONG ADMIT | ADMIT | WAITLIST | DECLINE\n═══════════════════════════════════════════════════════════════\n\nProduce a fair, consistent final recommendation using evidence from all agents. Include a 'nextgen_match' probability (0-100) reflecting the student's likelihood of being among the ~30 selected. Include 'rubric_total' (0-12) summing the 5 dimensions above, plus individual dimension scores. Explicitly map evidence to the overall score and recommendation. Be decisive and avoid hedging. Return valid JSON only."
-                        },
-                        {"role": "user", "content": prompt}
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": user_prompt}
                     ],
-                    max_completion_tokens=1400,
+                    max_completion_tokens=2400,
                     temperature=1,
                     refinements=2,
-                    refinement_instruction="Refine the JSON recommendation focusing on evidence mapping: ensure each decision_driver cites specific agent outputs and numeric values are normalized.",
+                    refinement_instruction=(
+                        "Refine the JSON recommendation: (1) ensure each decision_driver "
+                        "cites a specific agent output and numeric value, (2) verify the "
+                        "applicant_summary is exactly 5-8 sentences and reads naturally for "
+                        "a genetics-department faculty audience, (3) confirm rubric dimension "
+                        "scores sum correctly to rubric_total, and (4) double-check that "
+                        "nextgen_match aligns with overall_rating tier."
+                    ),
                     response_format={"type": "json_object"}
                 )
 
@@ -61,12 +78,23 @@ class MerlinStudentEvaluator(BaseAgent):
                 if normalized["adjusted"]:
                     data["score_adjusted"] = True
                     data["score_adjustment_reason"] = normalized["reason"]
+
                 # Ensure nextgen_match is present
                 if 'nextgen_match' not in data:
-                    # Fall back to Milo's value if available in the agent_outputs
                     milo_align = agent_outputs.get('milo_alignment', {})
                     if isinstance(milo_align, dict) and 'nextgen_match' in milo_align:
                         data['nextgen_match'] = milo_align['nextgen_match']
+
+                # ── applicant_summary ↔ executive_summary backward compat ──
+                # The new prompt asks for `applicant_summary` (5-8 sentences).
+                # The UI reads `executive_summary` so we keep both in sync.
+                if data.get('applicant_summary') and not data.get('executive_summary'):
+                    # Build a short exec summary from the first 2-3 sentences
+                    sentences = [s.strip() for s in data['applicant_summary'].replace('\n', ' ').split('.') if s.strip()]
+                    data['executive_summary'] = '. '.join(sentences[:3]) + '.' if sentences else data['applicant_summary']
+                elif data.get('executive_summary') and not data.get('applicant_summary'):
+                    data['applicant_summary'] = data['executive_summary']
+
                 data["status"] = "success"
                 data["agent"] = self.name
 
@@ -83,6 +111,7 @@ class MerlinStudentEvaluator(BaseAgent):
                 if span:
                     span.set_attribute("agent.result.score", str(data.get("overall_score", "")))
                     span.set_attribute("agent.result.recommendation", str(data.get("recommendation", "")))
+                    span.set_attribute("agent.result.overall_rating", str(data.get("overall_rating", "")))
                 return data
 
             except Exception as e:
@@ -99,46 +128,227 @@ class MerlinStudentEvaluator(BaseAgent):
         agent_outputs: Dict[str, Any]
     ) -> str:
         """Build the synthesis prompt from agent outputs."""
+        # ── prepare data sections ──────────────────────────────────
         outputs_json = json.dumps(agent_outputs, ensure_ascii=True, default=str)
+
         training_insights = agent_outputs.get("data_scientist") or {}
         training_json = json.dumps(training_insights, ensure_ascii=True, default=str)
-        prompt_parts = [
-            "You are synthesizing multiple specialist evaluations into a final recommendation.",
-            "Be explicit about how school context and recommendations affect the decision.",
-            "If data conflicts, call it out and weigh reliability.",
-            "Use Milo's training insights (if present) as a prior, comparing the current applicant to patterns observed in previous years' selected nominees and highlighting characteristics representative of Next Gen students. Do not let these insights override direct evidence.",
-            "Confirm eligibility against requirements and note any gaps or unknowns.",
 
+        milo_alignment = agent_outputs.get("milo_alignment") or {}
+        alignment_json = json.dumps(milo_alignment, ensure_ascii=True, default=str)
+
+        # ── build prompt ─────────────────────────────────────────────
+        prompt_parts = [
+            "══════════════════════════════════════════════════════════════=",
+            "APPLICANT UNDER REVIEW",
+            "══════════════════════════════════════════════════════════════=",
+            f"Name: {applicant_name}",
             "",
-            f"Applicant: {applicant_name}",
-            "",
-            "Milo training insights (JSON):",
+
+            "══════════════════════════════════════════════════════════════=",
+            "MILO — TRAINING INSIGHTS (historical acceptance model)",
+            "══════════════════════════════════════════════════════════════=",
             training_json,
             "",
-            "(The above JSON includes Milo's analysis of prior accepted vs not selected applicants. Compare the current student to that historical profile.)",
+            "(Milo analyzed prior accepted vs. not-selected applicants. Use these "
+            "patterns as a Bayesian prior — where does this applicant sit relative "
+            "to the historical profile of selected students? Do NOT let the prior "
+            "override strong direct evidence.)",
             "",
-            "Specialist agent outputs (JSON):",
+
+            "══════════════════════════════════════════════════════════════=",
+            "MILO — INDIVIDUAL ALIGNMENT (this student vs. model)",
+            "══════════════════════════════════════════════════════════════=",
+            alignment_json,
+            "",
+
+            "══════════════════════════════════════════════════════════════=",
+            "SPECIALIST AGENT OUTPUTS",
+            "══════════════════════════════════════════════════════════════=",
+            "The following JSON contains outputs from every upstream agent:",
+            "  • Rapunzel — Academic record analysis (GPA, rigor, coursework)",
+            "  • Tiana    — Essay / video evaluation + STEM interest scoring",
+            "  • Mulan    — Recommendation letter analysis",
+            "  • Moana    — School context & opportunity assessment",
+            "  • Gaston   — Eligibility screening (age, grade, quick-pass)",
+            "  • Milo     — Data scientist training insights & alignment",
+            "",
             outputs_json,
             "",
-            "Return a JSON object with the fields below:",
+
+            "═══════════════════════════════════════════════════════════════",
+            "YOUR TASK",
+            "═══════════════════════════════════════════════════════════════",
+            "Think deeply about this student. Cross-reference every agent's output. "
+            "Look for corroborating evidence AND contradictions. Consider the whole "
+            "person — their context, their trajectory, their potential to contribute "
+            "to a genetics research lab at Emory this summer.",
+            "",
+            "Then return a single JSON object with EXACTLY these fields:",
+            "",
             "{",
-            '  "applicant_name": "",',
-            '  "overall_score": 0,  // 0-100 integer',
-            '  "nextgen_match": 0,  // 0-100 probability of being among ~30 selected from 1,000+ applicants',
-            '  "recommendation": "Strongly Recommend|Recommend|Consider|Do Not Recommend",',
-            '  "executive_summary": "(2-3 sentence executive summary of this student)",',
-            '  "rationale": "(2-3 short paragraphs with evidence)",',
-            '  "decision_drivers": ["(top 3 evidence-based drivers of the decision)"] ,',
-            '  "top_risk": "(single biggest risk or open question)",',
-            '  "key_strengths": ["(3-6 detailed strengths with evidence)"],',
-            '  "key_risks": ["(2-4 specific risks or gaps)"],',
-            '  "context_factors": ["(2-4 context notes that shaped the decision)"],',
-            '  "evidence_used": ["(3-6 specific quotes or facts)"],',
-            '  "confidence": "High|Medium|Low"',
-            "}"
+            '  "applicant_name": "<full name>",',
+            '  "overall_score": <0-100 integer>,',
+            '  "nextgen_match": <0-100 probability of being among ~30 selected>,',
+            '  "overall_rating": "STRONG ADMIT | ADMIT | WAITLIST | DECLINE",',
+            '  "recommendation": "Strongly Recommend | Recommend | Consider | Do Not Recommend",',
+            "",
+            '  "applicant_summary": "<EXACTLY 5-8 SENTENCES. Written for Emory Human Genetics '
+            'faculty. See system prompt for detailed guidelines. This is the most '
+            'important field — faculty read this first.>",',
+            "",
+            '  "executive_summary": "<2-3 sentence version of the above for quick scanning>",',
+            "",
+            '  "rubric_scores": {',
+            '    "academic_record": <0-3>,',
+            '    "stem_interest": <0-3>,',
+            '    "essay_video": <0-3>,',
+            '    "recommendation_letter": <0-2>,',
+            '    "bonus": <0-1>',
+            '  },',
+            '  "rubric_total": <0-12, must equal sum of rubric_scores>,',
+            "",
+            '  "rationale": "<2-3 paragraphs mapping evidence to your decision>",',
+            '  "decision_drivers": ["<top 3-5 evidence-based drivers>"],',
+            '  "top_risk": "<single biggest risk or open question>",',
+            '  "key_strengths": ["<3-6 specific strengths with cited evidence>"],',
+            '  "key_risks": ["<2-4 specific risks or gaps>"],',
+            '  "context_factors": ["<2-4 contextual notes — school resources, SES, geography>"],',
+            '  "evidence_used": ["<3-6 concrete quotes or facts from agent outputs>"],',
+            '  "lab_readiness": "<1-2 sentences: would this student thrive in a wet-lab or '
+            'computational genetics environment?>",',
+            '  "confidence": "High | Medium | Low"',
+            "}",
         ]
 
         return "\n".join(prompt_parts)
+
+    # ── system prompt ─────────────────────────────────────────────────
+
+    @staticmethod
+    def _system_prompt() -> str:
+        """Return the full system prompt for Merlin's GPT-5-mini evaluation."""
+        return (
+            "You are **Merlin**, the final-stage evaluator for the Emory University "
+            "Next Generation Internship (NextGen) — Summer 2026.\n\n"
+
+            "═══════════════════════════════════════════════════════════════\n"
+            "AUDIENCE & PURPOSE\n"
+            "═══════════════════════════════════════════════════════════════\n"
+            "Your output will be read by professors in the **Department of Human "
+            "Genetics at Emory University School of Medicine** who are selecting "
+            "the top high-school applicants for paid summer research internships "
+            "in their laboratories. Write with the precision and clinical judgment "
+            "these faculty expect.\n\n"
+
+            "═══════════════════════════════════════════════════════════════\n"
+            "PROGRAM FACTS\n"
+            "═══════════════════════════════════════════════════════════════\n"
+            "• ~30 seats out of 1,000+ applicants (~3% acceptance rate).\n"
+            "• Interns work alongside Emory faculty and graduate students on "
+            "  active research projects in human genetics and related STEM fields.\n"
+            "• Applicants must be rising juniors or seniors in high school, at "
+            "  least 16 years old by June 1 2026.\n"
+            "• The program prioritizes students from under-represented and "
+            "  under-resourced backgrounds who demonstrate genuine passion for "
+            "  STEM and potential to thrive in a research environment.\n\n"
+
+            "═══════════════════════════════════════════════════════════════\n"
+            "SCORING RUBRIC (0-12 POINTS + BONUS)\n"
+            "═══════════════════════════════════════════════════════════════\n"
+            "You MUST compute and include every dimension score listed below, "
+            "drawing evidence from the specialist agents indicated:\n\n"
+
+            "1. **Academic Record** (0-3) — Rapunzel's academic_record_score\n"
+            "   3 = Exceptional (top-tier GPA, AP/IB/DE rigor, STEM coursework)\n"
+            "   2 = Solid (strong GPA, some advanced courses)\n"
+            "   1 = Adequate (average record)\n"
+            "   0 = Weak or insufficient data\n\n"
+
+            "2. **STEM Interest & Enthusiasm** (0-3) — Tiana's stem_interest_score\n"
+            "   3 = Deep, specific passion (named fields, prior projects, career vision)\n"
+            "   2 = Clear interest with some specifics\n"
+            "   1 = Vague or generic mention\n"
+            "   0 = No discernible STEM interest\n\n"
+
+            "3. **Personal Essay / Video** (0-3) — Tiana's essay_score\n"
+            "   3 = Exceptional: compelling narrative, authentic voice, clear connection "
+            "     to STEM and NextGen mission\n"
+            "   2 = Good: solid effort, reasonable quality\n"
+            "   1 = Minimal effort or off-topic\n"
+            "   0 = Missing or very weak\n\n"
+
+            "4. **Letter of Recommendation** (0-2) — Mulan's recommendation_score\n"
+            "   2 = Strong, specific endorsement from someone who knows the student well\n"
+            "   1 = Adequate or generic\n"
+            "   0 = Weak, missing, or perfunctory\n\n"
+
+            "5. **Bonus** (0-1) — award ONLY for truly exceptional circumstances:\n"
+            "   prior research experience, overcoming significant adversity, "
+            "   extraordinary STEM achievement, or exceptional community impact\n\n"
+
+            "rubric_total = sum of all five dimensions (max 12)\n\n"
+
+            "ADDITIONAL FACTORS (from Gaston & Moana):\n"
+            "• Quick-pass eligibility (age, grade level)\n"
+            "• Under-represented / under-resourced background (SES context)\n"
+            "• Geographic access to STEM opportunities (Moana's opportunity score)\n"
+            "• Previous research or advanced coursework\n\n"
+
+            "═══════════════════════════════════════════════════════════════\n"
+            "OVERALL RATING TIERS\n"
+            "═══════════════════════════════════════════════════════════════\n"
+            "Based on ALL evidence, assign exactly one of:\n"
+            "  STRONG ADMIT  — top-tier, clear selection (nextgen_match ≥ 75)\n"
+            "  ADMIT         — strong, should be selected (nextgen_match 55-74)\n"
+            "  WAITLIST      — competitive but not in top cohort (nextgen_match 35-54)\n"
+            "  DECLINE       — does not meet threshold (nextgen_match < 35)\n\n"
+
+            "═══════════════════════════════════════════════════════════════\n"
+            "APPLICANT SUMMARY (CRITICAL — READ CAREFULLY)\n"
+            "═══════════════════════════════════════════════════════════════\n"
+            "You MUST produce a field called 'applicant_summary' containing "
+            "**exactly 5 to 8 sentences**. This summary is the primary text "
+            "that Emory Human Genetics faculty will read when deciding which "
+            "students to interview.\n\n"
+
+            "Writing guidelines for the summary:\n"
+            "• Open with the student's name, grade, school, and geographic context.\n"
+            "• Highlight academic trajectory (GPA, rigor, standout courses).\n"
+            "• Describe the student's STEM passion with concrete specifics — "
+            "  projects, research interests, career aspirations.\n"
+            "• Note the strength and substance of the recommendation letter.\n"
+            "• Call out any distinguishing factor: adversity overcome, prior "
+            "  research, exceptional community impact, or unique perspective.\n"
+            "• Close with your professional judgment on whether this student "
+            "  would thrive in an Emory genetics research lab this summer.\n"
+            "• Write in a concise, clinical tone suited for faculty on a "
+            "  selection committee — no filler, every sentence must add value.\n"
+            "• Do NOT exceed 8 sentences.\n\n"
+
+            "═══════════════════════════════════════════════════════════════\n"
+            "DEEP-THINKING INSTRUCTIONS\n"
+            "═══════════════════════════════════════════════════════════════\n"
+            "Before producing JSON, reason deeply about this student:\n"
+            "1. Cross-reference ALL agent outputs — look for corroborating and "
+            "   conflicting evidence across Rapunzel, Tiana, Mulan, Moana, "
+            "   Gaston, and Milo.\n"
+            "2. Identify information gaps: what is unknown? How does uncertainty "
+            "   affect your confidence?\n"
+            "3. Consider the student holistically: a mediocre GPA from a "
+            "   severely under-resourced school may demonstrate more grit than "
+            "   a perfect GPA from a well-funded school.\n"
+            "4. Compare implicitly to the historical acceptance profile (from "
+            "   Milo's training insights) — does this student's pattern match "
+            "   past selectees?\n"
+            "5. Think about lab readiness: would this student be safe, curious, "
+            "   and productive in a wet-lab or computational genetics setting?\n"
+            "6. Be decisive. Faculty want clear, defensible calls, not hedging.\n\n"
+
+            "Return valid JSON only."
+        )
+
+    # ── general conversation ─────────────────────────────────────────
 
     async def process(self, message: str) -> str:
         """Process a general message."""
@@ -146,7 +356,7 @@ class MerlinStudentEvaluator(BaseAgent):
         messages = [
             {
                 "role": "system",
-                "content": "You are Merlin, part of an NIH Department of Genetics review panel evaluating Emory NextGen applicants. You produce final recommendations grounded in evidence and program requirements."
+                "content": self._system_prompt()
             }
         ] + self.conversation_history
 
@@ -154,10 +364,13 @@ class MerlinStudentEvaluator(BaseAgent):
             operation="merlin.process",
             model=self.model,
             messages=messages,
-            max_completion_tokens=1000,
+            max_completion_tokens=1200,
             temperature=1,
             refinements=2,
-            refinement_instruction="Refine your assistant response to be more decisive and explicitly map evidence to any recommendations."
+            refinement_instruction=(
+                "Refine your response to be more decisive. Map evidence to "
+                "recommendations explicitly and keep sentences tight."
+            )
         )
         assistant_message = response.choices[0].message.content
         self.add_to_history("assistant", assistant_message)
