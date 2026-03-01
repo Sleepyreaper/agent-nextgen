@@ -371,7 +371,8 @@ class BaseAgent(ABC):
                             input_tokens=input_tokens or 0,
                             output_tokens=output_tokens or 0,
                             duration_ms=duration_ms,
-                            success=True
+                            success=True,
+                            agent_name=self.name,
                         )
 
                     # Capture response ID (GenAI Semantic Convention)
@@ -557,7 +558,8 @@ class BaseAgent(ABC):
                     input_tokens=0,
                     output_tokens=0,
                     duration_ms=int((time.time() - start_time) * 1000),
-                    success=False
+                    success=False,
+                    agent_name=self.name,
                 )
             except Exception:
                 pass

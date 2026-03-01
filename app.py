@@ -7135,6 +7135,7 @@ def telemetry_overview():
         obs_status = get_observability_status()
 
         from datetime import datetime as _dt_now
+        token_usage = telemetry.get_token_usage()
         return jsonify({
             'status': 'success',
             'timestamp': _dt_now.utcnow().isoformat(),
@@ -7146,6 +7147,8 @@ def telemetry_overview():
                 'avg_duration_ms': round(status.get('average_duration_ms', 0), 1),
             },
             'agents': agent_summary,
+            'token_usage': token_usage.get('totals', {}),
+            'token_usage_by_model': token_usage.get('by_model', {}),
             'school_enrichment': {
                 'by_status': school_stats,
                 'moana_validation': moana_stats,
@@ -7155,6 +7158,32 @@ def telemetry_overview():
         })
     except Exception as e:
         logger.error(f"Telemetry overview error: {e}", exc_info=True)
+        return jsonify({'status': 'error', 'error': str(e)}), 500
+
+
+@app.route('/api/telemetry/token-usage')
+def telemetry_token_usage():
+    """Detailed token usage breakdown by model and agent.
+
+    Returns input/output/total token counts and call counts broken down
+    by model, agent, and agent+model combination. Also includes the most
+    recent model calls for diagnostics.
+    """
+    try:
+        usage = telemetry.get_token_usage()
+        return jsonify({'status': 'success', **usage})
+    except Exception as e:
+        logger.error(f"Token usage endpoint error: {e}", exc_info=True)
+        return jsonify({'status': 'error', 'error': str(e)}), 500
+
+
+@app.route('/api/telemetry/token-usage/reset', methods=['POST'])
+def telemetry_token_usage_reset():
+    """Reset accumulated token usage counters."""
+    try:
+        telemetry.reset_token_usage()
+        return jsonify({'status': 'success', 'message': 'Token usage counters reset'})
+    except Exception as e:
         return jsonify({'status': 'error', 'error': str(e)}), 500
 
 
