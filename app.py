@@ -5854,55 +5854,79 @@ def milo_get_ranking():
         return jsonify({'status': 'error', 'error': str(e)}), 500
 
 
-@app.route('/api/milo/validate', methods=['POST'])
-def milo_validate_model():
-    """Run a self-consistency validation of Milo's model against training data.
+# --- Milo Validation (async job pattern) ---
+_milo_validation_result = {}  # Stores the latest validation result
+_milo_validation_status = {"state": "idle"}  # idle | running | done | error
 
-    Uses compute_alignment to score every training student and checks whether
-    accepted students score higher than not-selected students.
 
-    Returns accuracy metrics, confusion matrix, and per-student scores.
-    Optional body: {"threshold": 65}  (default nextgen_match cutoff for "selected")
-    """
+def _run_milo_validation_job(threshold: int):
+    """Background thread: score all training students with Milo."""
+    global _milo_validation_result, _milo_validation_status
+    import asyncio, statistics, traceback
+    from src.agents.milo_data_scientist import MAX_BATCH_SIZE
+
     try:
+        _milo_validation_status = {"state": "running", "started_at": time.time(), "progress": "initializing"}
+
         orchestrator = get_orchestrator()
         milo = orchestrator.agents.get('data_scientist') if orchestrator else None
         if not milo:
-            return jsonify({'status': 'error', 'error': 'Milo agent not available'}), 500
+            _milo_validation_status = {"state": "error", "error": "Milo agent not available"}
+            return
 
-        body = request.get_json(silent=True) or {}
-        threshold = body.get('threshold', 65)  # nextgen_match score cutoff
-
-        import asyncio, statistics
-
-        # Step 1: Get all training examples
+        # Step 1: Get training examples
         training = db.get_training_examples()
         if not training:
-            return jsonify({'status': 'error', 'error': 'No training data found'}), 404
+            _milo_validation_status = {"state": "error", "error": "No training data found"}
+            return
 
-        # Step 2: Ensure insights are built
-        insights = asyncio.run(milo.analyze_training_insights())
+        total_students = len(training)
+        _milo_validation_status["progress"] = f"building insights from {total_students} students"
 
-        # Step 3: Score each training student using Milo's batch evaluator
-        from src.agents.milo_data_scientist import MAX_BATCH_SIZE
+        # Step 2: Build insights (may already be cached)
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        try:
+            insights = loop.run_until_complete(milo.analyze_training_insights())
+        except Exception as e:
+            _milo_validation_status = {"state": "error", "error": f"Insights failed: {e}"}
+            loop.close()
+            return
+
+        # Step 3: Evaluate in batches
         all_results = []
-        for i in range(0, len(training), MAX_BATCH_SIZE):
-            batch = training[i:i + MAX_BATCH_SIZE]
-            batch_results = asyncio.run(milo._evaluate_batch(batch, insights))
+        num_batches = (total_students + MAX_BATCH_SIZE - 1) // MAX_BATCH_SIZE
+        for batch_idx in range(0, total_students, MAX_BATCH_SIZE):
+            batch_num = batch_idx // MAX_BATCH_SIZE + 1
+            batch = training[batch_idx:batch_idx + MAX_BATCH_SIZE]
+            _milo_validation_status["progress"] = f"scoring batch {batch_num}/{num_batches} ({len(all_results)}/{total_students} done)"
+
+            try:
+                batch_results = loop.run_until_complete(milo._evaluate_batch(batch, insights))
+            except Exception as e:
+                logger.error(f"Milo validation batch {batch_num} failed: {e}")
+                batch_results = [
+                    {"nextgen_match": 0, "tier": "ERROR", "explanation": str(e)}
+                    for _ in batch
+                ]
+
             for j, result in enumerate(batch_results):
-                app = batch[j]
-                was_selected = app.get('was_selected', False)
+                app_data = batch[j]
+                was_selected = app_data.get('was_selected', False)
                 if isinstance(was_selected, str):
                     was_selected = was_selected.lower() in ('true', 'yes', '1', 'selected')
                 result['actual_selected'] = was_selected
-                result['application_id'] = app.get('application_id')
+                result['application_id'] = app_data.get('application_id')
                 result['applicant_name'] = (
-                    app.get('applicant_name') or
-                    f"{app.get('first_name', '')} {app.get('last_name', '')}".strip()
+                    app_data.get('applicant_name') or
+                    f"{app_data.get('first_name', '')} {app_data.get('last_name', '')}".strip()
                 )
                 all_results.append(result)
 
-        # Step 4: Classify predictions
+        loop.close()
+
+        # Step 4: Compute metrics
+        _milo_validation_status["progress"] = "computing metrics"
         accepted_scores = []
         not_selected_scores = []
         tp = fp = tn = fn = 0
@@ -5931,15 +5955,13 @@ def milo_validate_model():
         recall = tp / (tp + fn) if (tp + fn) else 0
         f1 = 2 * precision * recall / (precision + recall) if (precision + recall) else 0
 
-        # Score distribution
         accepted_mean = statistics.mean(accepted_scores) if accepted_scores else 0
         not_selected_mean = statistics.mean(not_selected_scores) if not_selected_scores else 0
         separation = accepted_mean - not_selected_mean
 
-        # Sort results by score for display
         all_results.sort(key=lambda x: x.get('nextgen_match', 0), reverse=True)
 
-        result = {
+        _milo_validation_result = {
             'status': 'success',
             'agent': 'Milo Data Scientist',
             'model_display': milo.model_display if hasattr(milo, 'model_display') else milo.model,
@@ -5985,13 +6007,79 @@ def milo_validate_model():
                 }
                 for i, r in enumerate(all_results)
             ],
+            'elapsed_seconds': round(time.time() - _milo_validation_status.get('started_at', time.time()), 1),
         }
-
-        return jsonify(result)
+        _milo_validation_status = {"state": "done", "finished_at": time.time()}
 
     except Exception as e:
-        logger.error(f"Milo validation error: {e}", exc_info=True)
-        return jsonify({'status': 'error', 'error': str(e)}), 500
+        logger.error(f"Milo validation job error: {e}", exc_info=True)
+        _milo_validation_status = {"state": "error", "error": str(e)}
+
+
+@app.route('/api/milo/validate', methods=['POST'])
+def milo_validate_model():
+    """Start Milo model validation as a background job.
+
+    POST body: {"threshold": 65}
+    Returns immediately. Poll GET /api/milo/validate for results.
+    """
+    global _milo_validation_status
+    import threading
+
+    if _milo_validation_status.get("state") == "running":
+        return jsonify({
+            'status': 'already_running',
+            'message': 'Validation is already in progress. GET /api/milo/validate to check status.',
+            'progress': _milo_validation_status.get('progress', ''),
+        })
+
+    body = request.get_json(silent=True) or {}
+    threshold = body.get('threshold', 65)
+
+    thread = threading.Thread(
+        target=_run_milo_validation_job,
+        args=(threshold,),
+        daemon=True,
+    )
+    thread.start()
+
+    return jsonify({
+        'status': 'started',
+        'message': 'Validation started. Poll GET /api/milo/validate for results.',
+        'threshold': threshold,
+    })
+
+
+@app.route('/api/milo/validate', methods=['GET'])
+def milo_validate_status():
+    """Check the status/results of the Milo validation job."""
+    state = _milo_validation_status.get("state", "idle")
+
+    if state == "idle":
+        return jsonify({
+            'status': 'idle',
+            'message': 'No validation has been run yet. POST /api/milo/validate to start one.',
+        })
+
+    if state == "running":
+        elapsed = time.time() - _milo_validation_status.get("started_at", time.time())
+        return jsonify({
+            'status': 'running',
+            'progress': _milo_validation_status.get('progress', ''),
+            'elapsed_seconds': round(elapsed, 1),
+        })
+
+    if state == "error":
+        return jsonify({
+            'status': 'error',
+            'error': _milo_validation_status.get('error', 'Unknown error'),
+        }), 500
+
+    # state == "done"
+    if _milo_validation_result:
+        return jsonify(_milo_validation_result)
+
+    return jsonify({'status': 'error', 'error': 'Results not available'}), 500
 
 
 # ==================== DATA MANAGEMENT ROUTES ====================
