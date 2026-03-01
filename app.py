@@ -1744,16 +1744,33 @@ def find_high_probability_match(
             gpa_diff = abs(uploaded_gpa - candidate_gpa)
             gpa_similarity = max(0.0, 1.0 - min(gpa_diff / 1.0, 1.0))
 
-        # Compute composite score.  When we have structured first/last names,
-        # weight per-field similarity higher than the full-name similarity.
+        # ── Adaptive weighting ──
+        # When the candidate has no school stored (common for older records),
+        # redistribute school weight to name so name-only matches can still
+        # reach the threshold.
+        has_school_data = bool(candidate_school and school_name)
+
         if student_first_name and student_last_name:
             fl_sim = 0.5 * first_similarity + 0.5 * last_similarity
-            score = 0.55 * max(name_similarity, fl_sim) + 0.25 * school_similarity + 0.10 * gpa_similarity
+            effective_name = max(name_similarity, fl_sim)
         else:
-            score = 0.55 * name_similarity + 0.25 * school_similarity + 0.10 * gpa_similarity
+            effective_name = name_similarity
 
+        if has_school_data:
+            # Full weighting: name 0.55, school 0.25, gpa 0.10
+            score = 0.55 * effective_name + 0.25 * school_similarity + 0.10 * gpa_similarity
+        else:
+            # No school to compare — shift school weight to name: 0.80 name, 0.10 gpa
+            score = 0.80 * effective_name + 0.10 * gpa_similarity
+
+        # Bonus for strong name+school match
         if name_similarity > 0.85 and school_similarity > 0.6:
-            score += 0.1
+            score += 0.10
+
+        # Exact first+last name bonus (catches "Anas Hassan" == "Anas Hassan")
+        if first_similarity >= 0.95 and last_similarity >= 0.95:
+            score += 0.10
+
         if email_match:
             score = max(score, 0.98)
 
@@ -1766,7 +1783,7 @@ def find_high_probability_match(
         if student_first_name and student_last_name:
             if first_similarity < 0.75 or last_similarity < 0.75:
                 continue
-            if school_name and candidate_school and school_similarity < 0.6:
+            if has_school_data and school_similarity < 0.6:
                 continue
 
         if score > best_score:
@@ -1775,7 +1792,8 @@ def find_high_probability_match(
             best_reason = (
                 f"first={first_similarity:.2f}, last={last_similarity:.2f}, "
                 f"name={name_similarity:.2f}, school={school_similarity:.2f}, "
-                f"gpa={gpa_similarity:.2f}, email={email_match}"
+                f"gpa={gpa_similarity:.2f}, email={email_match}, "
+                f"school_data={'yes' if has_school_data else 'no'}"
             )
 
     if not best_candidate:

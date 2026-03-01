@@ -220,6 +220,49 @@ class Database:
         logger.info(f"backfill_student_summaries: updated {updated} rows")
         return updated
 
+    def backfill_first_last_name(self) -> int:
+        """Backfill ``first_name`` / ``last_name`` from ``applicant_name``.
+
+        Older records may have only ``applicant_name`` populated.  This
+        parses the full name into first/last so the student-matching
+        logic can compare structured fields.  Safe to call repeatedly.
+        """
+        if not self.has_applications_column('first_name'):
+            return 0
+        if not self.has_applications_column('last_name'):
+            return 0
+
+        updated = 0
+        try:
+            rows = self.execute_query(
+                "SELECT application_id, applicant_name, first_name, last_name "
+                "FROM applications "
+                "WHERE (first_name IS NULL OR first_name = '') "
+                "  AND applicant_name IS NOT NULL AND applicant_name != ''"
+            )
+            for row in rows:
+                full = (row.get('applicant_name') or '').strip()
+                if not full:
+                    continue
+                parts = full.split()
+                first = parts[0] if parts else ''
+                last = parts[-1] if len(parts) > 1 else ''
+                if not first:
+                    continue
+                try:
+                    self.execute_non_query(
+                        "UPDATE applications SET first_name = %s, last_name = %s "
+                        "WHERE application_id = %s AND (first_name IS NULL OR first_name = '')",
+                        (first, last, row.get('application_id'))
+                    )
+                    updated += 1
+                except Exception:
+                    logger.debug(f"failed to backfill name for {row.get('application_id')}")
+            logger.info(f"backfill_first_last_name: updated {updated} rows")
+        except Exception as e:
+            logger.warning(f"backfill_first_last_name failed: {e}")
+        return updated
+
 
     def _schema_probe_allowed(self) -> bool:
         if self._schema_probe_failed_at is None:
@@ -1048,6 +1091,15 @@ class Database:
                 logger.info(f"★ Backfilled {rows_updated} student_summary row(s)")
             except Exception as back_err:
                 logger.warning(f"Backfill helper failed during migrations: {back_err}")
+
+            # Backfill first_name/last_name from applicant_name for older
+            # records so student-matching has structured fields to compare.
+            try:
+                name_rows = self.backfill_first_last_name()
+                if name_rows:
+                    logger.info(f"★ Backfilled {name_rows} first/last name row(s)")
+            except Exception as name_err:
+                logger.warning(f"Name backfill failed during migrations: {name_err}")
 
             cursor.close()
             logger.info("⭐ COMPREHENSIVE DATABASE MIGRATIONS COMPLETED")
