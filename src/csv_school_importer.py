@@ -25,7 +25,7 @@ import csv
 import json
 import logging
 from collections import defaultdict
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Tuple
 
 logger = logging.getLogger(__name__)
@@ -260,7 +260,7 @@ def _aggregate_school(nces_id: str, rows: List[Dict[str, str]]) -> Dict[str, Any
         'frpl_trend_json': json.dumps(frpl_trend) if frpl_trend else None,
         'years_of_data': len(sorted_rows),
         'latest_school_year': latest.get(CSV_SCHOOL_YEAR, ''),
-        'csv_import_date': datetime.utcnow(),
+        'csv_import_date': datetime.now(timezone.utc),
         # defaults for existing columns
         'school_url': '',
         'opportunity_score': 0,
