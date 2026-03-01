@@ -58,6 +58,10 @@ class BaseAgent(ABC):
         `choice.message.content` to a dict/list. Agents expect strings
         and perform text processing (regex, slicing) on the content —
         coercing to a string here avoids downstream type errors.
+
+        Also detects the double-wrapped message-object pattern where
+        content is a dict with 'role'/'refusal' keys (Foundry returning
+        the message object itself as content) and unwraps it.
         """
         try:
             if not response:
@@ -72,10 +76,23 @@ class BaseAgent(ABC):
                         continue
                     content = getattr(msg, "content", None)
                     if isinstance(content, (dict, list)):
-                        try:
-                            msg.content = json.dumps(content, ensure_ascii=False)
-                        except Exception:
-                            msg.content = str(content)
+                        # Detect message-object-shaped content (Foundry double-wrap)
+                        if isinstance(content, dict) and 'role' in content and 'refusal' in content:
+                            inner = content.get('content', '')
+                            if isinstance(inner, str):
+                                msg.content = inner
+                            elif isinstance(inner, (dict, list)):
+                                try:
+                                    msg.content = json.dumps(inner, ensure_ascii=False)
+                                except Exception:
+                                    msg.content = str(inner)
+                            else:
+                                msg.content = str(inner) if inner else ""
+                        else:
+                            try:
+                                msg.content = json.dumps(content, ensure_ascii=False)
+                            except Exception:
+                                msg.content = str(content)
                     elif content is None:
                         msg.content = ""
                     elif not isinstance(content, str):

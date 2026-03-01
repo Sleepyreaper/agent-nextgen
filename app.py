@@ -3267,6 +3267,24 @@ def student_detail(application_id):
                             parsed = {}
                         agent_results['merlin']['parsed_data'] = parsed
                         mer = agent_results['merlin']
+
+                        # Detect message-object-shaped parsed_json (has 'role'
+                        # and 'refusal' from Foundry adapter) and try to unwrap
+                        # the nested 'content' to find actual evaluation data.
+                        if isinstance(parsed, dict) and 'role' in parsed and 'refusal' in parsed:
+                            inner_content = parsed.get('content', '')
+                            if isinstance(inner_content, str) and inner_content.strip():
+                                try:
+                                    unwrapped = json.loads(inner_content)
+                                    if isinstance(unwrapped, dict):
+                                        parsed = unwrapped
+                                        agent_results['merlin']['parsed_data'] = parsed
+                                except Exception:
+                                    pass
+                            elif isinstance(inner_content, dict):
+                                parsed = inner_content
+                                agent_results['merlin']['parsed_data'] = parsed
+
                         if isinstance(parsed, dict):
                             # Promote all useful keys from parsed_json to top-level for template access
                             for k in ('overall_score', 'match_score', 'nextgen_match', 'recommendation',
@@ -3446,53 +3464,41 @@ def student_detail(application_id):
         
         logger.debug(f"About to render template with application_id={application.get('application_id')}")
 
-        # Pull Milo insights so the UI can display training-pattern information
+        # Pull Milo insights from already-persisted results — do NOT make
+        # live AI calls during page load as that blocks the worker for 10-30s
+        # and causes the page to hang/timeout under Front Door.
         milo_insights = {}
         milo_alignment = None
         alignment_score = None
         try:
-            orchestrator = get_orchestrator()
-            milo = orchestrator.agents.get('data_scientist') if orchestrator else None
-            # if the orchestrator already ran, it may have stored alignment in the
-            # application row; check there first to avoid redundant model calls.
-            try:
-                stored = application.get('agent_results') or {}
-                if isinstance(stored, str):
-                    stored = safe_load_json(stored)
-                if isinstance(stored, dict):
-                    # prefer explicit milo_alignment key, fall back to any
-                    # computed_alignment embedded inside data_scientist result
-                    milo_alignment = stored.get('milo_alignment') or \
-                        (stored.get('data_scientist') or {}).get('computed_alignment')
-            except Exception:
-                milo_alignment = None
+            # Check persisted agent_results on the application row
+            stored = application.get('agent_results') or {}
+            if isinstance(stored, str):
+                stored = safe_load_json(stored)
+            if isinstance(stored, dict):
+                milo_alignment = stored.get('milo_alignment') or \
+                    (stored.get('data_scientist') or {}).get('computed_alignment')
+                # Extract cached training insights from data_scientist result
+                ds = stored.get('data_scientist') or {}
+                if isinstance(ds, dict) and ds.get('status') == 'success':
+                    milo_insights = ds
 
-            if milo:
-                # always refresh insights (they are cached internally)
-                milo_insights = asyncio.run(milo.analyze_training_insights())
-                # compute AI-derived match/align for this specific application if
-                # we don't already have one from persisted results.
-                if not milo_alignment:
-                    try:
-                        milo_alignment = asyncio.run(milo.compute_alignment(application))
-                    except Exception as align_err:
-                        logger.debug(f"Milo compute_alignment failed: {align_err}")
-                # maintain simple numeric alignment as before as fallback
-                merlin_score = None
-                if agent_results.get('merlin'):
-                    try:
-                        merlin_score = float(agent_results['merlin'].get('overall_score') or
-                                              agent_results['merlin'].get('overallscore') or 0)
-                    except Exception:
-                        merlin_score = None
-                avg = milo_insights.get('average_merlin_score')
-                if merlin_score is not None and avg is not None:
-                    try:
-                        alignment_score = round(merlin_score - float(avg), 1)
-                    except Exception:
-                        alignment_score = None
+            # Simple numeric alignment from Merlin score vs stored average
+            merlin_score = None
+            if agent_results.get('merlin'):
+                try:
+                    merlin_score = float(agent_results['merlin'].get('overall_score') or
+                                          agent_results['merlin'].get('overallscore') or 0)
+                except Exception:
+                    merlin_score = None
+            avg = milo_insights.get('average_merlin_score')
+            if merlin_score is not None and avg is not None:
+                try:
+                    alignment_score = round(merlin_score - float(avg), 1)
+                except Exception:
+                    alignment_score = None
         except Exception as e:
-            logger.debug(f"Milo insights fetch failed in student_detail: {e}")
+            logger.debug(f"Milo insights load failed in student_detail: {e}")
 
         try:
             human_summary = _synthesize_human_summary(agent_results, application)
