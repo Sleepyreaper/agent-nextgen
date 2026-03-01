@@ -5854,6 +5854,146 @@ def milo_get_ranking():
         return jsonify({'status': 'error', 'error': str(e)}), 500
 
 
+@app.route('/api/milo/validate', methods=['POST'])
+def milo_validate_model():
+    """Run a self-consistency validation of Milo's model against training data.
+
+    Uses compute_alignment to score every training student and checks whether
+    accepted students score higher than not-selected students.
+
+    Returns accuracy metrics, confusion matrix, and per-student scores.
+    Optional body: {"threshold": 65}  (default nextgen_match cutoff for "selected")
+    """
+    try:
+        orchestrator = get_orchestrator()
+        milo = orchestrator.agents.get('data_scientist') if orchestrator else None
+        if not milo:
+            return jsonify({'status': 'error', 'error': 'Milo agent not available'}), 500
+
+        body = request.get_json(silent=True) or {}
+        threshold = body.get('threshold', 65)  # nextgen_match score cutoff
+
+        import asyncio, statistics
+
+        # Step 1: Get all training examples
+        training = db.get_training_examples()
+        if not training:
+            return jsonify({'status': 'error', 'error': 'No training data found'}), 404
+
+        # Step 2: Ensure insights are built
+        insights = asyncio.run(milo.analyze_training_insights())
+
+        # Step 3: Score each training student using Milo's batch evaluator
+        from src.agents.milo_data_scientist import MAX_BATCH_SIZE
+        all_results = []
+        for i in range(0, len(training), MAX_BATCH_SIZE):
+            batch = training[i:i + MAX_BATCH_SIZE]
+            batch_results = asyncio.run(milo._evaluate_batch(batch, insights))
+            for j, result in enumerate(batch_results):
+                app = batch[j]
+                was_selected = app.get('was_selected', False)
+                if isinstance(was_selected, str):
+                    was_selected = was_selected.lower() in ('true', 'yes', '1', 'selected')
+                result['actual_selected'] = was_selected
+                result['application_id'] = app.get('application_id')
+                result['applicant_name'] = (
+                    app.get('applicant_name') or
+                    f"{app.get('first_name', '')} {app.get('last_name', '')}".strip()
+                )
+                all_results.append(result)
+
+        # Step 4: Classify predictions
+        accepted_scores = []
+        not_selected_scores = []
+        tp = fp = tn = fn = 0
+
+        for r in all_results:
+            score = r.get('nextgen_match', 0) or 0
+            actual = r.get('actual_selected', False)
+            predicted = score >= threshold
+
+            if actual:
+                accepted_scores.append(score)
+                if predicted:
+                    tp += 1
+                else:
+                    fn += 1
+            else:
+                not_selected_scores.append(score)
+                if predicted:
+                    fp += 1
+                else:
+                    tn += 1
+
+        total = len(all_results)
+        accuracy = (tp + tn) / total if total else 0
+        precision = tp / (tp + fp) if (tp + fp) else 0
+        recall = tp / (tp + fn) if (tp + fn) else 0
+        f1 = 2 * precision * recall / (precision + recall) if (precision + recall) else 0
+
+        # Score distribution
+        accepted_mean = statistics.mean(accepted_scores) if accepted_scores else 0
+        not_selected_mean = statistics.mean(not_selected_scores) if not_selected_scores else 0
+        separation = accepted_mean - not_selected_mean
+
+        # Sort results by score for display
+        all_results.sort(key=lambda x: x.get('nextgen_match', 0), reverse=True)
+
+        result = {
+            'status': 'success',
+            'agent': 'Milo Data Scientist',
+            'model_display': milo.model_display if hasattr(milo, 'model_display') else milo.model,
+            'threshold': threshold,
+            'total_training_students': total,
+            'accepted_count': len(accepted_scores),
+            'not_selected_count': len(not_selected_scores),
+            'metrics': {
+                'accuracy': round(accuracy, 3),
+                'precision': round(precision, 3),
+                'recall': round(recall, 3),
+                'f1_score': round(f1, 3),
+            },
+            'confusion_matrix': {
+                'true_positives': tp,
+                'false_positives': fp,
+                'true_negatives': tn,
+                'false_negatives': fn,
+            },
+            'score_distribution': {
+                'accepted_mean': round(accepted_mean, 1),
+                'accepted_min': round(min(accepted_scores), 1) if accepted_scores else 0,
+                'accepted_max': round(max(accepted_scores), 1) if accepted_scores else 0,
+                'accepted_median': round(statistics.median(accepted_scores), 1) if accepted_scores else 0,
+                'not_selected_mean': round(not_selected_mean, 1),
+                'not_selected_min': round(min(not_selected_scores), 1) if not_selected_scores else 0,
+                'not_selected_max': round(max(not_selected_scores), 1) if not_selected_scores else 0,
+                'not_selected_median': round(statistics.median(not_selected_scores), 1) if not_selected_scores else 0,
+                'separation': round(separation, 1),
+            },
+            'students': [
+                {
+                    'rank': i + 1,
+                    'name': r.get('applicant_name', 'Unknown'),
+                    'application_id': r.get('application_id'),
+                    'actual': 'ACCEPTED' if r.get('actual_selected') else 'NOT SELECTED',
+                    'score': r.get('nextgen_match', 0),
+                    'tier': r.get('tier', '?'),
+                    'predicted_correct': (
+                        (r.get('nextgen_match', 0) >= threshold) == r.get('actual_selected', False)
+                    ),
+                    'explanation': r.get('explanation', ''),
+                }
+                for i, r in enumerate(all_results)
+            ],
+        }
+
+        return jsonify(result)
+
+    except Exception as e:
+        logger.error(f"Milo validation error: {e}", exc_info=True)
+        return jsonify({'status': 'error', 'error': str(e)}), 500
+
+
 # ==================== DATA MANAGEMENT ROUTES ====================
 
 @app.route('/data-management')
