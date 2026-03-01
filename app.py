@@ -5854,34 +5854,72 @@ def milo_get_ranking():
         return jsonify({'status': 'error', 'error': str(e)}), 500
 
 
-# --- Milo Validation (async job pattern) ---
-_milo_validation_result = {}  # Stores the latest validation result
-_milo_validation_status = {"state": "idle"}  # idle | running | done | error
+# --- Milo Validation (async job pattern with file-based state) ---
+import tempfile, threading
+
+_VALIDATION_STATE_FILE = os.path.join(tempfile.gettempdir(), "milo_validation_state.json")
+_VALIDATION_RESULT_FILE = os.path.join(tempfile.gettempdir(), "milo_validation_result.json")
+
+
+def _write_validation_state(state: dict):
+    """Write validation state to a shared temp file (visible to all workers)."""
+    try:
+        with open(_VALIDATION_STATE_FILE, 'w') as f:
+            json.dump(state, f)
+    except Exception:
+        pass
+
+
+def _read_validation_state() -> dict:
+    """Read validation state from shared temp file."""
+    try:
+        with open(_VALIDATION_STATE_FILE, 'r') as f:
+            return json.load(f)
+    except Exception:
+        return {"state": "idle"}
+
+
+def _write_validation_result(result: dict):
+    """Write validation result to a shared temp file."""
+    try:
+        with open(_VALIDATION_RESULT_FILE, 'w') as f:
+            json.dump(result, f, default=str)
+    except Exception:
+        pass
+
+
+def _read_validation_result() -> dict:
+    """Read validation result from shared temp file."""
+    try:
+        with open(_VALIDATION_RESULT_FILE, 'r') as f:
+            return json.load(f)
+    except Exception:
+        return {}
 
 
 def _run_milo_validation_job(threshold: int):
     """Background thread: score all training students with Milo."""
-    global _milo_validation_result, _milo_validation_status
-    import asyncio, statistics, traceback
-    from src.agents.milo_data_scientist import MAX_BATCH_SIZE
+    import asyncio, statistics
 
     try:
-        _milo_validation_status = {"state": "running", "started_at": time.time(), "progress": "initializing"}
+        _write_validation_state({"state": "running", "started_at": time.time(), "progress": "initializing"})
 
         orchestrator = get_orchestrator()
         milo = orchestrator.agents.get('data_scientist') if orchestrator else None
         if not milo:
-            _milo_validation_status = {"state": "error", "error": "Milo agent not available"}
+            _write_validation_state({"state": "error", "error": "Milo agent not available"})
             return
 
         # Step 1: Get training examples
         training = db.get_training_examples()
         if not training:
-            _milo_validation_status = {"state": "error", "error": "No training data found"}
+            _write_validation_state({"state": "error", "error": "No training data found"})
             return
 
         total_students = len(training)
-        _milo_validation_status["progress"] = f"building insights from {total_students} students"
+        start_time = time.time()
+        _write_validation_state({"state": "running", "started_at": start_time,
+                                 "progress": f"building insights from {total_students} students"})
 
         # Step 2: Build insights (may already be cached)
         loop = asyncio.new_event_loop()
@@ -5889,17 +5927,22 @@ def _run_milo_validation_job(threshold: int):
         try:
             insights = loop.run_until_complete(milo.analyze_training_insights())
         except Exception as e:
-            _milo_validation_status = {"state": "error", "error": f"Insights failed: {e}"}
+            _write_validation_state({"state": "error", "error": f"Insights failed: {e}"})
             loop.close()
             return
 
         # Step 3: Evaluate in batches
+        from src.agents.milo_data_scientist import MAX_BATCH_SIZE
         all_results = []
         num_batches = (total_students + MAX_BATCH_SIZE - 1) // MAX_BATCH_SIZE
         for batch_idx in range(0, total_students, MAX_BATCH_SIZE):
             batch_num = batch_idx // MAX_BATCH_SIZE + 1
             batch = training[batch_idx:batch_idx + MAX_BATCH_SIZE]
-            _milo_validation_status["progress"] = f"scoring batch {batch_num}/{num_batches} ({len(all_results)}/{total_students} done)"
+            _write_validation_state({
+                "state": "running",
+                "started_at": start_time,
+                "progress": f"scoring batch {batch_num}/{num_batches} ({len(all_results)}/{total_students} done)",
+            })
 
             try:
                 batch_results = loop.run_until_complete(milo._evaluate_batch(batch, insights))
@@ -5926,7 +5969,6 @@ def _run_milo_validation_job(threshold: int):
         loop.close()
 
         # Step 4: Compute metrics
-        _milo_validation_status["progress"] = "computing metrics"
         accepted_scores = []
         not_selected_scores = []
         tp = fp = tn = fn = 0
@@ -5961,7 +6003,7 @@ def _run_milo_validation_job(threshold: int):
 
         all_results.sort(key=lambda x: x.get('nextgen_match', 0), reverse=True)
 
-        _milo_validation_result = {
+        validation_result = {
             'status': 'success',
             'agent': 'Milo Data Scientist',
             'model_display': milo.model_display if hasattr(milo, 'model_display') else milo.model,
@@ -6007,13 +6049,14 @@ def _run_milo_validation_job(threshold: int):
                 }
                 for i, r in enumerate(all_results)
             ],
-            'elapsed_seconds': round(time.time() - _milo_validation_status.get('started_at', time.time()), 1),
+            'elapsed_seconds': round(time.time() - start_time, 1),
         }
-        _milo_validation_status = {"state": "done", "finished_at": time.time()}
+        _write_validation_result(validation_result)
+        _write_validation_state({"state": "done", "finished_at": time.time()})
 
     except Exception as e:
         logger.error(f"Milo validation job error: {e}", exc_info=True)
-        _milo_validation_status = {"state": "error", "error": str(e)}
+        _write_validation_state({"state": "error", "error": str(e)})
 
 
 @app.route('/api/milo/validate', methods=['POST'])
@@ -6023,14 +6066,12 @@ def milo_validate_model():
     POST body: {"threshold": 65}
     Returns immediately. Poll GET /api/milo/validate for results.
     """
-    global _milo_validation_status
-    import threading
-
-    if _milo_validation_status.get("state") == "running":
+    current = _read_validation_state()
+    if current.get("state") == "running":
         return jsonify({
             'status': 'already_running',
             'message': 'Validation is already in progress. GET /api/milo/validate to check status.',
-            'progress': _milo_validation_status.get('progress', ''),
+            'progress': current.get('progress', ''),
         })
 
     body = request.get_json(silent=True) or {}
@@ -6053,7 +6094,8 @@ def milo_validate_model():
 @app.route('/api/milo/validate', methods=['GET'])
 def milo_validate_status():
     """Check the status/results of the Milo validation job."""
-    state = _milo_validation_status.get("state", "idle")
+    current = _read_validation_state()
+    state = current.get("state", "idle")
 
     if state == "idle":
         return jsonify({
@@ -6062,22 +6104,23 @@ def milo_validate_status():
         })
 
     if state == "running":
-        elapsed = time.time() - _milo_validation_status.get("started_at", time.time())
+        elapsed = time.time() - current.get("started_at", time.time())
         return jsonify({
             'status': 'running',
-            'progress': _milo_validation_status.get('progress', ''),
+            'progress': current.get('progress', ''),
             'elapsed_seconds': round(elapsed, 1),
         })
 
     if state == "error":
         return jsonify({
             'status': 'error',
-            'error': _milo_validation_status.get('error', 'Unknown error'),
+            'error': current.get('error', 'Unknown error'),
         }), 500
 
     # state == "done"
-    if _milo_validation_result:
-        return jsonify(_milo_validation_result)
+    result = _read_validation_result()
+    if result:
+        return jsonify(result)
 
     return jsonify({'status': 'error', 'error': 'Results not available'}), 500
 
