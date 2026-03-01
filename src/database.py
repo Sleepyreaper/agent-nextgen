@@ -1520,7 +1520,11 @@ class Database:
                           is_test_data: bool = False,
                           was_selected: Optional[bool] = None,
                           student_id: Optional[str] = None,
-                          file_content_hash: Optional[str] = None) -> int:
+                          file_content_hash: Optional[str] = None,
+                          first_name: Optional[str] = None,
+                          last_name: Optional[str] = None,
+                          high_school: Optional[str] = None,
+                          state_code: Optional[str] = None) -> int:
         """Create a new application record."""
         training_col = self.get_training_example_column()
         test_col = self.get_test_data_column()
@@ -1564,6 +1568,20 @@ class Database:
         if file_content_hash and self.has_applications_column("file_content_hash"):
             columns.append("file_content_hash")
             values.append(file_content_hash)
+
+        # Store structured identity fields for student-based dedup matching
+        if first_name and self.has_applications_column("first_name"):
+            columns.append("first_name")
+            values.append(first_name.strip())
+        if last_name and self.has_applications_column("last_name"):
+            columns.append("last_name")
+            values.append(last_name.strip())
+        if high_school and self.has_applications_column("high_school"):
+            columns.append("high_school")
+            values.append(high_school.strip())
+        if state_code and self.has_applications_column("state_code"):
+            columns.append("state_code")
+            values.append(state_code.strip().upper())
 
         placeholders = ", ".join(["%s"] * len(columns))
         column_list = ", ".join(columns)
@@ -2696,9 +2714,9 @@ class Database:
     def get_application_match_candidates(self, is_training: bool, is_test_data: bool, search_query: Optional[str] = None) -> List[Dict[str, Any]]:
         """Get potential application matches for a given upload type.
 
-        This is a simplified, defensive implementation that avoids complex joins
-        and missing-name variables. It returns recent applications filtered by
-        training/test flags and an optional search query.
+        Returns recent applications filtered by training/test flags with all
+        fields needed for student-identity matching (first_name, last_name,
+        high_school, state_code, student_id, transcript_text).
         """
         try:
             applications_table = self.get_table_name("applications") or 'applications'
@@ -2714,6 +2732,14 @@ class Database:
             training_col = self.get_training_example_column() or 'is_training_example'
             test_col = self.get_test_data_column() or 'is_test_data'
 
+            # Detect optional columns that may or may not exist in the schema
+            has_first_name = self.has_applications_column('first_name')
+            has_last_name = self.has_applications_column('last_name')
+            has_high_school = self.has_applications_column('high_school')
+            has_state_code = self.has_applications_column('state_code')
+            has_student_id = self.has_applications_column('student_id')
+            has_transcript = self.has_applications_column('transcript_text')
+
             filters = [f"COALESCE(a.{training_col}, FALSE) = {'TRUE' if is_training else 'FALSE'}"]
             # Apply test data filter according to the flag requested
             filters.append(f"COALESCE(a.{test_col}, FALSE) = {'TRUE' if is_test_data else 'FALSE'}")
@@ -2724,42 +2750,56 @@ class Database:
                 params.extend([f"%{search_query}%", f"%{search_query}%"])
 
             where_clause = " AND ".join(filters)
+
+            # Build SELECT clause with optional identity columns
+            select_cols = [
+                f"a.{app_id_col} as application_id",
+                f"a.{applicant_col} as applicant_name",
+                f"a.{email_col} as email",
+                f"a.{status_col} as status",
+                f"a.{uploaded_col} as uploaded_date",
+                f"a.{was_selected_col} as was_selected",
+                f"a.{missing_fields_col} as missing_fields",
+                f"COALESCE(a.{training_col}, FALSE) as is_training_example",
+                f"COALESCE(a.{test_col}, FALSE) as is_test_data",
+            ]
+            if has_first_name:
+                select_cols.append("a.first_name as db_first_name")
+            if has_last_name:
+                select_cols.append("a.last_name as db_last_name")
+            if has_high_school:
+                select_cols.append("a.high_school as high_school")
+            if has_state_code:
+                select_cols.append("a.state_code as state_code")
+            if has_student_id:
+                select_cols.append("a.student_id as student_id")
+            if has_transcript:
+                select_cols.append("a.transcript_text as transcript_text")
+
+            select_clause = ", ".join(select_cols)
+
             query = f"""
-                SELECT
-                    a.{app_id_col} as application_id,
-                    a.{applicant_col} as applicant_name,
-                    a.{email_col} as email,
-                    a.{status_col} as status,
-                    a.{uploaded_col} as uploaded_date,
-                    a.{was_selected_col} as was_selected,
-                    a.{missing_fields_col} as missing_fields,
-                    COALESCE(a.{training_col}, FALSE) as is_training_example,
-                    COALESCE(a.{test_col}, FALSE) as is_test_data
+                SELECT {select_clause}
                 FROM {applications_table} a
                 WHERE {where_clause}
                 ORDER BY LOWER(COALESCE(a.{applicant_col}, '')) ASC
                 LIMIT 200
             """
 
-            results = self.execute_query(query.format(
-                app_id_col=app_id_col,
-                applicant_col=applicant_col,
-                email_col=email_col,
-                status_col=status_col,
-                uploaded_col=uploaded_col,
-                was_selected_col=was_selected_col,
-                missing_fields_col=missing_fields_col,
-                training_col=training_col,
-                test_col=test_col,
-                applications_table=applications_table,
-                where_clause=where_clause
-            ), tuple(params) if params else None)
+            results = self.execute_query(query, tuple(params) if params else None)
 
             formatted = []
             for row in results:
-                parts = row.get('applicant_name', '').strip().split()
-                first_name = parts[0] if parts else ''
-                last_name = parts[-1] if len(parts) > 1 else ''
+                # Prefer dedicated first_name/last_name columns; fall back to
+                # splitting applicant_name.
+                first_name = (row.get('db_first_name') or '').strip()
+                last_name = (row.get('db_last_name') or '').strip()
+                if not first_name or not last_name:
+                    parts = (row.get('applicant_name') or '').strip().split()
+                    if not first_name:
+                        first_name = parts[0] if parts else ''
+                    if not last_name:
+                        last_name = parts[-1] if len(parts) > 1 else ''
 
                 missing_fields = []
                 mf = row.get('missing_fields')
@@ -2774,7 +2814,13 @@ class Database:
                     'first_name': first_name,
                     'last_name': last_name,
                     'full_name': row.get('applicant_name'),
+                    'applicant_name': row.get('applicant_name'),
                     'email': row.get('email'),
+                    'school_name': row.get('high_school') or '',
+                    'high_school': row.get('high_school') or '',
+                    'state_code': row.get('state_code') or '',
+                    'student_id': row.get('student_id') or '',
+                    'transcript_text': row.get('transcript_text') or '',
                     'status': row.get('status'),
                     'uploaded_date': row.get('uploaded_date'),
                     'was_selected': bool(row.get('was_selected')) if row.get('was_selected') is not None else None,

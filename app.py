@@ -1302,7 +1302,10 @@ def upload():
                     is_test_data=is_test,
                     was_selected=was_selected,
                     student_id=student_id,
-                    file_content_hash=file_content_hash
+                    file_content_hash=file_content_hash,
+                    first_name=group_first,
+                    last_name=group_last,
+                    high_school=group_school
                 )
 
                 additional_fields = {}
@@ -1694,6 +1697,13 @@ def find_high_probability_match(
     is_training: bool,
     is_test: bool
 ) -> Optional[Dict[str, Any]]:
+    """Find an existing student record that matches the uploaded student.
+
+    Matching is student-identity-based: we compare first/last name, school,
+    email, and (optionally) GPA extracted from transcripts.  The function
+    returns the best-matching candidate above the confidence threshold, or
+    None if no confident match is found.
+    """
     if not student_name and not student_email:
         return None
 
@@ -1707,21 +1717,15 @@ def find_high_probability_match(
     best_score = 0.0
     best_reason = ""
 
-    def split_candidate_name(name: Optional[str]) -> tuple[Optional[str], Optional[str]]:
-        if not name:
-            return None, None
-        tokens = [token for token in re.split(r"\s+", name.strip()) if token]
-        if len(tokens) < 2:
-            return tokens[0], None
-        return tokens[0], tokens[-1]
-
     for candidate in candidates:
-        candidate_name = candidate.get('applicant_name')
+        candidate_name = candidate.get('applicant_name') or candidate.get('full_name') or ''
         candidate_email = candidate.get('email')
-        candidate_school = candidate.get('school_name')
+        # Use the dedicated first/last/school columns returned by the DB
+        candidate_first = candidate.get('first_name') or ''
+        candidate_last = candidate.get('last_name') or ''
+        candidate_school = candidate.get('school_name') or candidate.get('high_school') or ''
         candidate_gpa = _extract_gpa(candidate.get('transcript_text'))
 
-        candidate_first, candidate_last = split_candidate_name(candidate_name)
         first_similarity = _string_similarity(student_first_name, candidate_first)
         last_similarity = _string_similarity(student_last_name, candidate_last)
 
@@ -1740,7 +1744,14 @@ def find_high_probability_match(
             gpa_diff = abs(uploaded_gpa - candidate_gpa)
             gpa_similarity = max(0.0, 1.0 - min(gpa_diff / 1.0, 1.0))
 
-        score = 0.55 * name_similarity + 0.25 * school_similarity + 0.10 * gpa_similarity
+        # Compute composite score.  When we have structured first/last names,
+        # weight per-field similarity higher than the full-name similarity.
+        if student_first_name and student_last_name:
+            fl_sim = 0.5 * first_similarity + 0.5 * last_similarity
+            score = 0.55 * max(name_similarity, fl_sim) + 0.25 * school_similarity + 0.10 * gpa_similarity
+        else:
+            score = 0.55 * name_similarity + 0.25 * school_similarity + 0.10 * gpa_similarity
+
         if name_similarity > 0.85 and school_similarity > 0.6:
             score += 0.1
         if email_match:
@@ -1748,21 +1759,36 @@ def find_high_probability_match(
 
         score = min(score, 1.0)
 
-        if student_first_name and student_last_name and school_name:
-            if first_similarity < 0.75 or last_similarity < 0.75 or school_similarity < 0.6:
+        # Strict filter: when we have structured upload data AND the
+        # candidate also has school info, require reasonable similarity.
+        # But when the candidate has no school stored, skip the school
+        # gate so we can still match on name + email.
+        if student_first_name and student_last_name:
+            if first_similarity < 0.75 or last_similarity < 0.75:
+                continue
+            if school_name and candidate_school and school_similarity < 0.6:
                 continue
 
         if score > best_score:
             best_score = score
             best_candidate = candidate
-            best_reason = f"name={name_similarity:.2f}, school={school_similarity:.2f}, gpa={gpa_similarity:.2f}, email={email_match}"
+            best_reason = (
+                f"first={first_similarity:.2f}, last={last_similarity:.2f}, "
+                f"name={name_similarity:.2f}, school={school_similarity:.2f}, "
+                f"gpa={gpa_similarity:.2f}, email={email_match}"
+            )
 
     if not best_candidate:
         return None
 
-    if best_score >= 0.78 and (_string_similarity(student_name, best_candidate.get('applicant_name')) >= 0.6 or student_email):
+    effective_name_sim = _string_similarity(student_name, best_candidate.get('applicant_name') or '')
+    if best_score >= 0.78 and (effective_name_sim >= 0.6 or student_email):
         best_candidate['match_score'] = best_score
         best_candidate['match_reason'] = best_reason
+        logger.info(
+            f"Student match found: score={best_score:.2f} ({best_reason}) "
+            f"→ application_id={best_candidate.get('application_id')}"
+        )
         return best_candidate
 
     return None
