@@ -1725,6 +1725,9 @@ def _collect_documents_from_storage(
     if not storage.client:
         return []
 
+    # Create OCR callback so image-based PDF pages get text extraction
+    ocr_cb = _make_ocr_callback()
+
     documents: list[Dict[str, Any]] = []
     blob_names = storage.list_student_files(student_id, application_type)
     for blob_name in blob_names:
@@ -1740,7 +1743,9 @@ def _collect_documents_from_storage(
         try:
             with open(temp_path, 'wb') as handle:
                 handle.write(file_content)
-            file_text, _ = DocumentProcessor.process_document(temp_path)
+            file_text, _ = DocumentProcessor.process_document(
+                temp_path, ocr_callback=ocr_cb
+            )
         finally:
             try:
                 os.remove(temp_path)
