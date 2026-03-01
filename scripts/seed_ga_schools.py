@@ -40,12 +40,12 @@ def load_schools() -> list:
 
 
 def build_school_url(school_name: str, city: str) -> str:
-    """Build a high-schools.com reference URL for the school."""
+    """Build a reference identifier for the school."""
     # Normalize: lowercase, replace spaces with hyphens, strip non-alpha
     def slugify(text):
         return text.lower().replace(" ", "-").replace(".", "").replace("'", "")
     
-    return f"https://high-schools.com/directory/ga/{slugify(city)}/{slugify(school_name)}/"
+    return f"ga/{slugify(city)}/{slugify(school_name)}"
 
 
 def seed_ga_schools(clear_first: bool = True, dry_run: bool = False):

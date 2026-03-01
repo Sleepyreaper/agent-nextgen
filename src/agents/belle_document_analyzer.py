@@ -6,9 +6,9 @@ applications, transcripts, etc.) and categorizes the information with deep under
 """
 
 import json
+import os
 import re
 import time
-import requests
 import difflib
 import unicodedata
 from typing import Dict, List, Any, Optional, Tuple
@@ -49,10 +49,8 @@ class BelleDocumentAnalyzer(BaseAgent):
         self.emoji = "📖"
         self.description = "Analyzes documents and extracts structured data"
         self.content_processing_client: Optional[ContentProcessingClient] = None
-        # Cache of fetched state school lists: {state_code: (timestamp, [school names])}
+        # Cache of state school lists: {state_code: (timestamp, [school names])}
         self._state_school_cache: Dict[str, Tuple[float, List[str]]] = {}
-        # Cache of state->city->schools: {state_code: (timestamp, {city_slug: [school names]})}
-        self._state_city_cache: Dict[str, Tuple[float, Dict[str, List[str]]]] = {}
 
         if config.content_processing_enabled and config.content_processing_endpoint:
             self.content_processing_client = ContentProcessingClient(
@@ -185,7 +183,7 @@ class BelleDocumentAnalyzer(BaseAgent):
             agent_fields["activities"] = extracted_data.get("activities")
         if extracted_data.get("interest"):
             agent_fields["interest"] = extracted_data.get("interest")
-        # Try to match and persist school using the high-schools.com directory when possible
+        # Try to match and persist school using local school data when possible
         # Use provided application_id and db_connection if available
         student_name = student_info.get('name') if isinstance(student_info, dict) else None
         state_code = student_info.get('state_code') if isinstance(student_info, dict) else None
@@ -212,35 +210,8 @@ class BelleDocumentAnalyzer(BaseAgent):
                     if school_from_context:
                         matched_school = self._match_against_state_schools(self._normalize_school_candidate(school_from_context), state_code) or school_from_context
                     else:
-                        # map city name to slug and directly fetch that city's schools for a more targeted match
-                        try:
-                            city_links = self._fetch_state_city_links(state_code)
-                            # city_links: {slug: City Name}
-                            slug = None
-                            for sslug, cname in city_links.items():
-                                if cname and cname.lower() == candidate.strip().lower():
-                                    slug = sslug
-                                    break
-                            if slug:
-                                schools = self._fetch_city_school_list(state_code, slug)
-                                if schools:
-                                    # try to find a school whose name contains any proper noun tokens from the document
-                                    tokens = self._extract_proper_nouns(text_content)
-                                    picked = None
-                                    for sch in schools:
-                                        for tok in tokens:
-                                            if len(tok) > 3 and tok.lower() in sch.lower():
-                                                picked = sch
-                                                break
-                                        if picked:
-                                            break
-                                    if picked:
-                                        matched_school = picked
-                                    else:
-                                        # fallback to generic state match using the city name as context
-                                        matched_school = self._match_against_state_schools(candidate_norm, state_code)
-                        except Exception:
-                            matched_school = self._match_against_state_schools(candidate_norm, state_code)
+                        # Try matching using local school data with city as context
+                        matched_school = self._match_against_state_schools(candidate_norm, state_code)
                 else:
                     matched_school = self._match_against_state_schools(candidate_norm, state_code)
 
@@ -1235,9 +1206,10 @@ Document excerpt:
             return None
         return s
     def _fetch_state_school_list(self, state_code: str) -> List[str]:
-        """Fetch a list of school names for a given state from high-schools.com and cache results.
+        """Load school names for a given state from local data files.
 
         Returns a list of school name strings (may be empty).
+        Loads from data/<state_code>_high_schools.json if available.
         """
         if not state_code:
             return []
@@ -1247,128 +1219,23 @@ Document excerpt:
         if cached and now - cached[0] < 24 * 3600:
             return cached[1]
 
-        url = f"https://high-schools.com/directory/{code}/"
+        schools = []
         try:
-            headers = {"User-Agent": "NextGen-Agent/1.0 (+https://example.com)"}
-            resp = requests.get(url, timeout=8, headers=headers)
-            if resp.status_code != 200:
-                self._state_school_cache[code] = (now, [])
-                return []
-
-            html = resp.text
-            # Look for anchor text that contains school-like phrases
-            pattern = re.compile(r">([^<]*?(?:High School|HS|Academy|Charter|Magnet|School|Central|Highschool)[^<]*)<", re.IGNORECASE)
-            matches = pattern.findall(html)
-            schools = []
-            for m in matches:
-                name = re.sub(r'\s+', ' ', m).strip()
-                # basic cleanup
-                name = re.sub(r'^[\-:\s]+|[\-:\s]+$', '', name)
-                if len(name) > 2 and name not in schools:
-                    schools.append(name)
-
-            # Fallback: also try to grab link text from '/directory/{state}/' anchors
-            if not schools:
-                link_pat = re.compile(rf'href=["\']([^"\']*/directory/{re.escape(code)}/[^"\']*)["\'][^>]*>([^<]+)</a>', re.IGNORECASE)
-                for href, txt in link_pat.findall(html):
-                    name = re.sub(r'\s+', ' ', txt).strip()
-                    if len(name) > 2 and name not in schools:
+            # Look for a local JSON file: data/<state_code>_high_schools.json
+            data_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), 'data')
+            json_path = os.path.join(data_dir, f'{code}_high_schools.json')
+            if os.path.isfile(json_path):
+                with open(json_path, 'r', encoding='utf-8') as f:
+                    entries = json.load(f)
+                for entry in entries:
+                    name = entry.get('school_name', '').strip() if isinstance(entry, dict) else str(entry).strip()
+                    if name and name not in schools:
                         schools.append(name)
-
-            self._state_school_cache[code] = (now, schools)
-            return schools
         except Exception:
-            self._state_school_cache[code] = (now, [])
-            return []
+            pass
 
-    def _fetch_state_city_links(self, state_code: str) -> Dict[str, str]:
-        """Return mapping of city_slug -> city_name found on the state directory page.
-
-        Caches results for 24 hours.
-        """
-        if not state_code:
-            return {}
-        code = state_code.strip().lower()
-        now = time.time()
-        cached = self._state_city_cache.get(code)
-        if cached and now - cached[0] < 24 * 3600:
-            return {k: None for k in cached[1].keys()} if cached[1] else {}
-
-        url = f"https://high-schools.com/directory/{code}/"
-        try:
-            headers = {"User-Agent": "NextGen-Agent/1.0 (+https://example.com)"}
-            resp = requests.get(url, timeout=8, headers=headers)
-            if resp.status_code != 200:
-                self._state_city_cache[code] = (now, {})
-                return {}
-
-            html = resp.text
-            # find links to city pages: href like '/directory/{state}/{slug}/' with link text as city name
-            link_pat = re.compile(r'href=["\']([^"\']*/directory/'+re.escape(code)+r'/([^"\']+)["\'])[^>]*>([^<]+)</a>', re.IGNORECASE)
-            city_map = {}
-            for href, slug, txt in link_pat.findall(html):
-                city = re.sub(r'\s+', ' ', txt).strip()
-                slug = slug.strip().lower().strip('/')
-                if slug and city and slug not in city_map:
-                    city_map[slug] = city
-
-            self._state_city_cache[code] = (now, {k: [] for k in city_map.keys()})
-            # store empty lists now; actual city pages fetched on demand
-            return {k: city_map[k] for k in city_map}
-        except Exception:
-            self._state_city_cache[code] = (now, {})
-            return {}
-
-    def _fetch_city_school_list(self, state_code: str, city_slug: str, city_href: Optional[str] = None) -> List[str]:
-        """Fetch list of schools for a given city slug within a state. Caches per state."""
-        if not state_code or not city_slug:
-            return []
-        code = state_code.strip().lower()
-        now = time.time()
-        cached = self._state_city_cache.get(code)
-        if cached and now - cached[0] < 24 * 3600 and city_slug in cached[1] and cached[1][city_slug]:
-            return cached[1][city_slug]
-
-        base_url = f"https://high-schools.com/directory/{code}/{city_slug}/"
-        try:
-            headers = {"User-Agent": "NextGen-Agent/1.0 (+https://example.com)"}
-            resp = requests.get(city_href or base_url, timeout=8, headers=headers)
-            if resp.status_code != 200:
-                # ensure city key exists in cache
-                if code not in self._state_city_cache:
-                    self._state_city_cache[code] = (now, {city_slug: []})
-                else:
-                    self._state_city_cache[code][1].setdefault(city_slug, [])
-                return []
-
-            html = resp.text
-            # extract anchor texts that look like school names
-            pattern = re.compile(r">([^<]*?(?:High School|HS|Academy|Charter|Magnet|School|Central|Highschool)[^<]*)<", re.IGNORECASE)
-            matches = pattern.findall(html)
-            schools = []
-            for m in matches:
-                name = re.sub(r'\s+', ' ', m).strip()
-                name = re.sub(r'^[\-:\s]+|[\-:\s]+$', '', name)
-                if len(name) > 2 and name not in schools:
-                    schools.append(name)
-
-            # cache
-            if code not in self._state_city_cache:
-                self._state_city_cache[code] = (now, {city_slug: schools})
-            else:
-                ts, cmap = self._state_city_cache[code]
-                cmap[city_slug] = schools
-                self._state_city_cache[code] = (ts, cmap)
-
-            return schools
-        except Exception:
-            if code not in self._state_city_cache:
-                self._state_city_cache[code] = (now, {city_slug: []})
-            else:
-                ts, cmap = self._state_city_cache[code]
-                cmap.setdefault(city_slug, [])
-                self._state_city_cache[code] = (ts, cmap)
-            return []
+        self._state_school_cache[code] = (now, schools)
+        return schools
 
     def _normalize_for_matching(self, s: Optional[str]) -> Optional[str]:
         if not s or not isinstance(s, str):
@@ -1503,55 +1370,6 @@ Document excerpt:
         for n, orig in norm_map.items():
             if cand_norm in n or n in cand_norm:
                 return orig
-
-        # 5) City-level fallback: if no state-level match, try city pages
-        try:
-            city_links = self._fetch_state_city_links(state_code)
-            if city_links:
-                logger = __import__('logging').getLogger(__name__)
-                # iterate cities but limit to reasonable number to avoid heavy scraping
-                limit = 30
-                count = 0
-                for city_slug in city_links.keys():
-                    if count >= limit:
-                        break
-                    count += 1
-                    schools = self._fetch_city_school_list(state_code, city_slug)
-                    if not schools:
-                        continue
-                    # normalize city school list
-                    city_norm_map = {}
-                    city_norm_list = []
-                    for s in schools:
-                        n = self._normalize_for_matching(s)
-                        if n and n not in city_norm_map:
-                            city_norm_map[n] = s
-                            city_norm_list.append(n)
-
-                    # exact normalized
-                    if cand_norm in city_norm_map:
-                        logger.debug(f"Matched candidate via city {city_slug} exact: {city_norm_map[cand_norm]}")
-                        return city_norm_map[cand_norm]
-
-                    # token-set
-                    best_score = 0.0
-                    best = None
-                    for n in city_norm_list:
-                        score = self._token_set_ratio(cand_norm, n)
-                        if score > best_score:
-                            best_score = score
-                            best = n
-                    if best_score >= 0.75:
-                        logger.debug(f"Matched candidate via city {city_slug} token-set {best_score}")
-                        return city_norm_map.get(best)
-
-                    # difflib
-                    matches = difflib.get_close_matches(cand_norm, city_norm_list, n=2, cutoff=0.78)
-                    if matches:
-                        logger.debug(f"Matched candidate via city {city_slug} fuzzy: {city_norm_map.get(matches[0])}")
-                        return city_norm_map.get(matches[0])
-        except Exception:
-            pass
 
         return None
     def _extract_data_by_type(self, text: str, doc_type: str) -> Dict[str, Any]:

@@ -1,28 +1,22 @@
-import requests
+import json
+import os
 import re
 import difflib
 
 def fetch_state_school_list(state_code: str):
     code = state_code.strip().lower()
-    url = f"https://high-schools.com/directory/{code}/"
-    headers = {"User-Agent": "NextGen-Agent-Test/1.0"}
-    resp = requests.get(url, timeout=10, headers=headers)
-    resp.raise_for_status()
-    html = resp.text
-    pattern = re.compile(r">([^<]*?(?:High School|HS|Academy|Charter|Magnet|School|Central|Highschool)[^<]*)<", re.IGNORECASE)
-    matches = pattern.findall(html)
+    data_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'data')
+    json_path = os.path.join(data_dir, f'{code}_high_schools.json')
+    if not os.path.isfile(json_path):
+        print(f'No local data file found: {json_path}')
+        return []
+    with open(json_path, 'r', encoding='utf-8') as f:
+        entries = json.load(f)
     schools = []
-    for m in matches:
-        name = re.sub(r'\s+', ' ', m).strip()
-        name = re.sub(r'^[\-:\s]+|[\-:\s]+$', '', name)
-        if len(name) > 2 and name not in schools:
+    for entry in entries:
+        name = entry.get('school_name', '').strip() if isinstance(entry, dict) else str(entry).strip()
+        if name and name not in schools:
             schools.append(name)
-    if not schools:
-        link_pat = re.compile(rf'href=["\']([^"\']*/directory/{re.escape(code)}/[^"\']*)["\'][^>]*>([^<]+)</a>', re.IGNORECASE)
-        for href, txt in link_pat.findall(html):
-            name = re.sub(r'\s+', ' ', txt).strip()
-            if len(name) > 2 and name not in schools:
-                schools.append(name)
     return schools
 
 
@@ -57,7 +51,7 @@ def match_against_state_schools(candidate: str, state_code: str):
 
 if __name__ == '__main__':
     state = 'ga'
-    print('Fetching schools for', state)
+    print('Loading schools for', state)
     schools = fetch_state_school_list(state)
     print(f'Found {len(schools)} schools (showing first 20):')
     for s in schools[:20]:
