@@ -1,29 +1,16 @@
 #!/usr/bin/env python3
 """
-Seed database with ALL Georgia high schools from Wikipedia data.
+DEPRECATED — This script previously seeded the database from data/ga_high_schools.json
+(web-scraped Wikipedia data).  That file has been removed.  School data is now
+imported exclusively via CSV upload on the training page, which populates the
+school_enriched_data table directly.
 
-Steps:
-1. Clears all existing school_enriched_data records (garbage + old seeds)
-2. Loads data/ga_high_schools.json (364 schools)
-3. Creates skeleton records with analysis_status='pending' for Naveen/Moana to enrich
-
-Usage:
-    python scripts/seed_ga_schools.py              # Full reset + seed
-    python scripts/seed_ga_schools.py --no-clear   # Seed only (skip delete)
-    python scripts/seed_ga_schools.py --dry-run     # Preview without changes
+This script is retained only for historical reference.
 """
 
 import sys
-import json
-import argparse
-from pathlib import Path
-
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-
-from src.database import db
-from src.logger import app_logger as logger
-
-DATA_FILE = Path(__file__).resolve().parent.parent / "data" / "ga_high_schools.json"
+print("This script is DEPRECATED. Upload school CSV data via the Training page instead.")
+sys.exit(1)
 
 
 def load_schools() -> list:

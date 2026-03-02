@@ -3010,7 +3010,8 @@ class Database:
                 %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
                 %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
                 %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
-                %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
+                %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
+                %s
             )
             RETURNING school_enrichment_id
         """
@@ -3170,6 +3171,111 @@ class Database:
         except Exception as e:
             logger.error(f"Error getting school enriched data: {e}")
             return None
+
+    def get_school_enriched_data_fuzzy(self, school_name: str, state_code: Optional[str] = None,
+                                       threshold: float = 0.72) -> Optional[Dict[str, Any]]:
+        """Retrieve enriched school data using fuzzy name matching.
+
+        Tries exact match first, then falls back to token-set-ratio and
+        difflib fuzzy matching against all school names (optionally filtered
+        by state_code).  Returns the best-matching record or None.
+        """
+        import difflib
+        import re
+        import unicodedata
+
+        # Try exact match first
+        exact = self.get_school_enriched_data(school_name=school_name, state_code=state_code)
+        if exact:
+            return exact
+
+        try:
+            if not self.has_table("school_enriched_data"):
+                return None
+
+            query = "SELECT school_name FROM school_enriched_data WHERE is_active = TRUE"
+            params: list = []
+            if state_code:
+                query += " AND state_code = %s"
+                params.append(state_code)
+
+            rows = self.execute_query(query, tuple(params) if params else None)
+            if not rows:
+                return None
+
+            def _normalize(s: str) -> str:
+                s2 = unicodedata.normalize('NFKD', s)
+                s2 = ''.join(ch for ch in s2 if not unicodedata.combining(ch))
+                s2 = s2.lower()
+                s2 = re.sub(r"[^a-z0-9\s]", ' ', s2)
+                s2 = re.sub(r"\b(high school|hs|highschool|school|academy|charter|magnet)\b", ' ', s2)
+                return re.sub(r"\s{2,}", ' ', s2).strip()
+
+            def _token_set_ratio(a: str, b: str) -> float:
+                ta = set(t for t in a.split() if len(t) > 1)
+                tb = set(t for t in b.split() if len(t) > 1)
+                if not ta or not tb:
+                    return 0.0
+                return len(ta & tb) / len(ta | tb)
+
+            cand_norm = _normalize(school_name)
+            if not cand_norm:
+                return None
+
+            # Build name -> normalized mapping
+            name_map: dict = {}
+            for row in rows:
+                raw = row['school_name']
+                n = _normalize(raw)
+                if n:
+                    name_map[raw] = n
+
+            # 1) Exact normalized match
+            for raw, n in name_map.items():
+                if n == cand_norm:
+                    return self.get_school_enriched_data(school_name=raw, state_code=state_code)
+
+            # 2) Token-set ratio
+            best_score = 0.0
+            best_raw = None
+            for raw, n in name_map.items():
+                score = _token_set_ratio(cand_norm, n)
+                if score > best_score:
+                    best_score = score
+                    best_raw = raw
+            if best_score >= threshold and best_raw:
+                return self.get_school_enriched_data(school_name=best_raw, state_code=state_code)
+
+            # 3) difflib close match
+            norm_list = list(name_map.values())
+            raw_list = list(name_map.keys())
+            matches = difflib.get_close_matches(cand_norm, norm_list, n=1, cutoff=0.80)
+            if matches:
+                idx = norm_list.index(matches[0])
+                return self.get_school_enriched_data(school_name=raw_list[idx], state_code=state_code)
+
+            # 4) Substring match
+            for raw, n in name_map.items():
+                if cand_norm in n or n in cand_norm:
+                    return self.get_school_enriched_data(school_name=raw, state_code=state_code)
+
+            return None
+        except Exception as e:
+            logger.error(f"Error in fuzzy school lookup: {e}")
+            return None
+
+    def get_school_names_for_state(self, state_code: str) -> List[str]:
+        """Return all school names for a given state from the enriched data table."""
+        try:
+            if not self.has_table("school_enriched_data"):
+                return []
+            query = ("SELECT school_name FROM school_enriched_data "
+                     "WHERE is_active = TRUE AND state_code = %s ORDER BY school_name")
+            rows = self.execute_query(query, (state_code.upper(),))
+            return [r['school_name'] for r in rows] if rows else []
+        except Exception as e:
+            logger.error(f"Error fetching school names for state {state_code}: {e}")
+            return []
 
     def delete_all_school_enriched_data(self) -> int:
         """Delete ALL school enriched data records and cascade to child tables.
