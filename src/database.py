@@ -3084,6 +3084,70 @@ class Database:
             )
             return None
 
+    @staticmethod
+    def _add_school_field_aliases(record: Dict[str, Any]) -> Dict[str, Any]:
+        """Add common field-name aliases so every consumer (Moana, app.py, Aurora
+        cached path, etc.) can look up school data by *either* the canonical DB
+        column name or the legacy/Naveen-style name.
+
+        Also computes lightweight derived fields that are not stored in the DB
+        but that agents expect (e.g. ``socioeconomic_level``).
+        """
+        if record is None:
+            return record
+
+        # --- simple renames (DB column → legacy alias) ---
+        alias_map = {
+            # DB column                  → alias(es) used by agents / app.py
+            'total_students':             'enrollment_size',
+            'college_acceptance_rate':    'college_placement_rate',
+            'ap_course_count':           'ap_classes_count',
+            'stem_program_available':    'stem_programs',
+            'ib_program_available':      'ib_offerings',
+            'honors_course_count':       'honors_programs',
+            'web_sources_analyzed':      'web_sources',
+            'updated_at':               'analysis_date',
+        }
+        for db_col, alias in alias_map.items():
+            if alias not in record and db_col in record:
+                record[alias] = record[db_col]
+
+        # --- derived: socioeconomic_level from free_lunch_percentage ---
+        if 'socioeconomic_level' not in record or record.get('socioeconomic_level') is None:
+            flp = record.get('free_lunch_percentage')
+            if flp is not None:
+                try:
+                    flp = float(flp)
+                    if flp >= 75:
+                        record['socioeconomic_level'] = 'low'
+                    elif flp >= 50:
+                        record['socioeconomic_level'] = 'low-medium'
+                    elif flp >= 25:
+                        record['socioeconomic_level'] = 'medium'
+                    else:
+                        record['socioeconomic_level'] = 'medium-high'
+                except (ValueError, TypeError):
+                    record['socioeconomic_level'] = 'unknown'
+            else:
+                record['socioeconomic_level'] = 'unknown'
+
+        # --- derived: academic_programs summary for app.py ---
+        if 'academic_programs' not in record or record.get('academic_programs') is None:
+            parts = []
+            if record.get('ap_course_count'):
+                parts.append(f"{record['ap_course_count']} AP courses")
+            if record.get('ib_program_available'):
+                parts.append("IB program")
+            if record.get('stem_program_available'):
+                parts.append("STEM program")
+            if record.get('dual_enrollment_available'):
+                parts.append("Dual enrollment")
+            record['academic_programs'] = ', '.join(parts) if parts else None
+
+        # diversity_index: not derivable from CSV — leave as-is (may be None)
+
+        return record
+
     def get_school_enriched_data(self, school_id: Optional[int] = None, school_name: Optional[str] = None, 
                                  state_code: Optional[str] = None) -> Optional[Dict[str, Any]]:
         """Retrieve enriched school data by ID or name/state."""
@@ -3100,7 +3164,9 @@ class Database:
             else:
                 return None
             
-            return result[0] if result else None
+            if result:
+                return self._add_school_field_aliases(dict(result[0]))
+            return None
         except Exception as e:
             logger.error(f"Error getting school enriched data: {e}")
             return None
@@ -3187,7 +3253,8 @@ class Database:
             query += " ORDER BY opportunity_score DESC LIMIT %s"
             params.append(limit)
             
-            return self.execute_query(query, tuple(params))
+            results = self.execute_query(query, tuple(params))
+            return [self._add_school_field_aliases(dict(r)) for r in results]
         except Exception as e:
             logger.error(f"Error getting all schools enriched: {e}")
             return []
