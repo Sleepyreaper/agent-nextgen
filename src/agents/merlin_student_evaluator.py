@@ -70,6 +70,29 @@ class MerlinStudentEvaluator(BaseAgent):
                 data = safe_load_json(payload)
                 if not isinstance(data, dict):
                     data = {"raw_response": str(data)}
+
+                # Detect when the Foundry adapter returns a message-object-like
+                # dict (has 'role'/'refusal' keys with a nested 'content' field)
+                # instead of the actual AI output.  Unwrap the inner content.
+                if 'role' in data and 'refusal' in data:
+                    inner_content = data.get('content', '')
+                    if isinstance(inner_content, str) and inner_content.strip():
+                        try:
+                            unwrapped = json.loads(inner_content)
+                            if isinstance(unwrapped, dict):
+                                data = unwrapped
+                        except Exception:
+                            data = {"raw_response": inner_content}
+                    elif isinstance(inner_content, dict):
+                        data = inner_content
+                    else:
+                        logger.warning(
+                            "Merlin received message-object-shaped response with empty content "
+                            "for application %s; AI may not have produced output",
+                            application_id,
+                        )
+                        data = {"raw_response": "", "status": "empty_response"}
+
                 normalized = self._normalize_score(
                     data.get("overall_score"),
                     data.get("recommendation")

@@ -75,6 +75,12 @@
             <button type="button" class="btn btn-info" onclick="fetchMiloInsights()">
                 📊 Milo Insights
             </button>
+            <button type="button" class="btn" style="background:#8b5cf6; color:white;" onclick="openValidationModal()">
+                🧪 Validate Model
+            </button>
+            <button type="button" class="btn" style="background:#059669; color:white;" onclick="openReprocessModal()">
+                🔄 Reprocess Documents
+            </button>
             <a id="trainingUploadLink" href="{{ url_for('upload', app_type='training') }}" class="btn btn-primary">
                 ➕ Add Training Example
             </a>
@@ -156,6 +162,50 @@
 <!-- Info Card -->
 <div class="card" style="background: #f0f9ff; border-left: 4px solid #3b82f6; margin-top: 2rem;">
 
+<!-- Milo Validation Modal -->
+<div id="validationModal" style="display:none; position:fixed; top:0; left:0; right:0; bottom:0; background:rgba(0,0,0,0.6); z-index:9999; justify-content:center; align-items:center;">
+    <div style="background:white; border-radius:12px; padding:2rem; max-width:960px; width:95%; max-height:90vh; overflow-y:auto; box-shadow:0 20px 60px rgba(0,0,0,0.3);">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1rem;">
+            <h3 style="margin:0; color:#5b21b6;">🧪 Milo Model Validation</h3>
+            <button onclick="closeValidationModal()" style="background:none; border:none; font-size:1.5rem; cursor:pointer;">✕</button>
+        </div>
+        <div id="validationExplainer" style="background:#f5f3ff; border-radius:8px; padding:1rem; margin-bottom:1.25rem; color:#4c1d95; font-size:0.9rem; line-height:1.6;">
+            <strong>What does this do?</strong> Validation scores every training student through Milo's current model and compares the AI's prediction against the known outcome (Selected vs Not Selected). This reveals:
+            <ul style="margin:0.5rem 0 0 1.25rem;">
+                <li><strong>Accuracy</strong> — how often the model's prediction matches reality</li>
+                <li><strong>Precision / Recall / F1</strong> — how well it identifies truly selected students</li>
+                <li><strong>Score separation</strong> — gap between accepted and not-selected average scores</li>
+                <li><strong>Per-student breakdown</strong> — which students the model gets right or wrong and why</li>
+            </ul>
+            <p style="margin-top:0.5rem; margin-bottom:0;">Students scoring ≥ threshold are predicted "Selected". Students with missing application data will score 0.</p>
+        </div>
+
+        <!-- Threshold + Start -->
+        <div id="validationStart" style="display:flex; align-items:center; gap:1rem; margin-bottom:1.25rem;">
+            <label style="font-weight:600; color:#374151;">Threshold:</label>
+            <input type="number" id="validationThreshold" value="65" min="0" max="100" style="width:80px; padding:0.4rem; border:1px solid #d1d5db; border-radius:6px; font-size:1rem; text-align:center;">
+            <button id="validationRunBtn" onclick="startValidation()" class="btn" style="background:#8b5cf6; color:white; padding:0.5rem 1.5rem; font-weight:600;">
+                ▶ Run Validation
+            </button>
+        </div>
+
+        <!-- Progress -->
+        <div id="validationProgress" style="display:none; margin-bottom:1.25rem;">
+            <div style="display:flex; align-items:center; gap:0.75rem; margin-bottom:0.5rem;">
+                <span style="display:inline-block; width:14px; height:14px; border-radius:999px; background:#8b5cf6; animation:pulse 1s infinite;"></span>
+                <strong id="validationProgressText" style="color:#5b21b6;">Starting validation...</strong>
+            </div>
+            <div style="background:#e5e7eb; border-radius:8px; overflow:hidden; height:20px;">
+                <div id="validationProgressBar" style="background:linear-gradient(90deg,#8b5cf6,#a78bfa); height:100%; width:0%; transition:width 0.5s; border-radius:8px;"></div>
+            </div>
+            <p id="validationElapsed" style="color:#6b7280; font-size:0.85rem; margin-top:0.35rem;">Elapsed: 0s</p>
+        </div>
+
+        <!-- Results -->
+        <div id="validationResults" style="display:none;"></div>
+    </div>
+</div>
+
 <!-- XLSX Resolver Modal -->
 <div id="xlsxModal" style="display:none; position:fixed; top:0; left:0; right:0; bottom:0; background:rgba(0,0,0,0.6); z-index:9999; justify-content:center; align-items:center;">
     <div style="background:white; border-radius:12px; padding:2rem; max-width:900px; width:95%; max-height:85vh; overflow-y:auto; box-shadow:0 20px 60px rgba(0,0,0,0.3);">
@@ -188,6 +238,44 @@
             <li>👸 <strong>Application review</strong> identifies essay qualities that correlate with success</li>
             <li>🗡️ <strong>Recommendation analysis</strong> weights recommendation attributes from past winners</li>
         </ul>
+    </div>
+</div>
+
+<!-- Reprocess Documents Modal -->
+<div id="reprocessModal" style="display:none; position:fixed; top:0; left:0; right:0; bottom:0; background:rgba(0,0,0,0.6); z-index:9999; justify-content:center; align-items:center;">
+    <div style="background:white; border-radius:12px; padding:2rem; max-width:700px; width:90%; max-height:85vh; overflow-y:auto;">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1rem;">
+            <h3 style="margin:0;">🔄 Reprocess Training Documents</h3>
+            <button onclick="closeReprocessModal()" style="background:none; border:none; font-size:1.5rem; cursor:pointer;">✕</button>
+        </div>
+        <div style="background:#ecfdf5; border:1px solid #a7f3d0; border-radius:8px; padding:1rem; margin-bottom:1rem;">
+            <p style="margin:0; font-size:0.9rem; color:#065f46;">
+                <strong>What this does:</strong> Re-downloads every PDF/document from storage for each training student,
+                re-runs the text extraction and Belle section detection pipeline, and updates the
+                <code>application_text</code>, <code>transcript_text</code>, and <code>recommendation_text</code>
+                fields in the database. Use this after fixing the document processor to re-extract data
+                from existing training records.
+            </p>
+        </div>
+        <div id="reprocessStatus" style="display:none; margin-bottom:1rem;">
+            <div style="display:flex; justify-content:space-between; margin-bottom:0.5rem;">
+                <span id="reprocessStatusText">Starting...</span>
+                <span id="reprocessProgressText">0 / 0</span>
+            </div>
+            <div style="background:#e5e7eb; border-radius:4px; height:20px; overflow:hidden;">
+                <div id="reprocessProgressBar" style="background:linear-gradient(90deg,#059669,#10b981); height:100%; width:0%; transition:width 0.3s;"></div>
+            </div>
+            <div id="reprocessDetails" style="margin-top:1rem; font-size:0.85rem; color:#6b7280;"></div>
+        </div>
+        <div id="reprocessDiagnostic" style="display:none; margin-bottom:1rem;"></div>
+        <div style="display:flex; gap:0.5rem; flex-wrap:wrap;">
+            <button onclick="startReprocess()" id="reprocessStartBtn" class="btn" style="background:#059669; color:white;">
+                🔄 Start Reprocessing
+            </button>
+            <button onclick="loadDiagnostic()" class="btn" style="background:#3b82f6; color:white;">
+                📊 Show Diagnostic
+            </button>
+        </div>
     </div>
 </div>
 {% endblock %}
@@ -359,6 +447,226 @@ async function fetchMiloInsights() {
     }
 }
 
+// ---- Milo Model Validation ----
+let _validationPollTimer = null;
+
+function openValidationModal() {
+    document.getElementById('validationModal').style.display = 'flex';
+    // Check if a validation is already running
+    checkExistingValidation();
+}
+
+function closeValidationModal() {
+    document.getElementById('validationModal').style.display = 'none';
+    if (_validationPollTimer) { clearInterval(_validationPollTimer); _validationPollTimer = null; }
+}
+
+document.addEventListener('DOMContentLoaded', function() {
+    const vModal = document.getElementById('validationModal');
+    if (vModal) {
+        vModal.addEventListener('click', function(e) { if (e.target === this) closeValidationModal(); });
+    }
+});
+
+async function checkExistingValidation() {
+    try {
+        const r = await fetch('/api/milo/validate');
+        const data = await r.json();
+        if (data.status === 'running') {
+            showValidationRunning(data);
+            startPolling();
+        } else if (data.status === 'success') {
+            showValidationResults(data);
+        }
+    } catch (e) { /* ignore */ }
+}
+
+async function startValidation() {
+    const threshold = parseInt(document.getElementById('validationThreshold').value) || 65;
+    const btn = document.getElementById('validationRunBtn');
+    btn.disabled = true;
+    btn.textContent = 'Starting...';
+
+    try {
+        const r = await fetch('/api/milo/validate', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({threshold: threshold})
+        });
+        const data = await r.json();
+        if (data.status === 'started' || data.status === 'already_running') {
+            showValidationRunning(data);
+            startPolling();
+        } else {
+            alert('Error starting validation: ' + JSON.stringify(data));
+            btn.disabled = false;
+            btn.textContent = '▶ Run Validation';
+        }
+    } catch (err) {
+        alert('Network error: ' + err.message);
+        btn.disabled = false;
+        btn.textContent = '▶ Run Validation';
+    }
+}
+
+function showValidationRunning(data) {
+    document.getElementById('validationProgress').style.display = 'block';
+    document.getElementById('validationResults').style.display = 'none';
+    document.getElementById('validationRunBtn').disabled = true;
+    document.getElementById('validationRunBtn').textContent = 'Running...';
+    updateProgress(data);
+}
+
+function updateProgress(data) {
+    const progressText = document.getElementById('validationProgressText');
+    const elapsed = document.getElementById('validationElapsed');
+    const bar = document.getElementById('validationProgressBar');
+
+    progressText.textContent = data.progress || 'Processing...';
+    if (data.elapsed_seconds != null) {
+        elapsed.textContent = 'Elapsed: ' + Math.round(data.elapsed_seconds) + 's';
+    }
+
+    // Try to parse progress like "Batch 3/10 (24 students scored)"
+    const match = (data.progress || '').match(/Batch (\d+)\/(\d+)/);
+    if (match) {
+        const pct = Math.round((parseInt(match[1]) / parseInt(match[2])) * 100);
+        bar.style.width = pct + '%';
+    }
+}
+
+function startPolling() {
+    if (_validationPollTimer) clearInterval(_validationPollTimer);
+    _validationPollTimer = setInterval(async () => {
+        try {
+            const r = await fetch('/api/milo/validate');
+            const data = await r.json();
+            if (data.status === 'running') {
+                updateProgress(data);
+            } else if (data.status === 'success') {
+                clearInterval(_validationPollTimer);
+                _validationPollTimer = null;
+                document.getElementById('validationProgress').style.display = 'none';
+                showValidationResults(data);
+            } else if (data.status === 'error') {
+                clearInterval(_validationPollTimer);
+                _validationPollTimer = null;
+                document.getElementById('validationProgress').style.display = 'none';
+                document.getElementById('validationResults').style.display = 'block';
+                document.getElementById('validationResults').innerHTML = '<div style="background:#fef2f2; padding:1rem; border-radius:8px; color:#991b1b;"><strong>❌ Validation Error:</strong> ' + (data.error || 'Unknown') + '</div>';
+                document.getElementById('validationRunBtn').disabled = false;
+                document.getElementById('validationRunBtn').textContent = '▶ Run Validation';
+            }
+        } catch (e) { /* network hiccup, keep polling */ }
+    }, 5000);
+}
+
+function showValidationResults(data) {
+    const container = document.getElementById('validationResults');
+    container.style.display = 'block';
+    document.getElementById('validationRunBtn').disabled = false;
+    document.getElementById('validationRunBtn').textContent = '▶ Run Again';
+
+    const m = data.metrics || {};
+    const cm = data.confusion_matrix || {};
+    const sd = data.score_distribution || {};
+    const students = data.students || [];
+
+    // Accuracy color
+    const accPct = Math.round((m.accuracy || 0) * 100);
+    const accColor = accPct >= 80 ? '#059669' : accPct >= 60 ? '#d97706' : '#dc2626';
+
+    let html = '';
+
+    // ── Summary metrics ──
+    html += '<div style="display:grid; grid-template-columns:repeat(4,1fr); gap:0.75rem; margin-bottom:1.25rem;">';
+    html += metricCard('Accuracy', accPct + '%', accColor);
+    html += metricCard('Precision', Math.round((m.precision||0)*100) + '%', '#3b82f6');
+    html += metricCard('Recall', Math.round((m.recall||0)*100) + '%', '#8b5cf6');
+    html += metricCard('F1 Score', Math.round((m.f1_score||0)*100) + '%', '#ec4899');
+    html += '</div>';
+
+    // ── Confusion Matrix ──
+    html += '<div style="display:grid; grid-template-columns:1fr 1fr; gap:1rem; margin-bottom:1.25rem;">';
+    html += '<div style="background:#f9fafb; border-radius:8px; padding:1rem;">';
+    html += '<h4 style="margin:0 0 0.75rem; color:#374151;">Confusion Matrix</h4>';
+    html += '<table style="width:100%; border-collapse:collapse; text-align:center; font-size:0.9rem;">';
+    html += '<tr><td></td><th style="padding:0.4rem; color:#6b7280;">Pred Selected</th><th style="padding:0.4rem; color:#6b7280;">Pred Not Sel</th></tr>';
+    html += '<tr><th style="padding:0.4rem; text-align:left; color:#6b7280;">Actually Selected</th>';
+    html += '<td style="padding:0.4rem;"><span style="background:#dcfce7; color:#166534; padding:0.2rem 0.6rem; border-radius:4px; font-weight:600;">TP: ' + (cm.true_positives||0) + '</span></td>';
+    html += '<td style="padding:0.4rem;"><span style="background:#fef2f2; color:#991b1b; padding:0.2rem 0.6rem; border-radius:4px; font-weight:600;">FN: ' + (cm.false_negatives||0) + '</span></td></tr>';
+    html += '<tr><th style="padding:0.4rem; text-align:left; color:#6b7280;">Actually Not Sel</th>';
+    html += '<td style="padding:0.4rem;"><span style="background:#fef9c3; color:#854d0e; padding:0.2rem 0.6rem; border-radius:4px; font-weight:600;">FP: ' + (cm.false_positives||0) + '</span></td>';
+    html += '<td style="padding:0.4rem;"><span style="background:#dcfce7; color:#166534; padding:0.2rem 0.6rem; border-radius:4px; font-weight:600;">TN: ' + (cm.true_negatives||0) + '</span></td></tr>';
+    html += '</table></div>';
+
+    // ── Score Distribution ──
+    html += '<div style="background:#f9fafb; border-radius:8px; padding:1rem;">';
+    html += '<h4 style="margin:0 0 0.75rem; color:#374151;">Score Distribution</h4>';
+    html += '<table style="width:100%; border-collapse:collapse; font-size:0.9rem;">';
+    html += '<tr><td></td><th style="padding:0.35rem; color:#6b7280;">Mean</th><th style="padding:0.35rem; color:#6b7280;">Median</th><th style="padding:0.35rem; color:#6b7280;">Min</th><th style="padding:0.35rem; color:#6b7280;">Max</th></tr>';
+    html += '<tr><th style="padding:0.35rem; text-align:left; color:#059669;">Accepted</th>';
+    html += '<td style="padding:0.35rem; text-align:center; font-weight:600;">' + sd.accepted_mean + '</td>';
+    html += '<td style="padding:0.35rem; text-align:center;">' + sd.accepted_median + '</td>';
+    html += '<td style="padding:0.35rem; text-align:center;">' + sd.accepted_min + '</td>';
+    html += '<td style="padding:0.35rem; text-align:center;">' + sd.accepted_max + '</td></tr>';
+    html += '<tr><th style="padding:0.35rem; text-align:left; color:#dc2626;">Not Selected</th>';
+    html += '<td style="padding:0.35rem; text-align:center; font-weight:600;">' + sd.not_selected_mean + '</td>';
+    html += '<td style="padding:0.35rem; text-align:center;">' + sd.not_selected_median + '</td>';
+    html += '<td style="padding:0.35rem; text-align:center;">' + sd.not_selected_min + '</td>';
+    html += '<td style="padding:0.35rem; text-align:center;">' + sd.not_selected_max + '</td></tr>';
+    html += '<tr><th style="padding:0.35rem; text-align:left; color:#374151;">Separation</th>';
+    html += '<td colspan="4" style="padding:0.35rem; font-weight:700; color:' + (sd.separation >= 0 ? '#059669' : '#dc2626') + ';">' + (sd.separation >= 0 ? '+' : '') + sd.separation + ' pts</td></tr>';
+    html += '</table></div></div>';
+
+    // ── Info bar ──
+    html += '<div style="background:#eff6ff; border-radius:8px; padding:0.75rem 1rem; margin-bottom:1rem; display:flex; flex-wrap:wrap; gap:1rem; font-size:0.85rem; color:#1e40af;">';
+    html += '<span>📋 <strong>' + (data.total_training_students||0) + '</strong> students</span>';
+    html += '<span>✓ <strong>' + (data.accepted_count||0) + '</strong> accepted</span>';
+    html += '<span>✗ <strong>' + (data.not_selected_count||0) + '</strong> not selected</span>';
+    html += '<span>🎯 Threshold: <strong>' + (data.threshold||65) + '</strong></span>';
+    html += '<span>🤖 Model: <strong>' + (data.model_display||'—') + '</strong></span>';
+    html += '<span>⏱️ <strong>' + (data.elapsed_seconds||0) + 's</strong></span>';
+    html += '</div>';
+
+    // ── Per-student table ──
+    html += '<h4 style="margin:0 0 0.75rem; color:#374151;">Per-Student Results (sorted by score desc)</h4>';
+    html += '<div style="max-height:400px; overflow-y:auto; border:1px solid #e5e7eb; border-radius:8px;">';
+    html += '<table style="width:100%; border-collapse:collapse; font-size:0.85rem;">';
+    html += '<thead style="position:sticky; top:0; background:#f9fafb;"><tr>';
+    html += '<th style="padding:0.5rem; text-align:left;">#</th>';
+    html += '<th style="padding:0.5rem; text-align:left;">Name</th>';
+    html += '<th style="padding:0.5rem; text-align:center;">Actual</th>';
+    html += '<th style="padding:0.5rem; text-align:center;">Score</th>';
+    html += '<th style="padding:0.5rem; text-align:center;">Tier</th>';
+    html += '<th style="padding:0.5rem; text-align:center;">Correct?</th>';
+    html += '</tr></thead><tbody>';
+
+    students.forEach(function(s) {
+        const rowBg = s.predicted_correct ? '#f0fdf4' : '#fef2f2';
+        const actualColor = s.actual === 'ACCEPTED' ? '#059669' : '#6b7280';
+        const scoreColor = s.score >= (data.threshold||65) ? '#059669' : (s.score > 0 ? '#d97706' : '#dc2626');
+        html += '<tr style="background:' + rowBg + '; border-top:1px solid #f3f4f6;">';
+        html += '<td style="padding:0.4rem 0.5rem; color:#9ca3af;">' + s.rank + '</td>';
+        html += '<td style="padding:0.4rem 0.5rem; font-weight:500;">' + s.name + '</td>';
+        html += '<td style="padding:0.4rem 0.5rem; text-align:center;"><span style="color:' + actualColor + '; font-weight:600; font-size:0.8rem;">' + s.actual + '</span></td>';
+        html += '<td style="padding:0.4rem 0.5rem; text-align:center;"><span style="color:' + scoreColor + '; font-weight:700; font-size:1rem;">' + s.score + '</span></td>';
+        html += '<td style="padding:0.4rem 0.5rem; text-align:center;">' + (s.tier || '—') + '</td>';
+        html += '<td style="padding:0.4rem 0.5rem; text-align:center;">' + (s.predicted_correct ? '✅' : '❌') + '</td>';
+        html += '</tr>';
+    });
+
+    html += '</tbody></table></div>';
+
+    container.innerHTML = html;
+}
+
+function metricCard(label, value, color) {
+    return '<div style="background:' + color + '; color:white; padding:1rem; border-radius:8px; text-align:center;">' +
+           '<div style="font-size:1.75rem; font-weight:bold;">' + value + '</div>' +
+           '<div style="opacity:0.9; margin-top:0.25rem; font-size:0.85rem;">' + label + '</div></div>';
+}
+
 const hasProcessing = {{ 'true' if has_processing else 'false' }};
 if (hasProcessing) {
     setInterval(() => {
@@ -502,5 +810,143 @@ VideoUpload.init({
     hiddenFieldId: 'trainingVideoBlobInfo',
     appTypeGetter: () => 'training'
 });
+</script>
+<script>
+// ── Reprocess Documents ──
+function openReprocessModal() {
+    document.getElementById('reprocessModal').style.display = 'flex';
+}
+function closeReprocessModal() {
+    document.getElementById('reprocessModal').style.display = 'none';
+}
+(function() {
+    const rModal = document.getElementById('reprocessModal');
+    if (rModal) rModal.addEventListener('click', function(e) { if (e.target === this) closeReprocessModal(); });
+})();
+
+let reprocessPollTimer = null;
+
+async function startReprocess() {
+    const btn = document.getElementById('reprocessStartBtn');
+    btn.disabled = true;
+    btn.textContent = '⏳ Starting...';
+    document.getElementById('reprocessStatus').style.display = 'block';
+    document.getElementById('reprocessStatusText').textContent = 'Starting reprocess...';
+
+    try {
+        const resp = await fetch('/api/training/reprocess', { method: 'POST', headers: {'Content-Type': 'application/json'} });
+        const data = await resp.json();
+        if (data.status === 'success') {
+            document.getElementById('reprocessStatusText').textContent = `Processing ${data.total} records...`;
+            document.getElementById('reprocessProgressText').textContent = `0 / ${data.total}`;
+            pollReprocessStatus();
+        } else {
+            document.getElementById('reprocessStatusText').textContent = `Error: ${data.error || 'Unknown'}`;
+            btn.disabled = false;
+            btn.textContent = '🔄 Start Reprocessing';
+        }
+    } catch (err) {
+        document.getElementById('reprocessStatusText').textContent = `Error: ${err.message}`;
+        btn.disabled = false;
+        btn.textContent = '🔄 Start Reprocessing';
+    }
+}
+
+function pollReprocessStatus() {
+    if (reprocessPollTimer) clearInterval(reprocessPollTimer);
+    reprocessPollTimer = setInterval(async () => {
+        try {
+            const resp = await fetch('/api/training/reprocess');
+            const data = await resp.json();
+            const pct = data.total > 0 ? Math.round((data.processed / data.total) * 100) : 0;
+            document.getElementById('reprocessProgressBar').style.width = pct + '%';
+            document.getElementById('reprocessProgressText').textContent = `${data.processed} / ${data.total}`;
+
+            if (data.status === 'completed') {
+                clearInterval(reprocessPollTimer);
+                document.getElementById('reprocessStatusText').textContent =
+                    `✅ Complete! Updated ${data.updated} of ${data.total} records.`;
+                if (data.errors && data.errors.length > 0) {
+                    document.getElementById('reprocessDetails').innerHTML =
+                        `<strong>${data.errors.length} errors:</strong><br>` +
+                        data.errors.map(e => `• App #${e.application_id}: ${e.error}`).join('<br>');
+                }
+                document.getElementById('reprocessStartBtn').disabled = false;
+                document.getElementById('reprocessStartBtn').textContent = '🔄 Start Reprocessing';
+            } else if (data.status === 'error') {
+                clearInterval(reprocessPollTimer);
+                document.getElementById('reprocessStatusText').textContent = `❌ Error: ${data.error}`;
+                document.getElementById('reprocessStartBtn').disabled = false;
+                document.getElementById('reprocessStartBtn').textContent = '🔄 Start Reprocessing';
+            } else {
+                document.getElementById('reprocessStatusText').textContent =
+                    `Processing... (${data.updated} updated, ${data.errors ? data.errors.length : 0} errors)`;
+            }
+        } catch (err) {
+            // Network glitch, keep polling
+        }
+    }, 3000);
+}
+
+async function loadDiagnostic() {
+    const container = document.getElementById('reprocessDiagnostic');
+    container.style.display = 'block';
+    container.innerHTML = '<p>Loading diagnostic...</p>';
+    try {
+        const resp = await fetch('/api/training/diagnostic');
+        const data = await resp.json();
+        if (data.status !== 'success') {
+            container.innerHTML = `<p style="color:red;">Error: ${data.error}</p>`;
+            return;
+        }
+        const s = data.summary;
+        let html = `
+            <div style="display:grid; grid-template-columns:repeat(5,1fr); gap:0.5rem; margin-bottom:1rem;">
+                <div style="background:#f3f4f6; padding:0.5rem; border-radius:4px; text-align:center;">
+                    <div style="font-size:1.2rem; font-weight:bold;">${s.total}</div><div style="font-size:0.75rem;">Total</div>
+                </div>
+                <div style="background:#d1fae5; padding:0.5rem; border-radius:4px; text-align:center;">
+                    <div style="font-size:1.2rem; font-weight:bold;">${s.has_application}</div><div style="font-size:0.75rem;">Has App Text</div>
+                </div>
+                <div style="background:#dbeafe; padding:0.5rem; border-radius:4px; text-align:center;">
+                    <div style="font-size:1.2rem; font-weight:bold;">${s.has_transcript}</div><div style="font-size:0.75rem;">Has Transcript</div>
+                </div>
+                <div style="background:#fef3c7; padding:0.5rem; border-radius:4px; text-align:center;">
+                    <div style="font-size:1.2rem; font-weight:bold;">${s.has_recommendation}</div><div style="font-size:0.75rem;">Has Rec Letter</div>
+                </div>
+                <div style="background:#fecaca; padding:0.5rem; border-radius:4px; text-align:center;">
+                    <div style="font-size:1.2rem; font-weight:bold;">${s.missing_all}</div><div style="font-size:0.75rem;">Missing All</div>
+                </div>
+            </div>
+            <table style="width:100%; font-size:0.8rem; border-collapse:collapse;">
+                <thead><tr style="border-bottom:2px solid #e5e7eb;">
+                    <th style="text-align:left; padding:4px;">Name</th>
+                    <th style="text-align:left; padding:4px;">Selected</th>
+                    <th style="text-align:right; padding:4px;">App</th>
+                    <th style="text-align:right; padding:4px;">Transcript</th>
+                    <th style="text-align:right; padding:4px;">Rec</th>
+                </tr></thead>
+                <tbody>`;
+        for (const st of data.students) {
+            const name = st.applicant_name || `${st.first_name || ''} ${st.last_name || ''}`.trim() || `#${st.application_id}`;
+            const sel = st.was_selected ? '✅' : '❌';
+            const appLen = st.app_text_len || 0;
+            const tLen = st.transcript_len || 0;
+            const rLen = st.rec_len || 0;
+            const color = (appLen < 50 && tLen < 50 && rLen < 50) ? '#fef2f2' : '';
+            html += `<tr style="border-bottom:1px solid #f3f4f6; ${color ? 'background:'+color : ''}">
+                <td style="padding:4px;">${name}</td>
+                <td style="padding:4px; text-align:center;">${sel}</td>
+                <td style="padding:4px; text-align:right; ${appLen < 50 ? 'color:red;font-weight:bold;' : ''}">${appLen.toLocaleString()}</td>
+                <td style="padding:4px; text-align:right; ${tLen < 50 ? 'color:red;font-weight:bold;' : ''}">${tLen.toLocaleString()}</td>
+                <td style="padding:4px; text-align:right; ${rLen < 50 ? 'color:red;font-weight:bold;' : ''}">${rLen.toLocaleString()}</td>
+            </tr>`;
+        }
+        html += '</tbody></table>';
+        container.innerHTML = html;
+    } catch (err) {
+        container.innerHTML = `<p style="color:red;">Error: ${err.message}</p>`;
+    }
+}
 </script>
 {% endblock %}

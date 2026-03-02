@@ -429,15 +429,36 @@ class BelleDocumentAnalyzer(BaseAgent):
             page_lower = page_text.lower()
             page_char_count = len(page_text.strip())
             
-            # Skip very sparse pages (likely image-only content that wasn't OCR'd)
+            # Very sparse pages: likely image-only content that wasn't OCR'd well.
+            # If there's *some* text (≥10 chars), try AI classification anyway
+            # since even a few OCR fragments can hint at the section type.
             if page_char_count < 50:
+                if page_char_count >= 10:
+                    ai_type = self._classify_page_with_ai(page_text, page_num)
+                    if ai_type:
+                        logger.info(
+                            f"  Page {page_num}: sparse ({page_char_count} chars) but AI classified as '{ai_type}'"
+                        )
+                        if ai_type == 'transcript':
+                            transcript_pages.append(page_num)
+                        elif ai_type == 'recommendation':
+                            recommendation_pages.append(page_num)
+                        else:
+                            application_pages.append(page_num)
+                        result["section_map"][page_num] = {
+                            'type': ai_type,
+                            'scores': {'transcript': 0, 'recommendation': 0, 'application': 0},
+                            'ai_classified': True,
+                            'note': 'sparse page classified by AI'
+                        }
+                        continue
                 logger.info(
                     f"  Page {page_num}: only {page_char_count} chars — marking as sparse/unknown"
                 )
                 result["section_map"][page_num] = {
                     'type': 'sparse',
                     'scores': {'transcript': 0, 'recommendation': 0, 'application': 0},
-                    'note': 'page too sparse to classify (likely image-based)'
+                    'note': 'page too sparse to classify'
                 }
                 continue
             
@@ -493,6 +514,7 @@ class BelleDocumentAnalyzer(BaseAgent):
             # Determine section type based on highest score
             max_score = max(t_score, r_score, a_score)
             section_type = 'unknown'
+            ai_used = False
             
             if max_score >= 3:  # Minimum threshold for classification
                 if t_score == max_score and t_score > r_score and t_score > a_score:
@@ -514,13 +536,28 @@ class BelleDocumentAnalyzer(BaseAgent):
                         section_type = 'application'
                         application_pages.append(page_num)
             else:
-                # Low-confidence pages default to application/general content
-                section_type = 'application'
-                application_pages.append(page_num)
+                # Low-confidence: keyword scores below threshold.
+                # Use AI to classify the page before defaulting.
+                ai_type = self._classify_page_with_ai(page_text, page_num)
+                if ai_type:
+                    section_type = ai_type
+                    ai_used = True
+                    logger.info(f"  Page {page_num}: AI classified as '{ai_type}' (keyword max_score={max_score})")
+                    if ai_type == 'transcript':
+                        transcript_pages.append(page_num)
+                    elif ai_type == 'recommendation':
+                        recommendation_pages.append(page_num)
+                    else:
+                        application_pages.append(page_num)
+                else:
+                    # AI also inconclusive — default to application
+                    section_type = 'application'
+                    application_pages.append(page_num)
             
             result["section_map"][page_num] = {
                 'type': section_type,
-                'scores': {'transcript': t_score, 'recommendation': r_score, 'application': a_score}
+                'scores': {'transcript': t_score, 'recommendation': r_score, 'application': a_score},
+                'ai_classified': ai_used
             }
         
         # Assemble section texts from detected pages
@@ -547,6 +584,55 @@ class BelleDocumentAnalyzer(BaseAgent):
         logger.info(f"📖 BELLE section map: {result['section_map']}")
         return result
     
+    def _classify_page_with_ai(self, page_text: str, page_num: int) -> Optional[str]:
+        """Use AI to classify a page as transcript, recommendation, or application.
+        
+        Called as a fallback when keyword-based scoring is inconclusive.
+        Returns one of: 'transcript', 'recommendation', 'application', or None on failure.
+        """
+        import logging
+        logger = logging.getLogger(__name__)
+        
+        # Don't waste an AI call on very short text
+        if len(page_text.strip()) < 30:
+            return None
+        
+        # Truncate to ~2000 chars to keep the call fast and cheap
+        snippet = page_text[:2000] if len(page_text) > 2000 else page_text
+        
+        prompt = (
+            "Classify this document page into EXACTLY ONE category.\n"
+            "Reply with a single word — one of: transcript, recommendation, application\n\n"
+            "- transcript: Academic records, grades, GPA, course lists, credit hours, class schedules\n"
+            "- recommendation: Letters of recommendation, references, endorsements from teachers/counselors\n"
+            "- application: Personal statements, essays, student applications, written responses, short answers\n\n"
+            f"--- PAGE TEXT ---\n{snippet}\n--- END ---\n\n"
+            "Category:"
+        )
+        
+        try:
+            with tool_call(self.name, "classify_page_ai", {"page": page_num}):
+                response = self.client.chat.completions.create(
+                    model=self.model,
+                    messages=[{"role": "user", "content": prompt}],
+                    max_tokens=10,
+                    temperature=0
+                )
+                answer = response.choices[0].message.content.strip().lower()
+                # Normalise the answer
+                if 'transcript' in answer:
+                    return 'transcript'
+                elif 'recommendation' in answer:
+                    return 'recommendation'
+                elif 'application' in answer or 'essay' in answer or 'personal' in answer:
+                    return 'application'
+                else:
+                    logger.warning(f"  AI page classifier returned unexpected: {answer}")
+                    return None
+        except Exception as exc:
+            logger.warning(f"  AI page classification failed for page {page_num}: {exc}")
+            return None
+
     def _extract_student_info(self, text: str) -> Dict[str, Optional[str]]:
         """Extract student info using AI for name and school, always."""
         student_info = {

@@ -51,18 +51,23 @@ class DocumentProcessor:
                 page_num = page_idx + 1
                 page_text = page.get_text().strip()
                 
-                # Detect image-based pages: very little text but has images
-                if len(page_text) < _IMAGE_PAGE_TEXT_THRESHOLD:
+                # Detect image-based pages: very little text
+                if len(page_text) < _IMAGE_PAGE_TEXT_THRESHOLD and ocr_callback:
                     images = page.get_images()
-                    if images and ocr_callback:
-                        # Render page to PNG for OCR
+                    # Try OCR when:
+                    # 1. Page has embedded images (common case), OR
+                    # 2. Page has almost no text at all — likely a scanned
+                    #    document where content is rendered as paths/XObjects
+                    #    rather than detectable images.
+                    should_ocr = bool(images) or len(page_text) < 20
+                    if should_ocr:
                         try:
                             pix = page.get_pixmap(dpi=200)
                             img_bytes = pix.tobytes("png")
                             page_label = f"page {page_num} of {total_pages}"
                             logger.info(
                                 f"🔍 Page {page_num}/{total_pages}: only {len(page_text)} chars "
-                                f"but has {len(images)} image(s) — sending to OCR"
+                                f"(images={len(images) if images else 0}) — sending to OCR"
                             )
                             ocr_text = ocr_callback(img_bytes, page_label)
                             if ocr_text and len(ocr_text.strip()) > len(page_text):
@@ -75,8 +80,9 @@ class DocumentProcessor:
                             logger.warning(
                                 f"⚠️ OCR failed for page {page_num}: {ocr_err}"
                             )
-                    elif images:
-                        # No callback but we know it's an image page
+                elif len(page_text) < _IMAGE_PAGE_TEXT_THRESHOLD:
+                    images = page.get_images()
+                    if images:
                         logger.warning(
                             f"⚠️ Page {page_num}/{total_pages}: only {len(page_text)} chars "
                             f"with {len(images)} image(s) — no OCR callback, text may be incomplete"

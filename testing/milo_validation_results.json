@@ -1,0 +1,825 @@
+{
+  "accepted_count": 19,
+  "agent": "Milo Data Scientist",
+  "confusion_matrix": {
+    "false_negatives": 14,
+    "false_positives": 10,
+    "true_negatives": 50,
+    "true_positives": 5
+  },
+  "elapsed_seconds": 411.2,
+  "metrics": {
+    "accuracy": 0.696,
+    "f1_score": 0.294,
+    "precision": 0.333,
+    "recall": 0.263
+  },
+  "model_display": "gpt-4.1",
+  "not_selected_count": 60,
+  "score_distribution": {
+    "accepted_max": 98,
+    "accepted_mean": 26.9,
+    "accepted_median": 0,
+    "accepted_min": 0,
+    "not_selected_max": 97,
+    "not_selected_mean": 32.2,
+    "not_selected_median": 38.0,
+    "not_selected_min": 0,
+    "separation": -5.3
+  },
+  "status": "success",
+  "students": [
+    {
+      "actual": "ACCEPTED",
+      "application_id": 736,
+      "explanation": "Travis Whitson is a model NextGen candidate: top academics, rigorous STEM coursework, leadership, and a highly reflective, specific essay. His recommendation is detailed and enthusiastic, and he has overcome adversity as a Black student in advanced STEM. Historical human and agent scores confirm this is a top 1% applicant.",
+      "name": "Travis Whitson",
+      "predicted_correct": true,
+      "rank": 1,
+      "score": 98,
+      "tier": "STRONG ADMIT"
+    },
+    {
+      "actual": "NOT SELECTED",
+      "application_id": 784,
+      "explanation": "Adriana is a model NextGen candidate: 4.0 unweighted/4.1 weighted GPA, AP STEM, deep community engagement, and a reflective, specific essay connecting adversity to STEM motivation. Recommendations are detailed and enthusiastic. She matches the top 5% of prior admits.",
+      "name": "Adriana Berduo",
+      "predicted_correct": false,
+      "rank": 2,
+      "score": 97,
+      "tier": "STRONG ADMIT"
+    },
+    {
+      "actual": "NOT SELECTED",
+      "application_id": 774,
+      "explanation": "Akosua's profile closely matches historical selected students: top GPA, advanced STEM coursework, deep and specific research interest, strong leadership, and a highly positive recommendation. Human rubric confirms top-tier status.",
+      "name": "Akosua Baah",
+      "predicted_correct": false,
+      "rank": 3,
+      "score": 96,
+      "tier": "STRONG ADMIT"
+    },
+    {
+      "actual": "ACCEPTED",
+      "application_id": 773,
+      "explanation": "Bervelyn's profile is a textbook match for selection: top GPA, advanced STEM coursework, highly specific and authentic research interest, strong leadership, and a highly positive recommendation. Human rubric confirms selection.",
+      "name": "Bervelyn Atampugre",
+      "predicted_correct": true,
+      "rank": 4,
+      "score": 96,
+      "tier": "STRONG ADMIT"
+    },
+    {
+      "actual": "ACCEPTED",
+      "application_id": 738,
+      "explanation": "Hafsa Ismail is a prototypical NextGen admit: 4.13 GPA, multiple AP/honors STEM courses, and a highly specific, authentic STEM motivation. Her essay and recommendation are both strong, and her background (first-gen, low-SES, immigrant family) adds further context. Historical human scores confirm this is a top-tier applicant.",
+      "name": "Hafsa Ismail",
+      "predicted_correct": true,
+      "rank": 5,
+      "score": 92,
+      "tier": "STRONG ADMIT"
+    },
+    {
+      "actual": "ACCEPTED",
+      "application_id": 735,
+      "explanation": "Mary Yeboah has a rigorous academic and STEM background, significant adversity, and a reflective essay. Her recommendation is strong, and her lab experience is advanced for high school. Historical human scores confirm her as a top-tier candidate.",
+      "name": "Mary Yeboah",
+      "predicted_correct": true,
+      "rank": 6,
+      "score": 85,
+      "tier": "STRONG ADMIT"
+    },
+    {
+      "actual": "ACCEPTED",
+      "application_id": 737,
+      "explanation": "Heidy Roblero-Chavez has a strong academic profile, advanced STEM coursework, and a specific, authentic interest in genetics/epigenetics. She demonstrates resilience and first-gen status. While her lab experience is limited to classroom labs, her overall profile is highly competitive and consistent with selected students. Human rubric scores are missing, but her file aligns with top admits.",
+      "name": "Heidy Roblero-Chavez",
+      "predicted_correct": true,
+      "rank": 7,
+      "score": 80,
+      "tier": "STRONG ADMIT"
+    },
+    {
+      "actual": "NOT SELECTED",
+      "application_id": 805,
+      "explanation": "Yunyoung closely matches the academic and essay profile of selected students, with a top GPA, advanced STEM coursework, and a reflective, authentic essay. She lacks out-of-class research/lab experience, but her overall profile is highly competitive for selection.",
+      "name": "Yunyoung Choi",
+      "predicted_correct": false,
+      "rank": 8,
+      "score": 74,
+      "tier": "ADMIT"
+    },
+    {
+      "actual": "NOT SELECTED",
+      "application_id": 755,
+      "explanation": "Tomi\u2019s profile is nearly indistinguishable from selected students: perfect academic rigor, deep STEM motivation, and a strong recommendation. However, she was not selected in a prior cycle, likely due to the extremely competitive pool and lack of extraordinary differentiators. She is a clear admit, just below the rare 'strong admit' bar.",
+      "name": "Tomi Akinsanmi",
+      "predicted_correct": false,
+      "rank": 9,
+      "score": 70,
+      "tier": "ADMIT"
+    },
+    {
+      "actual": "NOT SELECTED",
+      "application_id": 796,
+      "explanation": "Daniela\u2019s application is highly competitive, with a strong academic record (Honors/AP STEM coursework), a compelling and personal essay connecting her own genetic disorder and her mother's cancer to her research interests, and a highly supportive recommendation. She also brings leadership and community engagement. The only notable gap is lack of prior lab experience, but her motivation and resilience are clear. Human rubric scores confirm this is a near-select profile.",
+      "name": "Daniela Byer",
+      "predicted_correct": false,
+      "rank": 10,
+      "score": 68,
+      "tier": "ADMIT"
+    },
+    {
+      "actual": "NOT SELECTED",
+      "application_id": 809,
+      "explanation": "Yves-Ann has a transcript and STEM coursework that closely match selected students, with IB Biology HL, advanced labs, and strong adversity factors. Her essays and recommendations are solid, though not quite as exceptional as the very top admits. She is a strong admit and would be competitive for selection.",
+      "name": "Yves-Ann Comeau",
+      "predicted_correct": false,
+      "rank": 11,
+      "score": 66,
+      "tier": "ADMIT"
+    },
+    {
+      "actual": "NOT SELECTED",
+      "application_id": 786,
+      "explanation": "Joell has a strong academic record (4.2 weighted, AP/gifted), leadership in STEM clubs, and a highly supportive recommendation. His essay is solid but not as reflective or specific as top admits. He is a strong, competitive candidate, just below the typical selection threshold.",
+      "name": "Joell Blaise",
+      "predicted_correct": false,
+      "rank": 12,
+      "score": 66,
+      "tier": "ADMIT"
+    },
+    {
+      "actual": "NOT SELECTED",
+      "application_id": 783,
+      "explanation": "Sienna has a 3.95 unweighted/4.34 weighted GPA, AP STEM courses, and a strong recommendation. Her essay and STEM interest are solid but not as reflective or research-focused as the very top candidates. She is a strong admit, competitive for selection.",
+      "name": "Sienna Bennett",
+      "predicted_correct": false,
+      "rank": 13,
+      "score": 66,
+      "tier": "ADMIT"
+    },
+    {
+      "actual": "NOT SELECTED",
+      "application_id": 782,
+      "explanation": "Cristian has a 3.98 unweighted/4.15 weighted GPA, AP STEM, and leadership in SNHS. His essay is strong, and his recommendation is highly enthusiastic. STEM interest is a bit broad, but overall he is a strong admit and competitive for selection.",
+      "name": "Cristian Benitez",
+      "predicted_correct": false,
+      "rank": 14,
+      "score": 66,
+      "tier": "ADMIT"
+    },
+    {
+      "actual": "NOT SELECTED",
+      "application_id": 754,
+      "explanation": "Oluwademilayo is highly competitive, with a nearly perfect academic and STEM profile, strong research engagement, and a supportive recommendation. Lacks bonus factors or extraordinary adversity, but would be a likely admit in most years.",
+      "name": "Oluwademilayo Akinmade",
+      "predicted_correct": false,
+      "rank": 15,
+      "score": 65,
+      "tier": "ADMIT"
+    },
+    {
+      "actual": "NOT SELECTED",
+      "application_id": 806,
+      "explanation": "Jamiya has a top academic record and strong recommendations, with adversity factors. Her STEM interest is genuine but not as deep or research-focused as the very top applicants, and her lab experience is limited. She is a solid admit, competitive but not a lock.",
+      "name": "Jamiya Coar",
+      "predicted_correct": true,
+      "rank": 16,
+      "score": 60,
+      "tier": "ADMIT"
+    },
+    {
+      "actual": "ACCEPTED",
+      "application_id": 766,
+      "explanation": "Abigail Lajara has a solid academic record and some lab experience, with strong leadership and extracurriculars. However, her STEM motivation and essay are less specific than the highest tier, and her recommendation focuses more on leadership than STEM. She is a competitive admit but not a lock. Human rubric scores support this mid-tier admit assessment.",
+      "name": "Abigail Lajara",
+      "predicted_correct": false,
+      "rank": 17,
+      "score": 60,
+      "tier": "ADMIT"
+    },
+    {
+      "actual": "NOT SELECTED",
+      "application_id": 807,
+      "explanation": "Kayin has a strong academic record and is highly involved in STEM clubs, with leadership experience. However, his essays are not as reflective or specific as top admits, and he lacks research/lab experience. He is competitive but falls short of the admit bar.",
+      "name": "Kayin Coaxum",
+      "predicted_correct": true,
+      "rank": 18,
+      "score": 54,
+      "tier": "WAITLIST"
+    },
+    {
+      "actual": "NOT SELECTED",
+      "application_id": 775,
+      "explanation": "Kelsey has shown resilience and strong recent academic performance, with positive recommendations. However, her overall GPA is just below the typical selected range, and her STEM interest is not highly specific or research-driven. She is competitive but not a clear admit.",
+      "name": "Kelsey Baltazar",
+      "predicted_correct": true,
+      "rank": 19,
+      "score": 54,
+      "tier": "WAITLIST"
+    },
+    {
+      "actual": "NOT SELECTED",
+      "application_id": 753,
+      "explanation": "Amora is a strong student with good grades and recommendations, but her STEM interest is more general and lacks the depth or research focus seen in top admits. She would be a waitlist candidate in most cycles.",
+      "name": "Amora Aiguobasimwin",
+      "predicted_correct": true,
+      "rank": 20,
+      "score": 53,
+      "tier": "WAITLIST"
+    },
+    {
+      "actual": "NOT SELECTED",
+      "application_id": 748,
+      "explanation": "Sadeen is a strong student with leadership and adversity factors, but her STEM motivation is not as deep or specific as top admits. She would be a high waitlist candidate, with some upside if the pool is less competitive.",
+      "name": "Sadeen Aboalsaud",
+      "predicted_correct": true,
+      "rank": 21,
+      "score": 52,
+      "tier": "WAITLIST"
+    },
+    {
+      "actual": "NOT SELECTED",
+      "application_id": 785,
+      "explanation": "Belva has overcome adversity and has a solid weighted GPA (3.8), but her transcript lacks AP/IB STEM rigor and her essay is generic and focused on clinical aspirations. Recommendations are positive but not detailed. She is a waitlist-level candidate.",
+      "name": "Belva Biju",
+      "predicted_correct": true,
+      "rank": 22,
+      "score": 49,
+      "tier": "WAITLIST"
+    },
+    {
+      "actual": "NOT SELECTED",
+      "application_id": 795,
+      "explanation": "Manesha is academically strong and highly involved in extracurriculars, but his STEM interest is generic and not research-focused, and his essay is surface-level. Recommendations are solid but not exceptional. Human rubric scores confirm this is a 'good but not select' profile, appropriate for waitlist.",
+      "name": "Manesha Buwaneka",
+      "predicted_correct": true,
+      "rank": 23,
+      "score": 48,
+      "tier": "WAITLIST"
+    },
+    {
+      "actual": "NOT SELECTED",
+      "application_id": 790,
+      "explanation": "Caleb is academically strong and well-recommended, but his STEM interest is not aligned with the program\u2019s focus (engineering, not genetics/biomedical research), and his essay is generic. This is a classic waitlist profile, as confirmed by the human rubric.",
+      "name": "Caleb Boamah",
+      "predicted_correct": true,
+      "rank": 24,
+      "score": 48,
+      "tier": "WAITLIST"
+    },
+    {
+      "actual": "NOT SELECTED",
+      "application_id": 777,
+      "explanation": "Vijval has a solid academic record with advanced STEM courses and extracurricular initiative. However, his GPA is slightly below the selection average, his essay and recommendation lack the depth and specificity of selected students, and there's no clear research focus.",
+      "name": "Vijval Bapanapalli",
+      "predicted_correct": true,
+      "rank": 25,
+      "score": 48,
+      "tier": "WAITLIST"
+    },
+    {
+      "actual": "NOT SELECTED",
+      "application_id": 808,
+      "explanation": "Jordan is a strong leader with a solid academic record and extensive service, but lacks evidence of advanced STEM coursework, research, or deep scientific motivation. Her STEM interest is generic, and her profile does not meet the bar for selection. She is a strong waitlist candidate.",
+      "name": "Jordan Collymore",
+      "predicted_correct": true,
+      "rank": 26,
+      "score": 46,
+      "tier": "WAITLIST"
+    },
+    {
+      "actual": "NOT SELECTED",
+      "application_id": 776,
+      "explanation": "Elsabet has a strong transcript and is active in school and community, but lacks research/lab experience and her STEM interest is not deeply articulated. Essay and recommendation content are missing, which limits her competitiveness.",
+      "name": "Elsabet Bamako",
+      "predicted_correct": true,
+      "rank": 27,
+      "score": 45,
+      "tier": "WAITLIST"
+    },
+    {
+      "actual": "NOT SELECTED",
+      "application_id": 792,
+      "explanation": "Alanna is academically solid and highly involved in STEM clubs and competitions, but her essay and STEM interest are broad and not deeply tied to genetics or research. No lab experience and only moderate recommendation strength keep her below the admit threshold.",
+      "name": "Alanna Boller",
+      "predicted_correct": true,
+      "rank": 28,
+      "score": 44,
+      "tier": "WAITLIST"
+    },
+    {
+      "actual": "NOT SELECTED",
+      "application_id": 751,
+      "explanation": "Adeyinka brings resilience and a strong healthcare focus, but her academic profile and STEM motivation are not as competitive as top admits. She would be a waitlist candidate, with some upside due to adversity.",
+      "name": "Adeyinka Adepoju",
+      "predicted_correct": true,
+      "rank": 29,
+      "score": 44,
+      "tier": "WAITLIST"
+    },
+    {
+      "actual": "NOT SELECTED",
+      "application_id": 778,
+      "explanation": "Abigail demonstrates resilience and is taking some advanced STEM courses, but her GPA is below the typical selected range and her lab/research experience is limited. Essays show some curiosity but lack the depth and specificity of top applicants. Recommendation content is missing, which is a significant gap.",
+      "name": "Abigail Barcenas-Lara",
+      "predicted_correct": true,
+      "rank": 30,
+      "score": 42,
+      "tier": "WAITLIST"
+    },
+    {
+      "actual": "NOT SELECTED",
+      "application_id": 787,
+      "explanation": "Courtney is in a medical sciences magnet and has solid lab and volunteer experience, but her application lacks evidence of AP STEM rigor and her STEM interests are not deeply research-oriented. Essays and recommendations are decent but not exceptional. She is promising but not at admit level.",
+      "name": "Courtney Blanks",
+      "predicted_correct": true,
+      "rank": 31,
+      "score": 41,
+      "tier": "WAITLIST"
+    },
+    {
+      "actual": "NOT SELECTED",
+      "application_id": 811,
+      "explanation": "Nicole's application shows resilience and motivation, with supportive recommendations and a clear interest in genetics. However, the lack of transcript and advanced STEM coursework is a major gap, and her STEM focus is more clinical than research-driven. She is promising but not at the admit level without more academic evidence.",
+      "name": "Nicole Cruz-Ramos",
+      "predicted_correct": true,
+      "rank": 32,
+      "score": 40,
+      "tier": "WAITLIST"
+    },
+    {
+      "actual": "NOT SELECTED",
+      "application_id": 779,
+      "explanation": "Alahaj demonstrates leadership, community engagement, and receives a strong, specific recommendation. However, his GPA is slightly below the typical selected range, and his STEM interest and essay are not deeply research-oriented. He lacks advanced STEM coursework and research experience.",
+      "name": "Alahaj Barry",
+      "predicted_correct": true,
+      "rank": 33,
+      "score": 39,
+      "tier": "WAITLIST"
+    },
+    {
+      "actual": "NOT SELECTED",
+      "application_id": 812,
+      "explanation": "Miranda demonstrates resilience, leadership, and strong teacher support, but her academic record is below the typical selected student (GPA, AP STEM). Her STEM interest is more general and not specifically aligned with genetics or biomedical research. She is a positive community contributor but lacks the academic rigor and STEM depth of top admits.",
+      "name": "Miranda Cuapio",
+      "predicted_correct": true,
+      "rank": 34,
+      "score": 38,
+      "tier": "WAITLIST"
+    },
+    {
+      "actual": "NOT SELECTED",
+      "application_id": 789,
+      "explanation": "Sydney is academically solid and brings leadership and a focus on health equity, but lacks lab experience and her essay is broad, not deeply research-focused. Recommendations are not available. She is a lower-end waitlist candidate.",
+      "name": "Sydney Blue",
+      "predicted_correct": true,
+      "rank": 35,
+      "score": 38,
+      "tier": "WAITLIST"
+    },
+    {
+      "actual": "NOT SELECTED",
+      "application_id": 752,
+      "explanation": "Jennifer's application shows resilience and strong character, but the lack of transcript and limited STEM specificity are significant gaps. She would be waitlisted, with selection unlikely unless the pool is weak.",
+      "name": "Jennifer Aguilar",
+      "predicted_correct": true,
+      "rank": 36,
+      "score": 38,
+      "tier": "WAITLIST"
+    },
+    {
+      "actual": "NOT SELECTED",
+      "application_id": 744,
+      "explanation": "Aneela Abas demonstrates perseverance and community engagement, but her academic record is below the typical selected range and her STEM interest is generic. She lacks lab experience and her recommendation, while positive, is not detailed or STEM-specific. She is not competitive for selection but could be considered for waitlist.",
+      "name": "Aneela Abas",
+      "predicted_correct": true,
+      "rank": 37,
+      "score": 38,
+      "tier": "WAITLIST"
+    },
+    {
+      "actual": "NOT SELECTED",
+      "application_id": 793,
+      "explanation": "Mikaili brings resilience and some advanced coursework, but her academic record is below the typical selected range and her STEM motivation is generic, focused on public health rather than genetics/biomedical research. Recommendations are not available. She falls just below the waitlist bar.",
+      "name": "Mikaili Boykin",
+      "predicted_correct": true,
+      "rank": 38,
+      "score": 34,
+      "tier": "DECLINE"
+    },
+    {
+      "actual": "NOT SELECTED",
+      "application_id": 734,
+      "explanation": "Anas Hassan has a decent academic record but lacks advanced STEM coursework, research/lab experience, and specificity in STEM motivation. His essay and recommendation are generic, and he does not meet the selection bar for this highly competitive program. Human reviewer also did not recommend for selection.",
+      "name": "Anas Hassan",
+      "predicted_correct": true,
+      "rank": 39,
+      "score": 30,
+      "tier": "DECLINE"
+    },
+    {
+      "actual": "NOT SELECTED",
+      "application_id": 788,
+      "explanation": "Aidan\u2019s unweighted GPA is below the program\u2019s minimum, and his transcript lacks AP STEM rigor. His essay and recommendations do not demonstrate the depth, specificity, or research motivation seen in selected students. He does not meet the academic or motivational bar for selection.",
+      "name": "Aidan Blot",
+      "predicted_correct": true,
+      "rank": 40,
+      "score": 28,
+      "tier": "DECLINE"
+    },
+    {
+      "actual": "NOT SELECTED",
+      "application_id": 750,
+      "explanation": "Faith's academic record is well below the selection bar, and her STEM engagement is not competitive. She would not advance in the selection process.",
+      "name": "Faith Adegbile-Bradley",
+      "predicted_correct": true,
+      "rank": 41,
+      "score": 26,
+      "tier": "DECLINE"
+    },
+    {
+      "actual": "NOT SELECTED",
+      "application_id": 810,
+      "explanation": "Vahn is engaged in STEM activities and receives strong teacher support, but her academic record is far below the selection threshold. There is little evidence of advanced coursework or deep research motivation. She does not meet the academic or STEM rigor required for selection.",
+      "name": "Vahn Cooper",
+      "predicted_correct": true,
+      "rank": 42,
+      "score": 24,
+      "tier": "DECLINE"
+    },
+    {
+      "actual": "NOT SELECTED",
+      "application_id": 794,
+      "explanation": "Noah\u2019s application lacks critical academic data, has no valid recommendation, and his essay is informal and does not demonstrate authentic or deep STEM motivation. There is no evidence of advanced STEM coursework or research interest. This profile does not meet the bar for selection.",
+      "name": "Noah Broyles",
+      "predicted_correct": true,
+      "rank": 43,
+      "score": 24,
+      "tier": "DECLINE"
+    },
+    {
+      "actual": "NOT SELECTED",
+      "application_id": 780,
+      "explanation": "Jenabou's academic record is far below the selection bar, with a low GPA and no evidence of advanced STEM coursework. Her essay and recommendation are generic, and her STEM interest is not research-focused. While she brings adversity and community engagement, she does not meet the academic or STEM rigor required for NextGen.",
+      "name": "Jenabou Barry",
+      "predicted_correct": true,
+      "rank": 44,
+      "score": 24,
+      "tier": "DECLINE"
+    },
+    {
+      "actual": "NOT SELECTED",
+      "application_id": 791,
+      "explanation": "Francis is resilient and well-liked, with strong recommendations, but his academic record is far below the selection threshold and his STEM motivation is not specific or research-oriented. This profile does not meet the bar for selection.",
+      "name": "Francis Bolay",
+      "predicted_correct": true,
+      "rank": 45,
+      "score": 22,
+      "tier": "DECLINE"
+    },
+    {
+      "actual": "NOT SELECTED",
+      "application_id": 749,
+      "explanation": "Tristan does not meet the academic or STEM engagement bar for selection. His application lacks the rigor and specificity required for the program.",
+      "name": "Tristan Adams",
+      "predicted_correct": true,
+      "rank": 46,
+      "score": 20,
+      "tier": "DECLINE"
+    },
+    {
+      "actual": "NOT SELECTED",
+      "application_id": 781,
+      "explanation": "Kino\u2019s academic record is far below the selection bar (1.62 GPA, no AP/IB STEM), and his essay and recommendations are generic. There is no evidence of advanced coursework, research motivation, or resilience. He does not meet the minimum bar for consideration.",
+      "name": "Kino Barton",
+      "predicted_correct": true,
+      "rank": 47,
+      "score": 7,
+      "tier": "DECLINE"
+    },
+    {
+      "actual": "NOT SELECTED",
+      "application_id": 804,
+      "explanation": "Evaluation error: 'str' object has no attribute 'get'",
+      "name": "Danielle Cherry",
+      "predicted_correct": true,
+      "rank": 48,
+      "score": 0,
+      "tier": "DECLINE"
+    },
+    {
+      "actual": "NOT SELECTED",
+      "application_id": 803,
+      "explanation": "Evaluation error: 'str' object has no attribute 'get'",
+      "name": "Jeremy Charles",
+      "predicted_correct": true,
+      "rank": 49,
+      "score": 0,
+      "tier": "DECLINE"
+    },
+    {
+      "actual": "NOT SELECTED",
+      "application_id": 802,
+      "explanation": "Evaluation error: 'str' object has no attribute 'get'",
+      "name": "Nilgun Cetinkaya",
+      "predicted_correct": true,
+      "rank": 50,
+      "score": 0,
+      "tier": "DECLINE"
+    },
+    {
+      "actual": "NOT SELECTED",
+      "application_id": 801,
+      "explanation": "Evaluation error: 'str' object has no attribute 'get'",
+      "name": "Olivia Cassinelli",
+      "predicted_correct": true,
+      "rank": 51,
+      "score": 0,
+      "tier": "DECLINE"
+    },
+    {
+      "actual": "NOT SELECTED",
+      "application_id": 800,
+      "explanation": "Evaluation error: 'str' object has no attribute 'get'",
+      "name": "Sarah Camilo",
+      "predicted_correct": true,
+      "rank": 52,
+      "score": 0,
+      "tier": "DECLINE"
+    },
+    {
+      "actual": "NOT SELECTED",
+      "application_id": 799,
+      "explanation": "Evaluation error: 'str' object has no attribute 'get'",
+      "name": "Trinity Calvin",
+      "predicted_correct": true,
+      "rank": 53,
+      "score": 0,
+      "tier": "DECLINE"
+    },
+    {
+      "actual": "NOT SELECTED",
+      "application_id": 798,
+      "explanation": "Evaluation error: 'str' object has no attribute 'get'",
+      "name": "Mimi Cai",
+      "predicted_correct": true,
+      "rank": 54,
+      "score": 0,
+      "tier": "DECLINE"
+    },
+    {
+      "actual": "NOT SELECTED",
+      "application_id": 797,
+      "explanation": "Evaluation error: 'str' object has no attribute 'get'",
+      "name": "Alexa Cabreja",
+      "predicted_correct": true,
+      "rank": 55,
+      "score": 0,
+      "tier": "DECLINE"
+    },
+    {
+      "actual": "ACCEPTED",
+      "application_id": 772,
+      "explanation": "Evaluation error: 'str' object has no attribute 'get'",
+      "name": "Robin Coley",
+      "predicted_correct": false,
+      "rank": 56,
+      "score": 0,
+      "tier": "DECLINE"
+    },
+    {
+      "actual": "ACCEPTED",
+      "application_id": 771,
+      "explanation": "Evaluation error: 'str' object has no attribute 'get'",
+      "name": "Payton Dinkins",
+      "predicted_correct": false,
+      "rank": 57,
+      "score": 0,
+      "tier": "DECLINE"
+    },
+    {
+      "actual": "ACCEPTED",
+      "application_id": 770,
+      "explanation": "Evaluation error: 'str' object has no attribute 'get'",
+      "name": "Daniela Figueredo",
+      "predicted_correct": false,
+      "rank": 58,
+      "score": 0,
+      "tier": "DECLINE"
+    },
+    {
+      "actual": "ACCEPTED",
+      "application_id": 769,
+      "explanation": "Evaluation error: 'str' object has no attribute 'get'",
+      "name": "Eliana Hall",
+      "predicted_correct": false,
+      "rank": 59,
+      "score": 0,
+      "tier": "DECLINE"
+    },
+    {
+      "actual": "ACCEPTED",
+      "application_id": 768,
+      "explanation": "Evaluation error: 'str' object has no attribute 'get'",
+      "name": "using completed",
+      "predicted_correct": false,
+      "rank": 60,
+      "score": 0,
+      "tier": "DECLINE"
+    },
+    {
+      "actual": "ACCEPTED",
+      "application_id": 767,
+      "explanation": "Evaluation error: 'str' object has no attribute 'get'",
+      "name": "Ansleigh Jackson",
+      "predicted_correct": false,
+      "rank": 61,
+      "score": 0,
+      "tier": "DECLINE"
+    },
+    {
+      "actual": "ACCEPTED",
+      "application_id": 765,
+      "explanation": "Evaluation error: 'str' object has no attribute 'get'",
+      "name": "Sheyanne Lang",
+      "predicted_correct": false,
+      "rank": 62,
+      "score": 0,
+      "tier": "DECLINE"
+    },
+    {
+      "actual": "ACCEPTED",
+      "application_id": 764,
+      "explanation": "Evaluation error: 'str' object has no attribute 'get'",
+      "name": "Peachtree School",
+      "predicted_correct": false,
+      "rank": 63,
+      "score": 0,
+      "tier": "DECLINE"
+    },
+    {
+      "actual": "NOT SELECTED",
+      "application_id": 763,
+      "explanation": "Evaluation error: 'str' object has no attribute 'get'",
+      "name": "Chloe' Augustus",
+      "predicted_correct": true,
+      "rank": 64,
+      "score": 0,
+      "tier": "DECLINE"
+    },
+    {
+      "actual": "NOT SELECTED",
+      "application_id": 762,
+      "explanation": "Evaluation error: 'str' object has no attribute 'get'",
+      "name": "Korede Asekun",
+      "predicted_correct": true,
+      "rank": 65,
+      "score": 0,
+      "tier": "DECLINE"
+    },
+    {
+      "actual": "NOT SELECTED",
+      "application_id": 761,
+      "explanation": "Evaluation error: 'str' object has no attribute 'get'",
+      "name": "Caleb Arzu",
+      "predicted_correct": true,
+      "rank": 66,
+      "score": 0,
+      "tier": "DECLINE"
+    },
+    {
+      "actual": "NOT SELECTED",
+      "application_id": 760,
+      "explanation": "Evaluation error: 'str' object has no attribute 'get'",
+      "name": "Ahnjaline Antilus",
+      "predicted_correct": true,
+      "rank": 67,
+      "score": 0,
+      "tier": "DECLINE"
+    },
+    {
+      "actual": "NOT SELECTED",
+      "application_id": 759,
+      "explanation": "Evaluation error: 'str' object has no attribute 'get'",
+      "name": "Naa Annan",
+      "predicted_correct": true,
+      "rank": 68,
+      "score": 0,
+      "tier": "DECLINE"
+    },
+    {
+      "actual": "NOT SELECTED",
+      "application_id": 758,
+      "explanation": "Evaluation error: 'str' object has no attribute 'get'",
+      "name": "Neil Allen",
+      "predicted_correct": true,
+      "rank": 69,
+      "score": 0,
+      "tier": "DECLINE"
+    },
+    {
+      "actual": "NOT SELECTED",
+      "application_id": 757,
+      "explanation": "Evaluation error: 'str' object has no attribute 'get'",
+      "name": "Alisha Allen",
+      "predicted_correct": true,
+      "rank": 70,
+      "score": 0,
+      "tier": "DECLINE"
+    },
+    {
+      "actual": "NOT SELECTED",
+      "application_id": 756,
+      "explanation": "Evaluation error: 'str' object has no attribute 'get'",
+      "name": "Jessica Alavez",
+      "predicted_correct": true,
+      "rank": 71,
+      "score": 0,
+      "tier": "DECLINE"
+    },
+    {
+      "actual": "NOT SELECTED",
+      "application_id": 747,
+      "explanation": "Evaluation error: 'str' object has no attribute 'get'",
+      "name": "Brooke Ablante",
+      "predicted_correct": true,
+      "rank": 72,
+      "score": 0,
+      "tier": "DECLINE"
+    },
+    {
+      "actual": "NOT SELECTED",
+      "application_id": 746,
+      "explanation": "Evaluation error: 'str' object has no attribute 'get'",
+      "name": "Sebrina Abdella",
+      "predicted_correct": true,
+      "rank": 73,
+      "score": 0,
+      "tier": "DECLINE"
+    },
+    {
+      "actual": "NOT SELECTED",
+      "application_id": 745,
+      "explanation": "Evaluation error: 'str' object has no attribute 'get'",
+      "name": "Yusra Abdalla",
+      "predicted_correct": true,
+      "rank": 74,
+      "score": 0,
+      "tier": "DECLINE"
+    },
+    {
+      "actual": "ACCEPTED",
+      "application_id": 743,
+      "explanation": "Evaluation error: 'str' object has no attribute 'get'",
+      "name": "Lewi Bayssa",
+      "predicted_correct": false,
+      "rank": 75,
+      "score": 0,
+      "tier": "DECLINE"
+    },
+    {
+      "actual": "ACCEPTED",
+      "application_id": 742,
+      "explanation": "Evaluation error: 'str' object has no attribute 'get'",
+      "name": "Keylyn Bonilla-Fuentes",
+      "predicted_correct": false,
+      "rank": 76,
+      "score": 0,
+      "tier": "DECLINE"
+    },
+    {
+      "actual": "ACCEPTED",
+      "application_id": 741,
+      "explanation": "Evaluation error: 'str' object has no attribute 'get'",
+      "name": "Zachary Eddy",
+      "predicted_correct": false,
+      "rank": 77,
+      "score": 0,
+      "tier": "DECLINE"
+    },
+    {
+      "actual": "ACCEPTED",
+      "application_id": 740,
+      "explanation": "Evaluation error: 'str' object has no attribute 'get'",
+      "name": "Dagmawi Fasika",
+      "predicted_correct": false,
+      "rank": 78,
+      "score": 0,
+      "tier": "DECLINE"
+    },
+    {
+      "actual": "ACCEPTED",
+      "application_id": 739,
+      "explanation": "Evaluation error: 'str' object has no attribute 'get'",
+      "name": "Soliyana Firew",
+      "predicted_correct": false,
+      "rank": 79,
+      "score": 0,
+      "tier": "DECLINE"
+    }
+  ],
+  "threshold": 65,
+  "total_training_students": 79
+}
