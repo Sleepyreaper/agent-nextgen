@@ -5106,17 +5106,32 @@ def cleanup_test_endpoint():
 def upload_test_files():
     """
     Upload real files from the test page for agent evaluation.
-    Accepts multiple files and processes them as test data.
+    Accepts chunked blob references (same WAF-friendly pattern as main upload).
+    Falls back to direct file upload for local/dev environments.
     """
     try:
-        # Get uploaded files
-        if 'files' not in request.files:
+        # ── Determine upload source: chunked blobs or direct files ──
+        blob_info_raw = (request.form.get('chunked_blob_info') or '').strip()
+        has_blobs = False
+        if blob_info_raw:
+            import base64 as _b64
+            try:
+                decoded = _b64.b64decode(blob_info_raw).decode('utf-8')
+            except Exception:
+                decoded = blob_info_raw
+            try:
+                chunked_blobs = json.loads(decoded)
+                has_blobs = isinstance(chunked_blobs, list) and len(chunked_blobs) > 0
+            except Exception:
+                chunked_blobs = []
+
+        has_direct_files = (
+            'files' in request.files
+            and any(f.filename for f in request.files.getlist('files'))
+        )
+
+        if not has_blobs and not has_direct_files:
             return jsonify({'status': 'error', 'error': 'No files uploaded'}), 400
-        
-        files = request.files.getlist('files')
-        
-        if len(files) == 0:
-            return jsonify({'status': 'error', 'error': 'No files selected'}), 400
         
         uploaded_students_map = {}
         app_doc_types = {
@@ -5126,102 +5141,184 @@ def upload_test_files():
         }
         transcript_doc_types = {'transcript', 'grades'}
         recommendation_doc_types = {'letter_of_recommendation'}
-        
-        for file in files:
-            if file.filename == '':
-                continue
-                
-            if not DocumentProcessor.validate_file_type(file.filename):
-                continue
-            
-            # Generate unique student ID
-            student_id = storage.generate_student_id()
-            
-            # Save file temporarily to extract text
-            filename = secure_filename(file.filename)
-            temp_path = os.path.join(app.config['UPLOAD_FOLDER'], f"temp_{student_id}_{filename}")
-            file.save(temp_path)
-            
-            # Extract text from file
-            application_text, file_type = DocumentProcessor.process_document(temp_path)
-            
-            # Read file content for Azure Storage
-            with open(temp_path, 'rb') as f:
-                file_content = f.read()
-            
-            # Upload to Azure Storage
-            storage_result = storage.upload_file(
-                file_content=file_content,
-                filename=filename,
-                student_id=student_id,
-                application_type='test'
-            )
-            
-            # Clean up temporary file
-            try:
-                os.remove(temp_path)
-            except Exception:
-                pass
 
-            # Use Belle to analyze the document and extract structured data
-            try:
-                belle = get_belle()
-                doc_analysis = belle.analyze_document(application_text, filename)
-            except Exception as e:
-                logger.warning(f"Belle analysis failed for test upload: {e}")
-                doc_analysis = {
-                    "document_type": "unknown",
-                    "confidence": 0,
-                    "student_info": {},
-                    "extracted_data": {}
-                }
+        # ── Process chunked blob references (WAF-safe path) ──
+        if has_blobs:
+            for cblob in chunked_blobs:
+                blob_path = cblob.get('blob_path')
+                cfilename = secure_filename(cblob.get('filename', 'file.bin'))
+                if not blob_path:
+                    continue
 
-            belle_student_info = doc_analysis.get('student_info', {})
-            student_name = belle_student_info.get('name') or extract_student_name(application_text)
-            student_email = belle_student_info.get('email') or extract_student_email(application_text)
+                student_id = storage.generate_student_id()
+                temp_id = uuid.uuid4().hex
+                temp_path = os.path.join(app.config['UPLOAD_FOLDER'], f"temp_{temp_id}_{cfilename}")
 
-            doc_type = doc_analysis.get('document_type', 'unknown')
-            agent_fields = doc_analysis.get('agent_fields', {})
-            school_name = agent_fields.get('school_name')
+                try:
+                    ok = storage.download_blob_to_file(
+                        blob_path=blob_path,
+                        local_path=temp_path,
+                        application_type='test',
+                    )
+                    if not ok:
+                        logger.warning(f"Could not retrieve {cfilename} from storage")
+                        continue
 
-            identity_key = (student_email or student_name or filename).strip().lower()
-            if identity_key not in uploaded_students_map:
-                uploaded_students_map[identity_key] = {
-                    'name': student_name or f"Student from {filename}",
-                    'email': student_email or "",
-                    'application_text': "",
-                    'transcript_text': "",
-                    'recommendation_text': "",
-                    'recommendation_texts': [],
-                    'filenames': [],
-                    'school_data': {'name': school_name} if school_name else {}
-                }
+                    application_text, file_type = DocumentProcessor.process_document(temp_path)
 
-            record = uploaded_students_map[identity_key]
-            record['filenames'].append(filename)
-            if school_name and not record.get('school_data'):
-                record['school_data'] = {'name': school_name}
+                    try:
+                        belle = get_belle()
+                        doc_analysis = belle.analyze_document(application_text, cfilename)
+                    except Exception as e:
+                        logger.warning(f"Belle analysis failed for test upload: {e}")
+                        doc_analysis = {
+                            "document_type": "unknown",
+                            "confidence": 0,
+                            "student_info": {},
+                            "extracted_data": {}
+                        }
+                finally:
+                    try:
+                        os.remove(temp_path)
+                    except Exception:
+                        pass
 
-            if doc_type in app_doc_types:
-                if record['application_text']:
-                    record['application_text'] += "\n\n--- Additional Application Document ---\n\n"
-                record['application_text'] += application_text
-            elif doc_type in transcript_doc_types:
-                if record['transcript_text']:
-                    record['transcript_text'] += "\n\n--- Additional Transcript Document ---\n\n"
-                record['transcript_text'] += application_text
-            elif doc_type in recommendation_doc_types:
-                record['recommendation_texts'].append(application_text)
-                if record['recommendation_text']:
-                    record['recommendation_text'] += "\n\n--- Additional Recommendation Letter ---\n\n"
-                record['recommendation_text'] += application_text
-            else:
-                if not record['application_text']:
-                    record['application_text'] = application_text
-                elif not record['recommendation_text']:
-                    record['recommendation_text'] = application_text
+                belle_student_info = doc_analysis.get('student_info', {})
+                student_name = belle_student_info.get('name') or extract_student_name(application_text)
+                student_email = belle_student_info.get('email') or extract_student_email(application_text)
+
+                doc_type = doc_analysis.get('document_type', 'unknown')
+                agent_fields = doc_analysis.get('agent_fields', {})
+                school_name = agent_fields.get('school_name')
+
+                identity_key = (student_email or student_name or cfilename).strip().lower()
+                if identity_key not in uploaded_students_map:
+                    uploaded_students_map[identity_key] = {
+                        'name': student_name or f"Student from {cfilename}",
+                        'email': student_email or "",
+                        'application_text': "",
+                        'transcript_text': "",
+                        'recommendation_text': "",
+                        'recommendation_texts': [],
+                        'filenames': [],
+                        'school_data': {'name': school_name} if school_name else {}
+                    }
+
+                record = uploaded_students_map[identity_key]
+                record['filenames'].append(cfilename)
+                if school_name and not record.get('school_data'):
+                    record['school_data'] = {'name': school_name}
+
+                if doc_type in app_doc_types:
+                    if record['application_text']:
+                        record['application_text'] += "\n\n--- Additional Application Document ---\n\n"
+                    record['application_text'] += application_text
+                elif doc_type in transcript_doc_types:
+                    if record['transcript_text']:
+                        record['transcript_text'] += "\n\n--- Additional Transcript Document ---\n\n"
+                    record['transcript_text'] += application_text
+                elif doc_type in recommendation_doc_types:
+                    record['recommendation_texts'].append(application_text)
+                    if record['recommendation_text']:
+                        record['recommendation_text'] += "\n\n--- Additional Recommendation Letter ---\n\n"
+                    record['recommendation_text'] += application_text
                 else:
-                    record['transcript_text'] = record['transcript_text'] or application_text
+                    if not record['application_text']:
+                        record['application_text'] = application_text
+                    elif not record['recommendation_text']:
+                        record['recommendation_text'] = application_text
+                    else:
+                        record['transcript_text'] = record['transcript_text'] or application_text
+
+        # ── Fallback: direct file upload (local dev without WAF) ──
+        if has_direct_files and not has_blobs:
+            files = request.files.getlist('files')
+            for file in files:
+                if file.filename == '':
+                    continue
+                if not DocumentProcessor.validate_file_type(file.filename):
+                    continue
+
+                student_id = storage.generate_student_id()
+                filename = secure_filename(file.filename)
+                temp_path = os.path.join(app.config['UPLOAD_FOLDER'], f"temp_{student_id}_{filename}")
+                file.save(temp_path)
+
+                application_text, file_type = DocumentProcessor.process_document(temp_path)
+
+                with open(temp_path, 'rb') as f:
+                    file_content = f.read()
+
+                storage.upload_file(
+                    file_content=file_content,
+                    filename=filename,
+                    student_id=student_id,
+                    application_type='test'
+                )
+
+                try:
+                    os.remove(temp_path)
+                except Exception:
+                    pass
+
+                try:
+                    belle = get_belle()
+                    doc_analysis = belle.analyze_document(application_text, filename)
+                except Exception as e:
+                    logger.warning(f"Belle analysis failed for test upload: {e}")
+                    doc_analysis = {
+                        "document_type": "unknown",
+                        "confidence": 0,
+                        "student_info": {},
+                        "extracted_data": {}
+                    }
+
+                belle_student_info = doc_analysis.get('student_info', {})
+                student_name = belle_student_info.get('name') or extract_student_name(application_text)
+                student_email = belle_student_info.get('email') or extract_student_email(application_text)
+
+                doc_type = doc_analysis.get('document_type', 'unknown')
+                agent_fields = doc_analysis.get('agent_fields', {})
+                school_name = agent_fields.get('school_name')
+
+                identity_key = (student_email or student_name or filename).strip().lower()
+                if identity_key not in uploaded_students_map:
+                    uploaded_students_map[identity_key] = {
+                        'name': student_name or f"Student from {filename}",
+                        'email': student_email or "",
+                        'application_text': "",
+                        'transcript_text': "",
+                        'recommendation_text': "",
+                        'recommendation_texts': [],
+                        'filenames': [],
+                        'school_data': {'name': school_name} if school_name else {}
+                    }
+
+                record = uploaded_students_map[identity_key]
+                record['filenames'].append(filename)
+                if school_name and not record.get('school_data'):
+                    record['school_data'] = {'name': school_name}
+
+                if doc_type in app_doc_types:
+                    if record['application_text']:
+                        record['application_text'] += "\n\n--- Additional Application Document ---\n\n"
+                    record['application_text'] += application_text
+                elif doc_type in transcript_doc_types:
+                    if record['transcript_text']:
+                        record['transcript_text'] += "\n\n--- Additional Transcript Document ---\n\n"
+                    record['transcript_text'] += application_text
+                elif doc_type in recommendation_doc_types:
+                    record['recommendation_texts'].append(application_text)
+                    if record['recommendation_text']:
+                        record['recommendation_text'] += "\n\n--- Additional Recommendation Letter ---\n\n"
+                    record['recommendation_text'] += application_text
+                else:
+                    if not record['application_text']:
+                        record['application_text'] = application_text
+                    elif not record['recommendation_text']:
+                        record['recommendation_text'] = application_text
+                    else:
+                        record['transcript_text'] = record['transcript_text'] or application_text
         
         uploaded_students = list(uploaded_students_map.values())
 

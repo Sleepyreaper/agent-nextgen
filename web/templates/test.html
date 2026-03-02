@@ -1114,6 +1114,62 @@ function updateFileCount() {
     }
 }
 
+/* ── Chunked upload helper (same 100 KB chunks as video-upload.js) ── */
+const TEST_CHUNK_SIZE = 100 * 1024; // 100 KB – stays under Front Door WAF 128 KB body limit
+
+function _testUuid() {
+    return 'xxxxxxxxxxxx4xxxyxxxxxxxxxxxxxxx'.replace(/[xy]/g, c => {
+        const r = (Math.random() * 16) | 0;
+        return (c === 'x' ? r : (r & 0x3) | 0x8).toString(16);
+    });
+}
+
+async function _chunkUploadFile(file, uploadId, onProgress) {
+    const totalChunks = Math.ceil(file.size / TEST_CHUNK_SIZE);
+    let blobPath = null, container = null;
+
+    for (let i = 0; i < totalChunks; i++) {
+        const start = i * TEST_CHUNK_SIZE;
+        const end = Math.min(start + TEST_CHUNK_SIZE, file.size);
+        const chunk = file.slice(start, end);
+
+        const fd = new FormData();
+        fd.append('chunk', chunk, file.name);
+        fd.append('upload_id', uploadId);
+        fd.append('chunk_index', i);
+        fd.append('total_chunks', totalChunks);
+        fd.append('filename', file.name);
+        fd.append('app_type', 'test');
+
+        let resp, retries = 3;
+        while (retries > 0) {
+            try {
+                resp = await fetch('/api/file/upload-chunk', { method: 'POST', body: fd });
+                if (resp.ok) break;
+            } catch (_) { /* retry */ }
+            retries--;
+            if (retries > 0) await new Promise(r => setTimeout(r, 1000));
+        }
+        if (!resp || !resp.ok) {
+            const errText = resp ? (await resp.text()).substring(0, 200) : 'Network error';
+            throw new Error(`Chunk ${i+1}/${totalChunks} failed: ${errText}`);
+        }
+
+        const ct = resp.headers.get('content-type') || '';
+        if (!ct.includes('application/json')) {
+            throw new Error(`Chunk ${i+1}/${totalChunks}: unexpected response type "${ct}"`);
+        }
+        const data = await resp.json();
+        onProgress(data.progress || 0);
+
+        if (data.complete) {
+            blobPath = data.blob_path;
+            container = data.container;
+        }
+    }
+    return { blobPath, container };
+}
+
 async function uploadTestFiles() {
     const fileInput = document.getElementById('testFileInput');
     const btnUpload = document.getElementById('btnUploadTest');
@@ -1128,17 +1184,40 @@ async function uploadTestFiles() {
     btnUpload.disabled = true;
     btnUpload.innerHTML = '⏳ Uploading...';
     uploadProgress.style.display = 'block';
-    uploadProgressText.textContent = 'Uploading files...';
+    uploadProgressText.textContent = 'Uploading files to storage...';
     
-    const formData = new FormData();
-    for (let i = 0; i < fileInput.files.length; i++) {
-        formData.append('files', fileInput.files[i]);
-    }
-    
+    // Step 1: Chunk-upload each file to blob storage (bypasses WAF)
+    const blobInfos = [];
+    const files = Array.from(fileInput.files);
     try {
+        for (let idx = 0; idx < files.length; idx++) {
+            const file = files[idx];
+            const uploadId = _testUuid();
+            const label = files.length > 1 ? `File ${idx+1}/${files.length}: ${file.name}` : file.name;
+            uploadProgressText.textContent = `Uploading ${label}…`;
+
+            const { blobPath, container } = await _chunkUploadFile(file, uploadId, pct => {
+                const overall = ((idx / files.length) * 100 + pct / files.length);
+                uploadProgressText.textContent = `Uploading ${label}… ${Math.round(overall)}%`;
+            });
+            blobInfos.push({ upload_id: uploadId, filename: file.name, blob_path: blobPath, container });
+        }
+    } catch (chunkErr) {
+        uploadProgressText.textContent = `❌ Upload failed: ${chunkErr.message}`;
+        btnUpload.disabled = false;
+        btnUpload.innerHTML = '📤 Upload & Test';
+        return;
+    }
+
+    // Step 2: Send blob references (not raw files) to the test endpoint
+    uploadProgressText.textContent = 'Processing uploaded files…';
+    try {
+        const fd = new FormData();
+        fd.append('chunked_blob_info', btoa(unescape(encodeURIComponent(JSON.stringify(blobInfos)))));
+
         const response = await fetch('/api/test/upload-files', {
             method: 'POST',
-            body: formData
+            body: fd
         });
         
         const result = await response.json();
