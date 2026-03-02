@@ -2429,7 +2429,7 @@ def api_process_student(application_id):
         result = asyncio.run(
             orchestrator.coordinate_evaluation(
                 application=application,
-                evaluation_steps=['application_reader', 'grade_reader', 'recommendation_reader', 'school_context', 'data_scientist', 'student_evaluator']
+                evaluation_steps=['application_reader', 'grade_reader', 'recommendation_reader', 'school_context', 'data_scientist', 'student_evaluator', 'aurora']
             )
         )
         
@@ -2907,7 +2907,7 @@ def api_resume_evaluation(application_id):
         result = asyncio.run(
             orchestrator.coordinate_evaluation(
                 application=application,
-                evaluation_steps=['application_reader', 'grade_reader', 'recommendation_reader', 'school_context', 'data_scientist', 'student_evaluator']
+                evaluation_steps=['application_reader', 'grade_reader', 'recommendation_reader', 'school_context', 'data_scientist', 'student_evaluator', 'aurora']
             )
         )
         
@@ -2983,7 +2983,7 @@ def api_provide_missing_info(application_id):
             result = asyncio.run(
                 orchestrator.coordinate_evaluation(
                     application=application,
-                    evaluation_steps=['application_reader', 'grade_reader', 'recommendation_reader', 'school_context', 'data_scientist', 'student_evaluator']
+                    evaluation_steps=['application_reader', 'grade_reader', 'recommendation_reader', 'school_context', 'data_scientist', 'student_evaluator', 'aurora']
                 )
             )
             
@@ -4605,7 +4605,8 @@ def start_application_processing(application_id: int) -> None:
                         'recommendation_reader',
                         'school_context',
                         'data_scientist',
-                        'student_evaluator'
+                        'student_evaluator',
+                        'aurora'
                     ]
                 )
             )
@@ -4643,7 +4644,8 @@ def start_training_processing(application_id: int) -> None:
                         'recommendation_reader',
                         'school_context',
                         'data_scientist',
-                        'student_evaluator'
+                        'student_evaluator',
+                        'aurora'
                     ]
                 )
             )
