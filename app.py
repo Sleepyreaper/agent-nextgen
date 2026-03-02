@@ -6413,7 +6413,7 @@ def get_schools_list():
         if request.args.get('search'):
             filters['search_text'] = request.args.get('search')
         
-        schools = db.get_all_schools_enriched(filters=filters, limit=500)
+        schools = db.get_all_schools_enriched(filters=filters, limit=5000)
         
         return jsonify({
             'status': 'success',

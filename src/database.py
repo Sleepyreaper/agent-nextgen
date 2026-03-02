@@ -1258,6 +1258,11 @@ class Database:
                 results.append(mapped)
             
             cursor.close()
+            # Commit to close the implicit transaction opened by psycopg3.
+            # Without this, SELECT leaves an idle-in-transaction session that
+            # PostgreSQL will kill after idle_in_transaction_session_timeout,
+            # and INSERT…RETURNING data is never persisted.
+            conn.commit()
             return results
         except Exception as e:
             # rollback and drop connection to avoid reuse of bad session
@@ -1326,9 +1331,10 @@ class Database:
             
             result = cursor.fetchone()
             
-            # For INSERT/UPDATE/DELETE, commit the transaction
-            if any(keyword in query.upper() for keyword in ['INSERT', 'UPDATE', 'DELETE']):
-                conn.commit()
+            # Always commit to close the implicit psycopg3 transaction.
+            # This persists INSERT/UPDATE/DELETE and releases idle-in-transaction
+            # locks for SELECT queries.
+            conn.commit()
             
             cursor.close()
             return result[0] if result else None
@@ -3395,7 +3401,7 @@ class Database:
             return False
 
     def get_all_schools_enriched(self, filters: Optional[Dict[str, Any]] = None, 
-                                limit: int = 100) -> List[Dict[str, Any]]:
+                                limit: int = 5000) -> List[Dict[str, Any]]:
         """Get all enriched schools with optional filters."""
         try:
             if not self.has_table("school_enriched_data"):
