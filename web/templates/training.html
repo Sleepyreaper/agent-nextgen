@@ -506,13 +506,28 @@ async function uploadSchoolCsv(e) {
     progressBar.textContent = '0%';
 
     try {
+        // Helper: safely parse JSON, throw clear error on HTML responses
+        async function safeJson(resp, context) {
+            const ct = resp.headers.get('content-type') || '';
+            if (!ct.includes('application/json')) {
+                const body = await resp.text();
+                if (body.trim().startsWith('<')) {
+                    if (resp.status === 403) throw new Error(`WAF blocked the upload (403 Forbidden). Try a smaller file or contact admin.`);
+                    throw new Error(`Server returned HTML instead of JSON (HTTP ${resp.status}). ${context}`);
+                }
+                // Try parsing anyway (some servers omit content-type)
+                try { return JSON.parse(body); } catch(e) { throw new Error(`Invalid response (HTTP ${resp.status}): ${body.substring(0, 120)}`); }
+            }
+            return resp.json();
+        }
+
         // POST the file
         const formData = new FormData();
         formData.append('file', fileInput.files[0]);
         const resp = await fetch(`/api/schools/import-csv?purge=${purge}&dry_run=false`, {
             method: 'POST', body: formData
         });
-        const data = await resp.json();
+        const data = await safeJson(resp, 'Upload may have been blocked by WAF.');
         if (!resp.ok || (data.status !== 'started' && data.status !== 'success')) {
             throw new Error(data.error || 'Import failed to start');
         }
@@ -523,7 +538,7 @@ async function uploadSchoolCsv(e) {
         while (!done) {
             await new Promise(r => setTimeout(r, 2000));
             const pollResp = await fetch('/api/schools/import-csv');
-            const state = await pollResp.json();
+            const state = await safeJson(pollResp, 'Progress poll failed.');
 
             if (state.total > 0) {
                 const pct = Math.round((state.processed / state.total) * 100);
