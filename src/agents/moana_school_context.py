@@ -1022,6 +1022,12 @@ Provide this as a structured analysis. Be honest about data availability. If exa
                     self.school_cache[school_name] = self._format_enriched_to_profile(enriched_school, approved=True)
                     return self.school_cache[school_name]
                 
+                # Accept CSV-imported government data (high-quality SES data)
+                elif enriched_school.get('analysis_status') == 'csv_imported':
+                    print(f"    ✓ Using CSV-imported government data (enrollment: {enriched_school.get('total_students')}, FRPL: {enriched_school.get('free_lunch_percentage')}%)")
+                    self.school_cache[school_name] = self._format_enriched_to_profile(enriched_school, approved=False)
+                    return self.school_cache[school_name]
+                
                 # Use AI-analyzed data if confidence is high
                 elif enriched_school.get('analysis_status') == 'complete' and enriched_school.get('data_confidence_score', 0) >= 75:
                     print(f"    ✓ Using AI-analyzed enriched data (confidence: {enriched_school.get('data_confidence_score')}, score: {enriched_school.get('opportunity_score')})")
@@ -1598,6 +1604,11 @@ This data will provide accurate context for evaluating student opportunity and a
         """
         Convert enriched school database record to Moana's expected profile format.
         
+        Handles both AI-analyzed records (from Naveen) and CSV-imported
+        government SES records.  The DB alias layer in ``database.py``
+        ensures that legacy field names like ``enrollment_size`` and
+        ``college_placement_rate`` are also present.
+        
         Args:
             enriched_school: School record from school_enriched_data table
             approved: Whether this is human-approved data
@@ -1605,9 +1616,23 @@ This data will provide accurate context for evaluating student opportunity and a
         Returns:
             Profile dict in Moana's expected format
         """
-        return {
+        analysis_status = enriched_school.get('analysis_status', 'pending')
+        is_csv = analysis_status == 'csv_imported'
+
+        # Determine data_quality label
+        if approved:
+            quality = 'human_approved'
+        elif is_csv:
+            quality = 'government_ses_data'
+        else:
+            quality = 'ai_analyzed'
+
+        # Use school_type from CSV if available, else default
+        school_type = enriched_school.get('school_type') or 'Public'
+
+        profile = {
             'school_name': enriched_school.get('school_name', 'Unknown'),
-            'school_type': 'Public',  # Will be enhanced with actual data later
+            'school_type': school_type,
             'ap_courses_offered': enriched_school.get('ap_course_count', 0),
             'ap_exam_pass_rate_pct': enriched_school.get('ap_exam_pass_rate', 0),
             'ib_offered': enriched_school.get('ib_program_available', False),
@@ -1619,17 +1644,33 @@ This data will provide accurate context for evaluating student opportunity and a
             'college_acceptance_rate_pct': enriched_school.get('college_acceptance_rate', 0),
             'free_reduced_lunch_pct': enriched_school.get('free_lunch_percentage', 0),
             'opportunity_score': enriched_school.get('opportunity_score', 0),
-            'data_source': 'enriched_database',
-            'data_quality': 'human_approved' if approved else 'ai_analyzed',
+            'data_source': 'csv_government' if is_csv else 'enriched_database',
+            'data_quality': quality,
             'data_confidence': enriched_school.get('data_confidence_score', 0),
             'state_code': enriched_school.get('state_code'),
             'school_district': enriched_school.get('school_district'),
             'county': enriched_school.get('county_name'),
-            'analysis_summary': f"School enriched profile from {enriched_school.get('analysis_status', 'pending')} analysis. "
+            'analysis_summary': f"School enriched profile from {analysis_status} analysis. "
                               f"Opportunity score: {enriched_school.get('opportunity_score', 0)}/100. "
                               f"Status: {enriched_school.get('human_review_status', 'pending')}. "
-                              f"Data confidence: {enriched_school.get('data_confidence_score', 0)}%."
+                              f"Data confidence: {enriched_school.get('data_confidence_score', 0)}%.",
         }
+
+        # ---- CSV-sourced SES fields (enrich Moana's context) ----
+        ses_keys = [
+            'is_title_i', 'is_charter', 'is_magnet', 'is_virtual',
+            'student_teacher_ratio', 'reduced_lunch_percentage',
+            'direct_certification_pct', 'district_poverty_pct',
+            'district_exp_per_pupil', 'district_rev_per_pupil',
+            'locale_code', 'nces_id', 'enrollment_trend_json',
+            'frpl_trend_json', 'years_of_data', 'latest_school_year',
+        ]
+        for key in ses_keys:
+            val = enriched_school.get(key)
+            if val is not None:
+                profile[key] = val
+
+        return profile
     
     async def process(self, message: str) -> str:
         """Process a general message."""
