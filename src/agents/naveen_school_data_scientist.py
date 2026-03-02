@@ -1,36 +1,26 @@
 """
 Naveen School Data Scientist Agent
-Analyzes schools to build enriched profiles with opportunity scores.
-Character: Naveen (Disney character from "The Princess and the Frog")
-Model: o4-mini (Azure AI Foundry) by default, but the actual deployment name is now resolved via configuration (FOUNDRY_MODEL_NAME or AZURE_DEPLOYMENT_NAME).
+Evaluates schools using NCES database records and AI to produce comprehensive
+school profiles with opportunity scores, benchmarking, and narrative summaries.
 
-Uses AI to analyze web data, academic programs, salary outcomes, and regional context.
-Builds comprehensive school enrichment profiles for student opportunity assessment.
+Character: Naveen (Disney's "The Princess and the Frog")
+Role: Takes raw NCES/CSV school data from the database and produces a
+      School Evaluation Report — analysing the school's capabilities,
+      resources, and outcomes against national benchmarks.
 """
 
 import logging
 import json
 import re
-import time
 from decimal import Decimal
 from src.utils import safe_load_json
 from typing import Dict, Any, Optional, List
 from datetime import datetime
-from urllib.parse import urlparse
-from opentelemetry.trace import SpanKind
 
 try:
     from .base_agent import BaseAgent
 except Exception:
     from agents.base_agent import BaseAgent
-
-try:
-    from src.services.naep_data_client import get_naep_client
-except Exception:
-    try:
-        from services.naep_data_client import get_naep_client
-    except Exception:
-        get_naep_client = None
 
 try:
     from ..observability import get_tracer
@@ -64,51 +54,65 @@ def _sanitize_for_json(obj):
         return float(obj)
     if isinstance(obj, datetime):
         return obj.isoformat()
-    if hasattr(obj, 'isoformat'):  # date, time
+    if hasattr(obj, 'isoformat'):
         return obj.isoformat()
     return obj
 
 
 class NaveenSchoolDataScientist(BaseAgent):
     """
-    Naveen - School Data Scientist Agent
-    Analyzes and enriches school data using AI model.
-    Uses web research and academic data to build comprehensive school profiles.
-    Calculates opportunity scores based on capabilities, outcomes, and regional context.
-    
-    Inherits from BaseAgent to use Azure OpenAI for intelligent enrichment.
+    Naveen — School Data Scientist Agent
+
+    Evaluates schools using imported NCES data from the database.  Produces a
+    School Evaluation Report with:
+
+    * Component scores (Academic Rigor, Resource Investment, Student Outcomes,
+      Equity & Access) each 0-100
+    * An overall Opportunity Score (0-100)
+    * A narrative School Profile Summary explaining the school's strengths,
+      gaps, and how student achievements should be interpreted in context
+    * Confidence score reflecting data completeness
+
+    Data flow:
+        CSV import -> school_enriched_data table -> Naveen evaluation ->
+        Moana (student context) -> Merlin (final evaluation)
     """
 
     def __init__(self, name: str = "Naveen School Data Scientist", client: Any = None, model: Optional[str] = None):
         """Initialize Naveen with AI client."""
         super().__init__(name=name, client=client)
-        # resolve default model from configuration (FOUNDRY_MODEL_NAME or deployment)
         self.model = model or config.model_tier_workhorse or config.foundry_model_name or config.deployment_name
-        self.model_display = self.model or "unknown"  # Display-friendly name
+        self.model_display = self.model or "unknown"
+
+    # ── Main entry point ─────────────────────────────────────────────
 
     def analyze_school(
         self,
         school_name: str,
         school_district: Optional[str] = None,
         state_code: Optional[str] = None,
-        web_sources: Optional[List[str]] = None,
         existing_data: Optional[Dict[str, Any]] = None,
-        enrichment_focus: Optional[str] = None
+        enrichment_focus: Optional[str] = None,
+        **kwargs,
     ) -> Dict[str, Any]:
         """
-        Analyze a school using AI and build enriched profile.
-        
+        Evaluate a school using its NCES database record and AI analysis.
+
+        Reads the imported school data (enrollment, FRPL%, graduation rate,
+        Title I status, etc.) and uses AI to produce a comprehensive School
+        Evaluation Report benchmarked against national NCES standards.
+
         Args:
             school_name: Name of the school
             school_district: District name
-            state_code: State code (e.g., 'GA')
-            web_sources: List of URLs to analyze
-            existing_data: Pre-existing school data from other agents (Moana, etc)
-            
+            state_code: Two-letter state code (e.g. 'GA')
+            existing_data: School record from school_enriched_data table
+            enrichment_focus: Optional focus area for analysis
+
         Returns:
-            Enriched school data with AI-powered analysis results
+            Dict with enriched_data, opportunity_score, confidence_score,
+            analysis_summary, school_profile, component scores, etc.
         """
-        # Register agent invocation with OpenTelemetry (GenAI Semantic Convention: invoke_agent)
         _otel_ctx = agent_run(
             "Naveen School Data Scientist", "analyze_school",
             context_data={"school_name": school_name, "state_code": state_code or ""},
@@ -120,7 +124,6 @@ class NaveenSchoolDataScientist(BaseAgent):
             "school_name": school_name,
             "school_district": school_district,
             "state_code": state_code,
-            "web_sources": web_sources or [],
             "analysis_status": "analyzing",
             "timestamp": datetime.now().isoformat(),
             "school_profile": {},
@@ -128,533 +131,376 @@ class NaveenSchoolDataScientist(BaseAgent):
             "opportunity_score": 0,
             "confidence_score": 0,
             "analysis_summary": "",
-            "data_quality_notes": ""
+            "data_quality_notes": "",
         }
 
         try:
             inferred_state = self._infer_state_code(state_code, existing_data)
             result["state_code"] = inferred_state
 
-            search_query = self._build_search_query(
-                school_name=school_name,
-                school_district=school_district,
-                state_code=inferred_state,
-                existing_data=existing_data
-            )
-            result["search_query"] = search_query
+            # Determine data quality tier from existing record
+            data_tier = self._assess_data_quality(existing_data)
+            result["data_quality_notes"] = data_tier["label"]
 
-            enriched_sources = self._build_web_sources(
-                web_sources=web_sources,
-                state_code=inferred_state,
-                search_query=search_query
+            # Build the evaluation prompt presenting real DB data
+            evaluation_prompt = self._build_evaluation_prompt(
+                school_name, school_district, inferred_state,
+                existing_data, enrichment_focus, data_tier,
             )
-            result["web_sources"] = enriched_sources
 
-            # ── Fetch live NAEP state data from Nation's Report Card ──
-            naep_summary = ""
-            naep_profile = None
-            if inferred_state and get_naep_client:
-                try:
-                    naep_client = get_naep_client()
-                    naep_profile = naep_client.get_state_education_profile(inferred_state)
-                    if not naep_profile.get("error"):
-                        naep_summary = naep_client.get_state_summary_for_prompt(inferred_state)
-                        result["naep_state_profile"] = naep_profile
-                        logger.info("📊 NAEP data retrieved for %s", inferred_state)
-                    else:
-                        logger.info("NAEP data not available for %s", inferred_state)
-                except Exception as naep_err:
-                    logger.warning("NAEP data fetch failed for %s: %s", inferred_state, naep_err)
-
-            # Build comprehensive school research prompt for AI
-            research_prompt = self._build_research_prompt(
-                school_name,
-                school_district,
-                inferred_state,
-                enriched_sources,
-                existing_data,
-                enrichment_focus=enrichment_focus,
-                naep_summary=naep_summary,
-            )
-            
-            # Use AI to analyze school comprehensively
-            logger.info(f"Naveen analyzing {school_name} with AI model")
-            # Wrap LLM call with telemetry helper so model usage is recorded
+            # AI evaluation call
+            logger.info(f"Naveen evaluating {school_name} ({data_tier['label']}) with AI model")
             try:
                 from .telemetry_helpers import lm_call
             except Exception:
                 from agents.telemetry_helpers import lm_call
-            with lm_call(self.model, "school_analysis", system_prompt=research_prompt):
-                ai_analysis = self._create_chat_completion(
-                operation="school_analysis",
-                model=self.model,
-                messages=[
-                    {
-                        "role": "system",
-                        "content": """You are Naveen, a school data scientist expert. Analyze schools comprehensively using evidence-based benchmarks.
 
-NATIONAL BENCHMARKS (NCES Condition of Education 2024):
-- U.S. average adjusted cohort graduation rate (ACGR): 87% (2021-22)
-  - By race/ethnicity: Asian/Pacific Islander 94%, White 90%, Hispanic 83%, Black 81%, American Indian/Alaska Native 74%
-  - Georgia ACGR: 84%
-  - Economically disadvantaged students: 81%, Students with disabilities: 71%, English learners: 72%
-- Immediate college enrollment rate: 62% overall (45% to 4-year, 17% to 2-year)
-  - By race: Asian 74%, White 64%, Black 61%, Hispanic 58%
-  - Female 66% vs Male 57%
-- Status dropout rate (ages 16-24): 5.3% overall
-  - American Indian/Alaska Native 9.9%, Hispanic 7.9%, Black 5.7%, White 4.3%, Asian 1.9%
-- Public school enrollment: 49.6 million (15.5M in grades 9-12)
-  - Projected 5% decline by 2031 nationally
-- School expenditures: Average ~$14,000 per pupil nationally (varies widely by state/district)
-- Teacher salaries: Average ~$66,000 nationally (critical for teacher retention/quality)
-- Student-teacher ratio: National average ~16:1
-- AP participation: ~35% of public high school students take at least one AP course
-  - AP exam pass rate (score 3+): ~60% nationally
-  - Schools with 10+ AP courses indicate strong academic investment
-- Dual enrollment: Growing rapidly, ~1.4 million high school students take college courses
-- Title I schools: ~56% of public schools receive Title I funds
-- Free/reduced lunch: ~52% of public school students eligible nationally
-
-Use these benchmarks to contextualize every school analysis:
-1. Academic capabilities and programs (AP, IB, STEM, dual enrollment, honors) — compare to national averages
-2. Student outcomes (college placement, graduation rates, test scores) — benchmark against ACGR by state and demographics
-3. School investment and resources (per-pupil spending, teacher salaries, facilities, teacher quality indicators)
-4. Opportunity equity (free/reduced lunch %, Title I status, how well school serves disadvantaged students)
-5. Regional opportunity context (job market, economic indicators, immediate college enrollment rates)
-6. Overall opportunity score for students (0-100) — grounded in how this school compares to national/state benchmarks
-
-Always compare school metrics against these benchmarks. A school with 84% graduation rate may look average nationally but could be exceptional given its demographics.
-
-Provide structured analysis in JSON format."""
-                    + (f"\n\nLIVE NAEP DATA FOR THIS STATE (from Nation's Report Card API):\n{naep_summary}" if naep_summary else "")
-                    },
-                    {
-                        "role": "user",
-                        "content": research_prompt
-                    }
-                ],
-                temperature=0.7,
-                max_completion_tokens=2000
+            with lm_call(self.model, "school_evaluation", system_prompt="school_data_scientist"):
+                ai_response = self._create_chat_completion(
+                    operation="school_evaluation",
+                    model=self.model,
+                    messages=[
+                        {"role": "system", "content": self._system_prompt()},
+                        {"role": "user", "content": evaluation_prompt},
+                    ],
+                    temperature=0.4,
+                    max_completion_tokens=2500,
                 )
-            
+
             # Parse AI response
-            if ai_analysis and hasattr(ai_analysis, 'choices') and ai_analysis.choices and getattr(ai_analysis.choices[0].message, 'content', None):
-                response_text = ai_analysis.choices[0].message.content
-                
-                # Try to extract JSON from response
-                try:
-                    # Look for JSON block in response
-                    import re
-                    json_match = re.search(r'\{.*\}', response_text, re.DOTALL)
-                    if json_match:
-                        ai_data = safe_load_json(json_match.group())
-                    else:
-                        ai_data = safe_load_json(response_text)
-                    
+            if (ai_response and hasattr(ai_response, 'choices')
+                    and ai_response.choices
+                    and getattr(ai_response.choices[0].message, 'content', None)):
+                response_text = ai_response.choices[0].message.content
+                ai_data = self._extract_json(response_text)
+
+                if ai_data:
                     result["enriched_data"] = ai_data
-                    result["confidence_score"] = ai_data.get("confidence_score", 75)
                     result["opportunity_score"] = ai_data.get("opportunity_score", 50)
-                    
-                except json.JSONDecodeError:
-                    # If JSON parsing fails, extract key fields from response
-                    logger.warning(f"Could not parse JSON from Naveen response for {school_name}")
+                    result["confidence_score"] = ai_data.get("confidence_score", 70)
+                    result["school_profile"] = {
+                        "school_summary": ai_data.get("school_profile_summary", ""),
+                        "academic_rigor_score": ai_data.get("academic_rigor_score", 0),
+                        "resource_investment_score": ai_data.get("resource_investment_score", 0),
+                        "student_outcomes_score": ai_data.get("student_outcomes_score", 0),
+                        "equity_access_score": ai_data.get("equity_access_score", 0),
+                        "key_insights": ai_data.get("key_insights", []),
+                        "context_for_student": ai_data.get("context_for_student", ""),
+                    }
+                else:
                     result["enriched_data"]["raw_analysis"] = response_text
-                    result["confidence_score"] = 60
-            
-            # Use AI to refine and improve results if confidence is low
-            if result["confidence_score"] < 70:
-                refinement_result = self._refine_analysis(school_name, result, existing_data)
-                result.update(refinement_result)
-            
+                    result["confidence_score"] = 50
+                    logger.warning(f"Could not parse JSON from Naveen for {school_name}")
+
+            # Refine if confidence is low
+            if result["confidence_score"] < 60:
+                refinement = self._refine_analysis(school_name, result, existing_data)
+                result.update(refinement)
+
             result["analysis_status"] = "complete"
-            result["status"] = "success"  # For compatibility with school_workflow
+            result["status"] = "success"
             result["analysis_summary"] = self._generate_analysis_summary(result)
-            
-            logger.info(f"Naveen enrichment complete for {school_name}: score={result['opportunity_score']}, confidence={result['confidence_score']}")
+
+            logger.info(
+                f"Naveen evaluation complete for {school_name}: "
+                f"score={result['opportunity_score']}, confidence={result['confidence_score']}"
+            )
 
         except Exception as e:
-            logger.error(f"Error analyzing school {school_name}: {str(e)}", exc_info=True)
+            logger.error(f"Error evaluating school {school_name}: {e}", exc_info=True)
             result["analysis_status"] = "error"
             result["status"] = "error"
             result["error"] = str(e)
 
-        # Add model information to result
         result["agent_name"] = self.name
         result["model_used"] = self.model
         result["model_display"] = self.model_display
 
-        # Close the invoke_agent span
         _otel_ctx.__exit__(None, None, None)
-
         return result
 
-    def _build_web_sources(
-        self,
-        web_sources: Optional[List[str]],
-        state_code: Optional[str],
-        search_query: Optional[str]
-    ) -> List[str]:
-        """Build a focused list of sources for the model to reason over."""
-        sources = list(web_sources or [])
+    # ── System prompt ────────────────────────────────────────────────
 
-        if search_query:
-            sources.append(f"search:{search_query}")
-
-        # State-specific sources
-        if state_code == "GA":
-            sources.append("https://gosa.georgia.gov/dashboards-data-report-card/data-dashboards")
-
-        # Federal references
-        sources.append("https://nces.ed.gov/fastfacts/")
-        sources.append("https://nces.ed.gov/programs/coe")  # NCES Condition of Education indicators
-
-        # De-duplicate while preserving order
-        seen = set()
-        unique_sources = []
-        for source in sources:
-            if source and source not in seen:
-                seen.add(source)
-                unique_sources.append(source)
-
-        return unique_sources
-
-    def _analyze_web_sources(self, urls: List[str]) -> Dict[str, Any]:
-        """Analyze web sources and extract relevant data."""
-        sources = {
-            "urls_analyzed": [],
-            "data_sources_found": {
-                "official_website": None,
-                "state_education": None,
-                "federal_data": None,
-                "college_data": None,
-                "salary_data": None,
-                "community_ratings": None
-            },
-            "scraping_success_rate": 0
-        }
-
-        for url in urls:
-            try:
-                parsed = urlparse(url)
-                domain = parsed.netloc.lower()
-                
-                source_info = {
-                    "url": url,
-                    "domain": domain,
-                    "data_type": self._classify_source(domain, url),
-                    "is_accessible": True,  # In real implementation, test connectivity
-                    "content_type": "text/html"
-                }
-                
-                sources["urls_analyzed"].append(source_info)
-                
-                # Classify source
-                if "state.us" in domain or "education" in domain.lower():
-                    sources["data_sources_found"]["state_education"] = url
-                elif "nces.ed.gov" in domain or "ced.gov" in domain:
-                    sources["data_sources_found"]["federal_data"] = url
-                elif "collegeboard" in domain or "act.org" in domain:
-                    sources["data_sources_found"]["college_data"] = url
-                elif "salary" in domain.lower() or "indeed" in domain or "glassdoor" in domain:
-                    sources["data_sources_found"]["salary_data"] = url
-                elif "greatschools" in domain or "niche" in domain:
-                    sources["data_sources_found"]["community_ratings"] = url
-                else:
-                    sources["data_sources_found"]["official_website"] = url
-                    
-            except Exception as e:
-                logger.debug(f"Error parsing URL {url}: {e}")
-
-        sources["scraping_success_rate"] = len(sources["urls_analyzed"]) / len(urls) * 100 if urls else 0
-        return sources
-
-    def _classify_source(self, domain: str, url: str) -> str:
-        """Classify the type of data source."""
-        if "state" in domain or "education" in domain.lower():
-            return "state_education"
-        elif "nces" in domain or "census" in domain:
-            return "federal_data"
-        elif "college" in domain or "sat" in domain or "act" in domain:
-            return "college_prep"
-        elif "salary" in domain.lower() or "indeed" in domain:
-            return "salary_outcomes"
-        elif "rate" in domain or "great" in domain or "niche" in domain:
-            return "community_sentiment"
-        else:
-            return "general_information"
-
-    def _build_academic_profile(
-        self,
-        school_name: str,
-        web_sources: Optional[List[str]],
-        existing_data: Optional[Dict[str, Any]]
-    ) -> Dict[str, Any]:
-        """Build academic capabilities profile."""
-        profile = {
-            "ap_course_count": 0,
-            "ap_exam_pass_rate": 0,
-            "honors_course_count": 0,
-            "standard_course_count": 0,
-            "stem_program_available": False,
-            "ib_program_available": False,
-            "dual_enrollment_available": False,
-            "ap_courses_list": [],
-            "college_acceptance_rate": 0,
-            "college_counselor_count": 0,
-            "advanced_placement_capacity_score": 0,
-            "college_readiness_score": 0
-        }
-
-        # In production, extract from web sources
-        # This is a placeholder for the structure
-        if existing_data:
-            profile.update(existing_data.get("academic_info", {}))
-
-        return profile
-
-    def _build_salary_profile(
-        self,
-        school_name: str,
-        state_code: Optional[str],
-        web_sources: Optional[List[str]]
-    ) -> Dict[str, Any]:
-        """Build regional salary and outcomes profile."""
-        salary_data = {
-            "stem_field_median_salary": 0,
-            "business_field_median_salary": 0,
-            "humanities_field_median_salary": 0,
-            "avg_all_fields_median_salary": 0,
-            "college_enrollment_rate": 0,
-            "workforce_entry_rate": 0,
-            "avg_starting_salary": 0,
-            "avg_5yr_salary": 0,
-            "state_avg_salary": self._get_state_avg_salary(state_code),
-            "salary_data_source": "BLS, NCES, regional analysis",
-            "salary_data_year": 2024,
-            "data_confidence": 0
-        }
-
-        return salary_data
-
-    def _build_demographic_profile(
-        self,
-        school_name: str,
-        existing_data: Optional[Dict[str, Any]]
-    ) -> Dict[str, Any]:
-        """Build demographic and community profile."""
-        demographics = {
-            "total_students": 0,
-            "graduation_rate": 0,
-            "free_lunch_percentage": 0,
-            "student_teacher_ratio": 0,
-            "avg_class_size": 0,
-            "community_sentiment_score": 0,
-            "parent_satisfaction_score": 0,
-            "school_investment_level": "medium",
-            "college_prep_focus": False,
-            "career_technical_focus": False
-        }
-
-        if existing_data:
-            demographics.update(existing_data.get("demographic_info", {}))
-
-        return demographics
-
-    def _calculate_opportunity_score(
-        self,
-        academic_profile: Dict[str, Any],
-        salary_outcomes: Dict[str, Any],
-        demographics: Dict[str, Any]
-    ) -> Dict[str, Any]:
-        """Calculate composite opportunity score and component scores."""
-        
-        # Academic Opportunity (0-100)
-        # Weighted: AP availability (30%), college acceptance (35%), college counseling (20%), readiness (15%)
-        academic_score = (
-            (academic_profile.get("advanced_placement_capacity_score", 0) * 0.30) +
-            (academic_profile.get("college_acceptance_rate", 0) * 0.35) +
-            (min(academic_profile.get("college_counselor_count", 0) / 2 * 100, 100) * 0.20) +
-            (academic_profile.get("college_readiness_score", 0) * 0.15)
+    @staticmethod
+    def _system_prompt() -> str:
+        """Return the system prompt with NCES benchmarks."""
+        return (
+            "You are Naveen, a school data scientist. You evaluate high schools using "
+            "verified NCES data and produce actionable school profiles for scholarship evaluation.\n\n"
+            "NCES CONDITION OF EDUCATION BENCHMARKS (2024):\n"
+            "─────────────────────────────────────────────\n"
+            "Graduation (ACGR 2021-22):\n"
+            "  National: 87%  |  GA: 84%  |  Econ. disadvantaged: 81%\n"
+            "  Asian/PI: 94%  |  White: 90%  |  Hispanic: 83%  |  Black: 81%  |  AI/AN: 74%\n"
+            "  Students w/ disabilities: 71%  |  English learners: 72%\n\n"
+            "College Enrollment (immediate):\n"
+            "  Overall: 62%  |  4-year: 45%  |  2-year: 17%\n"
+            "  Asian: 74%  |  White: 64%  |  Black: 61%  |  Hispanic: 58%\n"
+            "  Female: 66%  |  Male: 57%\n\n"
+            "School Resources:\n"
+            "  Per-pupil spending: ~$14,000 national avg\n"
+            "  Teacher salary: ~$66,000 national avg\n"
+            "  Student-teacher ratio: ~16:1 national avg\n\n"
+            "Academic Programs:\n"
+            "  AP participation: ~35% of students take >= 1 AP course\n"
+            "  AP pass rate (3+): ~60% nationally\n"
+            "  10+ AP courses = strong academic investment\n"
+            "  Dual enrollment: ~1.4M students (growing rapidly)\n\n"
+            "Socioeconomic:\n"
+            "  Title I schools: ~56% of public schools\n"
+            "  Free/reduced lunch: ~52% of students eligible nationally\n"
+            "  Dropout rate: 5.3% (AI/AN 9.9%, Hispanic 7.9%, Black 5.7%, White 4.3%, Asian 1.9%)\n\n"
+            "YOUR TASK:\n"
+            "Evaluate the provided school data against these benchmarks. Produce:\n"
+            "1. Component scores (0-100): academic_rigor_score, resource_investment_score,\n"
+            "   student_outcomes_score, equity_access_score\n"
+            "2. Overall opportunity_score (0-100)\n"
+            "3. confidence_score (0-100) based on data completeness\n"
+            "4. school_profile_summary: 3-5 sentence narrative about this school\n"
+            "5. key_insights: array of 3-5 specific observations\n"
+            "6. context_for_student: 2-3 sentences explaining how achievements at THIS school\n"
+            "   should be interpreted (is a B+ here impressive? is AP availability limited?)\n\n"
+            "A school exceeding benchmarks given its demographics should score higher than raw\n"
+            "numbers suggest. A 90% grad rate at a 70% FRPL school is more impressive than 92%\n"
+            "at a 15% FRPL school.\n\n"
+            "Return a single JSON object."
         )
 
-        # Resource Opportunity (0-100)
-        # Weighted: class size (25%), teacher ratio (25%), investment level (25%), STEM programs (25%)
-        investment_score = 100 if demographics.get("school_investment_level") == "high" else (
-            75 if demographics.get("school_investment_level") == "medium" else 50
-        )
-        stem_score = 25 if academic_profile.get("stem_program_available") else 0
-        
-        resource_score = (
-            (max(100 - (demographics.get("avg_class_size", 25) / 30 * 100), 0) * 0.25) +
-            (max(100 - (demographics.get("student_teacher_ratio", 25) / 30 * 100), 0) * 0.25) +
-            (investment_score * 0.25) +
-            (stem_score * 0.25)
-        )
+    # ── Evaluation prompt ────────────────────────────────────────────
 
-        # College Prep Opportunity (0-100)
-        college_prep_score = (
-            (academic_profile.get("college_acceptance_rate", 0) * 0.40) +
-            (min(academic_profile.get("dual_enrollment_available", False) * 50, 100) * 0.30) +
-            (demographics.get("college_prep_focus", False) * 100 * 0.30)
-        )
-
-        # Socioeconomic Opportunity (0-100)
-        # Schools with more disadvantaged students but good programs = higher opportunity
-        free_lunch_adjustment = (demographics.get("free_lunch_percentage", 0) / 100) * 30  # More opportunity if more need
-        socioeconomic_score = (
-            (100 - demographics.get("free_lunch_percentage", 0) * 0.3) * 0.50 +  # Resources
-            free_lunch_adjustment * 0.35 +  # Programs for disadvantaged
-            (demographics.get("community_sentiment_score", 50) * 0.15)
-        )
-
-        # Overall Composite Score
-        overall_score = (
-            (academic_score * 0.35) +
-            (resource_score * 0.25) +
-            (college_prep_score * 0.25) +
-            (socioeconomic_score * 0.15)
-        )
-
-        return {
-            "academic_opportunity_score": round(academic_score, 2),
-            "resource_opportunity_score": round(resource_score, 2),
-            "college_prep_opportunity_score": round(college_prep_score, 2),
-            "socioeconomic_opportunity_score": round(socioeconomic_score, 2),
-            "overall_opportunity_score": round(overall_score, 2),
-            "score_components": {
-                "academic": academic_profile,
-                "resources": demographics,
-                "college_prep": {"rate": academic_profile.get("college_acceptance_rate", 0)},
-                "socioeconomic": demographics
-            }
-        }
-
-    def _get_state_avg_salary(self, state_code: Optional[str]) -> float:
-        """Get average salary for state (mock data for now)."""
-        # In production, would query actual BLS data
-        state_salaries = {
-            "GA": 58000,
-            "CA": 72000,
-            "NY": 68000,
-            "TX": 56000,
-            "FL": 54000
-        }
-        return state_salaries.get(state_code, 60000) if state_code else 60000
-
-    def _generate_analysis_summary(self, result: Dict[str, Any]) -> str:
-        """Generate natural language summary of analysis."""
-        school = result.get("school_name", "School")
-        score = result.get("opportunity_metrics", {}).get("overall_opportunity_score", 0)
-        
-        summary = f"""
-School Profile Analysis: {school}
-========================================
-
-🔷 Agent: {self.name} ({self.model_display})
-Overall Opportunity Score: {score}/100
-
-Analysis Completed: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
-Data Sources Analyzed: {len(result.get('web_sources', []))}
-
-Key Metrics:
-- Academic Opportunity: {result.get('opportunity_metrics', {}).get('academic_opportunity_score', 'N/A')}/100
-- Resource Opportunity: {result.get('opportunity_metrics', {}).get('resource_opportunity_score', 'N/A')}/100
-- College Prep Opportunity: {result.get('opportunity_metrics', {}).get('college_prep_opportunity_score', 'N/A')}/100
-
-Academic Profile:
-- AP Courses Available: {result.get('academic_profile', {}).get('ap_course_count', 'N/A')}
-- College Acceptance Rate: {result.get('academic_profile', {}).get('college_acceptance_rate', 'N/A')}%
-- STEM Programs: {'Yes' if result.get('academic_profile', {}).get('stem_program_available') else 'No'}
-
-Demographics:
-- Total Students: {result.get('demographic_profile', {}).get('total_students', 'N/A')}
-- Graduation Rate: {result.get('demographic_profile', {}).get('graduation_rate', 'N/A')}%
-- Free Lunch %: {result.get('demographic_profile', {}).get('free_lunch_percentage', 'N/A')}%
-""".strip()
-
-        return summary
-
-    def _build_research_prompt(
+    def _build_evaluation_prompt(
         self,
         school_name: str,
         school_district: Optional[str],
         state_code: Optional[str],
-        web_sources: Optional[List[str]],
         existing_data: Optional[Dict[str, Any]],
-        enrichment_focus: Optional[str] = None,
-        naep_summary: Optional[str] = None,
+        enrichment_focus: Optional[str],
+        data_tier: Dict[str, Any],
     ) -> str:
-        """Build comprehensive research prompt for AI to analyze school."""
-        naep_block = ("LIVE NAEP STATE DATA (from Nation's Report Card API):\n" + naep_summary
-                      if naep_summary else "No NAEP data available for this state.")
-        prompt = f"""Analyze the school '{school_name}' {'in ' + school_district if school_district else ''} {'(' + state_code + ')' if state_code else ''}.
+        """Build prompt presenting the real DB data for AI evaluation."""
+        ed = existing_data or {}
 
-Based on available sources and data, provide a comprehensive JSON analysis including:
+        data_lines = [
+            f"School: {school_name}",
+            f"District: {school_district or ed.get('school_district', 'Unknown')}",
+            f"State: {state_code or 'Unknown'}",
+            f"County: {ed.get('county_name', 'Unknown')}",
+            f"Data Quality: {data_tier['label']}",
+            "",
+            "-- ENROLLMENT & DEMOGRAPHICS --",
+            f"Total Enrollment: {self._fmt_int(ed.get('total_students'))}",
+            f"Student-Teacher Ratio: {self._fmt(ed.get('student_teacher_ratio'))}",
+            f"Graduation Rate: {self._fmt(ed.get('graduation_rate'))}%",
+            f"College Acceptance/Placement Rate: {self._fmt(ed.get('college_acceptance_rate'))}%",
+            "",
+            "-- SOCIOECONOMIC --",
+            f"Free Lunch %: {self._fmt(ed.get('free_lunch_percentage'))}",
+            f"Reduced Lunch %: {self._fmt(ed.get('reduced_lunch_percentage'))}",
+            f"Direct Certification %: {self._fmt(ed.get('direct_certification_pct'))}",
+            f"Title I: {self._fmt_bool(ed.get('is_title_i'))}",
+            f"Charter: {self._fmt_bool(ed.get('is_charter'))}",
+            f"Magnet: {self._fmt_bool(ed.get('is_magnet'))}",
+            f"Virtual: {self._fmt_bool(ed.get('is_virtual'))}",
+            f"Locale Code: {ed.get('locale_code') or 'Unknown'}",
+            "",
+            "-- DISTRICT FINANCE --",
+            f"Per-Pupil Expenditure: {self._fmt_dollars(ed.get('district_exp_per_pupil'))}",
+            f"Per-Pupil Revenue: {self._fmt_dollars(ed.get('district_rev_per_pupil'))}",
+            f"District Poverty %: {self._fmt(ed.get('district_poverty_pct'))}",
+            "",
+            "-- ACADEMIC PROGRAMS --",
+            f"AP Courses: {self._fmt_int(ed.get('ap_course_count'))}",
+            f"AP Exam Pass Rate: {self._fmt(ed.get('ap_exam_pass_rate'))}%",
+            f"Honors Courses: {self._fmt_int(ed.get('honors_course_count'))}",
+            f"STEM Programs: {self._fmt_bool(ed.get('stem_program_available'))}",
+            f"IB Program: {self._fmt_bool(ed.get('ib_program_available'))}",
+            f"Dual Enrollment: {self._fmt_bool(ed.get('dual_enrollment_available'))}",
+            "",
+            "-- INVESTMENT --",
+            f"School Investment Level: {ed.get('school_investment_level') or 'Unknown'}",
+            f"Avg Class Size: {self._fmt(ed.get('avg_class_size'))}",
+            "",
+            "-- TRENDS --",
+            f"Enrollment Trend: {self._fmt_trend(ed.get('enrollment_trend_json'))}",
+            f"FRPL Trend: {self._fmt_trend(ed.get('frpl_trend_json'))}",
+            f"Years of Data: {ed.get('years_of_data') or 'Unknown'}",
+            f"Latest School Year: {ed.get('latest_school_year') or 'Unknown'}",
+        ]
 
-1. Academic Capabilities
-   - Number of AP courses offered
-   - Number of IB programs available
-   - STEM program availability and quality
-   - Honors program availability
-   - School type/grade levels
+        if ed.get('opportunity_score'):
+            data_lines.append(f"\nPrevious Opportunity Score: {ed['opportunity_score']}")
+        if ed.get('analysis_summary'):
+            data_lines.append(f"Previous Analysis: {str(ed['analysis_summary'])[:500]}")
 
-2. Student Outcomes
-   - College acceptance/placement rate (estimate 0-100%)
-   - Graduation rate (estimate 0-100%)
-   - Average test scores (if available)
-   - Notable achievements or recognitions
+        prompt = "\n".join(data_lines)
 
-3. School Investment Level
-   - Estimated funding level (low/medium/high)
-   - Facility quality indicators
-   - Teacher quality indicators
-   - School improvement efforts
+        if enrichment_focus:
+            prompt += f"\n\nFocus Area: {enrichment_focus}"
 
-4. Enrollment & Demographics
-   - Estimated total enrollment
-   - Free/reduced lunch percentage (indicator of socioeconomic need)
-   - Demographic diversity indicators
-   - Community sentiment/satisfaction
+        prompt += (
+            "\n\nUsing the data above and your knowledge of this school/district/state, produce a "
+            "JSON evaluation with these keys:\n"
+            "- academic_rigor_score (0-100)\n"
+            "- resource_investment_score (0-100)\n"
+            "- student_outcomes_score (0-100)\n"
+            "- equity_access_score (0-100)\n"
+            "- opportunity_score (0-100)\n"
+            "- confidence_score (0-100)\n"
+            "- school_profile_summary (string: 3-5 sentence narrative)\n"
+            "- key_insights (array of 3-5 strings)\n"
+            "- context_for_student (string: 2-3 sentences on how to interpret student achievement here)\n"
+            "- graduation_rate (number: best estimate if not provided)\n"
+            "- college_acceptance_rate (number: best estimate)\n"
+            "- free_lunch_percentage (number: if known)\n"
+            "- total_enrollment (number: if known)\n"
+            "- funding_level (string: low / medium / high)\n"
+            "- academic_courses (number: AP course count)\n"
+            "- stem_programs (boolean)\n"
+            "- honors_programs (number: honors course count)\n"
+            "- diversity_indicators (string: brief description)"
+        )
 
-5. Opportunity Equity & Access
-   - Free/reduced lunch percentage vs national average (52%)
-   - Title I status
-   - How well school serves disadvantaged students relative to its demographics
-   - Dual enrollment availability and participation
-   - Compare graduation rate to NCES benchmarks: national 87%, GA 84%
-   - Compare immediate college enrollment to national 62%
-
-6. Opportunity Score
-   - Provide an overall opportunity score (0-100) reflecting how well this school positions students for college/career success
-   - Use NCES Condition of Education benchmarks as reference points
-   - Consider: academic rigor, resources, student outcomes, equity, and addressing barriers
-   - A school exceeding benchmarks given its demographics should score higher than raw numbers suggest
-
-7. Confidence Score
-   - How confident you are in this analysis (0-100) based on data availability
-
-Available web sources to analyze (including a search query hint if provided): {json.dumps(web_sources) if web_sources else 'None provided'}
-
-Existing data from other agents: {json.dumps(_sanitize_for_json(existing_data)) if existing_data else 'None provided'}
-
-Focus guidance: {enrichment_focus if enrichment_focus else 'General enrichment requested'}
-
-{naep_block}
-
-IMPORTANT: Use the NAEP data above as ground-truth benchmarks when evaluating this school.
-Compare the school's state performance to national averages. A school in a state scoring
-below the national mean faces structural headwinds; a student who excels in that context
-deserves more credit. Conversely, a school in a high-performing state may benefit from
-systemic advantages. Factor this into your opportunity score and analysis.
-
-Return your analysis as a single JSON object with keys: academic_courses, academic_programs, stem_programs, honors_programs, 
-college_acceptance_rate, graduation_rate, test_scores, funding_level, facility_quality, teacher_quality_indicators, 
-total_enrollment, free_lunch_percentage, diversity_indicators, community_sentiment, opportunity_score, confidence_score, key_insights."""
-        
         return prompt
 
+    # ── Data quality assessment ──────────────────────────────────────
+
+    @staticmethod
+    def _assess_data_quality(existing_data: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+        """Assess data completeness of the school record."""
+        if not existing_data:
+            return {"tier": "none", "label": "No existing data — AI estimation only", "fields_present": 0}
+
+        key_fields = [
+            'total_students', 'graduation_rate', 'free_lunch_percentage',
+            'student_teacher_ratio', 'ap_course_count', 'district_exp_per_pupil',
+            'is_title_i', 'locale_code',
+        ]
+        present = sum(1 for f in key_fields if existing_data.get(f) is not None)
+        status = existing_data.get('analysis_status', '')
+
+        if status == 'csv_imported' and present >= 5:
+            return {"tier": "verified", "label": f"NCES verified data ({present}/{len(key_fields)} key fields)", "fields_present": present}
+        if present >= 4:
+            return {"tier": "rich", "label": f"Rich data ({present}/{len(key_fields)} key fields)", "fields_present": present}
+        if present >= 2:
+            return {"tier": "partial", "label": f"Partial data ({present}/{len(key_fields)} key fields)", "fields_present": present}
+        return {"tier": "sparse", "label": f"Sparse data ({present}/{len(key_fields)} key fields)", "fields_present": present}
+
+    # ── Formatters ───────────────────────────────────────────────────
+
+    @staticmethod
+    def _fmt(value) -> str:
+        """Format a numeric value for display, handling None."""
+        if value is None:
+            return "Unknown"
+        try:
+            return f"{float(value):.1f}"
+        except (ValueError, TypeError):
+            return str(value)
+
+    @staticmethod
+    def _fmt_int(value) -> str:
+        """Format an integer value."""
+        if value is None:
+            return "Unknown"
+        try:
+            return f"{int(value):,}"
+        except (ValueError, TypeError):
+            return str(value)
+
+    @staticmethod
+    def _fmt_bool(value) -> str:
+        """Format a boolean value."""
+        if value is None:
+            return "Unknown"
+        return "Yes" if value else "No"
+
+    @staticmethod
+    def _fmt_dollars(value) -> str:
+        """Format dollar amount."""
+        if value is None:
+            return "Unknown"
+        try:
+            return f"${float(value):,.0f}"
+        except (ValueError, TypeError):
+            return str(value)
+
+    @staticmethod
+    def _fmt_trend(value) -> str:
+        """Format a trend JSON field into a readable summary."""
+        if value is None:
+            return "Unknown"
+        if isinstance(value, str):
+            try:
+                value = json.loads(value)
+            except (json.JSONDecodeError, TypeError):
+                return str(value)[:100]
+        if isinstance(value, dict):
+            years = sorted(value.keys())
+            if len(years) >= 2:
+                first, last = years[0], years[-1]
+                try:
+                    delta = float(value[last]) - float(value[first])
+                    direction = "+" if delta > 0 else "" if delta < 0 else "="
+                    return f"{value[first]} -> {value[last]} ({direction}{delta:.0f}, {first}-{last})"
+                except (ValueError, TypeError):
+                    pass
+            return str(value)[:100]
+        return str(value)[:100]
+
+    def _extract_json(self, text: str) -> Optional[Dict[str, Any]]:
+        """Extract JSON object from AI response text."""
+        try:
+            json_match = re.search(r'\{.*\}', text, re.DOTALL)
+            if json_match:
+                return safe_load_json(json_match.group())
+            return safe_load_json(text)
+        except (json.JSONDecodeError, Exception):
+            return None
+
+    # ── Summary generation ───────────────────────────────────────────
+
+    def _generate_analysis_summary(self, result: Dict[str, Any]) -> str:
+        """Generate formatted analysis summary."""
+        school = result.get("school_name", "School")
+        profile = result.get("school_profile", {})
+        score = result.get("opportunity_score", 0)
+        confidence = result.get("confidence_score", 0)
+
+        lines = [
+            f"School Evaluation Report: {school}",
+            "=" * 50,
+            "",
+            f"Agent: {self.name} ({self.model_display})",
+            f"Data Quality: {result.get('data_quality_notes', 'Unknown')}",
+            f"Analysis: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
+            "",
+            f"Overall Opportunity Score: {score}/100 (confidence: {confidence}%)",
+            "",
+            "Component Scores:",
+            f"  Academic Rigor:      {profile.get('academic_rigor_score', 'N/A')}/100",
+            f"  Resource Investment: {profile.get('resource_investment_score', 'N/A')}/100",
+            f"  Student Outcomes:    {profile.get('student_outcomes_score', 'N/A')}/100",
+            f"  Equity & Access:     {profile.get('equity_access_score', 'N/A')}/100",
+            "",
+            f"Profile: {profile.get('school_summary', 'Not available')}",
+            "",
+            "Key Insights:",
+        ]
+
+        for insight in profile.get("key_insights", []):
+            lines.append(f"  * {insight}")
+
+        if profile.get("context_for_student"):
+            lines.append("")
+            lines.append(f"Student Context: {profile['context_for_student']}")
+
+        return "\n".join(lines)
+
+    # ── State inference ──────────────────────────────────────────────
+
+    @staticmethod
     def _infer_state_code(
-        self,
         state_code: Optional[str],
         existing_data: Optional[Dict[str, Any]]
     ) -> Optional[str]:
@@ -680,101 +526,54 @@ total_enrollment, free_lunch_percentage, diversity_indicators, community_sentime
 
         return None
 
-    def _build_search_query(
-        self,
-        school_name: str,
-        school_district: Optional[str],
-        state_code: Optional[str],
-        existing_data: Optional[Dict[str, Any]]
-    ) -> str:
-        """Use the model to generate a focused search query for school data."""
-        district_hint = f", {school_district}" if school_district else ""
-        state_hint = f", {state_code}" if state_code else ""
-        base_query = f"{school_name}{district_hint}{state_hint} high school profile graduation rate enrollment AP IB"
-
-        try:
-            query_prompt = f"""Create a concise web search query (max 18 words) to find official data for a high school.
-
-School name: {school_name}
-District: {school_district or 'Unknown'}
-State: {state_code or 'Unknown'}
-Existing data: {json.dumps(existing_data) if existing_data else 'None'}
-
-Return only the search query text."""
-
-            response = self._create_chat_completion(
-                operation="school_search_query",
-                model=self.model,
-                messages=[
-                    {"role": "system", "content": "You generate concise search queries for school data."},
-                    {"role": "user", "content": query_prompt}
-                ],
-                temperature=0.2,
-                max_completion_tokens=40
-            )
-
-            if response and hasattr(response, 'choices') and response.choices and getattr(response.choices[0].message, 'content', None):
-                query_text = response.choices[0].message.content.strip()
-                return query_text.strip("\"' ") or base_query
-        except Exception as e:
-            logger.warning(f"Search query generation failed: {e}")
-
-        return base_query
+    # ── Refinement ───────────────────────────────────────────────────
 
     def _refine_analysis(
         self,
         school_name: str,
         initial_result: Dict[str, Any],
-        existing_data: Optional[Dict[str, Any]]
+        existing_data: Optional[Dict[str, Any]],
     ) -> Dict[str, Any]:
         """Refine analysis if initial confidence is low."""
-        logger.info(f"Refining Naveen analysis for {school_name} (low confidence: {initial_result['confidence_score']})")
-        
-        refinement_prompt = f"""The initial analysis for '{school_name}' had low confidence ({initial_result['confidence_score']}%).
-        
-Initial findings: {json.dumps(_sanitize_for_json(initial_result['enriched_data']))}
+        logger.info(f"Refining Naveen analysis for {school_name} (confidence: {initial_result['confidence_score']})")
 
-Please refine this analysis by:
-1. Identifying what data is missing or uncertain
-2. Making educated inferences based on school district/region patterns
-3. Providing a more confidence assessment
+        initial_json = json.dumps(_sanitize_for_json(initial_result['enriched_data']), default=str)[:2000]
+        refinement_prompt = (
+            f"The initial evaluation for '{school_name}' had low confidence "
+            f"({initial_result['confidence_score']}%).\n\n"
+            f"Initial findings: {initial_json}\n\n"
+            "Please refine by:\n"
+            "1. Making educated inferences based on district/region patterns\n"
+            "2. Using your knowledge of this school or similar schools in the area\n"
+            "3. Providing improved confidence assessment\n\n"
+            "Return refined analysis as JSON with improved confidence_score and any corrected fields."
+        )
 
-Return refined analysis as JSON with improved confidence_score."""
-        
         refined_response = self._create_chat_completion(
-            operation="school_analysis_refinement",
+            operation="school_evaluation_refinement",
             model=self.model,
             messages=[
-                {
-                    "role": "system",
-                    "content": "You are Naveen refining school analysis. Improve confidence in results where possible."
-                },
-                {
-                    "role": "user",
-                    "content": refinement_prompt
-                }
+                {"role": "system", "content": "You are Naveen refining a school evaluation. Use your knowledge to fill data gaps and improve confidence."},
+                {"role": "user", "content": refinement_prompt},
             ],
-            temperature=0.5,
-            max_completion_tokens=1500
+            temperature=0.3,
+            max_completion_tokens=1500,
         )
-        
+
         refined_data = {}
         try:
-            if refined_response and hasattr(refined_response, 'choices') and refined_response.choices and getattr(refined_response.choices[0].message, 'content', None):
-                response_text = refined_response.choices[0].message.content
-                import re
-                json_match = re.search(r'\{.*\}', response_text, re.DOTALL)
-                if json_match:
-                    refined_data = safe_load_json(json_match.group())
-                    
+            if (refined_response and hasattr(refined_response, 'choices')
+                    and refined_response.choices
+                    and getattr(refined_response.choices[0].message, 'content', None)):
+                refined_data = self._extract_json(refined_response.choices[0].message.content) or {}
         except Exception as e:
             logger.warning(f"Could not parse refined analysis: {e}")
-        
+
         return {
             "enriched_data": refined_data or initial_result["enriched_data"],
-            "confidence_score": refined_data.get("confidence_score", initial_result["confidence_score"] + 10)
+            "confidence_score": refined_data.get("confidence_score", initial_result["confidence_score"] + 10),
         }
 
     async def process(self, message: str) -> str:
-        """Process a message - not used for Naveen's school analysis pipeline."""
-        return "Naveen processes schools via analyze_school() method"
+        """Process a message — not used for Naveen's school evaluation pipeline."""
+        return "Naveen evaluates schools via analyze_school() method"

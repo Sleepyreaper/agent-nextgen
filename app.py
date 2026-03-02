@@ -3050,7 +3050,6 @@ def student_detail(application_id):
                         'college_placement_rate': school_data.get('college_placement_rate'),
                         'opportunity_score': school_data.get('opportunity_score'),
                         'analysis_date': school_data.get('updated_at') or school_data.get('analysis_date'),
-                        'web_sources': school_data.get('web_sources')
                     }
                     logger.debug(f"School context loaded for {school_name}: opportunity_score={school_context.get('opportunity_score')}")
             except Exception as e:
@@ -6640,18 +6639,11 @@ def trigger_school_analysis(school_id):
                     model=config.model_tier_workhorse  # Tier 2
                 )
                 
-                # Get web sources
-                web_sources = school.get('web_sources_analyzed', [])
-                if isinstance(web_sources, str):
-                    import json
-                    web_sources = json.loads(web_sources)
-                
                 # Run analysis
                 result = scientist.analyze_school(
                     school_name=school['school_name'],
                     school_district=school.get('school_district', ''),
                     state_code=school.get('state_code', ''),
-                    web_sources=web_sources,
                     existing_data=school
                 )
                 
@@ -6815,16 +6807,10 @@ def trigger_school_analysis_sync(school_id):
             model=config.model_tier_workhorse  # Tier 2
         )
         
-        web_sources = school.get('web_sources_analyzed', [])
-        if isinstance(web_sources, str):
-            import json as _json
-            web_sources = _json.loads(web_sources)
-        
         result = scientist.analyze_school(
             school_name=school['school_name'],
             school_district=school.get('school_district', ''),
             state_code=school.get('state_code', ''),
-            web_sources=web_sources,
             existing_data=school
         )
         
@@ -7191,19 +7177,11 @@ def batch_naveen_moana():
                 if needs_naveen:
                     try:
                         full_school = db.get_school_enriched_data(sid) or {}
-                        web_sources = full_school.get('web_sources_analyzed', [])
-                        if isinstance(web_sources, str):
-                            import json as _json
-                            try:
-                                web_sources = _json.loads(web_sources)
-                            except Exception:
-                                web_sources = []
 
                         result = scientist.analyze_school(
                             school_name=name,
                             school_district=sch.get('school_district', ''),
                             state_code=sch.get('state_code', ''),
-                            web_sources=web_sources,
                             existing_data=full_school
                         )
 

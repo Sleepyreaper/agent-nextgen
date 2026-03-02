@@ -84,7 +84,27 @@ class SchoolDataWorkflow:
             )
             return cached_school
         
-        # Step 2: School not in database - trigger Aurora enrichment
+        # Step 2: If state has authoritative CSV data, do not enrich — return unmatched
+        if state_code and self.db.state_has_csv_school_data(state_code):
+            logger.warning(
+                f"⚠ School '{school_name}' not matched in CSV-imported list for {state_code}. "
+                f"Skipping Naveen enrichment — CSV list is authoritative.",
+                extra={'school': school_name, 'state': state_code}
+            )
+            return {
+                'school_name': school_name,
+                'state_code': state_code,
+                'analysis_status': 'unmatched',
+                'unmatched': True,
+                'data_source': 'unmatched_csv_state',
+                'opportunity_score': 0,
+                'note': (
+                    f"School '{school_name}' could not be matched to any school "
+                    f"in the authoritative {state_code} CSV import."
+                ),
+            }
+
+        # Step 3: School not in database - trigger Aurora enrichment
         if not aurora_agent:
             logger.warning(f"Aurora agent required to enrich new school: {school_name}")
             return {
@@ -153,9 +173,12 @@ class SchoolDataWorkflow:
         """
         Auto-lookup/create: Check if a school exists in the database.
         If not, create a skeleton record with analysis_status='pending'.
-        
-        This is the entry point for the user requirement:
-        "Does this high school name exist? If not, create a new record."
+
+        **CSV-covered states** (e.g. GA): If the state has a definitive
+        CSV-imported school list, we NEVER create a new record.  The fuzzy
+        lookup in ``_lookup_school_in_database`` should find a match.  If
+        it still fails, we return the best-effort result with an
+        ``unmatched`` flag instead of polluting the authoritative list.
         
         Args:
             school_name: High school name
@@ -169,14 +192,43 @@ class SchoolDataWorkflow:
         if not school_name:
             return {'error': 'School name is required'}
         
-        # Step 1: Look up by name + state
+        # Step 1: Look up by name + state (exact then fuzzy)
         existing = self._lookup_school_in_database(school_name, state_code)
         
         if existing:
             logger.info(f"✓ School exists: {school_name}", extra={'id': existing.get('school_enrichment_id')})
             return existing
         
-        # Step 2: Not found — create skeleton record
+        # Step 2: Check if this state has authoritative CSV data
+        if self.db.state_has_csv_school_data(state_code):
+            # State has a definitive school list — do NOT create new records.
+            # Return a shell record flagged as unmatched so agents can still
+            # proceed, but the school will not be persisted.
+            logger.warning(
+                f"⚠ School not matched in CSV-imported list for {state_code}: '{school_name}'. "
+                f"No new record will be created — the CSV list is authoritative.",
+                extra={'school': school_name, 'state': state_code}
+            )
+            return {
+                'school_name': school_name,
+                'state_code': state_code,
+                'analysis_status': 'unmatched',
+                'unmatched': True,
+                'data_source': 'unmatched_csv_state',
+                'opportunity_score': 0,
+                'total_students': 0,
+                'graduation_rate': 0,
+                'college_acceptance_rate': 0,
+                'free_lunch_percentage': 0,
+                'ap_course_count': 0,
+                'note': (
+                    f"School '{school_name}' could not be matched to any school "
+                    f"in the authoritative {state_code} CSV import. This may "
+                    f"indicate a misspelling or abbreviation in the application."
+                ),
+            }
+
+        # Step 3: Not found and no CSV data — create skeleton record
         logger.info(f"→ School not found, creating skeleton: {school_name} ({state_code})")
         
         skeleton = {
@@ -361,6 +413,11 @@ class SchoolDataWorkflow:
     ) -> Optional[Dict[str, Any]]:
         """
         Look up school in enriched data table.
+
+        Tries exact match first, then falls back to fuzzy matching.  For
+        states with CSV-imported definitive school lists (e.g. GA), fuzzy
+        matching is critical because application text may abbreviate or
+        slightly misspell the school name.
         
         Args:
             school_name: School name to search
@@ -370,25 +427,36 @@ class SchoolDataWorkflow:
             School enrichment record if found, None otherwise
         """
         try:
-            # Query school_enriched_data table
+            # Try exact match first
             result = self.db.get_school_enriched_data(
                 school_name=school_name,
                 state_code=state_code
             )
             
             if result:
-                # Convert database record to dictionary
                 school_data = dict(result) if hasattr(result, 'items') else result
-                
                 logger.debug(
-                    f"School lookup successful",
+                    f"School lookup successful (exact)",
                     extra={'school': school_name, 'records_found': 1}
                 )
-                
                 return school_data
+
+            # Exact match failed — try fuzzy matching
+            fuzzy_result = self.db.get_school_enriched_data_fuzzy(
+                school_name=school_name,
+                state_code=state_code,
+                threshold=0.55  # Lower threshold for better recall
+            )
+            if fuzzy_result:
+                matched_name = fuzzy_result.get('school_name', '?')
+                logger.info(
+                    f"School fuzzy-matched: '{school_name}' → '{matched_name}'",
+                    extra={'school': school_name, 'matched': matched_name, 'state': state_code}
+                )
+                return fuzzy_result
             
             logger.debug(
-                f"School not found in cache",
+                f"School not found in cache (exact + fuzzy)",
                 extra={'school': school_name, 'state': state_code}
             )
             return None
@@ -446,7 +514,6 @@ class SchoolDataWorkflow:
                 # Analysis results
                 'opportunity_score': school_data.get('opportunity_score'),
                 'analysis_summary': school_data.get('analysis_summary'),
-                'web_sources_analyzed': school_data.get('web_sources', []),
                 'analysis_date': school_data.get('analysis_date'),
                 'human_review_status': 'pending',  # Allow human review/editing
             }

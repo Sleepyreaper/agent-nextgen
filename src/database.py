@@ -3146,6 +3146,18 @@ class Database:
             if alias not in record and db_col in record:
                 record[alias] = record[db_col]
 
+        # --- extra aliases consumed by templates / agents ---
+        if 'free_reduced_lunch_pct' not in record and 'free_lunch_percentage' in record:
+            record['free_reduced_lunch_pct'] = record['free_lunch_percentage']
+        if 'frpl_pct' not in record and 'free_lunch_percentage' in record:
+            record['frpl_pct'] = record['free_lunch_percentage']
+        if 'total_enrollment' not in record and 'total_students' in record:
+            record['total_enrollment'] = record['total_students']
+        if 'enrollment' not in record and 'total_students' in record:
+            record['enrollment'] = record['total_students']
+        if 'district' not in record and 'school_district' in record:
+            record['district'] = record['school_district']
+
         # --- derived: socioeconomic_level from free_lunch_percentage ---
         if 'socioeconomic_level' not in record or record.get('socioeconomic_level') is None:
             flp = record.get('free_lunch_percentage')
@@ -3296,6 +3308,25 @@ class Database:
         except Exception as e:
             logger.error(f"Error in fuzzy school lookup: {e}")
             return None
+
+    def state_has_csv_school_data(self, state_code: str) -> bool:
+        """Return True if the given state has CSV-imported school records.
+
+        This indicates a definitive/authoritative school list exists for the
+        state.  When True, agents must match against the existing list rather
+        than creating new skeleton records.
+        """
+        try:
+            if not self.has_table("school_enriched_data"):
+                return False
+            rows = self.execute_query(
+                "SELECT 1 FROM school_enriched_data "
+                "WHERE state_code = %s AND analysis_status = 'csv_imported' LIMIT 1",
+                (state_code.upper(),)
+            )
+            return bool(rows)
+        except Exception:
+            return False
 
     def get_school_names_for_state(self, state_code: str) -> List[str]:
         """Return all school names for a given state from the enriched data table."""
