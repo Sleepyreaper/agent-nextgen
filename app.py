@@ -2103,24 +2103,44 @@ def training():
         # Count students with historical XLSX matches
         matched_count = len([t for t in training_data if t.get('has_historical_match')])
 
+        # Re-sort training data by high school, then state (from school enrichment), then last name
+        def _sort_key(s):
+            hs = (s.get('high_school') or '').strip().lower()
+            ln = (s.get('last_name') or '').strip().lower()
+            fn = (s.get('first_name') or '').strip().lower()
+            return (hs == '', hs, ln, fn)  # blanks sort last
+        training_data.sort(key=_sort_key)
+
+        # Fetch school enrichment data for the Schools tab
+        school_data = db.get_all_schools_enriched(limit=5000)
+        school_data.sort(key=lambda s: (
+            (s.get('state_code') or '').lower(),
+            (s.get('school_name') or '').lower()
+        ))
+        school_count = len(school_data)
+
         return render_template('training.html',
                              training_data=training_data,
+                             school_data=school_data,
                              search_query=search_query,
                              filter_selected=filter_selected,
                              total_count=total_count,
                              selected_count=selected_count,
                              not_selected_count=not_selected_count,
                              matched_count=matched_count,
+                             school_count=school_count,
                              is_training_view=True)
     except Exception as e:
         flash(f'Error loading training data: {str(e)}', 'error')
         return render_template('training.html', 
                              training_data=[], 
+                             school_data=[],
                              search_query='',
                              filter_selected='',
                              total_count=0,
                              selected_count=0,
-                             not_selected_count=0)
+                             not_selected_count=0,
+                             school_count=0)
 
 
 @app.route('/test')

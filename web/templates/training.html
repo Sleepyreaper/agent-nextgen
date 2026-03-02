@@ -124,10 +124,10 @@
     </div>
 
     <!-- Statistics -->
-    <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 1rem; margin-bottom: 2rem;">
+    <div style="display: grid; grid-template-columns: repeat(5, 1fr); gap: 1rem; margin-bottom: 2rem;">
         <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 1.5rem; border-radius: 8px; text-align: center;">
             <div style="font-size: 2rem; font-weight: bold;">{{ total_count }}</div>
-            <div style="opacity: 0.9; margin-top: 0.5rem;">Total Examples</div>
+            <div style="opacity: 0.9; margin-top: 0.5rem;">Total Students</div>
         </div>
         <div style="background: linear-gradient(135deg, #10b981 0%, #059669 100%); color: white; padding: 1.5rem; border-radius: 8px; text-align: center;">
             <div style="font-size: 2rem; font-weight: bold;">{{ selected_count }}</div>
@@ -141,8 +141,26 @@
             <div style="font-size: 2rem; font-weight: bold;">{{ matched_count }}</div>
             <div style="opacity: 0.9; margin-top: 0.5rem;">📊 XLSX Matched</div>
         </div>
+        <div style="background: linear-gradient(135deg, #22c55e 0%, #16a34a 100%); color: white; padding: 1.5rem; border-radius: 8px; text-align: center; cursor: pointer;" onclick="switchTab('schools')">
+            <div style="font-size: 2rem; font-weight: bold;">{{ school_count }}</div>
+            <div style="opacity: 0.9; margin-top: 0.5rem;">🏫 Schools</div>
+        </div>
     </div>
 
+    <!-- Tab Navigation -->
+    <div style="display: flex; gap: 0; margin-bottom: 0; border-bottom: 2px solid #e5e7eb;">
+        <button id="tabBtnStudents" class="training-tab active" onclick="switchTab('students')"
+                style="padding: 0.75rem 1.5rem; font-weight: 600; font-size: 1rem; border: none; background: none; cursor: pointer; border-bottom: 3px solid #667eea; color: #667eea; margin-bottom: -2px;">
+            👥 Students ({{ total_count }})
+        </button>
+        <button id="tabBtnSchools" class="training-tab" onclick="switchTab('schools')"
+                style="padding: 0.75rem 1.5rem; font-weight: 600; font-size: 1rem; border: none; background: none; cursor: pointer; border-bottom: 3px solid transparent; color: #6b7280; margin-bottom: -2px;">
+            🏫 Schools ({{ school_count }})
+        </button>
+    </div>
+
+    <!-- ═══ STUDENTS TAB ═══ -->
+    <div id="tabStudents" style="margin-top: 1.5rem;">
     <!-- Search and Filter -->
     <form method="GET" style="margin-bottom: 2rem;">
         <div style="display: grid; grid-template-columns: 1fr auto auto; gap: 1rem;">
@@ -173,6 +191,85 @@
     <!-- Training Data List Component -->
     {% set students = training_data %}
     {% include '_student_list.html' %}
+    </div>
+
+    <!-- ═══ SCHOOLS TAB ═══ -->
+    <div id="tabSchools" style="display: none; margin-top: 1.5rem;">
+        <!-- School Search -->
+        <div style="margin-bottom: 1.5rem;">
+            <input type="text" id="schoolSearchInput" placeholder="🔍 Search schools by name, district, or state..."
+                   oninput="filterSchoolTable()"
+                   style="width: 100%; padding: 0.75rem; border: 1px solid #d1d5db; border-radius: 5px; font-size: 1rem;">
+        </div>
+        {% if school_data %}
+        <div style="overflow-x: auto;">
+            <table class="student-list-table" id="schoolDataTable">
+                <thead>
+                    <tr>
+                        <th style="width: 25%; cursor:pointer;" onclick="sortSchoolTable(0)">School Name ⇅</th>
+                        <th style="width: 15%; cursor:pointer;" onclick="sortSchoolTable(1)">District ⇅</th>
+                        <th style="width: 8%; cursor:pointer;" onclick="sortSchoolTable(2)">State ⇅</th>
+                        <th style="width: 10%; cursor:pointer;" onclick="sortSchoolTable(3)">Enrollment ⇅</th>
+                        <th style="width: 10%; cursor:pointer;" onclick="sortSchoolTable(4)">FRPL % ⇅</th>
+                        <th style="width: 10%;">Status</th>
+                        <th style="width: 10%;">Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for school in school_data %}
+                    <tr class="school-row">
+                        <td>
+                            <div style="font-weight: 600; color: #003366;">{{ school.school_name or '—' }}</div>
+                            {% if school.nces_id %}
+                            <div style="font-size: 0.8rem; color: #9ca3af;">NCES: {{ school.nces_id }}</div>
+                            {% endif %}
+                        </td>
+                        <td style="color: #4b5563;">{{ school.school_district or school.district or '—' }}</td>
+                        <td><span style="background: #e5e7eb; padding: 0.2rem 0.5rem; border-radius: 4px; font-weight: 600; font-size: 0.85rem;">{{ school.state_code or '—' }}</span></td>
+                        <td style="text-align: right;">{{ school.total_enrollment or school.enrollment or '—' }}</td>
+                        <td style="text-align: right;">
+                            {% set frpl = school.frpl_pct or school.free_reduced_lunch_pct %}
+                            {% if frpl is not none %}
+                                {% if frpl > 0.7 %}
+                                <span style="color: #dc2626; font-weight: 600;">{{ (frpl * 100)|round|int if frpl <= 1 else frpl|round|int }}%</span>
+                                {% elif frpl > 0.4 %}
+                                <span style="color: #d97706; font-weight: 600;">{{ (frpl * 100)|round|int if frpl <= 1 else frpl|round|int }}%</span>
+                                {% else %}
+                                <span style="color: #059669;">{{ (frpl * 100)|round|int if frpl <= 1 else frpl|round|int }}%</span>
+                                {% endif %}
+                            {% else %}—{% endif %}
+                        </td>
+                        <td>
+                            {% if school.analysis_status == 'enriched' %}
+                            <span style="background: #dcfce7; color: #166534; padding: 0.25rem 0.5rem; border-radius: 4px; font-size: 0.8rem;">Enriched</span>
+                            {% elif school.analysis_status == 'csv_imported' %}
+                            <span style="background: #dbeafe; color: #1e40af; padding: 0.25rem 0.5rem; border-radius: 4px; font-size: 0.8rem;">Imported</span>
+                            {% else %}
+                            <span style="background: #f3f4f6; color: #6b7280; padding: 0.25rem 0.5rem; border-radius: 4px; font-size: 0.8rem;">{{ school.analysis_status or 'Pending' }}</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            {% if school.school_enrichment_id %}
+                            <a href="{{ url_for('view_school_enrichment', school_id=school.school_enrichment_id) }}"
+                               class="btn btn-info" style="font-size: 0.8rem; padding: 0.3rem 0.6rem;">View</a>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        <p style="color: #6b7280; font-size: 0.85rem; margin-top: 0.75rem;">
+            Showing {{ school_data|length }} schools · Sorted by state, then school name
+        </p>
+        {% else %}
+        <div style="text-align: center; padding: 3rem; color: #6b7280;">
+            <div style="font-size: 3rem; margin-bottom: 1rem;">🏫</div>
+            <h3>No School Data</h3>
+            <p>Upload a school CSV file using the upload card above to populate school data.</p>
+        </div>
+        {% endif %}
+    </div>
 </div>
 
 <!-- Duplicates Modal -->
@@ -318,6 +415,62 @@
 
 {% block extra_js %}
 <script>
+/* ── Tab Switching ───────────────────────────────────────────────── */
+function switchTab(tab) {
+    const studentsTab = document.getElementById('tabStudents');
+    const schoolsTab = document.getElementById('tabSchools');
+    const btnStudents = document.getElementById('tabBtnStudents');
+    const btnSchools = document.getElementById('tabBtnSchools');
+    if (tab === 'schools') {
+        studentsTab.style.display = 'none';
+        schoolsTab.style.display = 'block';
+        btnStudents.style.borderBottomColor = 'transparent';
+        btnStudents.style.color = '#6b7280';
+        btnSchools.style.borderBottomColor = '#22c55e';
+        btnSchools.style.color = '#16a34a';
+    } else {
+        studentsTab.style.display = 'block';
+        schoolsTab.style.display = 'none';
+        btnStudents.style.borderBottomColor = '#667eea';
+        btnStudents.style.color = '#667eea';
+        btnSchools.style.borderBottomColor = 'transparent';
+        btnSchools.style.color = '#6b7280';
+    }
+}
+
+/* ── School Table Search ─────────────────────────────────────────── */
+function filterSchoolTable() {
+    const query = (document.getElementById('schoolSearchInput').value || '').toLowerCase();
+    const rows = document.querySelectorAll('#schoolDataTable tbody .school-row');
+    rows.forEach(row => {
+        const text = row.textContent.toLowerCase();
+        row.style.display = text.includes(query) ? '' : 'none';
+    });
+}
+
+/* ── School Table Sort ───────────────────────────────────────────── */
+let schoolSortCol = -1;
+let schoolSortAsc = true;
+function sortSchoolTable(colIdx) {
+    const table = document.getElementById('schoolDataTable');
+    if (!table) return;
+    const tbody = table.querySelector('tbody');
+    const rows = Array.from(tbody.querySelectorAll('.school-row'));
+    if (colIdx === schoolSortCol) { schoolSortAsc = !schoolSortAsc; } else { schoolSortCol = colIdx; schoolSortAsc = true; }
+    rows.sort((a, b) => {
+        let aVal = (a.cells[colIdx]?.textContent || '').trim().toLowerCase();
+        let bVal = (b.cells[colIdx]?.textContent || '').trim().toLowerCase();
+        // try numeric
+        const aNum = parseFloat(aVal.replace(/[%,]/g, ''));
+        const bNum = parseFloat(bVal.replace(/[%,]/g, ''));
+        if (!isNaN(aNum) && !isNaN(bNum)) {
+            return schoolSortAsc ? aNum - bNum : bNum - aNum;
+        }
+        return schoolSortAsc ? aVal.localeCompare(bVal) : bVal.localeCompare(aVal);
+    });
+    rows.forEach(r => tbody.appendChild(r));
+}
+
 /* ── School CSV Upload ───────────────────────────────────────────── */
 function updateSchoolCsvFileName(input) {
     const el = document.getElementById('schoolCsvFileName');
