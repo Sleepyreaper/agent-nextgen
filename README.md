@@ -293,22 +293,36 @@ nano .env.local  # Add your credentials (never commit this file)
 | `agent_interactions` | 14 interaction types covering the full 9-step workflow (JSONB output, timestamps) |
 | `file_upload_audit` | AI-based student matching decisions with confidence scores and human review fields |
 
-### School Data (NCES)
+### School Data — Built from Public Sources
 
-School data is sourced from the **NCES Common Core of Data (CCD)** — the U.S. Department of Education's annual census of public schools. Data is imported via CSV upload on the Training page (Schools tab) rather than fetched from external APIs at runtime.
+> **📊 Public Data, Locally Enriched** — All school data in this system is derived from publicly available government datasets. We download, combine, and normalize multiple public data sources into a unified local database that our AI agents evaluate and enrich. No proprietary school data is used. No external APIs are called at runtime.
 
-**Import workflow:**
-1. Download CCD data from [NCES](https://nces.ed.gov/ccd/)
-2. Upload the CSV via Training → Schools tab (supports NCES column names)
-3. Schools are fuzzy-matched to existing records (threshold 0.55) or created
-4. Naveen evaluates each school's NCES data to produce component scores
-5. Moana uses the evaluation + student transcript to build contextual narratives
+The primary data source is the **NCES Common Core of Data (CCD)** — the U.S. Department of Education's annual census of all public schools and school districts in the United States. CCD data is published openly at [nces.ed.gov/ccd](https://nces.ed.gov/ccd/) and includes school-level demographics, finances, staffing, and program information.
 
-**Key NCES fields stored in `school_enriched_data`:**
+**Public data sources combined:**
+- **NCES CCD School Directory** — School names, addresses, NCES IDs, locale codes, charter/magnet/Title I flags
+- **NCES CCD Enrollment** — Total enrollment, grade-level counts, student-teacher ratios
+- **NCES CCD Free/Reduced Lunch** — FRPL percentages, direct certification rates
+- **NCES CCD Finance (District)** — Per-pupil expenditure, revenue breakdowns (federal/state/local)
+- **NCES CCD Staffing** — Full-time equivalent teacher counts
+
+These separate CCD datasets are joined by NCES school ID, aggregated across multiple school years to capture trends, and uploaded as a single CSV via the Training → Schools tab.
+
+**Import & enrichment workflow:**
+1. Download CCD datasets from [NCES](https://nces.ed.gov/ccd/) (school directory, enrollment, lunch, finance, staffing)
+2. Combine and normalize the datasets offline (join on NCES ID, compute multi-year trends)
+3. Upload the merged CSV via Training → Schools tab
+4. The importer groups rows by NCES ID, aggregates multi-year data, and stores enriched records locally
+5. **Naveen** (AI agent) evaluates each school's data to produce component scores (Academic Rigor, Resource Investment, Student Outcomes, Equity & Access)
+6. **Moana** (AI agent) uses Naveen's evaluation + student transcript to build contextual narratives
+
+**Key fields stored in `school_enriched_data`:**
 - Enrollment, student-teacher ratio, free/reduced lunch %
 - Title I status, charter/magnet flags, locale classification
-- Per-pupil expenditure, AP course count, graduation rate
-- District name, county, state
+- Per-pupil expenditure, revenue per pupil, instruction expenditure per pupil
+- AP course count, graduation rate, district poverty rate
+- Enrollment trends and FRPL trends (multi-year JSON)
+- District name, county, state, latitude/longitude
 
 ---
 

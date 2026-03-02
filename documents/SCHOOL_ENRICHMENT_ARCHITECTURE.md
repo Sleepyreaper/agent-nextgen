@@ -11,8 +11,23 @@
 
 The School Data Enrichment system provides nuanced, data-driven analysis of student opportunities within their school context.
 
+### Public Data, Locally Enriched
+
+> **All school data is derived from publicly available U.S. government datasets.** We combine multiple public data sources from the NCES Common Core of Data (CCD), normalize them into a unified schema, and store them locally. Our AI agents then evaluate and enrich this data — no proprietary school data is used, and no external APIs are called at runtime.
+
+**Public data sources used:**
+| Source | Data Provided | Published By |
+|--------|--------------|-------------|
+| NCES CCD School Directory | School names, addresses, NCES IDs, locale codes, charter/magnet/Title I flags | U.S. Dept. of Education |
+| NCES CCD Enrollment | Total enrollment, grade-level counts, student-teacher ratios | U.S. Dept. of Education |
+| NCES CCD Free/Reduced Lunch | FRPL percentages, direct certification rates | U.S. Dept. of Education |
+| NCES CCD Finance (District) | Per-pupil expenditure, revenue breakdowns (federal/state/local) | U.S. Dept. of Education |
+| NCES CCD Staffing | Full-time equivalent teacher counts | U.S. Dept. of Education |
+
+These separate CCD datasets are joined by NCES school ID, aggregated across multiple school years to capture trends, and uploaded as a combined CSV.
+
 ### Current Architecture (v1.0.43)
-- **Data Source**: NCES CCD CSV files uploaded via Training → Schools tab
+- **Data Pipeline**: Download public CCD datasets → combine/normalize offline → upload merged CSV → import into local database
 - **Naveen**: Evaluates NCES database records to produce School Evaluation Reports with component scores (Academic Rigor, Resource Investment, Student Outcomes, Equity & Access)
 - **Moana**: Uses Naveen's evaluation + NCES data + student coursework to build AI-powered contextual narratives
 - **Matching**: GA schools matched via fuzzy matching (threshold 0.55) against CSV-imported records

@@ -53,7 +53,11 @@ Production Flask application (~8100 lines in `app.py`) that evaluates high-schoo
 - `src/storage.py` — Azure Blob Storage operations
 - `src/document_processor.py` — PDF/DOCX text extraction with OCR fallback
 - `startup.sh` — Gunicorn launch script (4 workers, 2 threads, 600s timeout)
-- `VERSION` — Current version number (1.0.43)
+- `VERSION` — Current version number (1.0.45)
+
+### School Data — Public Sources
+
+School data is built entirely from **publicly available U.S. government datasets** — specifically the NCES Common Core of Data (CCD) published by the U.S. Department of Education. Multiple CCD datasets (school directory, enrollment, free/reduced lunch, district finance, staffing) are combined by NCES school ID, aggregated across school years, and uploaded as a merged CSV via the Training → Schools tab. Naveen and Moana then evaluate and enrich this public data locally — no proprietary data or runtime web calls are used.
 
 ### Key API Endpoints
 
