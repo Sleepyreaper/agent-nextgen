@@ -521,13 +521,21 @@ async function uploadSchoolCsv(e) {
             return resp.json();
         }
 
-        // POST the file
-        const formData = new FormData();
-        formData.append('file', fileInput.files[0]);
-        const resp = await fetch(`/api/schools/import-csv?purge=${purge}&dry_run=false`, {
-            method: 'POST', body: formData
+        // Read file as base64 and POST as JSON (avoids WAF multipart blocking)
+        progressText.textContent = 'Reading file…';
+        const fileBytes = await new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = () => resolve(reader.result.split(',')[1]); // strip data:...;base64, prefix
+            reader.onerror = () => reject(new Error('Failed to read file'));
+            reader.readAsDataURL(fileInput.files[0]);
         });
-        const data = await safeJson(resp, 'Upload may have been blocked by WAF.');
+        progressText.textContent = 'Uploading CSV data…';
+        const resp = await fetch(`/api/schools/import-csv?purge=${purge}&dry_run=false`, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({file_data: fileBytes})
+        });
+        const data = await safeJson(resp, 'Upload failed.');
         if (!resp.ok || (data.status !== 'started' && data.status !== 'success')) {
             throw new Error(data.error || 'Import failed to start');
         }
