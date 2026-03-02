@@ -497,7 +497,7 @@
     <div class="batch-actions">
         <div class="batch-actions-info">
             <h3>🔬 Batch School Analysis</h3>
-            <p>Run Naveen data enrichment + Moana context validation on up to 10 schools. Schools are processed sequentially with delays to manage API capacity (~2 min each).</p>
+            <p>Run Naveen school evaluation + Moana context narrative on up to 10 schools. Schools are processed sequentially with delays to manage API capacity (~2 min each).</p>
         </div>
         <div style="display: flex; align-items: center; gap: 1rem;">
             <select id="batchLimit" style="padding: 0.5rem; border-radius: 6px; border: 1px solid #e5e7eb; font-size: 0.9rem;">
@@ -1100,7 +1100,7 @@ async function triggerBatchAnalysis() {
     const limit = document.getElementById('batchLimit').value;
     const originalText = btn.innerHTML;
 
-    if (!confirm(`Start Naveen + Moana batch analysis on up to ${limit} schools?\n\nThis runs in the background — schools are processed one at a time with 60s delays to manage capacity.`)) return;
+    if (!confirm(`Start Naveen + Moana batch analysis on up to ${limit} schools?\n\nNaveen evaluates NCES data and produces component scores. Moana generates contextual narratives.\n\nSchools are processed one at a time with 60s delays to manage capacity.`)) return;
 
     btn.disabled = true;
     btn.innerHTML = '⏳ Queuing...';

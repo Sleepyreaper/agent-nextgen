@@ -1,28 +1,22 @@
 # School Data Enrichment System Architecture
 
-**Status**: Foundation Complete - Ready for Integration  
-**Commit**: `9b2c8eb`  
-**Date**: February 18, 2026
+**Status**: Fully Implemented — Database-First with NCES CCD Data  
+**Last Updated**: March 2, 2026 (v1.0.43)
+
+> **Note**: This document was originally written when the system planned to use web scraping. The architecture has since evolved to a database-first approach using NCES Common Core of Data (CCD) imported via CSV. Naveen now evaluates database records with AI to produce component scores and school summaries. Moana uses Naveen's evaluation plus NCES data to build contextual narratives. No external web data is fetched at runtime.
 
 ---
 
 ## 🎯 Vision & Purpose
 
-The School Detail Data Scientist system addresses a critical gap in Moana's (School Context Agent) ability to provide nuanced, data-driven analysis of student opportunities within their school context.
+The School Data Enrichment system provides nuanced, data-driven analysis of student opportunities within their school context.
 
-### Problem Statement
-- **Moana's Current Limitation**: Limited to extracting information directly from embedded URLs in uploads
-- **Data Gap**: Lacks comprehensive, pre-analyzed school profiles with opportunity metrics
-- **Inconsistency**: Multiple students from same school may receive different contextual analysis
-- **Human Review Gap**: No way to validate, audit, or improve school data quality
-
-### Solution Architecture
-Build a comprehensive school indexing and enrichment system that:
-1. Analyzes schools using web data to build enriched profiles
-2. Calculates composite "opportunity scores" reflecting school capabilities
-3. Provides human review dashboard for quality assurance
-4. Enables Moana to access pre-analyzed school data
-5. Tracks changes and improvements over time
+### Current Architecture (v1.0.43)
+- **Data Source**: NCES CCD CSV files uploaded via Training → Schools tab
+- **Naveen**: Evaluates NCES database records to produce School Evaluation Reports with component scores (Academic Rigor, Resource Investment, Student Outcomes, Equity & Access)
+- **Moana**: Uses Naveen's evaluation + NCES data + student coursework to build AI-powered contextual narratives
+- **Matching**: GA schools matched via fuzzy matching (threshold 0.55) against CSV-imported records
+- **No Runtime Web Calls**: All school data comes from the database; no NAEP, web scraping, or external APIs
 
 ---
 

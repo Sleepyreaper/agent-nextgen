@@ -4,7 +4,7 @@
 
 ## 🔄 PHASE 1-5 IMPLEMENTATION COMPLETE
 
-**Last Updated**: February 18, 2026 - All workflow changes implemented and tested
+**Last Updated**: March 2, 2026 - Database-first school data with AI-powered contextual narratives
 
 ### **Summary of Phases**
 
@@ -12,7 +12,7 @@
 |-------|-------|--------|
 | **Phase 1** | Database schema + student matching | ✅ Complete |
 | **Phase 2** | 8-step orchestrator workflow | ✅ Complete |
-| **Phase 3** | NAVEEN ↔ MOANA school validation loop | ✅ Complete |
+| **Phase 3** | NAVEEN school evaluation + MOANA contextual narratives | ✅ Complete (v1.0.43) |
 | **Phase 4** | RAPUNZEL contextual rigor + AURORA report formatting | ✅ Complete |
 | **Step 2.5** | High school pre-enrichment check | ✅ Complete |
 | **Phase 5a** | Comprehensive audit logging (all 9 steps) | ✅ Complete |
@@ -31,11 +31,11 @@
 - ✅ Helper methods for each workflow segment
 - ✅ `school_enrichment` data passed to RAPUNZEL for contextual weighting
 
-#### **Phase 3: School Validation Loop**
-- ✅ Bidirectional NAVEEN ↔ MOANA validation
-- ✅ Up to 2 remediation attempts with targeted context
-- ✅ Methods: `validate_school_requirements()`, `remediate_school_enrichment()`, `validate_and_remediate_school()`
-- ✅ Tracks validation attempts in audit log
+#### **Phase 3: School Evaluation & Context**
+- ✅ NAVEEN evaluates NCES database records, produces component scores (Academic Rigor, Resource Investment, Student Outcomes, Equity & Access)
+- ✅ MOANA builds AI-powered contextual narratives using Naveen evaluation + student data
+- ✅ School data imported via NCES CCD CSV upload (no external API calls at runtime)
+- ✅ Fuzzy school matching (threshold 0.55) for CSV-covered states
 
 #### **Phase 4: Rigor Weighting & Report Formatting**
 - ✅ RAPUNZEL: `_calculate_contextual_rigor_index()` (0-5 scale)
@@ -135,32 +135,32 @@
 │                          │                        │                         │
 │ 🌊 MOANA                 │                        │ 🗡️ MULAN               │
 │    School Context        │                        │    Recommendation Reader│
-│    Analyzer              │                        │    [Model: GPT-4]       │
-│    [Model: GPT-4]        │                        │                         │
+│    Narrative Builder      │                        │    [Model: GPT-4]       │
+│    [Model: Workhorse]     │                        │                         │
 │                          │                        │  Extracts:              │
-│  Extracts:               │                        │  ✓ Recommender names    │
-│  ✓ School name/type      │                        │  ✓ Recommender roles    │
-│  ✓ School size/location  │                        │  ✓ Strength areas       │
-│  ✓ AP/Honors density     │                        │  ✓ Weakness areas       │
-│  ✓ STEM programs         │                        │  ✓ Leadership examples  │
-│  ✓ Resources/investment  │                        │  ✓ Collaboration skills │
-│  ✓ Graduation rates      │                        │  ✓ Work ethic           │
-│  ✓ Socioeconomic context │                        │  ✓ Character traits     │
-│  ✓ Regional salary data  │                        │  ✓ Recommendation tone  │
-│  ✓ Community sentiment   │                        │  ✓ Evidence of impact   │
-│                          │                        │                         │
-│  Deep Reasoning:         │                        │  Deep Reasoning:        │
-│  - School constraint     │                        │  - Recommender bias     │
-│  - Resource availability │                        │  - Language analysis    │
-│  - Opportunity equity    │                        │  - Enthusiasm level     │
-│  - SES context           │                        │  - Specificity vs generic
-│  - Capstone analysis     │                        │  - Red flags            │
-│  - Enriched DB lookup    │                        │                         │
+│  Uses:                   │                        │  ✓ Recommender names    │
+│  ✓ NCES database fields  │                        │  ✓ Recommender roles    │
+│  ✓ Naveen's evaluation   │                        │  ✓ Strength areas       │
+│  ✓ Student coursework    │                        │  ✓ Weakness areas       │
+│  ✓ Student grades/GPA    │                        │  ✓ Leadership examples  │
+│                          │                        │  ✓ Collaboration skills │
+│  Produces:               │                        │  ✓ Work ethic           │
+│  ✓ Contextual narrative  │                        │  ✓ Character traits     │
+│  ✓ Opportunity scores    │                        │  ✓ Recommendation tone  │
+│  ✓ SES-level inference   │                        │  ✓ Evidence of impact   │
+│  ✓ AP utilization rate   │                        │                         │
+│                          │                        │  Deep Reasoning:        │
+│  Deep Reasoning:         │                        │  - Recommender bias     │
+│  - Context defines       │                        │  - Language analysis    │
+│    opportunity            │                        │  - Enthusiasm level     │
+│  - What school offered   │                        │  - Specificity vs generic
+│  - What student did      │                        │  - Red flags            │
+│  - Equity factors        │                        │                         │
 │                          │                        │  Telemetry:             │
 │  Telemetry:              │                        │  - Recommenders found   │
-│  - School enrichment     │                        │  - Sentiment analysis   │
-│  - Data confidence       │                        │  - Strength categories  │
-│  - Opportunity scoring   │                        │  - Generic/specific %   │
+│  - Context confidence    │                        │  - Sentiment analysis   │
+│  - Narrative quality     │                        │  - Strength categories  │
+│  - Data completeness     │                        │  - Generic/specific %   │
 └──────────────────────────┘                        └─────────────────────────┘
         ↓                                                      ↓
         └───────────────────────────┬──────────────────────────┘
@@ -198,24 +198,25 @@
 ┌─────────────────────────────────────────────────────────────────┐
 │  STAGE 5: SCHOOL ENRICHMENT & CONTEXTUAL ANALYSIS               │
 │                                                                 │
-│  🏰 NAVEEN (School Data Scientist)         [Model: GPT-4.1]    │
-│     School Enrichment Analyzer             (Mini - Fast)       │
+│  🏰 NAVEEN (School Data Scientist)         [Model: Workhorse]    │
+│     School Evaluation from NCES Data                            │
 │                                                                 │
 │  Uses:                                                          │
-│  - Enhanced database of school profiles                         │
-│  - Human-approved school data (when available)                │
-│  - Web sources for verification                               │
-│  - Opportunity scoring model                                   │
+│  - NCES CCD database records (imported via CSV)                 │
+│  - Enrollment, FRPL%, Title I, per-pupil expenditure           │
+│  - AP courses, graduation rate, student-teacher ratio           │
+│  - Charter/magnet flags, locale classification                  │
 │                                                                 │
-│  Computes:                                                      │
+│  Produces:                                                      │
+│  ✓ School Evaluation Report with component scores              │
+│    - Academic Rigor (AP density, program depth)                │
+│    - Resource Investment (per-pupil $, STR, Title I)            │
+│    - Student Outcomes (graduation rate, trends)                │
+│    - Equity & Access (FRPL%, underserved programs)             │
 │  ✓ Opportunity Score (0-100 composite)                        │
-│    - Academic opportunity (35%): AP density, STEM, IB         │
-│    - Resources (25%): Class size, teacher ratio, investment   │
-│    - College prep (25%): College acceptance rate, programs    │
-│    - Socioeconomic (15%): Free lunch %, median salary context │
-│  ✓ School performance trajectory                              │
-│  ✓ Resource constraint analysis                               │
-│  ✓ Peer comparison metrics                                    │
+│  ✓ School summary narrative                                   │
+│  ✓ Key insights + context for downstream agents               │
+│  ✓ Data quality assessment (verified/rich/partial/sparse)      │
 │                                                                 │
 │  Deep Reasoning (Mini-Model):                                  │
 │  - Score calculation transparency                              │
