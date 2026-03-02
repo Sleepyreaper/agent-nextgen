@@ -1,17 +1,15 @@
-"""Moana School Context Analyzer - Discovers school environment and program access context."""
+"""Moana School Context Analyzer — Contextualizes student achievements within
+their school environment using NCES database data and AI-powered narrative analysis.
+
+Workflow:
+    NCES database → school_enriched_data → Naveen evaluation →
+    Moana contextual narrative → Merlin final evaluation
+"""
 
 from typing import Dict, List, Any, Optional, Tuple
 from openai import AzureOpenAI
 from src.agents.base_agent import BaseAgent
 from src.agents.telemetry_helpers import agent_run
-
-try:
-    from src.services.naep_data_client import get_naep_client
-except Exception:
-    try:
-        from services.naep_data_client import get_naep_client
-    except Exception:
-        get_naep_client = None
 
 import re
 import json
@@ -19,17 +17,23 @@ import json
 
 class MoanaSchoolContext(BaseAgent):
     """
-    Specialized agent (Moana) for deeply understanding a student's school context. Model is determined by configuration when not explicitly provided.
-    
-    This agent analyzes:
-    - The high school itself: type, size, location (rural/urban/suburban)
-    - What programs the school offers (AP classes, IB, Honors, STEM)
-    - School resources compared to other schools
-    - Socioeconomic factors affecting school quality
-    - How much of the school's available resources the student utilized
-    
-    Key insight: A 4.0 GPA from a school with 2 AP classes is different 
-    from a 4.0 GPA from a school with 20 AP classes. This agent provides that context.
+    Moana — Student School Context Analyzer
+
+    Uses NCES database data and AI to produce a rich contextual narrative about
+    each student's school environment. Key outputs:
+
+    * What did this school offer? (programs, resources, demographics)
+    * What did the student do with what was available? (course selection, rigor)
+    * How should their achievements be interpreted in context?
+    * Are there equity factors that make their record more impressive?
+
+    The contextual narrative is the key deliverable — a nuanced, data-grounded
+    assessment that helps Merlin and reviewers understand what the student's
+    academic record means given their school's capabilities and constraints.
+
+    Key insight: A 4.0 GPA from a school with 2 AP classes and 70% free lunch
+    is categorically different from the same GPA at a school with 20 APs and
+    15% free lunch. Context defines opportunity.
     """
     
     def __init__(
@@ -208,109 +212,112 @@ class MoanaSchoolContext(BaseAgent):
         application_id: Optional[int] = None
     ) -> Dict[str, Any]:
         """
-        Fast path: Use pre-enriched school data from Aurora (via school_workflow).
-        
-        Instead of analyzing the school from scratch, we:
-        1. Use Aurora's enriched school profile
-        2. Extract student's program participation from transcript
-        3. Calculate opportunity scores with the pre-analyzed school data
-        4. Build contextual summary
-        
-        This is much faster and more consistent than re-analyzing each school.
-        
+        Enriched path: Use NCES database school data + Naveen's evaluation to
+        build a deep contextual understanding of the student's school environment.
+
+        Workflow:
+        1. Extract student's program participation from transcript (regex)
+        2. Build school profile from enrichment data (database + Naveen eval)
+        3. Calculate opportunity scores with real data
+        4. Use AI to produce a rich contextual narrative about this student
+           at THIS school — how should their achievements be interpreted?
+
         Args:
             student_name: Student's name
             application: Application data
             transcript_text: Grade report text
             rapunzel_grades_data: Grade analysis from Rapunzel
-            school_enrichment: Pre-enriched school data from Aurora
-            
+            school_enrichment: Pre-enriched school data from database
+
         Returns:
-            School context analysis using enriched data
+            School context analysis with AI-powered contextual narrative
         """
         try:
             print(f"  ✓ Using enriched school data: {school_enrichment.get('school_name')}")
-            
+
             # Extract what student participated in
             program_participation = await self._extract_program_participation(
                 transcript_text,
                 student_name
             )
-            
-            # Fetch live NAEP state-level data for additional context
-            naep_context = {}
-            state_code = school_enrichment.get('state_code', '').upper()
-            if state_code and get_naep_client:
-                try:
-                    naep_client = get_naep_client()
-                    naep_profile = naep_client.get_state_education_profile(state_code)
-                    if not naep_profile.get('error'):
-                        naep_context = {
-                            'naep_source': 'Nation\'s Report Card (NAEP)',
-                            'naep_year': naep_profile.get('year'),
-                            'naep_state_profile': naep_profile,
-                        }
-                        # Extract headline numbers for easy access
-                        math_g8 = (naep_profile.get('subjects', {})
-                                   .get('mathematics', {})
-                                   .get('grade_8', {}))
-                        reading_g8 = (naep_profile.get('subjects', {})
-                                      .get('reading', {})
-                                      .get('grade_8', {}))
-                        naep_context['state_math_mean_g8'] = (
-                            math_g8.get('state_mean', {}).get('All students'))
-                        naep_context['national_math_mean_g8'] = (
-                            math_g8.get('national_mean', {}).get('All students'))
-                        naep_context['state_reading_mean_g8'] = (
-                            reading_g8.get('state_mean', {}).get('All students'))
-                        naep_context['national_reading_mean_g8'] = (
-                            reading_g8.get('national_mean', {}).get('All students'))
-                        print(f"  📊 NAEP data loaded for {state_code}")
-                except Exception as naep_err:
-                    print(f"  ⚠ NAEP data unavailable: {naep_err}")
 
-            # Build school profile from enrichment
+            # Build school profile from enrichment — use all available DB fields
             school_profile = {
                 'school_name': school_enrichment.get('school_name'),
-                'enrollment_size': school_enrichment.get('enrollment_size'),
+                'school_district': school_enrichment.get('school_district'),
+                'state_code': school_enrichment.get('state_code'),
+                'county': school_enrichment.get('county_name'),
+                'enrollment_size': school_enrichment.get('total_students') or school_enrichment.get('enrollment_size'),
+                'student_teacher_ratio': school_enrichment.get('student_teacher_ratio'),
                 'socioeconomic_level': school_enrichment.get('socioeconomic_level'),
-                'ap_count': school_enrichment.get('ap_classes_count', 0),
-                'ib_offerings': school_enrichment.get('ib_offerings', 0),
-                'honors_programs': school_enrichment.get('honors_programs', 0),
-                'stem_programs': school_enrichment.get('stem_programs', 0),
+                'ap_count': self._safe_count(school_enrichment.get('ap_classes_count') or school_enrichment.get('ap_course_count', 0)),
+                'ib_offerings': school_enrichment.get('ib_program_available') or school_enrichment.get('ib_offerings', 0),
+                'honors_programs': school_enrichment.get('honors_course_count') or school_enrichment.get('honors_programs', 0),
+                'stem_programs': school_enrichment.get('stem_program_available') or school_enrichment.get('stem_programs', 0),
+                'dual_enrollment': school_enrichment.get('dual_enrollment_available', False),
                 'graduation_rate': school_enrichment.get('graduation_rate'),
-                'college_placement_rate': school_enrichment.get('college_placement_rate'),
+                'college_placement_rate': school_enrichment.get('college_acceptance_rate') or school_enrichment.get('college_placement_rate'),
+                'free_lunch_pct': school_enrichment.get('free_lunch_percentage'),
+                'is_title_i': school_enrichment.get('is_title_i'),
+                'is_charter': school_enrichment.get('is_charter'),
+                'is_magnet': school_enrichment.get('is_magnet'),
+                'locale_code': school_enrichment.get('locale_code'),
+                'district_exp_per_pupil': school_enrichment.get('district_exp_per_pupil'),
+                'school_investment_level': school_enrichment.get('school_investment_level'),
+                'opportunity_score': school_enrichment.get('opportunity_score'),
                 'diversity_index': school_enrichment.get('diversity_index'),
-                'data_sources': school_enrichment.get('web_sources_analyzed', []),
                 'analysis_date': school_enrichment.get('analysis_date'),
-                'enrichment_source': 'aurora_cached'
+                'enrichment_source': 'nces_database',
+                # Naveen's evaluation insights (if present)
+                'school_summary': school_enrichment.get('school_profile', {}).get('school_summary', '') if isinstance(school_enrichment.get('school_profile'), dict) else '',
+                'context_for_student': school_enrichment.get('school_profile', {}).get('context_for_student', '') if isinstance(school_enrichment.get('school_profile'), dict) else '',
             }
-            
-            # Quick SES context from enrichment
+
+            # SES context from real data
+            free_lunch = school_enrichment.get('free_lunch_percentage')
+            ses_level = self._infer_ses_level(free_lunch)
             ses_context = {
-                'socioeconomic_level': school_enrichment.get('socioeconomic_level', 'unknown'),
+                'socioeconomic_level': ses_level,
+                'free_lunch_pct': free_lunch,
+                'is_title_i': school_enrichment.get('is_title_i'),
+                'district_exp_per_pupil': school_enrichment.get('district_exp_per_pupil'),
+                'district_poverty_pct': school_enrichment.get('district_poverty_pct'),
                 'diversity_index': school_enrichment.get('diversity_index'),
                 'regional_context': f"{school_enrichment.get('state_code', 'US')} school",
-                'based_on_enrichment': True
+                'based_on_enrichment': True,
             }
-            
+
             # Calculate scores with enriched data
             scores = self._calculate_opportunity_scores_from_enrichment(
                 school_profile,
                 program_participation,
                 school_enrichment
             )
-            
+
             # Build resources summary
             school_resources = {
                 'ap_programs_available': school_profile.get('ap_count', 0),
-                'ib_available': bool(school_profile.get('ib_offerings', 0)),
-                'stem_available': bool(school_profile.get('stem_programs', 0)),
+                'ib_available': bool(school_profile.get('ib_offerings')),
+                'stem_available': bool(school_profile.get('stem_programs')),
+                'dual_enrollment_available': bool(school_profile.get('dual_enrollment')),
                 'enrollment_size_category': self._categorize_size(school_profile.get('enrollment_size')),
                 'investment_level': school_enrichment.get('school_investment_level', 'unknown'),
-                'opportunity_score': school_enrichment.get('opportunity_score', 0)
+                'opportunity_score': school_enrichment.get('opportunity_score', 0),
+                'student_teacher_ratio': school_profile.get('student_teacher_ratio'),
+                'is_title_i': school_profile.get('is_title_i'),
             }
-            
+
+            # Build AI-powered contextual narrative
+            contextual_summary = await self._build_contextual_narrative(
+                student_name,
+                school_profile,
+                program_participation,
+                scores,
+                rapunzel_grades_data,
+                ses_context,
+                school_resources,
+            )
+
             # Final analysis
             analysis = {
                 'status': 'success',
@@ -318,24 +325,17 @@ class MoanaSchoolContext(BaseAgent):
                 'school': {
                     'name': school_enrichment.get('school_name'),
                     'state': school_enrichment.get('state_code'),
-                    'identification_confidence': 0.99  # High confidence from Aurora
+                    'district': school_enrichment.get('school_district'),
+                    'identification_confidence': 0.99,
                 },
                 'school_profile': school_profile,
                 'ses_context': ses_context,
                 'program_participation': program_participation,
                 'school_resources': school_resources,
                 'opportunity_scores': scores,
-                'naep_state_data': naep_context if naep_context else None,
-                'contextual_summary': self._build_summary_from_enrichment(
-                    student_name,
-                    school_enrichment,
-                    program_participation,
-                    scores,
-                    rapunzel_grades_data,
-                    naep_context=naep_context,
-                ),
+                'contextual_summary': contextual_summary,
                 'model_used': self.model,
-                'data_source': 'enriched_aurora'  # Track that this used Aurora data
+                'data_source': 'nces_database',
             }
             
             self.add_to_history("assistant", json.dumps(analysis, default=str)[:1000])
@@ -414,52 +414,289 @@ class MoanaSchoolContext(BaseAgent):
         program_participation: Dict[str, Any],
         school_enrichment: Dict[str, Any]
     ) -> Dict[str, float]:
-        """Calculate scores using pre-analyzed school data."""
-        # Use Aurora's opportunity score as base
-        base_score = float(school_enrichment.get('opportunity_score', 50))
-        
-        # Adjust based on what student actually participated in
-        participation_adjustment = 0
+        """Calculate scores using real NCES database data and student activity."""
+        # ── Program Access Score (0-100): What's available at this school ──
+        ap_available = self._safe_count(school_profile.get('ap_count', 0))
+        honors_available = self._safe_count(school_profile.get('honors_programs', 0))
+        has_ib = bool(school_profile.get('ib_offerings'))
+        has_stem = bool(school_profile.get('stem_programs'))
+        has_dual = bool(school_profile.get('dual_enrollment'))
+
+        program_access = min(100, (
+            (min(ap_available, 20) / 20) * 30 +     # AP breadth (0-30)
+            (min(honors_available, 30) / 30) * 20 +  # Honors breadth (0-20)
+            (15 if has_ib else 0) +                   # IB availability (0-15)
+            (15 if has_stem else 0) +                 # STEM programs (0-15)
+            (10 if has_dual else 0) +                 # Dual enrollment (0-10)
+            10                                        # Base for any school
+        ))
+
+        # ── Program Participation Score (0-100): What the student used ──
         ap_taken = self._safe_count(program_participation.get('ap_courses_taken', 0))
         honors_taken = self._safe_count(program_participation.get('honors_courses_taken', 0))
-        advanced_count = self._safe_count(
-            program_participation.get('advanced_courses_count', program_participation.get('advanced_courses', []))
-        )
-        if ap_taken > 0:
-            participation_adjustment += 10
-        if honors_taken > 0:
-            participation_adjustment += 5
-        if advanced_count > 5:
-            participation_adjustment += 10
-        
+        stem_taken = len(program_participation.get('stem_courses', []))
+        total_advanced = program_participation.get('total_advanced_courses', ap_taken + honors_taken + stem_taken)
+
+        participation = min(100, (
+            (min(ap_taken, 8) / 8) * 40 +            # AP participation (0-40)
+            (min(honors_taken, 10) / 10) * 35 +      # Honors participation (0-35)
+            (min(stem_taken, 5) / 5) * 15 +           # STEM participation (0-15)
+            (10 if total_advanced >= 3 else 0)         # Rigor bonus (0-10)
+        ))
+
+        # ── Relative Advantage Score (0-100): Student vs school capacity ──
+        if ap_available > 0:
+            ap_utilization = min(ap_taken / ap_available, 1.0) * 100
+        else:
+            # No AP courses available — student can't be faulted
+            ap_utilization = 70 if ap_taken == 0 else 90
+
+        relative_advantage = min(100, (
+            ap_utilization * 0.50 +
+            participation * 0.30 +
+            (20 if program_participation.get('gt_program') else 0)
+        ))
+
+        # ── Context-Adjusted Score: Factor in NCES benchmark comparisons ──
+        # A student who maximizes limited resources deserves extra credit
+        context_bonus = 0
+        free_lunch_pct = school_enrichment.get('free_lunch_percentage')
+        if free_lunch_pct is not None:
+            try:
+                fl = float(free_lunch_pct)
+                if fl > 60 and total_advanced >= 2:
+                    context_bonus += 10  # High-need school, student still took advanced
+                elif fl > 40 and total_advanced >= 3:
+                    context_bonus += 5
+            except (ValueError, TypeError):
+                pass
+
+        overall = min(100, (
+            program_access * 0.25 +
+            participation * 0.30 +
+            relative_advantage * 0.30 +
+            context_bonus +
+            15  # Base
+        ))
+
+        # Use Naveen's opportunity score if available (weighted blend)
+        naveen_score = school_enrichment.get('opportunity_score')
+        if naveen_score:
+            try:
+                overall = overall * 0.6 + float(naveen_score) * 0.4
+            except (ValueError, TypeError):
+                pass
+
         return {
-            'opportunity_score': min(100, base_score + participation_adjustment),
-            'program_access_score': school_profile.get('ap_count', 0) * 2,  # Roughly
-            'program_participation_score': advanced_count * 5,
-            'relative_advantage_score': base_score / 100 * 50  # Normalized
+            'program_access_score': round(program_access, 1),
+            'program_participation_score': round(participation, 1),
+            'relative_advantage_score': round(relative_advantage, 1),
+            'overall_opportunity_score': round(overall, 1),
+            'context_bonus': context_bonus,
+            'interpretation': self._interpret_scores(program_access, participation, {
+                'ses_level': self._infer_ses_level(free_lunch_pct),
+            }),
         }
     
-    def _build_summary_from_enrichment(
+    @staticmethod
+    def _infer_ses_level(free_lunch_pct) -> str:
+        """Infer SES level from free/reduced lunch percentage."""
+        if free_lunch_pct is None:
+            return 'unknown'
+        try:
+            fl = float(free_lunch_pct)
+        except (ValueError, TypeError):
+            return 'unknown'
+        if fl < 20:
+            return 'High'
+        if fl < 40:
+            return 'Medium-High'
+        if fl < 60:
+            return 'Medium'
+        return 'Low'
+
+    async def _build_contextual_narrative(
         self,
         student_name: str,
-        school_enrichment: Dict[str, Any],
+        school_profile: Dict[str, Any],
         program_participation: Dict[str, Any],
         scores: Dict[str, float],
         rapunzel_grades_data: Optional[Dict[str, Any]] = None,
-        naep_context: Optional[Dict[str, Any]] = None,
+        ses_context: Optional[Dict[str, Any]] = None,
+        school_resources: Optional[Dict[str, Any]] = None,
     ) -> str:
-        """Build contextual summary using enriched school data."""
-        school_name = school_enrichment.get('school_name', 'their school')
-        ap_available = self._safe_count(school_enrichment.get('ap_classes_count', 0))
+        """
+        Use AI to produce a rich contextual narrative about this student's
+        school environment and how their achievements should be interpreted.
+
+        This is the KEY output of Moana — a nuanced, fact-grounded analysis
+        that helps Merlin and reviewers understand what the student's record
+        means in the context of their school's capabilities and constraints.
+        """
+        school_name = school_profile.get('school_name', 'their school')
+
+        # Build the context data for AI
+        school_facts = []
+        for label, key in [
+            ("Enrollment", "enrollment_size"),
+            ("Student-Teacher Ratio", "student_teacher_ratio"),
+            ("Graduation Rate", "graduation_rate"),
+            ("College Placement Rate", "college_placement_rate"),
+            ("Free/Reduced Lunch %", "free_lunch_pct"),
+            ("AP Courses Offered", "ap_count"),
+            ("Honors Courses", "honors_programs"),
+            ("Title I School", "is_title_i"),
+            ("Charter School", "is_charter"),
+            ("Magnet School", "is_magnet"),
+            ("Dual Enrollment", "dual_enrollment"),
+            ("STEM Programs", "stem_programs"),
+            ("IB Program", "ib_offerings"),
+            ("Investment Level", "school_investment_level"),
+            ("Locale", "locale_code"),
+            ("District Per-Pupil Expenditure", "district_exp_per_pupil"),
+            ("Opportunity Score", "opportunity_score"),
+        ]:
+            val = school_profile.get(key)
+            if val is not None and val != '' and val != 0 and val is not False:
+                school_facts.append(f"  {label}: {val}")
+
+        # Student's coursework
+        ap_taken = program_participation.get('ap_courses_taken', [])
+        honors_taken = self._safe_count(program_participation.get('honors_courses_taken', 0))
+        stem_courses = program_participation.get('stem_courses', [])
+        total_advanced = program_participation.get('total_advanced_courses', 0)
+
+        student_facts = [
+            f"  AP Courses Taken: {len(ap_taken) if isinstance(ap_taken, list) else ap_taken}",
+        ]
+        if isinstance(ap_taken, list) and ap_taken:
+            student_facts.append(f"  AP Subjects: {', '.join(ap_taken[:10])}")
+        student_facts.append(f"  Honors Courses Taken: {honors_taken}")
+        if stem_courses:
+            student_facts.append(f"  STEM Courses: {', '.join(stem_courses[:8])}")
+        student_facts.append(f"  Total Advanced Courses: {total_advanced}")
+        if program_participation.get('gt_program'):
+            student_facts.append("  Gifted/Accelerated Program: Yes")
+
+        # Grade data
+        grade_facts = []
+        if rapunzel_grades_data:
+            if rapunzel_grades_data.get('gpa') is not None:
+                grade_facts.append(f"  GPA: {rapunzel_grades_data['gpa']}")
+            if rapunzel_grades_data.get('gpa_scale'):
+                grade_facts.append(f"  GPA Scale: {rapunzel_grades_data['gpa_scale']}")
+            if rapunzel_grades_data.get('class_rank'):
+                grade_facts.append(f"  Class Rank: {rapunzel_grades_data['class_rank']}")
+            if rapunzel_grades_data.get('weighted_gpa') is not None:
+                grade_facts.append(f"  Weighted GPA: {rapunzel_grades_data['weighted_gpa']}")
+
+        # Scores
+        score_facts = [
+            f"  Program Access Score: {scores.get('program_access_score', 'N/A')}/100",
+            f"  Program Participation Score: {scores.get('program_participation_score', 'N/A')}/100",
+            f"  Relative Advantage Score: {scores.get('relative_advantage_score', 'N/A')}/100",
+            f"  Overall Opportunity Score: {scores.get('overall_opportunity_score', 'N/A')}/100",
+        ]
+        if scores.get('context_bonus', 0) > 0:
+            score_facts.append(f"  Context Bonus: +{scores['context_bonus']} (high-need school, student pursued rigor)")
+
+        # Naveen's insights if available
+        naveen_summary = school_profile.get('school_summary', '')
+        naveen_context = school_profile.get('context_for_student', '')
+
+        prompt = f"""You are Moana, an education equity expert analyzing a scholarship applicant's school context.
+
+STUDENT: {student_name}
+SCHOOL: {school_name}
+
+SCHOOL DATA (from NCES database):
+{chr(10).join(school_facts) if school_facts else '  Limited data available'}
+
+{"SCHOOL EVALUATION (from Naveen):" + chr(10) + "  " + naveen_summary if naveen_summary else ""}
+{"STUDENT CONTEXT NOTE:" + chr(10) + "  " + naveen_context if naveen_context else ""}
+
+STUDENT'S COURSEWORK:
+{chr(10).join(student_facts)}
+
+{"GRADES:" + chr(10) + chr(10).join(grade_facts) if grade_facts else "GRADES: Not yet available"}
+
+OPPORTUNITY SCORES:
+{chr(10).join(score_facts)}
+
+NCES BENCHMARKS:
+- National graduation rate: 87% | GA: 84%
+- Free/reduced lunch national avg: 52%
+- AP participation national avg: ~35% take at least 1 AP
+- Student-teacher ratio national avg: ~16:1
+- Per-pupil spending national avg: ~$14,000
+
+Write a 6-10 sentence contextual assessment of {student_name}'s school environment and how their
+academic record should be interpreted. Address:
+1. What kind of school is this? (resources, demographics, opportunities available)
+2. How did the student use what was available? (Did they maximize opportunities?)
+3. How should their GPA/grades be interpreted given this school context?
+4. What does their course selection reveal about their motivation and initiative?
+5. Are there equity factors (high-need school, limited AP access, Title I) that make
+   their achievements more impressive?
+
+Be specific and grounded in the data. Avoid generic praise. This assessment will be used by
+the final evaluator (Merlin) to make scholarship decisions."""
+
+        try:
+            response = self._create_chat_completion(
+                operation="moana.contextual_narrative",
+                model=self.model,
+                messages=[
+                    {"role": "system", "content": (
+                        "You are Moana, an education equity and school context expert. "
+                        "You produce concise, data-grounded contextual assessments that help "
+                        "scholarship evaluators understand what a student's achievements mean "
+                        "given their school environment. Be specific, cite the data, and avoid "
+                        "generic statements. A 4.0 GPA from a school with 2 AP courses and 75% "
+                        "free lunch is categorically different from the same GPA at a school "
+                        "with 20 APs and 15% free lunch. Context defines opportunity."
+                    )},
+                    {"role": "user", "content": prompt},
+                ],
+                max_completion_tokens=800,
+                temperature=0.5,
+            )
+
+            if (response and hasattr(response, 'choices')
+                    and response.choices
+                    and getattr(response.choices[0].message, 'content', None)):
+                narrative = response.choices[0].message.content.strip()
+                print(f"  ✓ AI contextual narrative generated ({len(narrative)} chars)")
+                return narrative
+
+        except Exception as e:
+            print(f"  ⚠ AI narrative failed ({e}), falling back to template")
+
+        # Fallback: template-based summary
+        return self._build_template_summary(
+            student_name, school_profile, program_participation,
+            scores, rapunzel_grades_data
+        )
+
+    def _build_template_summary(
+        self,
+        student_name: str,
+        school_profile: Dict[str, Any],
+        program_participation: Dict[str, Any],
+        scores: Dict[str, float],
+        rapunzel_grades_data: Optional[Dict[str, Any]] = None,
+    ) -> str:
+        """Fallback template-based summary when AI call fails."""
+        school_name = school_profile.get('school_name', 'their school')
+        ap_available = self._safe_count(school_profile.get('ap_count', 0))
         ap_taken = self._safe_count(program_participation.get('ap_courses_taken', 0))
-        opportunity = school_enrichment.get('opportunity_score', 50)
-        investment_level = school_enrichment.get('school_investment_level', 'moderate')
-        
+        investment_level = school_profile.get('school_investment_level', 'moderate')
+
         parts = [
             f"{student_name} attends {school_name}, a {investment_level}-investment school "
-            f"with an opportunity score of {opportunity}/100."
+            f"with an opportunity score of {school_profile.get('opportunity_score', 'N/A')}/100."
         ]
-        
+
         if ap_available > 0:
             parts.append(
                 f"The school offers {ap_available} AP course(s). "
@@ -467,49 +704,31 @@ class MoanaSchoolContext(BaseAgent):
                 f"demonstrating {'strong' if ap_taken >= 3 else 'moderate'} engagement "
                 f"with advanced curricula."
             )
-        
+
         honors_taken = self._safe_count(program_participation.get('honors_courses_taken', 0))
         if honors_taken > 0:
             parts.append(
                 f"{student_name} also participated in {honors_taken} "
                 f"honors courses, showing consistent rigor seeking."
             )
-        
-        contextual_insight = (
-            f"In the context of {school_name}'s resources and demographics, "
-            f"{student_name}'s course selection demonstrates a relative advantage score of "
-            f"{scores.get('relative_advantage_score', 0):.0f}/50."
-        )
-        parts.append(contextual_insight)
-        
+
+        free_lunch = school_profile.get('free_lunch_pct')
+        if free_lunch is not None:
+            try:
+                fl = float(free_lunch)
+                if fl > 52:
+                    parts.append(
+                        f"The school's free/reduced lunch rate of {fl:.0f}% exceeds "
+                        f"the national average (52%), indicating a higher-need environment."
+                    )
+            except (ValueError, TypeError):
+                pass
+
         if rapunzel_grades_data and rapunzel_grades_data.get('gpa'):
             parts.append(
-                f"Combined with a GPA of {rapunzel_grades_data.get('gpa')}, "
+                f"Combined with a GPA of {rapunzel_grades_data['gpa']}, "
                 f"{student_name} shows strong academic performance within their school context."
             )
-        
-        # NAEP state benchmarks
-        if naep_context:
-            state_math = naep_context.get('state_math_mean_g8')
-            nat_math = naep_context.get('national_math_mean_g8')
-            state_read = naep_context.get('state_reading_mean_g8')
-            nat_read = naep_context.get('national_reading_mean_g8')
-            sc = school_enrichment.get('state_code', 'the state')
-            if state_math and nat_math:
-                diff = round(state_math - nat_math, 1)
-                direction = 'above' if diff >= 0 else 'below'
-                parts.append(
-                    f"NAEP data shows {sc} grade-8 math scores are "
-                    f"{abs(diff)} points {direction} the national mean "
-                    f"({state_math} vs {nat_math})."
-                )
-            if state_read and nat_read:
-                diff = round(state_read - nat_read, 1)
-                direction = 'above' if diff >= 0 else 'below'
-                parts.append(
-                    f"In reading, {sc} scores {abs(diff)} points {direction} "
-                    f"the national mean ({state_read} vs {nat_read})."
-                )
 
         return " ".join(parts)
     

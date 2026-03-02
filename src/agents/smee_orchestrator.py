@@ -489,6 +489,25 @@ class SmeeOrchestrator(BaseAgent):
             )
             return cached_school
         
+        # Check if this state has authoritative CSV-imported data
+        if state_code and self.db and self.db.state_has_csv_school_data(state_code):
+            logger.warning(
+                f"⚠️ STEP 2.5: School '{high_school}' not found in CSV-imported "
+                f"list for {state_code}. No new record will be created.",
+                extra={'school': high_school, 'state': state_code}
+            )
+            return {
+                'school_name': high_school,
+                'state_code': state_code,
+                'analysis_status': 'unmatched',
+                'unmatched': True,
+                'data_source': 'unmatched_csv_state',
+                'note': (
+                    f"School '{high_school}' could not be matched to any school "
+                    f"in the authoritative {state_code} CSV import."
+                ),
+            }
+
         # School not in database - call NAVEEN to enrich it
         logger.info(
             f"🔄 STEP 2.5: High school not cached, calling NAVEEN for enrichment...",
