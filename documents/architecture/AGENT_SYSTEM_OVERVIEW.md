@@ -1,7 +1,7 @@
 # Agent System - Complete Overview
 
-**Date**: February 18, 2026  
-**Status**: ✅ All agents have Disney character names and model assignments
+**Last Updated**: June 2025  
+**Status**: ✅ All 15 agents operational with 4-tier model architecture
 
 ---
 
@@ -9,259 +9,176 @@
 
 ### Main Application Evaluation Pipeline
 
-| # | Disney Character | Agent Name | Class Name | Model | Purpose |
-|---|---|---|---|---|---|
-| 1 | 👸 **Tiana** | Tiana Application Reader | TianaApplicationReader | gpt-4 (standard) | Reads and extracts core application data |
-| 2 | 💇 **Rapunzel** | Rapunzel Grade Reader | RapunzelGradeReader | gpt-4 (standard) | Analyzes transcripts and grade trends |
-| 3 | 🌊 **Moana** | Moana School Context | MoanaSchoolContext | gpt-4 (standard) | Enriched school context analysis |
-| 4 | 🗡️ **Mulan** | Mulan Recommendation Reader | MulanRecommendationReader | gpt-4 (standard) | Extracts application essays/recommendations |
-| 5 | 🧙 **Merlin** | Merlin Student Evaluator | MerlinStudentEvaluator | gpt-4 (standard) | Final evaluation and scoring |
-| 6 | ✨ **Aurora** | Aurora Agent | AuroraAgent | N/A (local) | Formats final output |
-| 7 | 🎭 **Gaston** | Gaston Evaluator | GastonEvaluator | gpt-4 (standard) | Backup evaluation |
+| # | Disney Character | Class Name | Model Tier | Purpose |
+|---|---|---|---|---|
+| 1 | 👸 **Tiana** | `TianaApplicationReader` | Workhorse | Reads and extracts core application data |
+| 2 | 💇 **Rapunzel** | `RapunzelGradeReader` | Premium | Analyzes transcripts and grade trends |
+| 3 | 🌊 **Moana** | `MoanaSchoolContext` | Workhorse | Enriched school context analysis |
+| 4 | 🗡️ **Mulan** | `MulanRecommendationReader` | Workhorse | Extracts recommendation letters |
+| 5 | 🧙 **Merlin** | `MerlinStudentEvaluator` | Merlin | Final comprehensive evaluation and scoring |
+| 6 | ✨ **Aurora** | `AuroraAgent` | N/A (local) | Formats final output |
+| 7 | 🎭 **Gaston** | `GastonEvaluator` | Workhorse | Counter-evaluation and bias check |
 
 ### Support & Analysis Agents
 
-| # | Disney Character | Agent Name | Class Name | Model | Purpose |
-|---|---|---|---|---|---|
-| 8 | 📖 **Belle** | Belle Document Analyzer | BelleDocumentAnalyzer | gpt-4 (standard) | Analyzes uploaded documents |
-| 9 | 🔍 **Milo** | Milo Data Scientist | MiloDataScientist | **gpt-4.1 (mini)** ⭐ | Extracts patterns from training data |
-| 10 | 🏰 **Naveen** | Naveen School Data Scientist | NaveenSchoolDataScientist | **gpt-4.1 (mini)** ⭐ | Builds enriched school profiles |
-| 11 | 🪶 **Scuttle** | Scuttle Feedback Triage | ScuttleFeedbackTriageAgent | gpt-4 (standard) | Triages user feedback/issues |
-| 12 | 🧚 **Fairy Godmother** | Fairy Godmother Document Generator | FairyGodmotherDocumentGenerator | N/A (programmatic) | Generates recommendation documents |
-
-### Orchestration
-
-| Character | Agent Name | Class Name | Model | Purpose |
+| # | Disney Character | Class Name | Model Tier | Purpose |
 |---|---|---|---|---|
-| 💨 **Smee** | Smee Orchestrator | SmeeOrchestrator | gpt-4 (standard) | Coordinates all agents |
+| 8 | 📖 **Belle** | `BelleDocumentAnalyzer` | Lightweight | PDF/DOCX parsing, AI section detection, OCR |
+| 9 | 🔍 **Milo** | `MiloDataScientist` | Premium | ML training, validation, ranking |
+| 10 | 🏰 **Naveen** | `NaveenSchoolDataScientist` | Workhorse | School-level data science & enrichment |
+| 11 | 🧜 **Ariel** | `ArielQAAgent` | Workhorse | Conversational Q&A over student data |
+| 12 | 🌺 **Mirabel** | `MirabelVideoAnalyzer` | Vision | Video submission analysis (frame + audio) |
+| 13 | 😊 **Bashful** | `BashfulAgent` | Workhorse | Agent output summarization |
+| 14 | 📬 **FeedbackTriage** | `FeedbackTriageAgent` | Lightweight | User feedback routing |
+| 15 | 🧚 **Fairy Godmother** | `FairyGodmotherDocumentGenerator` | N/A (programmatic) | Document generation |
 
 ---
 
-## 🚀 Model Deployment Configuration
+## 🚀 4-Tier Model Architecture
 
-### Standard Model (Multi-turn Agent)
-- **Deployment Name**: `AZURE_DEPLOYMENT_NAME`
-- **Model**: GPT-4 (latest)
-- **Agents Using**: Tiana, Rapunzel, Moana, Mulan, Merlin, Gaston, Belle, Scuttle, Smee, Aurora (local)
-- **Purpose**: Complex reasoning, multi-turn conversations, detailed analysis
+| Tier | Default Deployment | Config Key | Agents |
+|------|-------------------|------------|--------|
+| **Premium** | `gpt-4.1` | `model_tier_premium` | Rapunzel, Milo |
+| **Merlin** | `MerlinGPT5Mini` | `model_tier_merlin` | Merlin |
+| **Workhorse** | `WorkForce4.1mini` | `model_tier_workhorse` | Tiana, Mulan, Moana, Gaston, Ariel, Naveen, Bashful |
+| **Lightweight** | `LightWork5Nano` | `model_tier_lightweight` | Belle, FeedbackTriage |
+| **Vision** | `gpt-4o` | `foundry_vision_model_name` | Mirabel, Belle OCR fallback |
 
-### Mini Model (Lightweight/Fast)
-- **Deployment Name**: `AZURE_DEPLOYMENT_NAME_MINI` (defaults to `o4miniagent`)
-- **Model**: gpt-4.1
-- **Agents Using**: 
-  - 🔍 **Milo** (Data Scientist) - Pattern extraction
-  - 🏰 **Naveen** (School Data Scientist) - School enrichment
-- **Purpose**: Fast analysis, pattern recognition, focused tasks
-- **Benefit**: Lower latency, cost-effective for specific operations
+### Tier Selection Rationale
+
+- **Premium**: Tasks requiring deep reasoning — transcript analysis, ML code generation
+- **Merlin**: Dedicated tier for final evaluation (independent scaling and tuning)
+- **Workhorse**: Balanced cost/performance for most agent tasks
+- **Lightweight**: High-volume, simpler tasks — document classification, feedback routing
+- **Vision**: Multimodal tasks — video frame analysis, scanned page OCR
 
 ---
 
 ## 📋 Model Information in Outputs
 
-All agents now include model metadata in their outputs:
+All agents include model metadata in their responses:
 
 ```json
 {
   "status": "success",
-  "agent_name": "Naveen School Data Scientist",
-  "model_used": "o4miniagent",
+  "agent_name": "Milo Data Scientist",
+  "model_used": "gpt-4.1",
   "model_display": "gpt-4.1",
-  "analysis": {...},
-  "results": {...}
+  "analysis": {}
 }
 ```
 
-### Fields Included:
-- `agent_name` - Disney character + title
-- `model_used` - Deployment name (o4miniagent, gpt-4, etc.)
-- `model_display` - Human-friendly model name (gpt-4.1, gpt-4)
-- Analysis/results specific to agent
-
 ---
 
-## 🔧 Configuration Setup
+## 🔧 Configuration
 
-### In .env or Key Vault:
+### In Key Vault (`nextgen-agents-kv`) or Environment:
 
 ```
-AZURE_DEPLOYMENT_NAME=<your-gpt4-deployment>
-AZURE_DEPLOYMENT_NAME_MINI=o4miniagent  # Optional, defaults to o4miniagent
+MODEL_TIER_PREMIUM=gpt-4.1
+MODEL_TIER_MERLIN=MerlinGPT5Mini
+MODEL_TIER_WORKHORSE=WorkForce4.1mini
+MODEL_TIER_LIGHTWEIGHT=LightWork5Nano
+FOUNDRY_VISION_MODEL_NAME=gpt-4o
 AZURE_OPENAI_ENDPOINT=https://<foundry>.openai.azure.com/
 AZURE_OPENAI_API_KEY=<your-key>
-AZURE_API_VERSION=2024-12-01-preview
 ```
 
-### In src/config.py (already updated):
+### In `src/config.py`:
 
 ```python
-self.deployment_name: str = self._get_secret("azure-deployment-name", "AZURE_DEPLOYMENT_NAME")
-self.deployment_name_mini: str = self._get_secret("azure-deployment-name-mini", "AZURE_DEPLOYMENT_NAME_MINI") or "o4miniagent"
+self.model_tier_premium = self._get_secret("model-tier-premium", "MODEL_TIER_PREMIUM") or "gpt-4.1"
+self.model_tier_merlin = self._get_secret("model-tier-merlin", "MODEL_TIER_MERLIN") or "MerlinGPT5Mini"
+self.model_tier_workhorse = self._get_secret("model-tier-workhorse", "MODEL_TIER_WORKHORSE") or "WorkForce4.1mini"
+self.model_tier_lightweight = self._get_secret("model-tier-lightweight", "MODEL_TIER_LIGHTWEIGHT") or "LightWork5Nano"
 ```
+
+Each agent selects its model via: `self.model = model or config.model_tier_<tier> or config.foundry_model_name or config.deployment_name`
 
 ---
 
 ## 🎯 Agent Specialization Matrix
 
-| Operation | Agent | Model | Why |
-|-----------|-------|-------|-----|
-| **Read application metadata** | Tiana | Standard | Needs context awareness |
-| **Parse complex transcripts** | Rapunzel | Standard | Complex document parsing |
-| **School context analysis** | Moana | Standard | Nuanced school evaluation |
-| **Extract essay recommendations** | Mulan | Standard | Long-form text analysis |
-| **Final scoring decision** | Merlin | Standard | Complex multi-factor evaluation |
-| **Extract training patterns** | Milo | **Mini** | Fast pattern recognition |
-| **Build school enrichment** | Naveen | **Mini** | Data aggregation & scoring |
-| **Triage feedback** | Scuttle | Standard | Categorization & routing |
-| **Generate documents** | Fairy Godmother | Programmatic | Template-based |
-| **Orchestration** | Smee | Standard | Coordination & routing |
+| Operation | Agent | Tier | Why |
+|-----------|-------|------|-----|
+| **Parse uploaded documents** | Belle | Lightweight | High-volume, classification + OCR |
+| **Read application metadata** | Tiana | Workhorse | Structured extraction |
+| **Parse complex transcripts** | Rapunzel | Premium | Complex document reasoning |
+| **School context analysis** | Moana | Workhorse | Profile enrichment |
+| **Extract recommendations** | Mulan | Workhorse | Letter analysis |
+| **Final scoring decision** | Merlin | Merlin | Multi-factor comprehensive eval |
+| **Counter-evaluation** | Gaston | Workhorse | Bias detection |
+| **ML training & validation** | Milo | Premium | Code generation, statistical analysis |
+| **Q&A over student data** | Ariel | Workhorse | Conversational, 30s latency target |
+| **Video analysis** | Mirabel | Vision | Frame extraction + GPT-4o vision |
+| **Output summarization** | Bashful | Workhorse | Concise summaries |
+| **Feedback routing** | FeedbackTriage | Lightweight | Fast categorization |
+| **School enrichment** | Naveen | Workhorse | Data aggregation & scoring |
+| **Document generation** | Fairy Godmother | Programmatic | Template-based |
+| **Format results** | Aurora | Local | Formatting only |
 
 ---
 
-## 🔐 Connector Verification
+## 🔑 Key Capabilities (v1.0.39)
 
-All agents can reach Azure AI Foundry models:
+### Belle Document Analyzer
+- PDF/DOCX/TXT parsing with page-level section detection
+- **AI fallback classification**: When keyword scoring < 3, uses GPT to classify pages
+- **Sparse page handling**: Pages with 10-50 chars classified via AI
+- **Vision OCR**: Scanned pages (<20 chars) rendered and processed through GPT-4o
 
-### Connectivity Check:
-```bash
-# Verify foundry endpoint
-curl -X GET https://<foundry>.openai.azure.com/
+### Milo Data Scientist
+- **Training**: Builds ML models from historical evaluation data
+- **Validation**: Async validation with confusion matrix, per-student metrics, file-based state for multi-worker compatibility
+- **Ranking**: ML-based applicant ranking with recommendations
 
-# List available deployments
-curl -X GET https://<foundry>.openai.azure.com/deployments \
-  -H "Authorization: Bearer $(az account get-access-token --query accessToken -o tsv)" \
-  -H "api-version=2024-12-01-preview"
+### Mirabel Video Analyzer
+- Frame extraction from uploaded videos
+- Audio transcription
+- GPT-4o vision analysis of selected frames
+- Combined visual + audio content assessment
+
+### Ariel QA Agent
+- Conversational Q&A over student evaluation data
+- Context-aware responses using all agent outputs
+- 30-second latency target
+
+---
+
+## 📊 Processing Pipeline
+
 ```
-
-### Currently Available Deployments:
-- ✅ `AZURE_DEPLOYMENT_NAME` - GPT-4 (multi-turn, standard)
-- ✅ `o4miniagent` - gpt-4.1 (mini, lightweight)
-
-### Connection Flow:
-1. `config.py` loads deployment names
-2. App initializes Azure OpenAI client with endpoint
-3. Each agent receives deployment name at initialization
-4. OpenAI SDK handles routing to correct deployment
-5. Responses include model metadata
-
-### Validation:
-- ✅ Syntax: All files compile without errors
-- ✅ Imports: All agent classes properly imported
-- ✅ Configuration: Both models configured and accessible
-- ✅ Metadata: Model info included in all outputs
+1. Belle (📖)     — Extract & classify document pages
+2. Student Record  — Match or create student in database
+3. School Enrichment — Naveen pre-enriches school if needed
+4. Tiana (👸)      — Read application data          ┐
+5. Rapunzel (💇)   — Analyze grades/transcript      │ Parallel
+6. Moana (🌊)      — Enrich school context          │
+7. Mulan (🗡️)      — Extract recommendations        ┘
+8. Merlin (🧙)     — Comprehensive evaluation
+9. Gaston (🎭)     — Counter-evaluation
+10. Aurora (✨)     — Format final report
+```
 
 ---
 
 ## 🎪 Disney Character Legend
 
 **Application Analysis Pipeline:**
-- 👸 **Tiana** - Reads applications (efficient, practical)
-- 💇 **Rapunzel** - Analyzes grades (detail-oriented, precision)
-- 🌊 **Moana** - Explores school context (adventurous, contextual)
-- 🗡️ **Mulan** - Reads recommendations & essays (bold, insightful)
-- 🧙 **Merlin** - Makes final decisions (wise, evaluative)
-- ✨ **Aurora** - Formats beautifully (elegant, polished)
-- 🎭 **Gaston** - Backup evaluation (strong alternative)
+- 👸 **Tiana** — Reads applications (efficient, practical)
+- 💇 **Rapunzel** — Analyzes grades (detail-oriented, precision)
+- 🌊 **Moana** — Explores school context (adventurous, contextual)
+- 🗡️ **Mulan** — Reads recommendations (bold, insightful)
+- 🧙 **Merlin** — Makes final decisions (wise, evaluative)
+- ✨ **Aurora** — Formats beautifully (elegant, polished)
+- 🎭 **Gaston** — Counter-evaluates (strong alternative perspective)
 
 **Support Agents:**
-- 📖 **Belle** - Analyzes documents (learned, analytical)
-- 🔍 **Milo** - Explores data science (adventurous explorer - Atlantis theme)
-- 🏰 **Naveen** - Builds school enrichment (sophisticated analyst)
-- 🪶 **Scuttle** - Triages feedback (communicative, organized)
-- 🧚 **Fairy Godmother** - Generates documents (magical, transformative)
-
-**Coordination:**
-- 💨 **Smee** - Orchestrates everything (nimble coordinator)
-
----
-
-## 📊 Usage Example
-
-### When Processing a Student Application:
-
-```
-1. Smee (💨) Orchestrator receives application
-2. Tiana (👸) reads core data
-3. Rapunzel (💇) analyzes transcript
-4. Moana (🌊) enriches with school context
-5. Mulan (🗡️) extracts recommendations
-6. Milo (🔍) compares to training patterns [MINI MODEL]
-7. Merlin (🧙) evaluates comprehensively
-8. Aurora (✨) formats output
-9. Result includes all model metadata
-```
-
-### When Enriching School Data:
-
-```
-1. Human initiates via /schools dashboard
-2. Naveen (🏰) analyzes with mini model [MINI MODEL]
-3. Builds enriched profile with:
-   - agent_name: "Naveen School Data Scientist"
-   - model_used: "o4miniagent"
-   - model_display: "gpt-4.1"
-4. Results stored with audit trail
-5. Human reviews and approves
-6. Moana (🌊) uses approved data in future analyses
-```
-
----
-
-## ✅ Deployment Checklist
-
-- [x] All agents have Disney character names
-- [x] Agent names are identified consistently throughout codebase
-- [x] Milo uses mini model (gpt-4.1 / o4miniagent)
-- [x] Naveen uses mini model (gpt-4.1 / o4miniagent)
-- [x] Config includes both deployment names
-- [x] Model info included in all outputs
-- [x] Agent metadata included in summaries
-- [x] Backwards compatibility maintained (FeedbackTriageAgent alias)
-- [x] All syntax validated
-- [x] Ready for deployment
-
----
-
-## 🚀 Ready for Testing
-
-When you're ready to test:
-
-1. **Verify Foundry Access**:
-   ```bash
-   python3 -c "from src.config import config; print(f'Endpoint: {config.azure_openai_endpoint}'); print(f'Standard: {config.deployment_name}'); print(f'Mini: {config.deployment_name_mini}')"
-   ```
-
-2. **Test Agent Initialization**:
-   ```bash
-   python3 -c "from src.agents import NaveenSchoolDataScientist, MiloDataScientist; print('✓ Naveen loaded'); print('✓ Milo loaded')"
-   ```
-
-3. **Test with Sample Application**:
-   - Upload a test application
-   - Watch agents process with Disney character names in logs
-   - Verify model information in outputs
-
----
-
-## 📝 Agent Summary Snapshot
-
-**Agent Name Format**: `[Disney Name] [Specialty]`
-
-| Agent | Short Name | Role |
-|-------|-----------|------|
-| Tiana Application Reader | Tiana | Metadata extractor |
-| Rapunzel Grade Reader | Rapunzel | Transcript analyzer |
-| Moana School Context | Moana | Context builder |
-| Mulan Recommendation Reader | Mulan | Essay analyzer |
-| Merlin Student Evaluator | Merlin | Final scorer |
-| Aurora Agent | Aurora | Output formatter |
-| Belle Document Analyzer | Belle | Document processor |
-| Milo Data Scientist | Milo | Pattern finder (mini) |
-| **Naveen School Data Scientist** | **Naveen** | **School scorer (mini)** ⭐ NEW |
-| Scuttle Feedback Triage | Scuttle | Feedback router |
-| Gaston Evaluator | Gaston | Alternate scorer |
-| Fairy Godmother | Fairy Godmother | Document generator |
-| Smee Orchestrator | Smee | Coordinator |
-
----
-
-**All agents identified, correctly configured, and ready for deployment! 🎉**
+- 📖 **Belle** — Analyzes documents (learned, analytical)
+- 🔍 **Milo** — Data science & ML (adventurous explorer — Atlantis)
+- 🏰 **Naveen** — School enrichment (sophisticated analyst)
+- 🧜 **Ariel** — Q&A conversations (curious, communicative)
+- 🌺 **Mirabel** — Video analysis (sees what others miss — Encanto)
+- 😊 **Bashful** — Summarizes quietly (concise, modest)
+- 📬 **FeedbackTriage** — Routes feedback (organized, efficient)
+- 🧚 **Fairy Godmother** — Generates documents (magical, transformative)
