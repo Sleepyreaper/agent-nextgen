@@ -1007,23 +1007,32 @@ class Database:
                             conn.rollback()
 
                 # Drop old unique index on (school_name, state_code) — schools can share names
+                # Use lock_timeout to avoid hanging if there is a zombie transaction holding a lock
                 try:
+                    cursor.execute("SET LOCAL lock_timeout = '10s'")
                     cursor.execute("DROP INDEX IF EXISTS idx_school_enriched_name_state")
                     conn.commit()
                     cursor.execute("CREATE INDEX IF NOT EXISTS idx_school_enriched_name_state ON school_enriched_data(LOWER(school_name), state_code)")
                     conn.commit()
                     logger.info("✓ Ensured non-unique index on school_enriched_data(school_name, state_code)")
                 except Exception as idx_err:
-                    logger.warning(f"Could not update name_state index: {idx_err}")
-                    conn.rollback()
+                    logger.warning(f"Could not update name_state index (lock timeout?): {idx_err}")
+                    try:
+                        conn.rollback()
+                    except Exception:
+                        pass
 
                 # NCES ID unique index for CSV import lookups
                 try:
+                    cursor.execute("SET LOCAL lock_timeout = '10s'")
                     cursor.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_school_enriched_nces ON school_enriched_data(nces_id) WHERE nces_id IS NOT NULL")
                     conn.commit()
                 except Exception as idx_err:
                     logger.warning(f"Could not create NCES unique index: {idx_err}")
-                    conn.rollback()
+                    try:
+                        conn.rollback()
+                    except Exception:
+                        pass
 
             # ===== STUDENT SCHOOL CONTEXT TABLE MIGRATIONS =====
             cursor.execute("""
