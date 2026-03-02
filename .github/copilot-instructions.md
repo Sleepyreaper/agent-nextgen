@@ -1,38 +1,82 @@
 <!-- Use this file to provide workspace-specific custom instructions to Copilot. For more details, visit https://code.visualstudio.com/docs/copilot/copilot-customization#_use-a-githubcopilotinstructionsmd-file -->
 
-## Azure AI Foundry Multi-Agent System
+## NextGen Agents — AI Scholarship Evaluation Platform
 
-This project is a Python-based multi-agent system that connects to Azure AI Foundry.
+Production Flask application (~7900 lines in `app.py`) that evaluates high-school scholarship applicants using 15+ Disney-themed AI agents backed by Azure AI Foundry. Deployed on Azure App Service behind Front Door + WAF with session-based authentication.
 
-### Project Setup Completed
+### Architecture
 
-- [x] Verify that the copilot-instructions.md file in the .github directory is created.
-- [x] Clarify Project Requirements - Python multi-agent system for Azure AI Foundry
-- [x] Scaffold the Project - Created project structure with src/agents/, config, and dependencies
-- [x] Customize the Project - Built multi-agent system with BaseAgent and SimpleAgent classes
-- [x] Install Required Extensions - No extensions required
-- [x] Compile the Project - Dependencies installed successfully
-- [x] Create and Run Task - Not needed for this project type
-- [x] Launch the Project - Ready to run with `python main.py` after configuration
-- [x] Ensure Documentation is Complete - README.md created with setup instructions
+- **Entry point**: `app.py` (Flask, served by gunicorn via `startup.sh`)
+- **Config**: `src/config.py` — loads secrets from Azure Key Vault (`nextgen-agents-kv`), falls back to env vars
+- **Database**: Azure PostgreSQL (schema in `database/schema_postgresql.sql`)
+- **Storage**: Azure Blob Storage for student documents (PDFs, DOCX, videos)
+- **Frontend**: Jinja2 templates in `web/templates/`, static assets in `web/static/`
+
+### 4-Tier Model Architecture
+
+| Tier | Default Deployment | Config Key | Used By |
+|------|-------------------|------------|---------|
+| Premium | `gpt-4.1` | `model_tier_premium` | Rapunzel (grades), Milo (data science) |
+| Merlin | `MerlinGPT5Mini` | `model_tier_merlin` | Merlin (final evaluation) |
+| Workhorse | `WorkForce4.1mini` | `model_tier_workhorse` | Tiana, Mulan, Moana, Gaston, Ariel, Naveen, Bashful |
+| Lightweight | `LightWork5Nano` | `model_tier_lightweight` | Belle (document analysis), FeedbackTriage |
+| Vision | `gpt-4o` | `foundry_vision_model_name` | Mirabel (video), Belle OCR fallback |
+
+### Agent Roster
+
+| Agent | Class | Purpose |
+|-------|-------|---------|
+| Belle | `BelleDocumentAnalyzer` | PDF/DOCX parsing, section detection (AI fallback), OCR |
+| Tiana | `TianaApplicationReader` | Application text extraction and scoring |
+| Rapunzel | `RapunzelGradeReader` | Transcript/grade analysis |
+| Mulan | `MulanRecommendationReader` | Recommendation letter analysis |
+| Moana | `MoanaSchoolContext` | School profile enrichment |
+| Merlin | `MerlinStudentEvaluator` | Final comprehensive evaluation |
+| Gaston | `GastonEvaluator` | Counter-evaluation and bias check |
+| Aurora | `AuroraAgent` | Result formatting and presentation |
+| Milo | `MiloDataScientist` | ML training, validation, ranking |
+| Ariel | `ArielQAAgent` | Conversational Q&A over student data |
+| Mirabel | `MirabelVideoAnalyzer` | Video submission analysis (frame + audio) |
+| Naveen | `NaveenSchoolDataScientist` | School-level data science |
+| Bashful | `BashfulAgent` | Agent output summarization |
+| FeedbackTriage | `FeedbackTriageAgent` | User feedback routing |
+| FairyGodmother | `FairyGodmotherDocumentGenerator` | Document generation |
 
 ### Key Files
 
-- `main.py` - Entry point for the agent system
-- `src/config.py` - Configuration management for Azure credentials
-- `src/agents/base_agent.py` - Base class for all agents
-- `src/agents/simple_agent.py` - Example agent implementation
-- `.env.example` - Template for environment variables
+- `app.py` — Flask application with all routes (~7900 lines)
+- `src/config.py` — Configuration from Key Vault / env vars
+- `src/agents/base_agent.py` — Abstract base class for all agents
+- `src/agents/belle_document_analyzer.py` — Document analysis with AI section detection
+- `src/agents/milo_data_scientist.py` — ML training, validation, and ranking
+- `src/database.py` — PostgreSQL database operations
+- `src/storage.py` — Azure Blob Storage operations
+- `src/document_processor.py` — PDF/DOCX text extraction with OCR fallback
+- `startup.sh` — Gunicorn launch script (4 workers, 2 threads, 600s timeout)
+- `VERSION` — Current version number (1.0.39)
 
-### Setup Instructions
+### Key API Endpoints
 
-1. Copy `.env.example` to `.env` and add your Azure AI Foundry credentials
-2. Activate virtual environment: `source .venv/bin/activate`
-3. Run the agent: `python main.py`
+- `POST /api/training/reprocess` — Re-extract all training documents (background task)
+- `GET /api/training/reprocess` — Poll reprocessing progress
+- `GET /api/training/diagnostic` — Field-size dashboard for training records
+- `POST /api/milo/validate` — Start model validation (async, file-based state)
+- `GET /api/milo/validate` — Poll validation progress/results
+- `POST /api/milo/rank` — Generate ML-based applicant rankings
+- `POST /login` — Session-based authentication
+
+### Deployment
+
+- **Production**: `nextgen-agents-web` (West US 2), Front Door origin timeout 240s
+- **Staging**: `nextgen-agents-web` slot `staging`
+- **SCM**: Locked by default; unlock with `az webapp config access-restriction set ... --use-same-restrictions-for-scm-site false`, deploy via `az webapp deploy --type zip`, then re-lock
+- **Git**: Branch `some-authentication`, pushed to GitHub
 
 ### Development Guidelines
 
-- Extend `BaseAgent` class to create custom agents
-- Use the config module for managing Azure credentials
-- Follow the async/await pattern for agent processing
-- Add new agents in the `src/agents/` directory
+- Extend `BaseAgent` to create new agents; add them in `src/agents/`
+- Use `config.model_tier_*` properties for model selection (never hardcode deployment names)
+- Use `src/logger.py` for structured logging with `get_logger()`
+- All agent processing follows the `process(student_data)` async pattern
+- Long-running operations use background threads + file-based polling (for multi-worker gunicorn compatibility)
+- Test files live in `testing/`; scripts in `scripts/`

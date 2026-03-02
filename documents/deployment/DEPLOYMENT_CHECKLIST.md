@@ -109,13 +109,11 @@ Choose one deployment method:
 ### Option A: Deploy from ZIP
 
 - [ ] Create deployment package
-- [ ] Deploy ZIP file
+- [ ] Unlock SCM, deploy ZIP, re-lock SCM
 
 ```bash
-app_name="your-webapp-name"
-
 # Create ZIP excluding unnecessary files
-zip -r deployment.zip . \
+zip -r /tmp/nextgen-deploy.zip . \
   -x ".git/*" \
   ".venv/*" \
   "__pycache__/*" \
@@ -123,36 +121,29 @@ zip -r deployment.zip . \
   ".pytest_cache/*" \
   "node_modules/*"
 
+# Unlock SCM for deployment
+az webapp config access-restriction set -g NextGen_Agents \
+  -n nextgen-agents-web --use-same-restrictions-for-scm-site false
+
 # Deploy
-az webapp deployment source config-zip \
-  --resource-group your-resource-group \
-  --name $app_name \
-  --src-path deployment.zip
+az webapp deploy -g NextGen_Agents -n nextgen-agents-web \
+  --src-path /tmp/nextgen-deploy.zip --type zip
+
+# Re-lock SCM
+az webapp config access-restriction set -g NextGen_Agents \
+  -n nextgen-agents-web --use-same-restrictions-for-scm-site true
 ```
 
-### Option B: Deploy from Git (Recommended for CI/CD)
-
-- [ ] Create deployment user
-- [ ] Configure local Git
-- [ ] Push code
+### Deploy to Staging
 
 ```bash
-app_name="your-webapp-name"
-
-# Configure local Git
-git_url=$(az webapp deployment source config-local-git \
-  --resource-group your-resource-group \
-  --name $app_name \
-  --query url -o tsv)
-
-# Add remote
-git remote add azure $git_url
-
-# Push code
-git push azure main  # or your main branch name
+az webapp config access-restriction set -g NextGen_Agents \
+  -n nextgen-agents-web --slot staging --use-same-restrictions-for-scm-site false
+az webapp deploy -g NextGen_Agents -n nextgen-agents-web --slot staging \
+  --src-path /tmp/nextgen-deploy.zip --type zip
+az webapp config access-restriction set -g NextGen_Agents \
+  -n nextgen-agents-web --slot staging --use-same-restrictions-for-scm-site true
 ```
-
-### Option C: GitHub Actions (Continuous Deployment)
 
 - [ ] Create service principal for GitHub
 - [ ] Add publish profile to GitHub Secrets

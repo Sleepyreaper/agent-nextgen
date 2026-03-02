@@ -1,6 +1,6 @@
 # NextGen Multi-Agent Student Evaluation System
 
-> **Version 1.0.33** · Production-ready AI evaluation pipeline with 15+ Disney-themed agents, 4-tier model architecture, and enterprise security via Azure Front Door + WAF.
+> **Version 1.0.39** · Production-ready AI evaluation pipeline with 15+ Disney-themed agents, 4-tier model architecture, and enterprise security via Azure Front Door + WAF.
 
 An intelligent multi-agent system that evaluates high school internship applications using specialized Disney-themed agents coordinated in a 9-step workflow. Built on Azure AI Foundry with comprehensive audit trails, fairness-aware assessment, and school context enrichment.
 
@@ -16,8 +16,14 @@ An intelligent multi-agent system that evaluates high school internship applicat
 - **Contextual Rigor Weighting** — RAPUNZEL calculates academic rigor adjusted by school opportunity (0–5 scale)
 - **Video Application Support** — MIRABEL analyzes video submissions with chunked upload (100KB for WAF compatibility)
 - **Interactive Q&A** — ARIEL answers natural language questions about any evaluated student
+- **Model Validation** — Milo validates prediction accuracy against training data with confusion matrix and per-student metrics
+- **Document Reprocessing** — Re-extract all training documents through the improved pipeline with progress tracking
+- **Training Diagnostics** — Real-time field-size dashboard showing extraction health for all training records
+- **AI-Powered Section Detection** — Belle uses GPT fallback when keyword scoring is inconclusive for page classification
+- **Vision OCR** — Scanned/image-based PDF pages automatically OCR'd via GPT-4o vision model
 - **Historical Score Import** — Upload XLSX scoring spreadsheets and link to training applications
 - **XLSX Resolution UI** — Search and link unmatched historical scores to training records
+- **Session Authentication** — Username/password login with configurable session expiry
 - **Comprehensive Audit Trail** — 14 interaction types logged to database for compliance
 - **Feedback System** — User-submitted issues auto-create GitHub issues
 - **Telemetry & Observability** — OpenTelemetry + Application Insights for agent performance monitoring
@@ -118,6 +124,7 @@ The application provides a full-featured web UI built with Flask and Jinja2 temp
 | 📤 Upload Application | `/upload` | Upload student documents (PDF, DOCX, TXT, MP4) to trigger the evaluation pipeline |
 | 📝 Feedback | `/feedback` | Report issues or request features — auto-creates GitHub issues |
 | ⚡ Quick Test | `/test` | Real-time 9-step pipeline test with live agent progress tracking |
+| 🔐 Login | `/login` | Session-based authentication (auto-redirect when auth is configured) |
 
 ### Additional Pages (not in nav)
 
@@ -144,7 +151,7 @@ The application provides a full-featured web UI built with Flask and Jinja2 temp
 |-----------|----------|---------|
 | **Azure Front Door** | `nextgen-frontdoor` (Premium) | DDoS protection, SSL termination, global load balancing |
 | **WAF Policy** | `nextgenWAFPolicy` | Prevention mode, DRS 2.1, BotManager 1.1, 128KB body inspection |
-| **Web App** | `nextgen-agents-web` | Python 3.9 on Linux App Service with staging slot |
+| **Web App** | `nextgen-agents-web` | Python 3.12 on Linux App Service (gunicorn 4 workers, 600s timeout) |
 | **AI Foundry** | `nextgenagentfoundry` (West US 3) | 7 model deployments across 4 tiers |
 | **PostgreSQL** | Flexible Server | Application data, audit trails, training records |
 | **Key Vault** | Secure credential store | All secrets managed via Azure AD / Managed Identity |
@@ -174,7 +181,7 @@ The application provides a full-featured web UI built with Flask and Jinja2 temp
 
 ### Prerequisites
 
-- Python 3.9+
+- Python 3.12+ (3.9+ compatible)
 - Azure CLI (`az login`)
 - Azure subscription with Key Vault + OpenAI access
 
@@ -348,10 +355,10 @@ When a student already exists, new files are added to the same record and the fu
 
 ```
 .
-├── app.py                              # Flask web application (~7000 lines)
+├── app.py                              # Flask web application (~7900 lines)
 ├── main.py                             # CLI interface
 ├── requirements.txt                    # Python dependencies
-├── VERSION                             # Current version (1.0.33)
+├── VERSION                             # Current version (1.0.39)
 ├── Dockerfile                          # Container configuration
 ├── Procfile                            # Process configuration
 ├── startup.sh / startup.py             # App Service startup
@@ -460,26 +467,24 @@ zip -r /tmp/nextgen-deploy.zip . \
 
 # 2. Deploy to Production
 # Unlock SCM
-az webapp update -g NextGen_Agents -n nextgen-agents-web \
-  --set siteConfig.scmIpSecurityRestrictionsUseMain=false
-sleep 15
+az webapp config access-restriction set -g NextGen_Agents \
+  -n nextgen-agents-web --use-same-restrictions-for-scm-site false
 
 # Deploy
 az webapp deploy -g NextGen_Agents -n nextgen-agents-web \
-  --src-path /tmp/nextgen-deploy.zip --type zip --async true
+  --src-path /tmp/nextgen-deploy.zip --type zip
 
 # Re-lock SCM
-az webapp update -g NextGen_Agents -n nextgen-agents-web \
-  --set siteConfig.scmIpSecurityRestrictionsUseMain=true
+az webapp config access-restriction set -g NextGen_Agents \
+  -n nextgen-agents-web --use-same-restrictions-for-scm-site true
 
 # 3. Deploy to Staging (same pattern with --slot staging)
-az webapp update -g NextGen_Agents -n nextgen-agents-web --slot staging \
-  --set siteConfig.scmIpSecurityRestrictionsUseMain=false
-sleep 15
+az webapp config access-restriction set -g NextGen_Agents \
+  -n nextgen-agents-web --slot staging --use-same-restrictions-for-scm-site false
 az webapp deploy -g NextGen_Agents -n nextgen-agents-web --slot staging \
-  --src-path /tmp/nextgen-deploy.zip --type zip --async true
-az webapp update -g NextGen_Agents -n nextgen-agents-web --slot staging \
-  --set siteConfig.scmIpSecurityRestrictionsUseMain=true
+  --src-path /tmp/nextgen-deploy.zip --type zip
+az webapp config access-restriction set -g NextGen_Agents \
+  -n nextgen-agents-web --slot staging --use-same-restrictions-for-scm-site true
 ```
 
 ### CI/CD
@@ -627,6 +632,6 @@ Standalone terminal-style debugging interface for real-time agent execution moni
 Requires:
 - Azure subscription (OpenAI, Key Vault, PostgreSQL, Front Door)
 - GitHub account (CI/CD, feedback issues)
-- Python 3.9+
+- Python 3.12+ (3.9+ compatible)
 
 For support, see documentation in the `/documents` directory.

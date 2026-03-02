@@ -1,279 +1,114 @@
-# Model & Agent Configuration - Implementation Summary
+# Model & Agent Configuration
 
-**Date**: February 18, 2026  
-**Status**: ✅ Complete & Verified
-**Not Yet Pushed**: Per user request
-
----
-
-## ✅ What Was Done
-
-### 1. Disney Character Naming for All Agents ✅
-
-**New/renamed agents with Disney character names:**
-- ✨ **Scuttle** (`ScuttleFeedbackTriageAgent`) - Feedback Triage Agent
-  - Character: From "The Little Mermaid" - chatty, communicative
-  - Perfect for triaging user feedback
-
-- 🏰 **Naveen** (`NaveenSchoolDataScientist`) - School Data Scientist  
-  - Character: From "The Princess and the Frog" - analytical, sophisticated
-  - Analyzes school enrichment data
-
-**All existing agents already have Disney names:**
-- 👸 Tiana (Application Reader)
-- 💇 Rapunzel (Grade Reader)
-- 🌊 Moana (School Context)
-- 🗡️ Mulan (Recommendation Reader)
-- 🧙 Merlin (Student Evaluator)
-- ✨ Aurora (Agent)
-- 📖 Belle (Document Analyzer)
-- 🔍 Milo (Data Scientist)
-- 🎭 Gaston (Evaluator)
-- 💨 Smee (Orchestrator)
-- 🧚 Fairy Godmother (Document Generator)
+**Last Updated**: June 2025  
+**Status**: ✅ 4-tier model architecture deployed (v1.0.39)
 
 ---
 
-### 2. Model Configuration Updates ✅
+## 🚀 4-Tier Model Architecture
 
-**New config parameter added:**
+The system uses five model tiers configured via Azure Key Vault or environment variables:
+
+| Tier | Config Key | Default Deployment | Purpose |
+|------|-----------|-------------------|---------|
+| **Premium** | `model_tier_premium` | `gpt-4.1` | Deep reasoning tasks |
+| **Merlin** | `model_tier_merlin` | `MerlinGPT5Mini` | Final evaluation (dedicated) |
+| **Workhorse** | `model_tier_workhorse` | `WorkForce4.1mini` | General agent tasks |
+| **Lightweight** | `model_tier_lightweight` | `LightWork5Nano` | High-volume simple tasks |
+| **Vision** | `foundry_vision_model_name` | `gpt-4o` | Multimodal (video, OCR) |
+
+---
+
+## 🎭 Agent → Model Tier Mapping
+
+### Premium Tier (`gpt-4.1`)
+| Agent | Class | Rationale |
+|-------|-------|-----------|
+| Rapunzel | `RapunzelGradeReader` | Complex transcript reasoning |
+| Milo | `MiloDataScientist` | ML code generation & statistical analysis |
+
+### Merlin Tier (`MerlinGPT5Mini`)
+| Agent | Class | Rationale |
+|-------|-------|-----------|
+| Merlin | `MerlinStudentEvaluator` | Dedicated scaling for final eval |
+
+### Workhorse Tier (`WorkForce4.1mini`)
+| Agent | Class | Rationale |
+|-------|-------|-----------|
+| Tiana | `TianaApplicationReader` | Structured data extraction |
+| Mulan | `MulanRecommendationReader` | Letter analysis |
+| Moana | `MoanaSchoolContext` | School profile enrichment |
+| Gaston | `GastonEvaluator` | Counter-evaluation |
+| Ariel | `ArielQAAgent` | Conversational Q&A (30s target) |
+| Naveen | `NaveenSchoolDataScientist` | School data aggregation |
+| Bashful | `BashfulAgent` | Output summarization |
+
+### Lightweight Tier (`LightWork5Nano`)
+| Agent | Class | Rationale |
+|-------|-------|-----------|
+| Belle | `BelleDocumentAnalyzer` | High-volume document classification |
+| FeedbackTriage | `FeedbackTriageAgent` | Fast feedback categorization |
+
+### Vision Tier (`gpt-4o`)
+| Agent | Class | Rationale |
+|-------|-------|-----------|
+| Mirabel | `MirabelVideoAnalyzer` | Video frame analysis |
+| Belle (OCR) | `BelleDocumentAnalyzer` | Scanned page OCR fallback |
+
+### Local / Programmatic (no model)
+| Agent | Class | Rationale |
+|-------|-------|-----------|
+| Aurora | `AuroraAgent` | Formatting only |
+| Fairy Godmother | `FairyGodmotherDocumentGenerator` | Template-based generation |
+
+---
+
+## 🔧 Configuration in `src/config.py`
+
 ```python
-# src/config.py - Line 101
-self.deployment_name_mini: str = self._get_secret(
-    "azure-deployment-name-mini", 
-    "AZURE_DEPLOYMENT_NAME_MINI"
-) or "o4miniagent"
+# Key Vault secrets (with env var fallbacks)
+self.model_tier_premium = self._get_secret("model-tier-premium", "MODEL_TIER_PREMIUM") or "gpt-4.1"
+self.model_tier_merlin = self._get_secret("model-tier-merlin", "MODEL_TIER_MERLIN") or "MerlinGPT5Mini"
+self.model_tier_workhorse = self._get_secret("model-tier-workhorse", "MODEL_TIER_WORKHORSE") or "WorkForce4.1mini"
+self.model_tier_lightweight = self._get_secret("model-tier-lightweight", "MODEL_TIER_LIGHTWEIGHT") or "LightWork5Nano"
+self.foundry_vision_model_name = self._get_secret("foundry-vision-model-name", "FOUNDRY_VISION_MODEL_NAME") or "gpt-4o"
 ```
 
-**Mini Model Agents (gpt-4.1):**
-- 🔍 **Milo** - Updated to use `config.deployment_name_mini`
-- 🏰 **Naveen** - Configured to use `config.deployment_name_mini` (o4miniagent)
+### Agent Model Selection Pattern
 
-**Standard Model Agents (gpt-4):**
-- All other agents continue using `config.deployment_name`
-- Smee orchestrator routes appropriately
+Each agent uses a fallback chain:
+
+```python
+# Example from TianaApplicationReader
+self.model = model or config.model_tier_workhorse or config.foundry_model_name or config.deployment_name
+```
+
+This allows per-agent model override via constructor, with tier defaults from Key Vault, and legacy fallbacks.
 
 ---
 
-### 3. Model Information in Outputs ✅
+## 📋 Model Metadata in Responses
 
-**All agents now include in their responses:**
+All agents include model information in their output:
 
-```python
-result = {
-    "agent_name": self.name,           # e.g., "Naveen School Data Scientist"
-    "model_used": self.model,          # e.g., "o4miniagent"
-    "model_display": self.model_display, # e.g., "gpt-4.1"
-    ...analysis results...
+```json
+{
+  "agent_name": "Milo Data Scientist",
+  "model_used": "gpt-4.1",
+  "model_display": "gpt-4.1",
+  "status": "success",
+  ...
 }
 ```
 
-**Agents with model metadata:**
-- ✅ Naveen School Data Scientist
-- ✅ Milo Data Scientist
-- ✅ Scuttle Feedback Triage Agent
-- ✅ All others can be similarly enhanced
-
 ---
 
-### 4. Foundry Connectivity & Model Access ✅
+## 🔄 Changing Model Assignments
 
-**Models configured to reach Azure AI Foundry:**
+To change a model deployment for a tier:
 
-| Model | Deployment | Version | Status |
-|-------|-----------|---------|--------|
-| Standard | `AZURE_DEPLOYMENT_NAME` | gpt-4 | ✅ Ready |
-| Mini | `o4miniagent` | gpt-4.1 | ✅ Ready |
+1. Update the secret in Key Vault: `az keyvault secret set --vault-name nextgen-agents-kv --name model-tier-workhorse --value "new-deployment-name"`
+2. Restart the app: `az webapp restart -g NextGen_Agents -n nextgen-agents-web`
+3. All agents using that tier will automatically pick up the new deployment
 
-**Connection verification:**
-- ✅ Syntax: All Python files compile without errors
-- ✅ Imports: All agents properly exported/imported
-- ✅ Configuration: Both models configured in config.py
-- ✅ Accessibility: OpenAI SDK can reach both deployments
-- ✅ Backwards compatibility: Old names aliased (FeedbackTriageAgent)
-
----
-
-## 📝 Files Modified
-
-### Core Configuration
-1. **`src/config.py`** (+1 line)
-   - Added `deployment_name_mini` configuration parameter
-   - Defaults to `"o4miniagent"` if not in Key Vault
-
-### Agent Definitions
-2. **`src/agents/__init__.py`** (+7 lines, -1 line)
-   - Added `NaveenSchoolDataScientist` export
-   - Added `ScuttleFeedbackTriageAgent` export
-   - Maintained `FeedbackTriageAgent` alias for backwards compatibility
-
-3. **`src/agents/school_detail_data_scientist.py`** (+21 lines, -1 line)
-   - Renamed class to `NaveenSchoolDataScientist`
-   - Added Disney character name in docstring
-   - Added `model_display` for "gpt-4.1"
-   - Added model parameters to `__init__`
-   - Updated summary generation to include agent and model info
-   - Added model metadata to return results
-
-4. **`src/agents/feedback_triage_agent.py`** (+25 lines, -1 line)
-   - Renamed class to `ScuttleFeedbackTriageAgent`
-   - Added Disney character name in docstring
-   - Added `model_display` attribute
-   - Updated return values with model metadata
-   - Added backwards compatibility alias: `FeedbackTriageAgent = ScuttleFeedbackTriageAgent`
-
-5. **`src/agents/milo_data_scientist.py`** (+11 lines)
-   - Updated docstring with Disney character info
-   - Added `model_display = "gpt-4.1"` attribute
-   - Added model metadata to all return statements
-   - Model info now included in success and error responses
-
-### Moana Integration
-6. **`src/agents/moana_school_context.py`** (+74 lines)
-   - Enhanced `_get_or_create_school_profile()` to:
-     - Check enriched school database FIRST
-     - Use human-approved data (priority 1)
-     - Use high-confidence AI data (priority 2)
-     - Fall back to web search
-   - Added new `_format_enriched_to_profile()` method
-     - Converts DB records to Moana's profile format
-     - Includes opportunity scores and confidence levels
-
-### Database Layer
-7. **`src/database.py`** (+184 lines)
-   - Added logger import
-   - Added 8 new methods for school management:
-     - `create_school_enriched_data()`
-     - `get_school_enriched_data()`
-     - `get_all_schools_enriched()`
-     - `update_school_review()`
-     - `_save_school_version()`
-     - `_save_analysis_history()`
-
-### Main Application
-8. **`app.py`** (+128 lines, -19 lines)
-   - Imported `NaveenSchoolDataScientist`
-   - Updated Milo initialization to use `config.deployment_name_mini`
-   - Updated Scuttle feedback agent name
-   - Updated school analysis route to use Naveen with mini model
-   - Added model logging in school analysis completion
-
----
-
-## 🔄 Backwards Compatibility
-
-✅ **Maintained backwards compatibility:**
-- `FeedbackTriageAgent` aliased to `ScuttleFeedbackTriageAgent`
-- Existing code using old names continues to work
-- No breaking changes to API contracts
-- All existing agent registrations work with new names
-
----
-
-## 🎯 Model Routing Summary
-
-### Processing Pipeline Model Assignment:
-
-```
-Application submitted
-    ↓
-Smee (Standard) - Orchestrates
-    ├─→ Tiana (Standard) - Read app
-    ├─→ Rapunzel (Standard) - Grade analysis
-    ├─→ Moana (Standard) - School context [USES Naveen's enriched data]
-    ├─→ Mulan (Standard) - Recommendations
-    ├─→ Milo (MINI ⭐) - Training patterns [FAST]
-    ├─→ Merlin (Standard) - Evaluation
-    └─→ Aurora (Local) - Format output
-
-School Enrichment Workflow:
-    ↓
-Naveen (MINI ⭐) - Analyzes schools [FAST]
-    ↓
-Stores in school_enriched_data table
-    ↓
-Human reviews at /schools dashboard
-    ↓
-Moana uses enriched data for context
-```
-
----
-
-## 🧪 Testing & Verification
-
-### Compilation Status: ✅
-```bash
-✓ src/config.py compiles
-✓ src/agents/__init__.py compiles
-✓ src/agents/milo_data_scientist.py compiles
-✓ src/agents/feedback_triage_agent.py compiles
-✓ src/agents/school_detail_data_scientist.py compiles
-✓ src/agents/moana_school_context.py compiles
-✓ app.py compiles
-✓ All 8 files verified
-```
-
-### Import Status: ✅
-All agents import successfully:
-- NaveenSchoolDataScientist ✓
-- ScuttleFeedbackTriageAgent ✓
-- FeedbackTriageAgent (alias) ✓
-- MiloDataScientist ✓
-
-### Configuration Status: ✅
-Both models accessible in Azure AI Foundry:
-- `AZURE_DEPLOYMENT_NAME` - Standard (gpt-4)
-- `AZURE_DEPLOYMENT_NAME_MINI` or `o4miniagent` - Mini (gpt-4.1)
-
----
-
-## 📋 Deployment Checklist
-
-### Pre-Deployment:
-- [x] All agents have Disney character names
-- [x] New agents named (Scuttle, Naveen)
-- [x] Model assignment correct (Milo, Naveen → mini)
-- [x] Config updated with mini model deployment
-- [x] Model info in all agent outputs
-- [x] Syntax validated
-- [x] Imports verified
-- [x] Backwards compatibility maintained
-- [x] All changes tested
-
-### Deployment Steps:
-When ready to push:
-1. `git add .` - Stage changes
-2. `git commit -m "feat: disney names for all agents, model assignments (gpt-4/gpt-4.1)"` 
-3. `git push origin main`
-
-### Post-Deployment:
-1. Verify foundry connectivity
-2. Test Milo with mini model
-3. Test Naveen with mini model
-4. Verify model metadata in logs
-5. Monitor for performance improvements (mini model should be faster)
-
----
-
-## 📊 Performance Impact
-
-**Mini Model (gpt-4.1) Benefits:**
-- ✅ Faster response times for Milo analysis
-- ✅ Faster response times for Naveen school analysis
-- ✅ Lower cost per invocation
-- ✅ Better for focused, specific tasks
-- ✅ Maintains quality for pattern recognition & data aggregation
-
-**Standard Model (gpt-4) Retained For:**
-- Complex multi-factor evaluation (Merlin)
-- Nuanced contextual analysis (Moana)
-- Long-form content analysis (Mulan)
-- General orchestration (Smee)
-
----
-
-## 🚀 Ready for Deployment
-
-All configuration, naming, and model assignments complete and verified.
-
-**Status**: Ready to push to GitHub when you give the signal! 🎉
+To change a single agent's tier, edit its `__init__` method to reference a different `config.model_tier_*` property.
