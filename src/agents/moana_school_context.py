@@ -137,7 +137,8 @@ class MoanaSchoolContext(BaseAgent):
                 # Step 2: Extract programs from transcript
                 program_participation = await self._extract_program_participation(
                     transcript_text,
-                    student_name
+                    student_name,
+                    rapunzel_grades_data=rapunzel_grades_data
                 )
                 
                 # Step 3: Look up school in database or create profile
@@ -238,7 +239,8 @@ class MoanaSchoolContext(BaseAgent):
             # Extract what student participated in
             program_participation = await self._extract_program_participation(
                 transcript_text,
-                student_name
+                student_name,
+                rapunzel_grades_data=rapunzel_grades_data
             )
 
             # Build school profile from enrichment — use all available DB fields
@@ -562,7 +564,9 @@ class MoanaSchoolContext(BaseAgent):
 
         # Student's coursework
         ap_taken = program_participation.get('ap_courses_taken', [])
-        honors_taken = self._safe_count(program_participation.get('honors_courses_taken', 0))
+        honors_taken_raw = program_participation.get('honors_courses_taken', [])
+        honors_taken = self._safe_count(honors_taken_raw)
+        de_taken = program_participation.get('de_courses_taken', [])
         stem_courses = program_participation.get('stem_courses', [])
         total_advanced = program_participation.get('total_advanced_courses', 0)
 
@@ -572,6 +576,11 @@ class MoanaSchoolContext(BaseAgent):
         if isinstance(ap_taken, list) and ap_taken:
             student_facts.append(f"  AP Subjects: {', '.join(ap_taken[:10])}")
         student_facts.append(f"  Honors Courses Taken: {honors_taken}")
+        if isinstance(honors_taken_raw, list) and honors_taken_raw:
+            student_facts.append(f"  Honors Subjects: {', '.join(honors_taken_raw[:10])}")
+        if isinstance(de_taken, list) and de_taken:
+            student_facts.append(f"  Dual Enrollment Courses: {len(de_taken)}")
+            student_facts.append(f"  DE Subjects: {', '.join(de_taken[:10])}")
         if stem_courses:
             student_facts.append(f"  STEM Courses: {', '.join(stem_courses[:8])}")
         student_facts.append(f"  Total Advanced Courses: {total_advanced}")
@@ -773,7 +782,8 @@ the final evaluator (Merlin) to make scholarship decisions."""
         # Extract programs from transcript
         program_participation = await self._extract_program_participation(
             transcript_text,
-            student_name
+            student_name,
+            rapunzel_grades_data=rapunzel_grades_data
         )
         
         # Look up school in database or create profile
@@ -991,42 +1001,153 @@ the final evaluator (Merlin) to make scholarship decisions."""
     async def _extract_program_participation(
         self,
         transcript_text: str,
-        student_name: str
+        student_name: str,
+        rapunzel_grades_data: Optional[Dict[str, Any]] = None
     ) -> Dict[str, Any]:
-        """Extract which advanced programs the student participated in."""
+        """Extract which advanced programs the student participated in.
+        
+        Primary source: Rapunzel's standardized_transcript_rows (per-course Level column).
+        Fallback: Broad regex patterns on raw transcript text.
+        """
         
         participation = {
             'ap_courses_taken': [],
             'ib_courses_taken': [],
             'honors_courses_taken': [],
+            'de_courses_taken': [],
             'stem_courses': [],
             'gt_program': False,
             'other_programs': []
         }
         
-        # Count AP courses
-        ap_matches = re.findall(r'AP\s+([A-Za-z\s&]+):\s*([A-F\+\-])', transcript_text, re.IGNORECASE)
-        participation['ap_courses_taken'] = [course for course, _ in ap_matches]
+        used_rapunzel = False
         
-        # Count Honors courses
-        honors_matches = re.findall(r'\(Honors\):\s*([A-F\+\-])', transcript_text)
-        participation['honors_courses_taken'] = len(honors_matches)
+        # ── PRIMARY: Use Rapunzel's parsed transcript rows if available ──
+        if rapunzel_grades_data and isinstance(rapunzel_grades_data, dict):
+            # Rapunzel returns standardized_transcript_rows as list of lists:
+            # [Year, Course, Level, Grade, Numeric, Credits]
+            rows = (rapunzel_grades_data.get('standardized_transcript_rows')
+                    or rapunzel_grades_data.get('grade_table_rows')
+                    or [])
+            headers = (rapunzel_grades_data.get('grade_table_headers') or [])
+            
+            # Find the Level column index
+            level_idx = None
+            course_idx = None
+            headers_lower = [h.lower().strip() for h in headers] if headers else []
+            for i, h in enumerate(headers_lower):
+                if 'level' in h:
+                    level_idx = i
+                elif 'course' in h:
+                    course_idx = i
+            
+            # Default positions if headers weren't parsed: Year=0, Course=1, Level=2
+            if level_idx is None and rows and len(rows[0]) >= 3:
+                level_idx = 2
+            if course_idx is None and rows and len(rows[0]) >= 2:
+                course_idx = 1
+            
+            if rows and level_idx is not None:
+                for row in rows:
+                    if not row or level_idx >= len(row):
+                        continue
+                    level = str(row[level_idx]).strip().upper()
+                    course_name = str(row[course_idx]).strip() if course_idx is not None and course_idx < len(row) else ''
+                    
+                    if level in ('AP', 'ADVANCED PLACEMENT'):
+                        participation['ap_courses_taken'].append(course_name)
+                    elif level in ('HONORS', 'HNR', 'H', 'HON', 'HONOR'):
+                        participation['honors_courses_taken'].append(course_name)
+                    elif level in ('IB', 'INTERNATIONAL BACCALAUREATE'):
+                        participation['ib_courses_taken'].append(course_name)
+                    elif level in ('DE', 'DUAL ENROLLMENT', 'DUAL', 'COLLEGE'):
+                        participation['de_courses_taken'].append(course_name)
+                
+                if (participation['ap_courses_taken'] or participation['honors_courses_taken']
+                        or participation['ib_courses_taken'] or participation['de_courses_taken']):
+                    used_rapunzel = True
+                    print(f"    ✓ Program participation from Rapunzel: "
+                          f"{len(participation['ap_courses_taken'])} AP, "
+                          f"{len(participation['honors_courses_taken'])} Honors, "
+                          f"{len(participation['ib_courses_taken'])} IB, "
+                          f"{len(participation['de_courses_taken'])} DE")
         
-        # Look for STEM indicators
+        # ── FALLBACK: Broad regex extraction from transcript text ──
+        if not used_rapunzel and transcript_text:
+            text_lower = transcript_text.lower()
+            
+            # AP courses — multiple patterns
+            ap_patterns = [
+                r'AP\s+([A-Za-z\s&/]+?)(?:\s*[-:]\s*[A-F\+\-]|\s*\d|\s*$|\s*\|)',
+                r'Advanced\s+Placement\s+([A-Za-z\s&/]+?)(?:\s*[-:]\s*[A-F\+\-]|\s*\d|\s*$|\s*\|)',
+            ]
+            for pat in ap_patterns:
+                for m in re.finditer(pat, transcript_text, re.IGNORECASE | re.MULTILINE):
+                    course = m.group(1).strip().rstrip('- :')
+                    if course and course not in participation['ap_courses_taken']:
+                        participation['ap_courses_taken'].append(course)
+            
+            # Honors courses — multiple patterns
+            honors_patterns = [
+                r'Honors\s+([A-Za-z\s&/]+?)(?:\s*[-:]\s*[A-F\+\-]|\s*\d|\s*$|\s*\|)',
+                r'([A-Za-z\s&/]+?)\s+\(Honors\)',
+                r'([A-Za-z\s&/]+?)\s+Honors(?:\s*[-:]\s*[A-F\+\-]|\s*\d|\s*$|\s*\|)',
+                r'([A-Za-z\s&/]+?)\s+-\s*Honors',
+                r'HNR\s+([A-Za-z\s&/]+?)(?:\s*[-:]\s*[A-F\+\-]|\s*\d|\s*$|\s*\|)',
+                r'H\s+([A-Za-z\s&/]+?)(?:\s*[-:]\s*[A-F\+\-]|\s*\d|\s*$|\s*\|)',
+            ]
+            for pat in honors_patterns:
+                for m in re.finditer(pat, transcript_text, re.IGNORECASE | re.MULTILINE):
+                    course = m.group(1).strip().rstrip('- :')
+                    if course and len(course) > 2 and course not in participation['honors_courses_taken']:
+                        participation['honors_courses_taken'].append(course)
+            
+            # IB courses
+            ib_patterns = [
+                r'IB\s+([A-Za-z\s&/]+?)(?:\s*[-:]\s*[A-F\+\-]|\s*\d|\s*$|\s*\|)',
+            ]
+            for pat in ib_patterns:
+                for m in re.finditer(pat, transcript_text, re.IGNORECASE | re.MULTILINE):
+                    course = m.group(1).strip().rstrip('- :')
+                    if course and course not in participation['ib_courses_taken']:
+                        participation['ib_courses_taken'].append(course)
+            
+            # Dual Enrollment
+            de_patterns = [
+                r'(?:Dual\s+Enrollment|DE)\s+([A-Za-z\s&/]+?)(?:\s*[-:]\s*[A-F\+\-]|\s*\d|\s*$|\s*\|)',
+            ]
+            for pat in de_patterns:
+                for m in re.finditer(pat, transcript_text, re.IGNORECASE | re.MULTILINE):
+                    course = m.group(1).strip().rstrip('- :')
+                    if course and course not in participation['de_courses_taken']:
+                        participation['de_courses_taken'].append(course)
+            
+            if (participation['ap_courses_taken'] or participation['honors_courses_taken']
+                    or participation['ib_courses_taken'] or participation['de_courses_taken']):
+                print(f"    ✓ Program participation from regex: "
+                      f"{len(participation['ap_courses_taken'])} AP, "
+                      f"{len(participation['honors_courses_taken'])} Honors, "
+                      f"{len(participation['ib_courses_taken'])} IB, "
+                      f"{len(participation['de_courses_taken'])} DE")
+        
+        # ── STEM detection (always runs, supplements either source) ──
         stem_keywords = ['STEM', 'Computer Science', 'Physics', 'Chemistry', 'Biology', 'Mathematics', 'Engineering']
         for keyword in stem_keywords:
-            if keyword.lower() in transcript_text.lower():
+            if keyword.lower() in (transcript_text or '').lower():
                 if keyword not in participation['stem_courses']:
                     participation['stem_courses'].append(keyword)
         
         # Check for gifted program
-        if re.search(r'gifted|accelerated|advanced placement', transcript_text, re.IGNORECASE):
+        if re.search(r'gifted|accelerated|advanced placement', transcript_text or '', re.IGNORECASE):
             participation['gt_program'] = True
         
-        # Count total advanced courses
+        # Count total advanced courses (honors_courses_taken is now a list, not int)
+        honors_count = len(participation['honors_courses_taken']) if isinstance(participation['honors_courses_taken'], list) else participation['honors_courses_taken']
         participation['total_advanced_courses'] = (
             len(participation['ap_courses_taken']) +
-            participation['honors_courses_taken'] +
+            honors_count +
+            len(participation['ib_courses_taken']) +
+            len(participation['de_courses_taken']) +
             len(participation['stem_courses'])
         )
         
