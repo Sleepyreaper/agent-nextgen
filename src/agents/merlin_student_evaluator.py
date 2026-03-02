@@ -71,69 +71,97 @@ class MerlinStudentEvaluator(BaseAgent):
                 if not isinstance(data, dict):
                     data = {"raw_response": str(data)}
 
+                # ── Helper: detect if data needs a retry ──
+                def _needs_retry(d):
+                    """True if result is empty or a message-object wrapper."""
+                    if not isinstance(d, dict):
+                        return True
+                    # Message-object wrapper with empty content
+                    if 'role' in d and 'refusal' in d:
+                        inner = d.get('content', '')
+                        if not inner or (isinstance(inner, str) and not inner.strip()):
+                            return True
+                    # Completely empty / raw_response-only result
+                    if set(d.keys()) <= {'raw_response', 'status'} and not d.get('raw_response'):
+                        return True
+                    return False
+
+                def _unwrap_message_object(d):
+                    """If d is a Foundry message-object wrapper, unwrap it."""
+                    if not isinstance(d, dict) or 'role' not in d or 'refusal' not in d:
+                        return d
+                    inner = d.get('content', '')
+                    if isinstance(inner, str) and inner.strip():
+                        try:
+                            unwrapped = json.loads(inner)
+                            if isinstance(unwrapped, dict):
+                                return unwrapped
+                        except Exception:
+                            return {"raw_response": inner}
+                    elif isinstance(inner, dict):
+                        return inner
+                    return d  # Return as-is if can't unwrap
+
                 # Detect when the Foundry adapter returns a message-object-like
                 # dict (has 'role'/'refusal' keys with a nested 'content' field)
                 # instead of the actual AI output.  Unwrap the inner content.
-                if 'role' in data and 'refusal' in data:
-                    inner_content = data.get('content', '')
-                    if isinstance(inner_content, str) and inner_content.strip():
-                        try:
-                            unwrapped = json.loads(inner_content)
-                            if isinstance(unwrapped, dict):
-                                data = unwrapped
-                        except Exception:
-                            data = {"raw_response": inner_content}
-                    elif isinstance(inner_content, dict):
-                        data = inner_content
-                    else:
-                        # Empty content from Foundry adapter — retry once
+                data = _unwrap_message_object(data)
+
+                # ── Retry loop: up to 2 retries if result is empty ──
+                if _needs_retry(data):
+                    for retry_num in range(1, 3):
                         logger.warning(
-                            "Merlin received message-object-shaped response with empty content "
-                            "for application %s; retrying once...",
-                            application_id,
+                            "Merlin received empty/invalid response for application %s "
+                            "(attempt %d); retrying (attempt %d)...",
+                            application_id, retry_num, retry_num + 1,
                         )
                         try:
                             retry_response = self._create_chat_completion(
-                                operation="merlin.evaluate_student.retry",
+                                operation=f"merlin.evaluate_student.retry{retry_num}",
                                 model=self.model,
                                 messages=[
                                     {"role": "system", "content": system_prompt},
                                     {"role": "user", "content": user_prompt}
                                 ],
-                                max_completion_tokens=2400,
+                                max_completion_tokens=3000,
                                 temperature=1,
-                                refinements=0,
+                                refinements=1,
+                                refinement_instruction=(
+                                    "Ensure the JSON contains overall_score, recommendation, "
+                                    "rationale, applicant_summary, and nextgen_match fields."
+                                ),
                                 response_format={"type": "json_object"}
                             )
                             retry_payload = retry_response.choices[0].message.content
                             retry_data = safe_load_json(retry_payload)
                             if isinstance(retry_data, dict):
-                                # Check if retry also returned message-object wrapper
-                                if 'role' in retry_data and 'refusal' in retry_data:
-                                    rc = retry_data.get('content', '')
-                                    if isinstance(rc, str) and rc.strip():
-                                        try:
-                                            retry_data = json.loads(rc)
-                                        except Exception:
-                                            retry_data = None
-                                    elif isinstance(rc, dict):
-                                        retry_data = rc
-                                    else:
-                                        retry_data = None
-                                if retry_data and isinstance(retry_data, dict) and retry_data.get('overall_score') is not None:
-                                    data = retry_data
-                                    logger.info("Merlin retry succeeded for application %s", application_id)
-                                else:
-                                    logger.error(
-                                        "Merlin retry also returned empty for application %s",
-                                        application_id,
-                                    )
-                                    data = {"raw_response": "", "status": "empty_response"}
+                                retry_data = _unwrap_message_object(retry_data)
+                            if (isinstance(retry_data, dict)
+                                    and not _needs_retry(retry_data)
+                                    and retry_data.get('overall_score') is not None):
+                                data = retry_data
+                                logger.info(
+                                    "Merlin retry %d succeeded for application %s",
+                                    retry_num, application_id,
+                                )
+                                break
                             else:
-                                data = {"raw_response": str(retry_data), "status": "empty_response"}
+                                logger.warning(
+                                    "Merlin retry %d also returned empty for application %s",
+                                    retry_num, application_id,
+                                )
                         except Exception as retry_err:
-                            logger.error("Merlin retry failed for application %s: %s", application_id, retry_err)
-                            data = {"raw_response": "", "status": "empty_response"}
+                            logger.error(
+                                "Merlin retry %d failed for application %s: %s",
+                                retry_num, application_id, retry_err,
+                            )
+                    else:
+                        # All retries exhausted
+                        logger.error(
+                            "Merlin all retries exhausted for application %s — empty response",
+                            application_id,
+                        )
+                        data = {"raw_response": "", "status": "empty_response"}
 
                 normalized = self._normalize_score(
                     data.get("overall_score"),
