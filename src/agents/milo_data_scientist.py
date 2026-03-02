@@ -344,18 +344,34 @@ class MiloDataScientist(BaseAgent):
         prompt = self._build_batch_evaluation_prompt(profiles, insights)
 
         try:
-            response = self._create_chat_completion(
-                operation="milo.evaluate_batch",
-                model=self.model,
-                messages=[
-                    {"role": "system", "content": self._system_prompt_evaluate()},
-                    {"role": "user", "content": prompt},
-                ],
-                max_completion_tokens=3000,
-                temperature=0.2,
-                response_format={"type": "json_object"},
-            )
-            payload = safe_load_json(response.choices[0].message.content)
+            payload = None
+            for attempt in range(2):
+                response = self._create_chat_completion(
+                    operation="milo.evaluate_batch",
+                    model=self.model,
+                    messages=[
+                        {"role": "system", "content": self._system_prompt_evaluate()},
+                        {"role": "user", "content": prompt},
+                    ],
+                    max_completion_tokens=3000,
+                    temperature=0.2,
+                    response_format={"type": "json_object"},
+                )
+                payload = safe_load_json(response.choices[0].message.content)
+
+                # Guard against malformed JSON (safe_load_json returns the raw
+                # string when parsing fails, and calling .get() on a str crashes).
+                if isinstance(payload, dict):
+                    break
+                logger.warning(
+                    "Milo batch response attempt %d was not valid JSON dict: %s",
+                    attempt + 1,
+                    str(payload)[:300],
+                )
+
+            if not isinstance(payload, dict):
+                payload = {"evaluations": []}
+
             evaluations = payload.get("evaluations", [])
 
             # Merge back with application metadata
@@ -363,6 +379,18 @@ class MiloDataScientist(BaseAgent):
             for i, app in enumerate(batch):
                 if i < len(evaluations):
                     eval_data = evaluations[i]
+                    # Guard individual entries (AI may return a string instead
+                    # of a dict for a single evaluation).
+                    if not isinstance(eval_data, dict):
+                        logger.warning(
+                            "Milo evaluation[%d] not a dict: %s", i, str(eval_data)[:200]
+                        )
+                        eval_data = {
+                            "nextgen_match": 0,
+                            "match_score": 0,
+                            "tier": "DECLINE",
+                            "explanation": "Malformed AI evaluation response.",
+                        }
                 else:
                     eval_data = {
                         "nextgen_match": 0,
