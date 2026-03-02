@@ -250,11 +250,24 @@ def _make_ocr_callback():
             {
                 "role": "system",
                 "content": (
-                    "You are a precise document OCR system. Extract ALL text from the "
+                    "You are a precise document OCR system specializing in academic "
+                    "transcripts and student records. Extract ALL text from the "
                     "provided image exactly as it appears. Preserve the layout, including "
-                    "tables, columns, and line breaks. For transcripts and grade reports, "
-                    "capture every course name, grade, credit, GPA, and any other data. "
-                    "Do NOT summarize or interpret — reproduce the text faithfully."
+                    "tables, columns, and line breaks.\n\n"
+                    "For TRANSCRIPTS and GRADE REPORTS, you MUST capture:\n"
+                    "- Every course name and its corresponding grade (letter or numeric)\n"
+                    "- Credit hours / units for each course\n"
+                    "- GPA values (weighted and unweighted)\n"
+                    "- Semester / term / year labels\n"
+                    "- Student name, school name, grade level\n"
+                    "- Class rank, test scores, attendance data if present\n"
+                    "- Any headers like 'UNOFFICIAL TRANSCRIPT', 'ACADEMIC RECORD', etc.\n\n"
+                    "For tabular data, reproduce the table structure using aligned columns "
+                    "or a clear delimiter (e.g., ' | ' or tabs). Each row should be on its "
+                    "own line.\n\n"
+                    "Do NOT summarize or interpret — reproduce the text faithfully. "
+                    "If text is partially illegible, include your best reading with [?] "
+                    "for uncertain characters."
                 )
             },
             {
@@ -282,7 +295,7 @@ def _make_ocr_callback():
             resp = client.chat.completions.create(
                 model=vision_model,
                 messages=messages,
-                max_tokens=4000,
+                max_tokens=6000,
                 temperature=0.0
             )
             text = resp.choices[0].message.content or ""
@@ -5173,7 +5186,10 @@ def upload_test_files():
                         logger.warning(f"Could not retrieve {cfilename} from storage")
                         continue
 
-                    application_text, file_type = DocumentProcessor.process_document(temp_path)
+                    ocr_callback = _make_ocr_callback()
+                    application_text, file_type = DocumentProcessor.process_document(
+                        temp_path, ocr_callback=ocr_callback
+                    )
 
                     try:
                         belle = get_belle()
@@ -5253,7 +5269,10 @@ def upload_test_files():
                 temp_path = os.path.join(app.config['UPLOAD_FOLDER'], f"temp_{student_id}_{filename}")
                 file.save(temp_path)
 
-                application_text, file_type = DocumentProcessor.process_document(temp_path)
+                ocr_callback = _make_ocr_callback()
+                application_text, file_type = DocumentProcessor.process_document(
+                    temp_path, ocr_callback=ocr_callback
+                )
 
                 with open(temp_path, 'rb') as f:
                     file_content = f.read()

@@ -62,7 +62,7 @@ class DocumentProcessor:
                     should_ocr = bool(images) or len(page_text) < 20
                     if should_ocr:
                         try:
-                            pix = page.get_pixmap(dpi=200)
+                            pix = page.get_pixmap(dpi=300)
                             img_bytes = pix.tobytes("png")
                             page_label = f"page {page_num} of {total_pages}"
                             logger.info(

@@ -362,7 +362,11 @@ class BelleDocumentAnalyzer(BaseAgent):
                 'semester grade', 'final grade', 'grading scale',
                 'class rank', 'weighted gpa', 'unweighted gpa',
                 'high school transcript', 'official transcript',
-                'college preparatory', 'graduation requirements'
+                'college preparatory', 'graduation requirements',
+                'unofficial transcript', 'student transcript',
+                'quality points', 'earned credits', 'attempted credits',
+                'grading period', 'marking period', 'report card',
+                'academic summary', 'scholastic record'
             ],
             # Medium-confidence indicators (1 point each)
             # Only terms that are SPECIFIC to transcripts, not general
@@ -370,7 +374,9 @@ class BelleDocumentAnalyzer(BaseAgent):
             'medium': [
                 'gpa', 'honors', 'ap ', ' ib ', 'semester', 'quarter',
                 'credits', 'elective', 'physical education',
-                'attendance', 'period', 'room', 'mark'
+                'attendance', 'period', 'room', 'mark',
+                'cr hrs', 'cr earned', 'grade level', 'absences',
+                'tardies', 'conduct', 'citizenship'
             ]
         }
         
@@ -504,6 +510,26 @@ class BelleDocumentAnalyzer(BaseAgent):
             ))
             if grade_pattern_count >= 4:
                 t_score += 2  # Multiple grade patterns on page
+            
+            # ── OCR'd scanned transcript heuristics ──
+            # Scanned transcripts often produce dense tabular output with
+            # course-grade pairs, credit columns, and numeric data.
+            # Detect course+grade row patterns (e.g., "English 11  B+  1.0")
+            course_grade_rows = len(re.findall(
+                r'[A-Za-z]{3,}.{2,30}(?:[ABCDF][+-]?|(?:100|\d{2})\b)',
+                page_text
+            ))
+            if course_grade_rows >= 5:
+                t_score += 3  # Strong signal: multiple course-grade rows
+            elif course_grade_rows >= 3:
+                t_score += 1
+            
+            # Detect credit/unit columns (e.g., "0.50", "1.00", "0.5")
+            credit_patterns = len(re.findall(
+                r'\b(?:0\.(?:25|50?|75)|1\.00?)\b', page_text
+            ))
+            if credit_patterns >= 3:
+                t_score += 2  # Credit hour column present
             
             logger.info(
                 f"  Page {page_num} scores: transcript={t_score}, "
