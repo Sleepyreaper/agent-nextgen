@@ -912,7 +912,36 @@ class Database:
                             is_active BOOLEAN DEFAULT TRUE,
                             archived_at TIMESTAMP,
                             moana_requirements_met BOOLEAN DEFAULT FALSE,
-                            last_moana_validation TIMESTAMP
+                            last_moana_validation TIMESTAMP,
+                            -- SES / CSV-sourced columns (issue #13)
+                            nces_id VARCHAR(20),
+                            city VARCHAR(100),
+                            zip_code VARCHAR(10),
+                            latitude NUMERIC(10,6),
+                            longitude NUMERIC(10,6),
+                            phone VARCHAR(20),
+                            school_type VARCHAR(20),
+                            is_charter BOOLEAN DEFAULT FALSE,
+                            is_magnet BOOLEAN DEFAULT FALSE,
+                            is_virtual BOOLEAN DEFAULT FALSE,
+                            is_title_i BOOLEAN DEFAULT FALSE,
+                            locale_code VARCHAR(5),
+                            teachers_fte NUMERIC(7,1),
+                            reduced_lunch_percentage NUMERIC(5,2),
+                            direct_certification_pct NUMERIC(5,2),
+                            district_poverty_pct NUMERIC(5,2),
+                            district_population INTEGER,
+                            district_exp_per_pupil NUMERIC(10,2),
+                            district_rev_per_pupil NUMERIC(10,2),
+                            district_exp_instruction_per_pupil NUMERIC(10,2),
+                            district_rev_federal_pct NUMERIC(5,2),
+                            district_rev_state_pct NUMERIC(5,2),
+                            district_rev_local_pct NUMERIC(5,2),
+                            enrollment_trend_json TEXT,
+                            frpl_trend_json TEXT,
+                            years_of_data INTEGER,
+                            latest_school_year VARCHAR(10),
+                            csv_import_date TIMESTAMP
                         )
                     """)
                     cursor.execute("CREATE INDEX IF NOT EXISTS idx_school_enriched_name ON school_enriched_data(school_name)")
@@ -937,7 +966,35 @@ class Database:
                 
                 for col_name, col_type in {
                     'moana_requirements_met': 'BOOLEAN DEFAULT FALSE',
-                    'last_moana_validation': 'TIMESTAMP'
+                    'last_moana_validation': 'TIMESTAMP',
+                    'nces_id': 'VARCHAR(20)',
+                    'city': 'VARCHAR(100)',
+                    'zip_code': 'VARCHAR(10)',
+                    'latitude': 'NUMERIC(10,6)',
+                    'longitude': 'NUMERIC(10,6)',
+                    'phone': 'VARCHAR(20)',
+                    'school_type': 'VARCHAR(20)',
+                    'is_charter': 'BOOLEAN DEFAULT FALSE',
+                    'is_magnet': 'BOOLEAN DEFAULT FALSE',
+                    'is_virtual': 'BOOLEAN DEFAULT FALSE',
+                    'is_title_i': 'BOOLEAN DEFAULT FALSE',
+                    'locale_code': 'VARCHAR(5)',
+                    'teachers_fte': 'NUMERIC(7,1)',
+                    'reduced_lunch_percentage': 'NUMERIC(5,2)',
+                    'direct_certification_pct': 'NUMERIC(5,2)',
+                    'district_poverty_pct': 'NUMERIC(5,2)',
+                    'district_population': 'INTEGER',
+                    'district_exp_per_pupil': 'NUMERIC(10,2)',
+                    'district_rev_per_pupil': 'NUMERIC(10,2)',
+                    'district_exp_instruction_per_pupil': 'NUMERIC(10,2)',
+                    'district_rev_federal_pct': 'NUMERIC(5,2)',
+                    'district_rev_state_pct': 'NUMERIC(5,2)',
+                    'district_rev_local_pct': 'NUMERIC(5,2)',
+                    'enrollment_trend_json': 'TEXT',
+                    'frpl_trend_json': 'TEXT',
+                    'years_of_data': 'INTEGER',
+                    'latest_school_year': 'VARCHAR(10)',
+                    'csv_import_date': 'TIMESTAMP',
                 }.items():
                     if col_name not in school_columns:
                         try:
@@ -953,6 +1010,10 @@ class Database:
                     cursor.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_school_enriched_name_state ON school_enriched_data(LOWER(school_name), state_code)")
                     conn.commit()
                     logger.info("✓ Ensured unique index on school_enriched_data(school_name, state_code)")
+
+                    # NCES ID index for CSV import lookups
+                    cursor.execute("CREATE INDEX IF NOT EXISTS idx_school_enriched_nces ON school_enriched_data(nces_id)")
+                    conn.commit()
                 except Exception as idx_err:
                     logger.warning(f"Could not create unique index (duplicates may exist): {idx_err}")
                     conn.rollback()
@@ -2934,8 +2995,23 @@ class Database:
                 free_lunch_percentage, ap_course_count, ap_exam_pass_rate, stem_program_available,
                 ib_program_available, dual_enrollment_available, analysis_status, 
                 human_review_status, web_sources_analyzed, data_confidence_score, created_by,
-                school_investment_level, is_active
-            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                school_investment_level, is_active,
+                nces_id, city, zip_code, latitude, longitude, phone,
+                school_type, is_charter, is_magnet, is_virtual, is_title_i,
+                locale_code, teachers_fte, reduced_lunch_percentage,
+                direct_certification_pct, district_poverty_pct, district_population,
+                district_exp_per_pupil, district_rev_per_pupil,
+                district_exp_instruction_per_pupil, district_rev_federal_pct,
+                district_rev_state_pct, district_rev_local_pct,
+                enrollment_trend_json, frpl_trend_json, years_of_data,
+                latest_school_year, csv_import_date, student_teacher_ratio
+            ) VALUES (
+                %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
+                %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
+                %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
+                %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
+                %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
+            )
             RETURNING school_enrichment_id
         """
         
@@ -2965,7 +3041,37 @@ class Database:
                     school_data.get('confidence_score', 0) or school_data.get('data_confidence_score', 0),
                     school_data.get('created_by', 'naveen'),
                     school_data.get('school_investment_level', 'medium'),
-                    school_data.get('is_active', True)  # New column for active status
+                    school_data.get('is_active', True),
+                    # SES / CSV-sourced columns
+                    school_data.get('nces_id'),
+                    school_data.get('city'),
+                    school_data.get('zip_code'),
+                    school_data.get('latitude'),
+                    school_data.get('longitude'),
+                    school_data.get('phone'),
+                    school_data.get('school_type'),
+                    school_data.get('is_charter', False),
+                    school_data.get('is_magnet', False),
+                    school_data.get('is_virtual', False),
+                    school_data.get('is_title_i', False),
+                    school_data.get('locale_code'),
+                    school_data.get('teachers_fte'),
+                    school_data.get('reduced_lunch_percentage'),
+                    school_data.get('direct_certification_pct'),
+                    school_data.get('district_poverty_pct'),
+                    school_data.get('district_population'),
+                    school_data.get('district_exp_per_pupil'),
+                    school_data.get('district_rev_per_pupil'),
+                    school_data.get('district_exp_instruction_per_pupil'),
+                    school_data.get('district_rev_federal_pct'),
+                    school_data.get('district_rev_state_pct'),
+                    school_data.get('district_rev_local_pct'),
+                    school_data.get('enrollment_trend_json'),
+                    school_data.get('frpl_trend_json'),
+                    school_data.get('years_of_data'),
+                    school_data.get('latest_school_year'),
+                    school_data.get('csv_import_date'),
+                    school_data.get('student_teacher_ratio'),
                 )
             )
             
@@ -2977,6 +3083,70 @@ class Database:
                 extra={'school_name': school_data.get('school_name'), 'school_data_keys': list(school_data.keys())}
             )
             return None
+
+    @staticmethod
+    def _add_school_field_aliases(record: Dict[str, Any]) -> Dict[str, Any]:
+        """Add common field-name aliases so every consumer (Moana, app.py, Aurora
+        cached path, etc.) can look up school data by *either* the canonical DB
+        column name or the legacy/Naveen-style name.
+
+        Also computes lightweight derived fields that are not stored in the DB
+        but that agents expect (e.g. ``socioeconomic_level``).
+        """
+        if record is None:
+            return record
+
+        # --- simple renames (DB column → legacy alias) ---
+        alias_map = {
+            # DB column                  → alias(es) used by agents / app.py
+            'total_students':             'enrollment_size',
+            'college_acceptance_rate':    'college_placement_rate',
+            'ap_course_count':           'ap_classes_count',
+            'stem_program_available':    'stem_programs',
+            'ib_program_available':      'ib_offerings',
+            'honors_course_count':       'honors_programs',
+            'web_sources_analyzed':      'web_sources',
+            'updated_at':               'analysis_date',
+        }
+        for db_col, alias in alias_map.items():
+            if alias not in record and db_col in record:
+                record[alias] = record[db_col]
+
+        # --- derived: socioeconomic_level from free_lunch_percentage ---
+        if 'socioeconomic_level' not in record or record.get('socioeconomic_level') is None:
+            flp = record.get('free_lunch_percentage')
+            if flp is not None:
+                try:
+                    flp = float(flp)
+                    if flp >= 75:
+                        record['socioeconomic_level'] = 'low'
+                    elif flp >= 50:
+                        record['socioeconomic_level'] = 'low-medium'
+                    elif flp >= 25:
+                        record['socioeconomic_level'] = 'medium'
+                    else:
+                        record['socioeconomic_level'] = 'medium-high'
+                except (ValueError, TypeError):
+                    record['socioeconomic_level'] = 'unknown'
+            else:
+                record['socioeconomic_level'] = 'unknown'
+
+        # --- derived: academic_programs summary for app.py ---
+        if 'academic_programs' not in record or record.get('academic_programs') is None:
+            parts = []
+            if record.get('ap_course_count'):
+                parts.append(f"{record['ap_course_count']} AP courses")
+            if record.get('ib_program_available'):
+                parts.append("IB program")
+            if record.get('stem_program_available'):
+                parts.append("STEM program")
+            if record.get('dual_enrollment_available'):
+                parts.append("Dual enrollment")
+            record['academic_programs'] = ', '.join(parts) if parts else None
+
+        # diversity_index: not derivable from CSV — leave as-is (may be None)
+
+        return record
 
     def get_school_enriched_data(self, school_id: Optional[int] = None, school_name: Optional[str] = None, 
                                  state_code: Optional[str] = None) -> Optional[Dict[str, Any]]:
@@ -2994,7 +3164,9 @@ class Database:
             else:
                 return None
             
-            return result[0] if result else None
+            if result:
+                return self._add_school_field_aliases(dict(result[0]))
+            return None
         except Exception as e:
             logger.error(f"Error getting school enriched data: {e}")
             return None
@@ -3081,7 +3253,8 @@ class Database:
             query += " ORDER BY opportunity_score DESC LIMIT %s"
             params.append(limit)
             
-            return self.execute_query(query, tuple(params))
+            results = self.execute_query(query, tuple(params))
+            return [self._add_school_field_aliases(dict(r)) for r in results]
         except Exception as e:
             logger.error(f"Error getting all schools enriched: {e}")
             return []

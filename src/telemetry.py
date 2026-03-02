@@ -3,8 +3,10 @@
 import os
 import json
 import time
-from typing import Optional, Dict, Any
-from datetime import datetime
+import threading
+from collections import defaultdict
+from typing import Optional, Dict, Any, List
+from datetime import datetime, timezone
 
 from opentelemetry import trace, metrics
 from opentelemetry.trace import SpanKind
@@ -48,6 +50,21 @@ class NextGenTelemetry:
     def __init__(self):
         # Cache counters to avoid re-creating on every call
         self._counters = {}
+        # In-memory token usage accumulation
+        self._lock = threading.Lock()
+        self._token_by_model: Dict[str, Dict[str, int]] = defaultdict(
+            lambda: {"input_tokens": 0, "output_tokens": 0, "total_tokens": 0, "call_count": 0}
+        )
+        self._token_by_agent: Dict[str, Dict[str, int]] = defaultdict(
+            lambda: {"input_tokens": 0, "output_tokens": 0, "total_tokens": 0, "call_count": 0}
+        )
+        self._token_by_agent_model: Dict[str, Dict[str, int]] = defaultdict(
+            lambda: {"input_tokens": 0, "output_tokens": 0, "total_tokens": 0, "call_count": 0}
+        )
+        self._token_total = {"input_tokens": 0, "output_tokens": 0, "total_tokens": 0, "call_count": 0}
+        self._recent_calls: List[Dict[str, Any]] = []  # last N model calls
+        self._max_recent = 200
+        self._tracking_since = datetime.now(timezone.utc).isoformat()
 
     def _get_counter(self, name: str):
         """Get or create a cached counter instrument."""
@@ -146,10 +163,11 @@ class NextGenTelemetry:
         input_tokens: int,
         output_tokens: int,
         duration_ms: float,
-        success: bool = True
+        success: bool = True,
+        agent_name: str = "",
     ) -> None:
         """
-        Log a call to the AI model.
+        Log a call to the AI model with token usage tracking.
         
         Args:
             model: Model name
@@ -157,30 +175,155 @@ class NextGenTelemetry:
             output_tokens: Output token count
             duration_ms: Duration in milliseconds
             success: Whether the call succeeded
+            agent_name: Name of the calling agent
         """
+        total_tokens = (input_tokens or 0) + (output_tokens or 0)
         tracer = get_tracer()
         
         if tracer:
             with tracer.start_as_current_span("model_call") as span:
-                span.set_attribute("gen_ai.model", model)
+                span.set_attribute("gen_ai.model", model or "")
                 span.set_attribute("gen_ai.system", "azure_openai")
-                span.set_attribute("gen_ai.usage.prompt_tokens", input_tokens)
-                span.set_attribute("gen_ai.usage.completion_tokens", output_tokens)
-                span.set_attribute("gen_ai.usage.total_tokens", input_tokens + output_tokens)
+                span.set_attribute("gen_ai.usage.prompt_tokens", input_tokens or 0)
+                span.set_attribute("gen_ai.usage.completion_tokens", output_tokens or 0)
+                span.set_attribute("gen_ai.usage.total_tokens", total_tokens)
                 span.set_attribute("duration_ms", float(duration_ms))
                 span.set_attribute("success", success)
+                if agent_name:
+                    span.set_attribute("gen_ai.agent.name", agent_name)
         
+        # OpenTelemetry metric counters (split by token type)
         try:
-            token_ctr = self._get_counter("model_tokens_used")
-            if token_ctr:
-                token_ctr.add(input_tokens + output_tokens, {"model": model, "type": "total"})
-            
-            duration_ctr = self._get_counter("model_call_duration_ms")
+            input_ctr = self._get_counter("gen_ai.client.token.usage.input")
+            if input_ctr:
+                attrs = {"gen_ai.request.model": model or "unknown", "gen_ai.token.type": "input"}
+                if agent_name:
+                    attrs["gen_ai.agent.name"] = agent_name
+                input_ctr.add(input_tokens or 0, attrs)
+
+            output_ctr = self._get_counter("gen_ai.client.token.usage.output")
+            if output_ctr:
+                attrs = {"gen_ai.request.model": model or "unknown", "gen_ai.token.type": "output"}
+                if agent_name:
+                    attrs["gen_ai.agent.name"] = agent_name
+                output_ctr.add(output_tokens or 0, attrs)
+
+            duration_ctr = self._get_counter("gen_ai.client.operation.duration_ms")
             if duration_ctr:
-                duration_ctr.add(duration_ms, {"model": model})
+                attrs = {"gen_ai.request.model": model or "unknown"}
+                if agent_name:
+                    attrs["gen_ai.agent.name"] = agent_name
+                duration_ctr.add(duration_ms, attrs)
+
+            call_ctr = self._get_counter("gen_ai.client.call.count")
+            if call_ctr:
+                attrs = {
+                    "gen_ai.request.model": model or "unknown",
+                    "success": str(success).lower(),
+                }
+                if agent_name:
+                    attrs["gen_ai.agent.name"] = agent_name
+                call_ctr.add(1, attrs)
         except Exception:
             pass
+
+        # In-memory accumulation for the app API
+        self._accumulate_token_usage(
+            model=model or "unknown",
+            agent_name=agent_name or "unknown",
+            input_tokens=input_tokens or 0,
+            output_tokens=output_tokens or 0,
+            duration_ms=duration_ms,
+            success=success,
+        )
     
+    # ── In-memory token usage accumulation ────────────────────────────
+
+    def _accumulate_token_usage(
+        self,
+        model: str,
+        agent_name: str,
+        input_tokens: int,
+        output_tokens: int,
+        duration_ms: float,
+        success: bool,
+    ) -> None:
+        """Accumulate token usage in memory for the /api/telemetry/token-usage endpoint."""
+        total = input_tokens + output_tokens
+        with self._lock:
+            # By model
+            m = self._token_by_model[model]
+            m["input_tokens"] += input_tokens
+            m["output_tokens"] += output_tokens
+            m["total_tokens"] += total
+            m["call_count"] += 1
+
+            # By agent
+            a = self._token_by_agent[agent_name]
+            a["input_tokens"] += input_tokens
+            a["output_tokens"] += output_tokens
+            a["total_tokens"] += total
+            a["call_count"] += 1
+
+            # By agent+model combo
+            key = f"{agent_name}::{model}"
+            am = self._token_by_agent_model[key]
+            am["input_tokens"] += input_tokens
+            am["output_tokens"] += output_tokens
+            am["total_tokens"] += total
+            am["call_count"] += 1
+
+            # Grand total
+            self._token_total["input_tokens"] += input_tokens
+            self._token_total["output_tokens"] += output_tokens
+            self._token_total["total_tokens"] += total
+            self._token_total["call_count"] += 1
+
+            # Recent calls ring buffer
+            self._recent_calls.append({
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "model": model,
+                "agent": agent_name,
+                "input_tokens": input_tokens,
+                "output_tokens": output_tokens,
+                "total_tokens": total,
+                "duration_ms": round(duration_ms, 1),
+                "success": success,
+            })
+            if len(self._recent_calls) > self._max_recent:
+                self._recent_calls = self._recent_calls[-self._max_recent:]
+
+    def get_token_usage(self) -> Dict[str, Any]:
+        """Return accumulated token usage statistics.
+
+        Returns a dict with:
+          - totals: grand totals across all models/agents
+          - by_model: {model_name: {input_tokens, output_tokens, total_tokens, call_count}}
+          - by_agent: {agent_name: {input_tokens, output_tokens, total_tokens, call_count}}
+          - by_agent_model: {"agent::model": {...}}
+          - recent_calls: last N model invocations
+          - tracking_since: ISO timestamp when tracking started
+        """
+        with self._lock:
+            return {
+                "totals": dict(self._token_total),
+                "by_model": {k: dict(v) for k, v in self._token_by_model.items()},
+                "by_agent": {k: dict(v) for k, v in self._token_by_agent.items()},
+                "by_agent_model": {k: dict(v) for k, v in self._token_by_agent_model.items()},
+                "recent_calls": list(self._recent_calls[-50:]),
+                "tracking_since": self._tracking_since,
+            }
+
+    def reset_token_usage(self) -> None:
+        """Reset all accumulated token usage counters."""
+        with self._lock:
+            self._token_by_model.clear()
+            self._token_by_agent.clear()
+            self._token_by_agent_model.clear()
+            self._token_total = {"input_tokens": 0, "output_tokens": 0, "total_tokens": 0, "call_count": 0}
+            self._recent_calls.clear()
+            self._tracking_since = datetime.now(timezone.utc).isoformat()
+
     def log_school_enrichment(
         self,
         school_name: str,

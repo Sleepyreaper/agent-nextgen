@@ -10,7 +10,9 @@ import difflib
 import hashlib
 import threading
 import requests
-from flask import Flask, flash, jsonify, render_template, redirect, url_for, request, Response, stream_with_context
+from datetime import datetime, timedelta, timezone
+from flask import Flask, flash, jsonify, render_template, redirect, url_for, request, Response, session, stream_with_context
+from werkzeug.security import check_password_hash
 from werkzeug.utils import secure_filename
 
 from typing import Dict, Any, Optional
@@ -74,6 +76,82 @@ app = Flask(__name__, template_folder='web/templates', static_folder='web/static
 app.secret_key = config.flask_secret_key or os.urandom(32).hex()
 app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB max file size
 app.config['UPLOAD_FOLDER'] = 'uploads'
+
+
+# ---------------------------------------------------------------------------
+# Session lifetime
+# ---------------------------------------------------------------------------
+app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(hours=config.auth_session_hours)
+
+
+# ---------------------------------------------------------------------------
+# Authentication - simple Key Vault-backed username / password
+# ---------------------------------------------------------------------------
+_AUTH_WHITELIST = {
+    'login',                 # login page itself
+    'static',                # CSS / JS / images
+    'health_check',          # optional health probe endpoint
+}
+
+
+@app.before_request
+def require_login():
+    """Redirect unauthenticated requests to the login page."""
+    # Skip auth check if credentials are not configured (local dev / not yet set up)
+    if not config.auth_username or not config.auth_password_hash:
+        return  # auth disabled
+
+    # Allow whitelisted endpoints through
+    if request.endpoint in _AUTH_WHITELIST:
+        return
+
+    # Check session
+    if session.get('authenticated'):
+        login_time = session.get('login_time')
+        if login_time:
+            elapsed = datetime.now(timezone.utc) - datetime.fromisoformat(login_time)
+            if elapsed < timedelta(hours=config.auth_session_hours):
+                return  # session still valid
+        # Session expired
+        session.clear()
+
+    # Not authenticated - redirect HTML requests, return 401 for API calls
+    if request.path.startswith('/api/'):
+        return jsonify({'error': 'Authentication required'}), 401
+    return redirect(url_for('login', next=request.path))
+
+
+@app.route('/login', methods=['GET', 'POST'])
+def login():
+    """Login page and form handler."""
+    error = None
+    if request.method == 'POST':
+        username = request.form.get('username', '').strip()
+        password = request.form.get('password', '')
+
+        if (username == config.auth_username and
+                check_password_hash(config.auth_password_hash, password)):
+            session.permanent = True
+            session['authenticated'] = True
+            session['username'] = username
+            session['login_time'] = datetime.now(timezone.utc).isoformat()
+            logger.info("User '%s' logged in successfully", username)
+            next_url = request.args.get('next') or url_for('index')
+            return redirect(next_url)
+        else:
+            error = 'Invalid username or password.'
+            logger.warning("Failed login attempt for user '%s'", username)
+
+    return render_template('login.html', error=error, app_version=config.app_version)
+
+
+@app.route('/logout')
+def logout():
+    """Clear the session and redirect to login."""
+    username = session.get('username', 'unknown')
+    session.clear()
+    logger.info("User '%s' logged out", username)
+    return redirect(url_for('login'))
 
 
 @app.context_processor
@@ -953,12 +1031,13 @@ def upload():
                         doc_analysis = belle.analyze_document(application_text, filename)
                     except Exception as e:
                         logger.warning(f"Belle analysis failed: {e}")
-                    doc_analysis = {
-                        "document_type": "unknown",
-                        "confidence": 0,
-                        "student_info": {},
-                        "extracted_data": {}
-                    }
+                        doc_analysis = {
+                            "document_type": "unknown",
+                            "confidence": 0,
+                            "student_info": {},
+                            "extracted_data": {},
+                            "agent_fields": {}
+                        }
 
                 belle_student_info = doc_analysis.get('student_info', {})
                 extracted_name = belle_student_info.get('name') or extract_student_name(application_text)
@@ -1646,6 +1725,9 @@ def _collect_documents_from_storage(
     if not storage.client:
         return []
 
+    # Create OCR callback so image-based PDF pages get text extraction
+    ocr_cb = _make_ocr_callback()
+
     documents: list[Dict[str, Any]] = []
     blob_names = storage.list_student_files(student_id, application_type)
     for blob_name in blob_names:
@@ -1661,7 +1743,9 @@ def _collect_documents_from_storage(
         try:
             with open(temp_path, 'wb') as handle:
                 handle.write(file_content)
-            file_text, _ = DocumentProcessor.process_document(temp_path)
+            file_text, _ = DocumentProcessor.process_document(
+                temp_path, ocr_callback=ocr_cb
+            )
         finally:
             try:
                 os.remove(temp_path)
@@ -3189,6 +3273,24 @@ def student_detail(application_id):
                             parsed = {}
                         agent_results['merlin']['parsed_data'] = parsed
                         mer = agent_results['merlin']
+
+                        # Detect message-object-shaped parsed_json (has 'role'
+                        # and 'refusal' from Foundry adapter) and try to unwrap
+                        # the nested 'content' to find actual evaluation data.
+                        if isinstance(parsed, dict) and 'role' in parsed and 'refusal' in parsed:
+                            inner_content = parsed.get('content', '')
+                            if isinstance(inner_content, str) and inner_content.strip():
+                                try:
+                                    unwrapped = json.loads(inner_content)
+                                    if isinstance(unwrapped, dict):
+                                        parsed = unwrapped
+                                        agent_results['merlin']['parsed_data'] = parsed
+                                except Exception:
+                                    pass
+                            elif isinstance(inner_content, dict):
+                                parsed = inner_content
+                                agent_results['merlin']['parsed_data'] = parsed
+
                         if isinstance(parsed, dict):
                             # Promote all useful keys from parsed_json to top-level for template access
                             for k in ('overall_score', 'match_score', 'nextgen_match', 'recommendation',
@@ -3368,53 +3470,41 @@ def student_detail(application_id):
         
         logger.debug(f"About to render template with application_id={application.get('application_id')}")
 
-        # Pull Milo insights so the UI can display training-pattern information
+        # Pull Milo insights from already-persisted results — do NOT make
+        # live AI calls during page load as that blocks the worker for 10-30s
+        # and causes the page to hang/timeout under Front Door.
         milo_insights = {}
         milo_alignment = None
         alignment_score = None
         try:
-            orchestrator = get_orchestrator()
-            milo = orchestrator.agents.get('data_scientist') if orchestrator else None
-            # if the orchestrator already ran, it may have stored alignment in the
-            # application row; check there first to avoid redundant model calls.
-            try:
-                stored = application.get('agent_results') or {}
-                if isinstance(stored, str):
-                    stored = safe_load_json(stored)
-                if isinstance(stored, dict):
-                    # prefer explicit milo_alignment key, fall back to any
-                    # computed_alignment embedded inside data_scientist result
-                    milo_alignment = stored.get('milo_alignment') or \
-                        (stored.get('data_scientist') or {}).get('computed_alignment')
-            except Exception:
-                milo_alignment = None
+            # Check persisted agent_results on the application row
+            stored = application.get('agent_results') or {}
+            if isinstance(stored, str):
+                stored = safe_load_json(stored)
+            if isinstance(stored, dict):
+                milo_alignment = stored.get('milo_alignment') or \
+                    (stored.get('data_scientist') or {}).get('computed_alignment')
+                # Extract cached training insights from data_scientist result
+                ds = stored.get('data_scientist') or {}
+                if isinstance(ds, dict) and ds.get('status') == 'success':
+                    milo_insights = ds
 
-            if milo:
-                # always refresh insights (they are cached internally)
-                milo_insights = asyncio.run(milo.analyze_training_insights())
-                # compute AI-derived match/align for this specific application if
-                # we don't already have one from persisted results.
-                if not milo_alignment:
-                    try:
-                        milo_alignment = asyncio.run(milo.compute_alignment(application))
-                    except Exception as align_err:
-                        logger.debug(f"Milo compute_alignment failed: {align_err}")
-                # maintain simple numeric alignment as before as fallback
-                merlin_score = None
-                if agent_results.get('merlin'):
-                    try:
-                        merlin_score = float(agent_results['merlin'].get('overall_score') or
-                                              agent_results['merlin'].get('overallscore') or 0)
-                    except Exception:
-                        merlin_score = None
-                avg = milo_insights.get('average_merlin_score')
-                if merlin_score is not None and avg is not None:
-                    try:
-                        alignment_score = round(merlin_score - float(avg), 1)
-                    except Exception:
-                        alignment_score = None
+            # Simple numeric alignment from Merlin score vs stored average
+            merlin_score = None
+            if agent_results.get('merlin'):
+                try:
+                    merlin_score = float(agent_results['merlin'].get('overall_score') or
+                                          agent_results['merlin'].get('overallscore') or 0)
+                except Exception:
+                    merlin_score = None
+            avg = milo_insights.get('average_merlin_score')
+            if merlin_score is not None and avg is not None:
+                try:
+                    alignment_score = round(merlin_score - float(avg), 1)
+                except Exception:
+                    alignment_score = None
         except Exception as e:
-            logger.debug(f"Milo insights fetch failed in student_detail: {e}")
+            logger.debug(f"Milo insights load failed in student_detail: {e}")
 
         try:
             human_summary = _synthesize_human_summary(agent_results, application)
@@ -4154,6 +4244,205 @@ def api_clear_historical_scores():
     cohort_year = int(request.form.get('cohort_year', 2024))
     deleted = db.clear_historical_scores(cohort_year)
     return jsonify({'status': 'success', 'deleted': deleted})
+
+
+@app.route('/api/training/reprocess', methods=['POST'])
+def api_reprocess_training():
+    """Re-extract document fields for training records.
+
+    Re-downloads every file from blob storage for each training student,
+    re-runs DocumentProcessor + Belle section detection, and updates
+    application_text / transcript_text / recommendation_text in the DB.
+
+    This is essential after improving the extraction pipeline so that
+    existing training data benefits from the fixes.
+
+    Optional JSON body:
+        application_ids: list of ints — restrict to specific records
+    """
+    import threading
+
+    try:
+        data = request.get_json(silent=True) or {}
+        requested_ids = data.get('application_ids')
+
+        training_col = db.get_training_example_column() or 'is_training_example'
+        test_col = db.get_test_data_column() or 'is_test_data'
+
+        where = f"{training_col} = TRUE AND ({test_col} = FALSE OR {test_col} IS NULL)"
+        if requested_ids:
+            placeholders = ', '.join(['%s'] * len(requested_ids))
+            where += f" AND application_id IN ({placeholders})"
+            rows = db.execute_query(
+                f"SELECT application_id, student_id, applicant_name FROM applications WHERE {where}",
+                tuple(requested_ids)
+            )
+        else:
+            rows = db.execute_query(
+                f"SELECT application_id, student_id, applicant_name FROM applications WHERE {where}"
+            )
+
+        if not rows:
+            return jsonify({'status': 'success', 'message': 'No training records found', 'count': 0})
+
+        # Return immediately, run in background
+        results_file = os.path.join(app.config.get('UPLOAD_FOLDER', '/tmp'), 'reprocess_state.json')
+        state = {
+            'status': 'running',
+            'total': len(rows),
+            'processed': 0,
+            'updated': 0,
+            'errors': [],
+            'started_at': datetime.now(timezone.utc).isoformat()
+        }
+        with open(results_file, 'w') as f:
+            json.dump(state, f)
+
+        def _background_reprocess(records, state_path):
+            try:
+                belle = BelleDocumentAnalyzer(
+                    client=get_ai_client(),
+                    model=config.model_tier_lightweight or config.foundry_model_name,
+                    db_connection=db
+                )
+                for rec in records:
+                    app_id = rec['application_id']
+                    student_id = rec.get('student_id')
+                    name = rec.get('applicant_name', f'ID#{app_id}')
+                    try:
+                        if not student_id:
+                            logger.warning(f"Reprocess: skipping {name} — no student_id")
+                            state['errors'].append({'application_id': app_id, 'error': 'no student_id'})
+                            state['processed'] += 1
+                            continue
+
+                        # Re-download and re-analyze files from blob storage
+                        documents = _collect_documents_from_storage(student_id, 'training', belle)
+                        if not documents:
+                            documents = _collect_documents_from_storage(student_id, 'application', belle)
+                        if not documents:
+                            logger.warning(f"Reprocess: no files in storage for {name}")
+                            state['errors'].append({'application_id': app_id, 'error': 'no files in storage'})
+                            state['processed'] += 1
+                            continue
+
+                        aggregated = _aggregate_documents(documents)
+                        updates = {}
+                        for field in ['application_text', 'transcript_text', 'recommendation_text']:
+                            val = aggregated.get(field)
+                            if val:
+                                updates[field] = val
+
+                        if updates:
+                            db.update_application_fields(app_id, updates)
+                            state['updated'] += 1
+                            logger.info(
+                                f"Reprocess: updated {name} (app={app_id}) — "
+                                f"fields: {list(updates.keys())}, "
+                                f"sizes: {', '.join(f'{k}={len(v)}' for k, v in updates.items())}"
+                            )
+
+                            # Update missing_fields marker
+                            missing_fields = []
+                            if not updates.get('transcript_text'):
+                                missing_fields.append('transcript')
+                            if not updates.get('recommendation_text'):
+                                missing_fields.append('letters_of_recommendation')
+                            db.set_missing_fields(app_id, missing_fields)
+
+                    except Exception as exc:
+                        logger.error(f"Reprocess error for {name}: {exc}", exc_info=True)
+                        state['errors'].append({'application_id': app_id, 'error': str(exc)})
+
+                    state['processed'] += 1
+                    # Persist progress
+                    with open(state_path, 'w') as f:
+                        json.dump(state, f)
+
+                state['status'] = 'completed'
+                state['completed_at'] = datetime.now(timezone.utc).isoformat()
+            except Exception as exc:
+                state['status'] = 'error'
+                state['error'] = str(exc)
+            finally:
+                with open(state_path, 'w') as f:
+                    json.dump(state, f)
+
+        thread = threading.Thread(target=_background_reprocess, args=(rows, results_file), daemon=True)
+        thread.start()
+
+        return jsonify({
+            'status': 'success',
+            'message': f'Reprocessing {len(rows)} training records in background. '
+                       f'GET /api/training/reprocess to check progress.',
+            'total': len(rows)
+        })
+
+    except Exception as e:
+        logger.error(f"Error starting reprocess: {e}", exc_info=True)
+        return jsonify({'status': 'error', 'error': str(e)}), 500
+
+
+@app.route('/api/training/reprocess', methods=['GET'])
+def api_reprocess_training_status():
+    """Check progress of a running reprocess job."""
+    results_file = os.path.join(app.config.get('UPLOAD_FOLDER', '/tmp'), 'reprocess_state.json')
+    if not os.path.exists(results_file):
+        return jsonify({'status': 'idle', 'message': 'No reprocess job has been started.'})
+    try:
+        with open(results_file) as f:
+            state = json.load(f)
+        return jsonify(state)
+    except Exception as e:
+        return jsonify({'status': 'error', 'error': str(e)}), 500
+
+
+@app.route('/api/training/diagnostic', methods=['GET'])
+def api_training_diagnostic():
+    """Return field sizes and section detection info for training records.
+
+    Shows application_text, transcript_text, recommendation_text lengths
+    for each training student so you can quickly find records with missing data.
+    """
+    try:
+        training_col = db.get_training_example_column() or 'is_training_example'
+        test_col = db.get_test_data_column() or 'is_test_data'
+        selected_col = db.get_applications_column('was_selected') or 'was_selected'
+
+        rows = db.execute_query(f"""
+            SELECT application_id, applicant_name, first_name, last_name,
+                   {selected_col} AS was_selected,
+                   COALESCE(LENGTH(application_text), 0) AS app_text_len,
+                   COALESCE(LENGTH(transcript_text), 0) AS transcript_len,
+                   COALESCE(LENGTH(recommendation_text), 0) AS rec_len,
+                   status, high_school
+            FROM applications
+            WHERE {training_col} = TRUE
+              AND ({test_col} = FALSE OR {test_col} IS NULL)
+            ORDER BY {selected_col} DESC NULLS LAST, applicant_name
+        """)
+
+        summary = {
+            'total': len(rows),
+            'has_application': sum(1 for r in rows if r.get('app_text_len', 0) > 50),
+            'has_transcript': sum(1 for r in rows if r.get('transcript_len', 0) > 50),
+            'has_recommendation': sum(1 for r in rows if r.get('rec_len', 0) > 50),
+            'missing_all': sum(1 for r in rows if (
+                r.get('app_text_len', 0) < 50 and
+                r.get('transcript_len', 0) < 50 and
+                r.get('rec_len', 0) < 50
+            ))
+        }
+
+        return jsonify({
+            'status': 'success',
+            'summary': summary,
+            'students': rows
+        })
+
+    except Exception as e:
+        logger.error(f"Training diagnostic error: {e}", exc_info=True)
+        return jsonify({'status': 'error', 'error': str(e)}), 500
 
 
 @app.route('/api/training/unmatched')
@@ -5770,6 +6059,277 @@ def milo_get_ranking():
         return jsonify({'status': 'error', 'error': str(e)}), 500
 
 
+# --- Milo Validation (async job pattern with file-based state) ---
+import tempfile, threading
+
+_VALIDATION_STATE_FILE = os.path.join(tempfile.gettempdir(), "milo_validation_state.json")
+_VALIDATION_RESULT_FILE = os.path.join(tempfile.gettempdir(), "milo_validation_result.json")
+
+
+def _write_validation_state(state: dict):
+    """Write validation state to a shared temp file (visible to all workers)."""
+    try:
+        with open(_VALIDATION_STATE_FILE, 'w') as f:
+            json.dump(state, f)
+    except Exception:
+        pass
+
+
+def _read_validation_state() -> dict:
+    """Read validation state from shared temp file."""
+    try:
+        with open(_VALIDATION_STATE_FILE, 'r') as f:
+            return json.load(f)
+    except Exception:
+        return {"state": "idle"}
+
+
+def _write_validation_result(result: dict):
+    """Write validation result to a shared temp file."""
+    try:
+        with open(_VALIDATION_RESULT_FILE, 'w') as f:
+            json.dump(result, f, default=str)
+    except Exception:
+        pass
+
+
+def _read_validation_result() -> dict:
+    """Read validation result from shared temp file."""
+    try:
+        with open(_VALIDATION_RESULT_FILE, 'r') as f:
+            return json.load(f)
+    except Exception:
+        return {}
+
+
+def _run_milo_validation_job(threshold: int):
+    """Background thread: score all training students with Milo."""
+    import asyncio, statistics
+
+    try:
+        _write_validation_state({"state": "running", "started_at": time.time(), "progress": "initializing"})
+
+        orchestrator = get_orchestrator()
+        milo = orchestrator.agents.get('data_scientist') if orchestrator else None
+        if not milo:
+            _write_validation_state({"state": "error", "error": "Milo agent not available"})
+            return
+
+        # Step 1: Get training examples
+        training = db.get_training_examples()
+        if not training:
+            _write_validation_state({"state": "error", "error": "No training data found"})
+            return
+
+        total_students = len(training)
+        start_time = time.time()
+        _write_validation_state({"state": "running", "started_at": start_time,
+                                 "progress": f"building insights from {total_students} students"})
+
+        # Step 2: Build insights (may already be cached)
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        try:
+            insights = loop.run_until_complete(milo.analyze_training_insights())
+        except Exception as e:
+            _write_validation_state({"state": "error", "error": f"Insights failed: {e}"})
+            loop.close()
+            return
+
+        # Step 3: Evaluate in batches
+        from src.agents.milo_data_scientist import MAX_BATCH_SIZE
+        all_results = []
+        num_batches = (total_students + MAX_BATCH_SIZE - 1) // MAX_BATCH_SIZE
+        for batch_idx in range(0, total_students, MAX_BATCH_SIZE):
+            batch_num = batch_idx // MAX_BATCH_SIZE + 1
+            batch = training[batch_idx:batch_idx + MAX_BATCH_SIZE]
+            _write_validation_state({
+                "state": "running",
+                "started_at": start_time,
+                "progress": f"scoring batch {batch_num}/{num_batches} ({len(all_results)}/{total_students} done)",
+            })
+
+            try:
+                batch_results = loop.run_until_complete(milo._evaluate_batch(batch, insights))
+            except Exception as e:
+                logger.error(f"Milo validation batch {batch_num} failed: {e}")
+                batch_results = [
+                    {"nextgen_match": 0, "tier": "ERROR", "explanation": str(e)}
+                    for _ in batch
+                ]
+
+            for j, result in enumerate(batch_results):
+                app_data = batch[j]
+                was_selected = app_data.get('was_selected', False)
+                if isinstance(was_selected, str):
+                    was_selected = was_selected.lower() in ('true', 'yes', '1', 'selected')
+                result['actual_selected'] = was_selected
+                result['application_id'] = app_data.get('application_id')
+                result['applicant_name'] = (
+                    app_data.get('applicant_name') or
+                    f"{app_data.get('first_name', '')} {app_data.get('last_name', '')}".strip()
+                )
+                all_results.append(result)
+
+        loop.close()
+
+        # Step 4: Compute metrics
+        accepted_scores = []
+        not_selected_scores = []
+        tp = fp = tn = fn = 0
+
+        for r in all_results:
+            score = r.get('nextgen_match', 0) or 0
+            actual = r.get('actual_selected', False)
+            predicted = score >= threshold
+
+            if actual:
+                accepted_scores.append(score)
+                if predicted:
+                    tp += 1
+                else:
+                    fn += 1
+            else:
+                not_selected_scores.append(score)
+                if predicted:
+                    fp += 1
+                else:
+                    tn += 1
+
+        total = len(all_results)
+        accuracy = (tp + tn) / total if total else 0
+        precision = tp / (tp + fp) if (tp + fp) else 0
+        recall = tp / (tp + fn) if (tp + fn) else 0
+        f1 = 2 * precision * recall / (precision + recall) if (precision + recall) else 0
+
+        accepted_mean = statistics.mean(accepted_scores) if accepted_scores else 0
+        not_selected_mean = statistics.mean(not_selected_scores) if not_selected_scores else 0
+        separation = accepted_mean - not_selected_mean
+
+        all_results.sort(key=lambda x: x.get('nextgen_match', 0), reverse=True)
+
+        validation_result = {
+            'status': 'success',
+            'agent': 'Milo Data Scientist',
+            'model_display': milo.model_display if hasattr(milo, 'model_display') else milo.model,
+            'threshold': threshold,
+            'total_training_students': total,
+            'accepted_count': len(accepted_scores),
+            'not_selected_count': len(not_selected_scores),
+            'metrics': {
+                'accuracy': round(accuracy, 3),
+                'precision': round(precision, 3),
+                'recall': round(recall, 3),
+                'f1_score': round(f1, 3),
+            },
+            'confusion_matrix': {
+                'true_positives': tp,
+                'false_positives': fp,
+                'true_negatives': tn,
+                'false_negatives': fn,
+            },
+            'score_distribution': {
+                'accepted_mean': round(accepted_mean, 1),
+                'accepted_min': round(min(accepted_scores), 1) if accepted_scores else 0,
+                'accepted_max': round(max(accepted_scores), 1) if accepted_scores else 0,
+                'accepted_median': round(statistics.median(accepted_scores), 1) if accepted_scores else 0,
+                'not_selected_mean': round(not_selected_mean, 1),
+                'not_selected_min': round(min(not_selected_scores), 1) if not_selected_scores else 0,
+                'not_selected_max': round(max(not_selected_scores), 1) if not_selected_scores else 0,
+                'not_selected_median': round(statistics.median(not_selected_scores), 1) if not_selected_scores else 0,
+                'separation': round(separation, 1),
+            },
+            'students': [
+                {
+                    'rank': i + 1,
+                    'name': r.get('applicant_name', 'Unknown'),
+                    'application_id': r.get('application_id'),
+                    'actual': 'ACCEPTED' if r.get('actual_selected') else 'NOT SELECTED',
+                    'score': r.get('nextgen_match', 0),
+                    'tier': r.get('tier', '?'),
+                    'predicted_correct': (
+                        (r.get('nextgen_match', 0) >= threshold) == r.get('actual_selected', False)
+                    ),
+                    'explanation': r.get('explanation', ''),
+                }
+                for i, r in enumerate(all_results)
+            ],
+            'elapsed_seconds': round(time.time() - start_time, 1),
+        }
+        _write_validation_result(validation_result)
+        _write_validation_state({"state": "done", "finished_at": time.time()})
+
+    except Exception as e:
+        logger.error(f"Milo validation job error: {e}", exc_info=True)
+        _write_validation_state({"state": "error", "error": str(e)})
+
+
+@app.route('/api/milo/validate', methods=['POST'])
+def milo_validate_model():
+    """Start Milo model validation as a background job.
+
+    POST body: {"threshold": 65}
+    Returns immediately. Poll GET /api/milo/validate for results.
+    """
+    current = _read_validation_state()
+    if current.get("state") == "running":
+        return jsonify({
+            'status': 'already_running',
+            'message': 'Validation is already in progress. GET /api/milo/validate to check status.',
+            'progress': current.get('progress', ''),
+        })
+
+    body = request.get_json(silent=True) or {}
+    threshold = body.get('threshold', 65)
+
+    thread = threading.Thread(
+        target=_run_milo_validation_job,
+        args=(threshold,),
+        daemon=True,
+    )
+    thread.start()
+
+    return jsonify({
+        'status': 'started',
+        'message': 'Validation started. Poll GET /api/milo/validate for results.',
+        'threshold': threshold,
+    })
+
+
+@app.route('/api/milo/validate', methods=['GET'])
+def milo_validate_status():
+    """Check the status/results of the Milo validation job."""
+    current = _read_validation_state()
+    state = current.get("state", "idle")
+
+    if state == "idle":
+        return jsonify({
+            'status': 'idle',
+            'message': 'No validation has been run yet. POST /api/milo/validate to start one.',
+        })
+
+    if state == "running":
+        elapsed = time.time() - current.get("started_at", time.time())
+        return jsonify({
+            'status': 'running',
+            'progress': current.get('progress', ''),
+            'elapsed_seconds': round(elapsed, 1),
+        })
+
+    if state == "error":
+        return jsonify({
+            'status': 'error',
+            'error': current.get('error', 'Unknown error'),
+        }), 500
+
+    # state == "done"
+    result = _read_validation_result()
+    if result:
+        return jsonify(result)
+
+    return jsonify({'status': 'error', 'error': 'Results not available'}), 500
+
+
 # ==================== DATA MANAGEMENT ROUTES ====================
 
 @app.route('/data-management')
@@ -6976,6 +7536,83 @@ def bulk_seed_schools():
         return jsonify({'status': 'error', 'error': str(e)}), 500
 
 
+@app.route('/api/schools/import-csv', methods=['POST'])
+def import_schools_csv():
+    """Import schools from a CSV file (GA high-school SES data).
+
+    Accepts either:
+      - A file upload (multipart/form-data, field name 'file')
+      - A JSON body with {"csv_path": "/path/to/file.csv"}
+
+    Query params:
+      - purge=true  (default true) — delete all existing school data first
+      - dry_run=true — parse and aggregate without writing to DB
+
+    The CSV is expected to have NCES CCD format with columns like
+    school_year, ncessch, school_name, enrollment, frpl_pct, etc.
+    Multiple year-rows per school are collapsed into one record.
+    """
+    from src.csv_school_importer import import_schools_from_csv, read_and_group_csv, _aggregate_school
+    import tempfile
+
+    try:
+        purge = request.args.get('purge', 'true').lower() == 'true'
+        dry_run = request.args.get('dry_run', 'false').lower() == 'true'
+
+        csv_path = None
+
+        # Option 1: file upload
+        if 'file' in request.files:
+            uploaded = request.files['file']
+            if uploaded.filename:
+                tmp = tempfile.NamedTemporaryFile(delete=False, suffix='.csv', mode='wb')
+                uploaded.save(tmp)
+                tmp.close()
+                csv_path = tmp.name
+                logger.info(f"CSV upload saved to {csv_path}")
+
+        # Option 2: JSON body with path
+        if not csv_path:
+            data = request.get_json(silent=True) or {}
+            csv_path = data.get('csv_path')
+
+        if not csv_path:
+            return jsonify({
+                'status': 'error',
+                'error': 'Provide a CSV file upload (field "file") or JSON body {"csv_path": "..."}'
+            }), 400
+
+        # Validate file exists
+        if not os.path.isfile(csv_path):
+            return jsonify({'status': 'error', 'error': f'File not found: {csv_path}'}), 404
+
+        result = import_schools_from_csv(csv_path, db, purge_first=purge, dry_run=dry_run)
+        return jsonify(result)
+
+    except Exception as e:
+        logger.error(f"Error in CSV import: {e}", exc_info=True)
+        return jsonify({'status': 'error', 'error': str(e)}), 500
+
+
+@app.route('/api/schools/purge', methods=['DELETE'])
+def purge_schools():
+    """Delete ALL school enriched data records.
+
+    This is a destructive operation — use with care.
+    Returns the count of records deleted.
+    """
+    try:
+        count = db.delete_all_school_enriched_data()
+        return jsonify({
+            'status': 'success',
+            'purged': count,
+            'message': f'Deleted {count} school records and cascaded child tables'
+        })
+    except Exception as e:
+        logger.error(f"Error purging schools: {e}", exc_info=True)
+        return jsonify({'status': 'error', 'error': str(e)}), 500
+
+
 # ==================== TELEMETRY & MONITORING ====================
 
 @app.route('/telemetry')
@@ -7051,6 +7688,7 @@ def telemetry_overview():
         obs_status = get_observability_status()
 
         from datetime import datetime as _dt_now
+        token_usage = telemetry.get_token_usage()
         return jsonify({
             'status': 'success',
             'timestamp': _dt_now.utcnow().isoformat(),
@@ -7062,6 +7700,8 @@ def telemetry_overview():
                 'avg_duration_ms': round(status.get('average_duration_ms', 0), 1),
             },
             'agents': agent_summary,
+            'token_usage': token_usage.get('totals', {}),
+            'token_usage_by_model': token_usage.get('by_model', {}),
             'school_enrichment': {
                 'by_status': school_stats,
                 'moana_validation': moana_stats,
@@ -7071,6 +7711,32 @@ def telemetry_overview():
         })
     except Exception as e:
         logger.error(f"Telemetry overview error: {e}", exc_info=True)
+        return jsonify({'status': 'error', 'error': str(e)}), 500
+
+
+@app.route('/api/telemetry/token-usage')
+def telemetry_token_usage():
+    """Detailed token usage breakdown by model and agent.
+
+    Returns input/output/total token counts and call counts broken down
+    by model, agent, and agent+model combination. Also includes the most
+    recent model calls for diagnostics.
+    """
+    try:
+        usage = telemetry.get_token_usage()
+        return jsonify({'status': 'success', **usage})
+    except Exception as e:
+        logger.error(f"Token usage endpoint error: {e}", exc_info=True)
+        return jsonify({'status': 'error', 'error': str(e)}), 500
+
+
+@app.route('/api/telemetry/token-usage/reset', methods=['POST'])
+def telemetry_token_usage_reset():
+    """Reset accumulated token usage counters."""
+    try:
+        telemetry.reset_token_usage()
+        return jsonify({'status': 'success', 'message': 'Token usage counters reset'})
+    except Exception as e:
         return jsonify({'status': 'error', 'error': str(e)}), 500
 
 

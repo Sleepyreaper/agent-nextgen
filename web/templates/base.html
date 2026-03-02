@@ -279,6 +279,9 @@
                 <a href="{{ url_for('upload') }}">📤 Upload Application</a>
                 <a href="{{ url_for('submit_feedback') }}">📝 Feedback</a>
                 <a href="{{ url_for('test') }}" style="color: #fbbf24; font-weight: bold;">⚡ Quick Test</a>
+                {% if session.get('authenticated') %}
+                <a href="{{ url_for('logout') }}" style="margin-left: auto; background: rgba(239,68,68,0.18); border-color: rgba(239,68,68,0.35); color: #fca5a5;">🔒 Logout</a>
+                {% endif %}
             </nav>
         </header>
 
