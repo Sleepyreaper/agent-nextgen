@@ -86,12 +86,54 @@ class MerlinStudentEvaluator(BaseAgent):
                     elif isinstance(inner_content, dict):
                         data = inner_content
                     else:
+                        # Empty content from Foundry adapter — retry once
                         logger.warning(
                             "Merlin received message-object-shaped response with empty content "
-                            "for application %s; AI may not have produced output",
+                            "for application %s; retrying once...",
                             application_id,
                         )
-                        data = {"raw_response": "", "status": "empty_response"}
+                        try:
+                            retry_response = self._create_chat_completion(
+                                operation="merlin.evaluate_student.retry",
+                                model=self.model,
+                                messages=[
+                                    {"role": "system", "content": system_prompt},
+                                    {"role": "user", "content": user_prompt}
+                                ],
+                                max_completion_tokens=2400,
+                                temperature=1,
+                                refinements=0,
+                                response_format={"type": "json_object"}
+                            )
+                            retry_payload = retry_response.choices[0].message.content
+                            retry_data = safe_load_json(retry_payload)
+                            if isinstance(retry_data, dict):
+                                # Check if retry also returned message-object wrapper
+                                if 'role' in retry_data and 'refusal' in retry_data:
+                                    rc = retry_data.get('content', '')
+                                    if isinstance(rc, str) and rc.strip():
+                                        try:
+                                            retry_data = json.loads(rc)
+                                        except Exception:
+                                            retry_data = None
+                                    elif isinstance(rc, dict):
+                                        retry_data = rc
+                                    else:
+                                        retry_data = None
+                                if retry_data and isinstance(retry_data, dict) and retry_data.get('overall_score') is not None:
+                                    data = retry_data
+                                    logger.info("Merlin retry succeeded for application %s", application_id)
+                                else:
+                                    logger.error(
+                                        "Merlin retry also returned empty for application %s",
+                                        application_id,
+                                    )
+                                    data = {"raw_response": "", "status": "empty_response"}
+                            else:
+                                data = {"raw_response": str(retry_data), "status": "empty_response"}
+                        except Exception as retry_err:
+                            logger.error("Merlin retry failed for application %s: %s", application_id, retry_err)
+                            data = {"raw_response": "", "status": "empty_response"}
 
                 normalized = self._normalize_score(
                     data.get("overall_score"),
@@ -118,7 +160,9 @@ class MerlinStudentEvaluator(BaseAgent):
                 elif data.get('executive_summary') and not data.get('applicant_summary'):
                     data['applicant_summary'] = data['executive_summary']
 
-                data["status"] = "success"
+                # Only mark as "success" if we actually got meaningful output
+                if data.get("status") != "empty_response":
+                    data["status"] = "success"
                 data["agent"] = self.name
 
                 if self.db and application_id:

@@ -4873,7 +4873,14 @@ def _process_session(session_id):
 
             if orchestration_result and 'results' in orchestration_result:
                 merlin_result = orchestration_result['results'].get('student_evaluator', {})
-                if merlin_result and merlin_result.get('status') == 'success':
+                # Only save if Merlin actually produced meaningful content
+                # (not an empty_response with null score and no recommendation)
+                has_content = (
+                    merlin_result.get('overall_score') is not None
+                    or merlin_result.get('recommendation')
+                    or merlin_result.get('rationale')
+                )
+                if merlin_result and merlin_result.get('status') == 'success' and has_content:
                     try:
                         db.save_merlin_evaluation(
                             application_id=application_id,
@@ -4886,6 +4893,8 @@ def _process_session(session_id):
                         )
                     except Exception as save_err:
                         logger.warning(f"Failed to save Merlin evaluation: {str(save_err)}")
+                elif merlin_result and merlin_result.get('status') == 'empty_response':
+                    logger.warning(f"Merlin returned empty response for application {application_id} — skipping save")
 
                 db.update_application_status(application_id, 'Completed')
 
