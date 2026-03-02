@@ -1292,14 +1292,14 @@ Document excerpt:
             return None
         return s
     def _fetch_state_school_list(self, state_code: str) -> List[str]:
-        """Load school names for a given state from local data files.
+        """Load school names for a given state from the enriched database.
 
         Returns a list of school name strings (may be empty).
-        Loads from data/<state_code>_high_schools.json if available.
+        Queries the school_enriched_data table instead of static JSON files.
         """
         if not state_code:
             return []
-        code = state_code.strip().lower()
+        code = state_code.strip().upper()
         now = time.time()
         cached = self._state_school_cache.get(code)
         if cached and now - cached[0] < 24 * 3600:
@@ -1307,16 +1307,8 @@ Document excerpt:
 
         schools = []
         try:
-            # Look for a local JSON file: data/<state_code>_high_schools.json
-            data_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), 'data')
-            json_path = os.path.join(data_dir, f'{code}_high_schools.json')
-            if os.path.isfile(json_path):
-                with open(json_path, 'r', encoding='utf-8') as f:
-                    entries = json.load(f)
-                for entry in entries:
-                    name = entry.get('school_name', '').strip() if isinstance(entry, dict) else str(entry).strip()
-                    if name and name not in schools:
-                        schools.append(name)
+            from src.database import db
+            schools = db.get_school_names_for_state(code)
         except Exception:
             pass
 
