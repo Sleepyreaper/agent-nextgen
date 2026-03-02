@@ -91,6 +91,7 @@ _AUTH_WHITELIST = {
     'login',                 # login page itself
     'static',                # CSS / JS / images
     'health_check',          # optional health probe endpoint
+    'healthz',               # Azure Front Door health probe
 }
 
 
@@ -607,7 +608,13 @@ def refresh_foundry_dataset_async(reason: str) -> None:
 def healthz():
     """Health check endpoint for Azure Front Door probes.
     Excluded from EasyAuth — returns 200 with no sensitive data."""
-    return jsonify({"status": "ok"}), 200
+    version = "unknown"
+    try:
+        with open(os.path.join(os.path.dirname(__file__), 'VERSION')) as f:
+            version = f.read().strip()
+    except Exception:
+        pass
+    return jsonify({"status": "ok", "version": version}), 200
 
 
 @app.route('/')
