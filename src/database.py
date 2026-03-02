@@ -912,7 +912,36 @@ class Database:
                             is_active BOOLEAN DEFAULT TRUE,
                             archived_at TIMESTAMP,
                             moana_requirements_met BOOLEAN DEFAULT FALSE,
-                            last_moana_validation TIMESTAMP
+                            last_moana_validation TIMESTAMP,
+                            -- SES / CSV-sourced columns (issue #13)
+                            nces_id VARCHAR(20),
+                            city VARCHAR(100),
+                            zip_code VARCHAR(10),
+                            latitude NUMERIC(10,6),
+                            longitude NUMERIC(10,6),
+                            phone VARCHAR(20),
+                            school_type VARCHAR(20),
+                            is_charter BOOLEAN DEFAULT FALSE,
+                            is_magnet BOOLEAN DEFAULT FALSE,
+                            is_virtual BOOLEAN DEFAULT FALSE,
+                            is_title_i BOOLEAN DEFAULT FALSE,
+                            locale_code VARCHAR(5),
+                            teachers_fte NUMERIC(7,1),
+                            reduced_lunch_percentage NUMERIC(5,2),
+                            direct_certification_pct NUMERIC(5,2),
+                            district_poverty_pct NUMERIC(5,2),
+                            district_population INTEGER,
+                            district_exp_per_pupil NUMERIC(10,2),
+                            district_rev_per_pupil NUMERIC(10,2),
+                            district_exp_instruction_per_pupil NUMERIC(10,2),
+                            district_rev_federal_pct NUMERIC(5,2),
+                            district_rev_state_pct NUMERIC(5,2),
+                            district_rev_local_pct NUMERIC(5,2),
+                            enrollment_trend_json TEXT,
+                            frpl_trend_json TEXT,
+                            years_of_data INTEGER,
+                            latest_school_year VARCHAR(10),
+                            csv_import_date TIMESTAMP
                         )
                     """)
                     cursor.execute("CREATE INDEX IF NOT EXISTS idx_school_enriched_name ON school_enriched_data(school_name)")
@@ -937,7 +966,35 @@ class Database:
                 
                 for col_name, col_type in {
                     'moana_requirements_met': 'BOOLEAN DEFAULT FALSE',
-                    'last_moana_validation': 'TIMESTAMP'
+                    'last_moana_validation': 'TIMESTAMP',
+                    'nces_id': 'VARCHAR(20)',
+                    'city': 'VARCHAR(100)',
+                    'zip_code': 'VARCHAR(10)',
+                    'latitude': 'NUMERIC(10,6)',
+                    'longitude': 'NUMERIC(10,6)',
+                    'phone': 'VARCHAR(20)',
+                    'school_type': 'VARCHAR(20)',
+                    'is_charter': 'BOOLEAN DEFAULT FALSE',
+                    'is_magnet': 'BOOLEAN DEFAULT FALSE',
+                    'is_virtual': 'BOOLEAN DEFAULT FALSE',
+                    'is_title_i': 'BOOLEAN DEFAULT FALSE',
+                    'locale_code': 'VARCHAR(5)',
+                    'teachers_fte': 'NUMERIC(7,1)',
+                    'reduced_lunch_percentage': 'NUMERIC(5,2)',
+                    'direct_certification_pct': 'NUMERIC(5,2)',
+                    'district_poverty_pct': 'NUMERIC(5,2)',
+                    'district_population': 'INTEGER',
+                    'district_exp_per_pupil': 'NUMERIC(10,2)',
+                    'district_rev_per_pupil': 'NUMERIC(10,2)',
+                    'district_exp_instruction_per_pupil': 'NUMERIC(10,2)',
+                    'district_rev_federal_pct': 'NUMERIC(5,2)',
+                    'district_rev_state_pct': 'NUMERIC(5,2)',
+                    'district_rev_local_pct': 'NUMERIC(5,2)',
+                    'enrollment_trend_json': 'TEXT',
+                    'frpl_trend_json': 'TEXT',
+                    'years_of_data': 'INTEGER',
+                    'latest_school_year': 'VARCHAR(10)',
+                    'csv_import_date': 'TIMESTAMP',
                 }.items():
                     if col_name not in school_columns:
                         try:
@@ -953,6 +1010,10 @@ class Database:
                     cursor.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_school_enriched_name_state ON school_enriched_data(LOWER(school_name), state_code)")
                     conn.commit()
                     logger.info("✓ Ensured unique index on school_enriched_data(school_name, state_code)")
+
+                    # NCES ID index for CSV import lookups
+                    cursor.execute("CREATE INDEX IF NOT EXISTS idx_school_enriched_nces ON school_enriched_data(nces_id)")
+                    conn.commit()
                 except Exception as idx_err:
                     logger.warning(f"Could not create unique index (duplicates may exist): {idx_err}")
                     conn.rollback()
@@ -2934,8 +2995,23 @@ class Database:
                 free_lunch_percentage, ap_course_count, ap_exam_pass_rate, stem_program_available,
                 ib_program_available, dual_enrollment_available, analysis_status, 
                 human_review_status, web_sources_analyzed, data_confidence_score, created_by,
-                school_investment_level, is_active
-            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                school_investment_level, is_active,
+                nces_id, city, zip_code, latitude, longitude, phone,
+                school_type, is_charter, is_magnet, is_virtual, is_title_i,
+                locale_code, teachers_fte, reduced_lunch_percentage,
+                direct_certification_pct, district_poverty_pct, district_population,
+                district_exp_per_pupil, district_rev_per_pupil,
+                district_exp_instruction_per_pupil, district_rev_federal_pct,
+                district_rev_state_pct, district_rev_local_pct,
+                enrollment_trend_json, frpl_trend_json, years_of_data,
+                latest_school_year, csv_import_date, student_teacher_ratio
+            ) VALUES (
+                %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
+                %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
+                %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
+                %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
+                %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
+            )
             RETURNING school_enrichment_id
         """
         
@@ -2965,7 +3041,37 @@ class Database:
                     school_data.get('confidence_score', 0) or school_data.get('data_confidence_score', 0),
                     school_data.get('created_by', 'naveen'),
                     school_data.get('school_investment_level', 'medium'),
-                    school_data.get('is_active', True)  # New column for active status
+                    school_data.get('is_active', True),
+                    # SES / CSV-sourced columns
+                    school_data.get('nces_id'),
+                    school_data.get('city'),
+                    school_data.get('zip_code'),
+                    school_data.get('latitude'),
+                    school_data.get('longitude'),
+                    school_data.get('phone'),
+                    school_data.get('school_type'),
+                    school_data.get('is_charter', False),
+                    school_data.get('is_magnet', False),
+                    school_data.get('is_virtual', False),
+                    school_data.get('is_title_i', False),
+                    school_data.get('locale_code'),
+                    school_data.get('teachers_fte'),
+                    school_data.get('reduced_lunch_percentage'),
+                    school_data.get('direct_certification_pct'),
+                    school_data.get('district_poverty_pct'),
+                    school_data.get('district_population'),
+                    school_data.get('district_exp_per_pupil'),
+                    school_data.get('district_rev_per_pupil'),
+                    school_data.get('district_exp_instruction_per_pupil'),
+                    school_data.get('district_rev_federal_pct'),
+                    school_data.get('district_rev_state_pct'),
+                    school_data.get('district_rev_local_pct'),
+                    school_data.get('enrollment_trend_json'),
+                    school_data.get('frpl_trend_json'),
+                    school_data.get('years_of_data'),
+                    school_data.get('latest_school_year'),
+                    school_data.get('csv_import_date'),
+                    school_data.get('student_teacher_ratio'),
                 )
             )
             

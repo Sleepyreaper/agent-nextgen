@@ -7536,6 +7536,83 @@ def bulk_seed_schools():
         return jsonify({'status': 'error', 'error': str(e)}), 500
 
 
+@app.route('/api/schools/import-csv', methods=['POST'])
+def import_schools_csv():
+    """Import schools from a CSV file (GA high-school SES data).
+
+    Accepts either:
+      - A file upload (multipart/form-data, field name 'file')
+      - A JSON body with {"csv_path": "/path/to/file.csv"}
+
+    Query params:
+      - purge=true  (default true) — delete all existing school data first
+      - dry_run=true — parse and aggregate without writing to DB
+
+    The CSV is expected to have NCES CCD format with columns like
+    school_year, ncessch, school_name, enrollment, frpl_pct, etc.
+    Multiple year-rows per school are collapsed into one record.
+    """
+    from src.csv_school_importer import import_schools_from_csv, read_and_group_csv, _aggregate_school
+    import tempfile
+
+    try:
+        purge = request.args.get('purge', 'true').lower() == 'true'
+        dry_run = request.args.get('dry_run', 'false').lower() == 'true'
+
+        csv_path = None
+
+        # Option 1: file upload
+        if 'file' in request.files:
+            uploaded = request.files['file']
+            if uploaded.filename:
+                tmp = tempfile.NamedTemporaryFile(delete=False, suffix='.csv', mode='wb')
+                uploaded.save(tmp)
+                tmp.close()
+                csv_path = tmp.name
+                logger.info(f"CSV upload saved to {csv_path}")
+
+        # Option 2: JSON body with path
+        if not csv_path:
+            data = request.get_json(silent=True) or {}
+            csv_path = data.get('csv_path')
+
+        if not csv_path:
+            return jsonify({
+                'status': 'error',
+                'error': 'Provide a CSV file upload (field "file") or JSON body {"csv_path": "..."}'
+            }), 400
+
+        # Validate file exists
+        if not os.path.isfile(csv_path):
+            return jsonify({'status': 'error', 'error': f'File not found: {csv_path}'}), 404
+
+        result = import_schools_from_csv(csv_path, db, purge_first=purge, dry_run=dry_run)
+        return jsonify(result)
+
+    except Exception as e:
+        logger.error(f"Error in CSV import: {e}", exc_info=True)
+        return jsonify({'status': 'error', 'error': str(e)}), 500
+
+
+@app.route('/api/schools/purge', methods=['DELETE'])
+def purge_schools():
+    """Delete ALL school enriched data records.
+
+    This is a destructive operation — use with care.
+    Returns the count of records deleted.
+    """
+    try:
+        count = db.delete_all_school_enriched_data()
+        return jsonify({
+            'status': 'success',
+            'purged': count,
+            'message': f'Deleted {count} school records and cascaded child tables'
+        })
+    except Exception as e:
+        logger.error(f"Error purging schools: {e}", exc_info=True)
+        return jsonify({'status': 'error', 'error': str(e)}), 500
+
+
 # ==================== TELEMETRY & MONITORING ====================
 
 @app.route('/telemetry')
