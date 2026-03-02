@@ -62,6 +62,42 @@
                 </form>
             </div>
         </div>
+        <!-- School CSV Upload Card -->
+        <div style="width:100%; margin-top:1rem;">
+            <div class="card" style="padding:1rem; background:#f0fdf4;">
+                <h3 style="margin-top:0;">🏫 Upload School Data (CSV)</h3>
+                <p style="color:#166534; font-size:0.85rem; margin-bottom:0.75rem;">
+                    Upload an NCES CCD CSV file to populate school enrichment data. This replaces all existing school records.
+                </p>
+                <form id="schoolCsvUploadForm" enctype="multipart/form-data" onsubmit="return uploadSchoolCsv(event)">
+                    <div style="border:2px dashed #22c55e; border-radius:8px; padding:1.5rem; text-align:center; cursor:pointer;"
+                         onclick="document.getElementById('schoolCsvFileInput').click()">
+                        <input type="file" id="schoolCsvFileInput" name="file" required accept=".csv" style="display:none;" onchange="updateSchoolCsvFileName(this)">
+                        <p style="color:#166534; font-weight:600;">Click to select a school CSV file</p>
+                        <p style="color:#15803d; font-size:0.8rem; margin-top:0.25rem;">Accepts .csv files (NCES CCD format)</p>
+                        <p id="schoolCsvFileName" style="color:#166534; font-weight:600; display:none;"></p>
+                    </div>
+                    <div style="display:flex; gap:1rem; align-items:center; margin-top:0.75rem;">
+                        <label style="display:flex; align-items:center; gap:0.4rem; font-size:0.85rem; color:#166534;">
+                            <input type="checkbox" id="schoolCsvPurge" checked>
+                            Purge existing school data first
+                        </label>
+                    </div>
+                    <button type="submit" class="btn" style="margin-top:0.75rem; background:#16a34a; color:white;" id="schoolCsvUploadBtn">
+                        🏫 Upload &amp; Import Schools
+                    </button>
+                </form>
+                <!-- Import progress -->
+                <div id="schoolCsvProgress" style="display:none; margin-top:1rem;">
+                    <p id="schoolCsvProgressText" style="color:#166534; font-weight:600; margin-bottom:0.5rem;">Importing schools…</p>
+                    <div style="background:#e5e7eb; border-radius:8px; overflow:hidden; height:24px;">
+                        <div id="schoolCsvProgressBar" style="background:linear-gradient(90deg,#22c55e,#16a34a); height:100%; width:0%; transition:width 0.3s; color:#fff; font-size:0.8rem; line-height:24px; text-align:center; border-radius:8px;">0%</div>
+                    </div>
+                    <p id="schoolCsvProgressDetail" style="color:#6b7280; font-size:0.8rem; margin-top:0.3rem;"></p>
+                </div>
+                <div id="schoolCsvResult" style="display:none; margin-top:1rem;"></div>
+            </div>
+        </div>
         <div style="display: flex; gap: 0.75rem; align-items:center;">
             <button type="button" class="btn btn-secondary" onclick="clearTrainingData()">
                 🧹 Clear Training Data
@@ -282,6 +318,97 @@
 
 {% block extra_js %}
 <script>
+/* ── School CSV Upload ───────────────────────────────────────────── */
+function updateSchoolCsvFileName(input) {
+    const el = document.getElementById('schoolCsvFileName');
+    if (input.files.length) {
+        const f = input.files[0];
+        const sizeMB = (f.size / 1024 / 1024).toFixed(1);
+        el.textContent = `${f.name} (${sizeMB} MB)`;
+        el.style.display = 'block';
+    } else {
+        el.style.display = 'none';
+    }
+}
+
+async function uploadSchoolCsv(e) {
+    e.preventDefault();
+    const fileInput = document.getElementById('schoolCsvFileInput');
+    if (!fileInput.files.length) { alert('Please select a CSV file.'); return false; }
+    const purge = document.getElementById('schoolCsvPurge').checked;
+
+    const btn = document.getElementById('schoolCsvUploadBtn');
+    const progressDiv = document.getElementById('schoolCsvProgress');
+    const progressText = document.getElementById('schoolCsvProgressText');
+    const progressBar = document.getElementById('schoolCsvProgressBar');
+    const progressDetail = document.getElementById('schoolCsvProgressDetail');
+    const resultDiv = document.getElementById('schoolCsvResult');
+
+    btn.disabled = true;
+    btn.textContent = 'Uploading…';
+    progressDiv.style.display = 'block';
+    resultDiv.style.display = 'none';
+    progressText.textContent = 'Uploading CSV file…';
+    progressBar.style.width = '0%';
+    progressBar.textContent = '0%';
+
+    try {
+        // POST the file
+        const formData = new FormData();
+        formData.append('file', fileInput.files[0]);
+        const resp = await fetch(`/api/schools/import-csv?purge=${purge}&dry_run=false`, {
+            method: 'POST', body: formData
+        });
+        const data = await resp.json();
+        if (!resp.ok || (data.status !== 'started' && data.status !== 'success')) {
+            throw new Error(data.error || 'Import failed to start');
+        }
+
+        // Poll progress
+        progressText.textContent = 'Importing schools…';
+        let done = false;
+        while (!done) {
+            await new Promise(r => setTimeout(r, 2000));
+            const pollResp = await fetch('/api/schools/import-csv');
+            const state = await pollResp.json();
+
+            if (state.total > 0) {
+                const pct = Math.round((state.processed / state.total) * 100);
+                progressBar.style.width = pct + '%';
+                progressBar.textContent = pct + '%';
+                progressDetail.textContent = `${state.processed} / ${state.total} schools processed (${state.created} created, ${state.errors} errors)`;
+            }
+
+            if (state.status === 'completed') {
+                done = true;
+                progressBar.style.width = '100%';
+                progressBar.textContent = '100%';
+                progressText.textContent = '✅ Import complete!';
+                resultDiv.style.display = 'block';
+                resultDiv.innerHTML = `<div style="background:#dcfce7; border:1px solid #86efac; border-radius:8px; padding:1rem; color:#166534;">
+                    <strong>✅ Import Complete</strong><br>
+                    CSV Rows: ${state.csv_rows || 0} · Unique Schools: ${state.unique_schools || 0}<br>
+                    Created: <strong>${state.created}</strong> · Errors: ${state.errors} · Purged: ${state.purged || 0}<br>
+                    <a href="/data-management/schools" style="color:#166534; font-weight:600;">View Schools →</a>
+                </div>`;
+            } else if (state.status === 'error') {
+                done = true;
+                throw new Error(state.error || 'Import failed');
+            }
+        }
+    } catch (err) {
+        resultDiv.style.display = 'block';
+        resultDiv.innerHTML = `<div style="background:#fef2f2; border:1px solid #fca5a5; border-radius:8px; padding:1rem; color:#991b1b;">
+            <strong>❌ Import Error:</strong> ${err.message}
+        </div>`;
+        progressText.textContent = '❌ Import failed';
+    } finally {
+        btn.disabled = false;
+        btn.textContent = '🏫 Upload & Import Schools';
+    }
+    return false;
+}
+
 async function clearTrainingData() {
     if (!confirm('Clear ALL training data (excluding test uploads)? This cannot be undone.')) {
         return;

@@ -47,7 +47,7 @@ def main() -> None:
     else:
         if not VERSION_FILE.exists():
             raise SystemExit("VERSION file not found.")
-        current = VERSION_FILE.read_text(encoding="utf-8").strip()
+        current = VERSION_FILE.read_text(encoding="utf-8").strip().split('\n')[0].strip()
         new_version = bump_version(current, args.mode)
 
     VERSION_FILE.write_text(new_version + "\n", encoding="utf-8")
