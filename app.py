@@ -7551,6 +7551,9 @@ def import_schools_csv():
     The CSV is expected to have NCES CCD format with columns like
     school_year, ncessch, school_name, enrollment, frpl_pct, etc.
     Multiple year-rows per school are collapsed into one record.
+
+    Returns immediately with status. Poll GET /api/schools/import-csv
+    to check progress.
     """
     from src.csv_school_importer import import_schools_from_csv, read_and_group_csv, _aggregate_school
     import tempfile
@@ -7586,11 +7589,116 @@ def import_schools_csv():
         if not os.path.isfile(csv_path):
             return jsonify({'status': 'error', 'error': f'File not found: {csv_path}'}), 404
 
-        result = import_schools_from_csv(csv_path, db, purge_first=purge, dry_run=dry_run)
-        return jsonify(result)
+        # For dry runs, run synchronously (fast)
+        if dry_run:
+            result = import_schools_from_csv(csv_path, db, purge_first=purge, dry_run=True)
+            return jsonify(result)
+
+        # ── Async import via background thread ──────────────────────
+        state_file = os.path.join(tempfile.gettempdir(), 'school_csv_import_state.json')
+        state = {
+            'status': 'running',
+            'started_at': datetime.now(timezone.utc).isoformat(),
+            'csv_path': csv_path,
+            'purge': purge,
+            'processed': 0,
+            'total': 0,
+            'created': 0,
+            'errors': 0,
+            'error_details': [],
+        }
+        with open(state_file, 'w') as f:
+            json.dump(state, f)
+
+        def _background_school_import(csv_path, purge, state_path):
+            from src.csv_school_importer import read_and_group_csv, _aggregate_school
+            try:
+                # Step 1: Read & group
+                groups = read_and_group_csv(csv_path)
+                total_rows = sum(len(v) for v in groups.values())
+                total_schools = len(groups)
+
+                # Aggregate
+                records = []
+                for nces_id, rows in groups.items():
+                    try:
+                        rec = _aggregate_school(nces_id, rows)
+                        records.append(rec)
+                    except Exception as e:
+                        logger.error(f"  Error aggregating school {nces_id}: {e}")
+
+                # Update state with totals
+                state['total'] = len(records)
+                state['csv_rows'] = total_rows
+                state['unique_schools'] = total_schools
+                with open(state_path, 'w') as f:
+                    json.dump(state, f)
+
+                # Purge if requested
+                purged = 0
+                if purge:
+                    purged = db.delete_all_school_enriched_data()
+                    logger.info(f"  🗑️  Purged {purged} existing school records")
+                state['purged'] = purged
+
+                # Insert records one-by-one with progress updates
+                for i, rec in enumerate(records):
+                    try:
+                        school_id = db.create_school_enriched_data(rec)
+                        if school_id:
+                            state['created'] += 1
+                        else:
+                            state['errors'] += 1
+                    except Exception as e:
+                        state['errors'] += 1
+                        state['error_details'].append(str(e)[:100])
+                        logger.error(f"  Error inserting {rec.get('school_name')}: {e}")
+
+                    state['processed'] = i + 1
+                    # Write progress every 50 records
+                    if (i + 1) % 50 == 0 or (i + 1) == len(records):
+                        with open(state_path, 'w') as f:
+                            json.dump(state, f)
+
+                state['status'] = 'completed'
+                state['completed_at'] = datetime.now(timezone.utc).isoformat()
+            except Exception as exc:
+                state['status'] = 'error'
+                state['error'] = str(exc)
+                logger.error(f"Background school import error: {exc}", exc_info=True)
+            finally:
+                with open(state_path, 'w') as f:
+                    json.dump(state, f)
+
+        thread = threading.Thread(
+            target=_background_school_import,
+            args=(csv_path, purge, state_file),
+            daemon=True
+        )
+        thread.start()
+
+        return jsonify({
+            'status': 'started',
+            'message': 'School CSV import started in background. Poll GET /api/schools/import-csv for progress.',
+        })
 
     except Exception as e:
         logger.error(f"Error in CSV import: {e}", exc_info=True)
+        return jsonify({'status': 'error', 'error': str(e)}), 500
+
+
+@app.route('/api/schools/import-csv', methods=['GET'])
+def import_schools_csv_progress():
+    """Poll the progress of a background school CSV import."""
+    import tempfile
+    state_file = os.path.join(tempfile.gettempdir(), 'school_csv_import_state.json')
+    if not os.path.isfile(state_file):
+        return jsonify({'status': 'idle', 'message': 'No import in progress'})
+    try:
+        with open(state_file, 'r') as f:
+            state = json.load(f)
+        return jsonify(state)
+    except Exception as e:
         return jsonify({'status': 'error', 'error': str(e)}), 500
 
 
