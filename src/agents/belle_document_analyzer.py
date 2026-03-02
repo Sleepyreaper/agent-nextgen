@@ -638,10 +638,11 @@ class BelleDocumentAnalyzer(BaseAgent):
         
         try:
             with tool_call(self.name, "classify_page_ai", {"page": page_num}):
-                response = self.client.chat.completions.create(
+                response = self._create_chat_completion(
+                    operation="belle.classify_page",
                     model=self.model,
                     messages=[{"role": "user", "content": prompt}],
-                    max_tokens=10,
+                    max_completion_tokens=10,
                     temperature=0
                 )
                 answer = response.choices[0].message.content.strip().lower()
