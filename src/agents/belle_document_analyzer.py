@@ -389,12 +389,24 @@ class BelleDocumentAnalyzer(BaseAgent):
                 'sincerely', 'respectfully submitted',
                 'i have known', 'i have had the pleasure',
                 'in my capacity as', 'as a teacher of',
-                'character reference', 'reference letter'
+                'character reference', 'reference letter',
+                'it is with great enthusiasm that i recommend',
+                'i wholeheartedly recommend', 'without reservation',
+                'i am pleased to recommend', 'i am honored to recommend',
+                'strongly recommend', 'highest recommendation',
+                'to whom it may concern,',
+                'i am writing this letter', 'i am writing on behalf',
+                'pleasure of teaching', 'pleasure of knowing',
+                'pleasure of working with',
             ],
             'medium': [
                 'recommend', 'reference', 'endorsement', 'counselor',
                 'principal', 'dear', 'academic standing',
-                'work ethic'
+                'work ethic', 'my student', 'my class',
+                'strong candidate', 'exceptional student',
+                'pleasure to teach', 'honor roll', 'academic excellence',
+                'department chair', 'school counselor',
+                'years of teaching', 'year of teaching',
             ]
         }
         
@@ -408,7 +420,11 @@ class BelleDocumentAnalyzer(BaseAgent):
                 'community service', 'volunteer experience',
                 'application for admission', 'student application',
                 'i am passionate', 'my dream', 'i aspire',
-                'in the future', 'my experience'
+                'in the future', 'my experience',
+                'application summary', 'competition details',
+                'application information', 'personal details',
+                'i write to apply', 'i am applying',
+                'extra_cur', 'essay_video',
             ],
             'medium': [
                 'essay', 'reflection', 'experience', 'passion',
@@ -434,6 +450,29 @@ class BelleDocumentAnalyzer(BaseAgent):
         for page_num, page_text in sorted(pages.items()):
             page_lower = page_text.lower()
             page_char_count = len(page_text.strip())
+            
+            # ── TOC / Table of Contents detection ──
+            # TOC pages list section names ("Reference Letter", "Field24",
+            # "essay_video", "resume") which would falsely trigger keyword
+            # scoring. Detect and classify as application (metadata).
+            is_toc = False
+            if page_char_count < 300:
+                toc_signals = sum([
+                    'table of contents' in page_lower,
+                    bool(re.search(r'(?:essay|resume|reference|field\d|transcript)', page_lower)),
+                    bool(re.search(r'\b\d+\s*$', page_text.strip(), re.MULTILINE)),  # lines ending with page numbers
+                    page_lower.count('|') >= 3 or page_text.count('\n') >= 4,
+                ])
+                if toc_signals >= 3 or 'table of contents' in page_lower:
+                    is_toc = True
+                    result["section_map"][page_num] = {
+                        'type': 'application',
+                        'scores': {'transcript': 0, 'recommendation': 0, 'application': 1},
+                        'note': 'table of contents page'
+                    }
+                    application_pages.append(page_num)
+                    logger.info(f"  Page {page_num}: detected as Table of Contents — classifying as application")
+                    continue
             
             # Very sparse pages: likely image-only content that wasn't OCR'd well.
             # If there's *some* text (≥10 chars), try AI classification anyway
@@ -486,19 +525,36 @@ class BelleDocumentAnalyzer(BaseAgent):
             long_lines  = sum(1 for ln in non_empty_lines if len(ln.strip()) >= 80)
             
             # Prose-density: long flowing paragraphs → strong essay signal
+            # BUT recommendation letters are ALSO long prose — so only add the
+            # full prose bonus to application if recommendation keywords are absent.
             if non_empty_lines:
                 avg_line_len = sum(len(ln.strip()) for ln in non_empty_lines) / len(non_empty_lines)
             else:
                 avg_line_len = 0
             
+            has_recommendation_keywords = r_score >= 3
             if avg_line_len >= 80 and long_lines >= 5:
-                a_score += 4  # Dense prose → very likely essay/application
+                if has_recommendation_keywords:
+                    # Recommendation letters are ALSO dense prose — give smaller
+                    # boost to application and counter-boost recommendation
+                    a_score += 1
+                    r_score += 2  # Prose-style rec letter
+                else:
+                    a_score += 4  # Dense prose without rec keywords → essay/application
             elif avg_line_len >= 60 and long_lines >= 3:
-                a_score += 2  # Moderate prose density
+                if has_recommendation_keywords:
+                    r_score += 1  # Moderate prose rec letter
+                else:
+                    a_score += 2  # Moderate prose density
             
             # Tabular data: many short lines → transcript-like
+            # BUT only if actual transcript keywords are present — resumes and
+            # application forms also have short lines.
             if short_lines > 10 and avg_line_len < 50:
-                t_score += 2  # Tabular data indicator
+                if t_score >= 3:  # Only boost if already has some transcript signal
+                    t_score += 2  # Tabular data with transcript keywords
+                elif not (a_score >= 3):
+                    t_score += 1  # Weak tabular signal
             
             # Grade pattern: ONLY actual grade markers next to course-like context
             # Use strict patterns that avoid matching article "A" or random numbers
@@ -532,6 +588,50 @@ class BelleDocumentAnalyzer(BaseAgent):
             if credit_patterns >= 3:
                 t_score += 2  # Credit hour column present
             
+            # ── Resume detection ──
+            # Resumes have short-line tabular format but are NOT transcripts.
+            # Look for resume-specific keywords to reassign score.
+            resume_signals = sum([
+                bool(re.search(r'\bresume\b|\bcurriculum vitae\b|\bc\.?v\.?\b', page_lower)),
+                bool(re.search(r'\b(?:objective|experience|skills|education|certifications|references)\s*:', page_lower)),
+                bool(re.search(r'\b(?:phone|email|address|contact)\s*:', page_lower)),
+                bool(re.search(r'e x p e r i e n c e|s k i l l s|e d u c a t i o n|o b j e c t i v e', page_lower)),  # spaced letters
+                bool(re.search(r'\b(?:volunteer|intern|leadership|work experience)\b', page_lower)),
+            ])
+            if resume_signals >= 2:
+                # This is a resume, not a transcript — shift score toward application
+                a_score += 4
+                t_score = max(0, t_score - 3)  # Reduce transcript score
+                logger.info(f"  Page {page_num}: resume detected ({resume_signals} signals) — boosting application score")
+            
+            # ── Recommendation letter structure override ──
+            # Recommendation letters consistently get inflated application scores
+            # because they discuss the student's qualities using the same vocabulary
+            # as personal essays (leadership, community, growth, etc.).
+            # If we detect strong rec-letter structural signals, boost R further.
+            has_salutation = bool(re.search(
+                r'(?:to whom it may concern|dear\s+\w+\s*committee|dear\s+(?:admissions|selection|sir|madam)|to the\s+.*(?:committee|board|panel))',
+                page_lower
+            ))
+            has_closing = bool(re.search(
+                r'(?:sincerely|respectfully|regards|best wishes|warmly)',
+                page_lower
+            ))
+            has_rec_language = bool(re.search(
+                r'(?:i (?:would like to |am pleased to |am writing to |am happy to |am excited to )?recommend|i(?:\'m| am) (?:excited|pleased|happy|honored|delighted) to recommend|(?:he|she|they) (?:is|are|was|has|demonstrates|exhibits)|i (?:taught|have known|have had the pleasure))',
+                page_lower
+            ))
+            if has_salutation and (has_closing or has_rec_language):
+                # Strong recommendation letter structure
+                r_score += 3
+                a_score = max(0, a_score - 2)  # Reduce inflated application score
+                logger.info(f"  Page {page_num}: rec-letter structure detected (salutation+{'closing' if has_closing else 'rec-language'}) — boosting R")
+            elif has_rec_language and has_closing:
+                # Rec language + closing without formal salutation — still likely a rec letter
+                r_score += 2
+                a_score = max(0, a_score - 1)
+                logger.info(f"  Page {page_num}: rec-letter language+closing detected — boosting R")
+            
             logger.info(
                 f"  Page {page_num} scores: transcript={t_score}, "
                 f"recommendation={r_score}, application={a_score} "
@@ -550,18 +650,23 @@ class BelleDocumentAnalyzer(BaseAgent):
                 elif r_score == max_score and r_score > t_score and r_score > a_score:
                     section_type = 'recommendation'
                     recommendation_pages.append(page_num)
-                elif a_score == max_score:
+                elif a_score == max_score and a_score > r_score:
+                    section_type = 'application'
+                    application_pages.append(page_num)
+                elif r_score == a_score and r_score == max_score:
+                    # Tie between recommendation and application — favour recommendation
+                    # because rec letters are harder to recover if misclassified,
+                    # and application content typically has more pages.
+                    section_type = 'recommendation'
+                    recommendation_pages.append(page_num)
+                    logger.info(f"  Page {page_num}: R/A tie ({r_score}) — choosing recommendation")
+                elif t_score == a_score and t_score == max_score:
+                    # Tie between transcript and application — favour application
                     section_type = 'application'
                     application_pages.append(page_num)
                 else:
-                    # Tie-breaking: favour APPLICATION over transcript.
-                    # Essays are the most critical content for evaluation agents.
-                    if t_score == a_score:
-                        section_type = 'application'
-                        application_pages.append(page_num)
-                    else:
-                        section_type = 'application'
-                        application_pages.append(page_num)
+                    section_type = 'application'
+                    application_pages.append(page_num)
             else:
                 # Low-confidence: keyword scores below threshold.
                 # Use AI to classify the page before defaulting.
