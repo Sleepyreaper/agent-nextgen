@@ -949,7 +949,8 @@ class Database:
                     cursor.execute("CREATE INDEX IF NOT EXISTS idx_school_enriched_opportunity ON school_enriched_data(opportunity_score)")
                     cursor.execute("CREATE INDEX IF NOT EXISTS idx_school_enriched_review_status ON school_enriched_data(human_review_status)")
                     cursor.execute("CREATE INDEX IF NOT EXISTS idx_school_enriched_active ON school_enriched_data(is_active)")
-                    cursor.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_school_enriched_name_state ON school_enriched_data(LOWER(school_name), state_code)")
+                    cursor.execute("CREATE INDEX IF NOT EXISTS idx_school_enriched_name_state ON school_enriched_data(LOWER(school_name), state_code)")
+                    cursor.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_school_enriched_nces ON school_enriched_data(nces_id) WHERE nces_id IS NOT NULL")
                     conn.commit()
                     logger.info("✓ Created school_enriched_data table with indexes")
                 except Exception as school_err:
@@ -1005,17 +1006,23 @@ class Database:
                             logger.error(f"❌ Failed to add {col_name} to school_enriched_data: {col_err}")
                             conn.rollback()
 
-                # Ensure unique index on (school_name, state_code) exists
+                # Drop old unique index on (school_name, state_code) — schools can share names
                 try:
-                    cursor.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_school_enriched_name_state ON school_enriched_data(LOWER(school_name), state_code)")
+                    cursor.execute("DROP INDEX IF EXISTS idx_school_enriched_name_state")
                     conn.commit()
-                    logger.info("✓ Ensured unique index on school_enriched_data(school_name, state_code)")
+                    cursor.execute("CREATE INDEX IF NOT EXISTS idx_school_enriched_name_state ON school_enriched_data(LOWER(school_name), state_code)")
+                    conn.commit()
+                    logger.info("✓ Ensured non-unique index on school_enriched_data(school_name, state_code)")
+                except Exception as idx_err:
+                    logger.warning(f"Could not update name_state index: {idx_err}")
+                    conn.rollback()
 
-                    # NCES ID index for CSV import lookups
-                    cursor.execute("CREATE INDEX IF NOT EXISTS idx_school_enriched_nces ON school_enriched_data(nces_id)")
+                # NCES ID unique index for CSV import lookups
+                try:
+                    cursor.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_school_enriched_nces ON school_enriched_data(nces_id) WHERE nces_id IS NOT NULL")
                     conn.commit()
                 except Exception as idx_err:
-                    logger.warning(f"Could not create unique index (duplicates may exist): {idx_err}")
+                    logger.warning(f"Could not create NCES unique index: {idx_err}")
                     conn.rollback()
 
             # ===== STUDENT SCHOOL CONTEXT TABLE MIGRATIONS =====
@@ -2972,13 +2979,30 @@ class Database:
     def create_school_enriched_data(self, school_data: Dict[str, Any]) -> Optional[int]:
         """Create or upsert an enriched school record.
         
-        If a school with the same name and state already exists, returns
-        the existing record's ID instead of creating a duplicate.
+        Dedup priority:
+          1. By NCES ID (unique national identifier) — preferred for CSV imports
+          2. By school_name + state_code — fallback for non-CSV records
         """
-        # --- Dedup check: look for existing school by name + state ---
+        nces_id = school_data.get('nces_id')
         school_name = school_data.get('school_name')
         state_code = school_data.get('state_code')
-        if school_name and state_code:
+
+        # --- Dedup check: prefer NCES ID (stable across renames) ---
+        if nces_id:
+            try:
+                existing = self.execute_query(
+                    "SELECT school_enrichment_id FROM school_enriched_data WHERE nces_id = %s",
+                    (nces_id,)
+                )
+                if existing:
+                    logger.info(
+                        f"School already exists (NCES {nces_id}): {school_name} → ID {existing[0]['school_enrichment_id']}"
+                    )
+                    return existing[0]['school_enrichment_id']
+            except Exception:
+                pass
+        elif school_name and state_code:
+            # Fallback: name+state dedup for non-CSV records
             existing = self.get_school_enriched_data(
                 school_name=school_name, state_code=state_code
             )
