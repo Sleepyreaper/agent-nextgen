@@ -7584,7 +7584,7 @@ def import_schools_csv():
 
         csv_path = None
 
-        # Option 1: file upload
+        # Option 1: file upload (multipart/form-data)
         if 'file' in request.files:
             uploaded = request.files['file']
             if uploaded.filename:
@@ -7594,15 +7594,27 @@ def import_schools_csv():
                 csv_path = tmp.name
                 logger.info(f"CSV upload saved to {csv_path}")
 
-        # Option 2: JSON body with path
+        # Option 2: JSON body with base64 file_data (WAF-friendly)
         if not csv_path:
             data = request.get_json(silent=True) or {}
-            csv_path = data.get('csv_path')
+            if data.get('file_data'):
+                import base64
+                try:
+                    raw = base64.b64decode(data['file_data'])
+                    tmp = tempfile.NamedTemporaryFile(delete=False, suffix='.csv', mode='wb')
+                    tmp.write(raw)
+                    tmp.close()
+                    csv_path = tmp.name
+                    logger.info(f"Base64 CSV decoded and saved to {csv_path} ({len(raw)} bytes)")
+                except Exception as e:
+                    return jsonify({'status': 'error', 'error': f'Failed to decode base64 file_data: {e}'}), 400
+            else:
+                csv_path = data.get('csv_path')
 
         if not csv_path:
             return jsonify({
                 'status': 'error',
-                'error': 'Provide a CSV file upload (field "file") or JSON body {"csv_path": "..."}'
+                'error': 'Provide a CSV file upload (field "file"), JSON {"file_data": "base64..."}, or {"csv_path": "..."}'
             }), 400
 
         # Validate file exists
