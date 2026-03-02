@@ -160,6 +160,10 @@ Each agent selects its model via: `self.model = model or config.model_tier_<tier
 10. Aurora (✨)     — Format final report
 ```
 
+### School Data Pipeline (Public Data)
+
+All school data used by Naveen and Moana is derived from **publicly available U.S. government datasets** — specifically the NCES Common Core of Data (CCD). Multiple CCD datasets (school directory, enrollment, FRPL, district finance, staffing) are combined by NCES school ID, aggregated across school years to capture trends, and uploaded as a merged CSV. The AI agents then evaluate and enrich this public data locally — no proprietary school data or runtime web calls are used.
+
 ---
 
 ## 🎪 Disney Character Legend

@@ -5,6 +5,8 @@
 
 > **Note**: This guide was originally written for a web-scraping approach. The implementation now uses NCES CCD CSV imports for school data. Naveen evaluates database records with AI component scoring. Moana builds contextual narratives. All references to web scraping, BeautifulSoup, Selenium, or NAEP APIs are historical and no longer apply.
 
+> **📊 Public Data Sources**: All school data is derived from publicly available U.S. government datasets — specifically the NCES Common Core of Data (CCD) published by the U.S. Department of Education at [nces.ed.gov/ccd](https://nces.ed.gov/ccd/). Multiple CCD datasets (school directory, enrollment, free/reduced lunch, district finance, staffing) are combined offline by NCES school ID, aggregated across school years, and uploaded as a single merged CSV. No proprietary data is used.
+
 ---
 
 ## Phase 2 Implementation Tasks
