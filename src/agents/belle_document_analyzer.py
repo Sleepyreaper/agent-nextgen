@@ -439,6 +439,7 @@ class BelleDocumentAnalyzer(BaseAgent):
             # If there's *some* text (≥10 chars), try AI classification anyway
             # since even a few OCR fragments can hint at the section type.
             if page_char_count < 50:
+                print(f"📄 BELLE Page {page_num}: sparse ({page_char_count} chars, first 100: {repr(page_text[:100])})", flush=True)
                 if page_char_count >= 10:
                     ai_type = self._classify_page_with_ai(page_text, page_num)
                     if ai_type:
@@ -608,6 +609,15 @@ class BelleDocumentAnalyzer(BaseAgent):
             logger.info(f"📖 BELLE detected application/essay on page(s): {application_pages}")
         
         logger.info(f"📖 BELLE section map: {result['section_map']}")
+        print(
+            f"📖 BELLE section detection complete: "
+            f"transcript={transcript_pages}, recommendation={recommendation_pages}, "
+            f"application={application_pages}",
+            flush=True
+        )
+        for pn, info in result['section_map'].items():
+            if info.get('type') == 'sparse':
+                print(f"  ⚠️ Page {pn}: SPARSE/DROPPED — not routed to any agent", flush=True)
         return result
     
     def _classify_page_with_ai(self, page_text: str, page_num: int) -> Optional[str]:

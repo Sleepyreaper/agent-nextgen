@@ -65,6 +65,11 @@ class DocumentProcessor:
                             pix = page.get_pixmap(dpi=300)
                             img_bytes = pix.tobytes("png")
                             page_label = f"page {page_num} of {total_pages}"
+                            print(
+                                f"🔍 OCR Page {page_num}/{total_pages}: only {len(page_text)} chars "
+                                f"(images={len(images) if images else 0}) — sending to OCR ({len(img_bytes)} bytes)",
+                                flush=True
+                            )
                             logger.info(
                                 f"🔍 Page {page_num}/{total_pages}: only {len(page_text)} chars "
                                 f"(images={len(images) if images else 0}) — sending to OCR"
@@ -73,19 +78,43 @@ class DocumentProcessor:
                             if ocr_text and len(ocr_text.strip()) > len(page_text):
                                 page_text = ocr_text.strip()
                                 ocr_pages.append(page_num)
+                                print(
+                                    f"✅ OCR extracted {len(page_text)} chars from page {page_num}",
+                                    flush=True
+                                )
                                 logger.info(
                                     f"✅ OCR extracted {len(page_text)} chars from page {page_num}"
                                 )
+                            else:
+                                print(
+                                    f"⚠️ OCR returned insufficient text for page {page_num}: "
+                                    f"got {len(ocr_text.strip()) if ocr_text else 0} chars vs {len(page_text)} existing",
+                                    flush=True
+                                )
                         except Exception as ocr_err:
+                            print(
+                                f"❌ OCR failed for page {page_num}: {ocr_err}",
+                                flush=True
+                            )
                             logger.warning(
                                 f"⚠️ OCR failed for page {page_num}: {ocr_err}"
                             )
                 elif len(page_text) < _IMAGE_PAGE_TEXT_THRESHOLD:
                     images = page.get_images()
                     if images:
+                        print(
+                            f"⚠️ Page {page_num}/{total_pages}: only {len(page_text)} chars "
+                            f"with {len(images)} image(s) — NO OCR callback available, text may be incomplete",
+                            flush=True
+                        )
                         logger.warning(
                             f"⚠️ Page {page_num}/{total_pages}: only {len(page_text)} chars "
                             f"with {len(images)} image(s) — no OCR callback, text may be incomplete"
+                        )
+                    elif len(page_text) < 50:
+                        print(
+                            f"⚠️ Page {page_num}/{total_pages}: sparse page ({len(page_text)} chars, 0 images, no OCR callback)",
+                            flush=True
                         )
                 
                 if page_text:

@@ -245,6 +245,7 @@ def _make_ocr_callback():
         """OCR a single page image using AI vision (GPT-4o)."""
         import base64 as _b64
         b64_image = _b64.b64encode(image_bytes).decode('utf-8')
+        print(f"📸 OCR callback invoked for {page_label} ({len(image_bytes)} bytes, model={vision_model})", flush=True)
         
         messages = [
             {
@@ -289,21 +290,28 @@ def _make_ocr_callback():
             }
         ]
         
-        try:
-            # Both AzureOpenAI and FoundryClient expose .chat.completions.create()
-            # FoundryClient now preserves multimodal message format for the SDK path
-            resp = client.chat.completions.create(
-                model=vision_model,
-                messages=messages,
-                max_tokens=6000,
-                temperature=0.0
-            )
-            text = resp.choices[0].message.content or ""
-            logger.info("OCR vision extracted %d chars from %s", len(text), page_label)
-            return text
-        except Exception as e:
-            logger.warning("OCR vision call failed for %s: %s", page_label, e)
-            return ""
+        import time as _time
+        max_retries = 2
+        for attempt in range(1, max_retries + 1):
+            try:
+                # Both AzureOpenAI and FoundryClient expose .chat.completions.create()
+                # FoundryClient now preserves multimodal message format for the SDK path
+                resp = client.chat.completions.create(
+                    model=vision_model,
+                    messages=messages,
+                    max_tokens=6000,
+                    temperature=0.0
+                )
+                text = resp.choices[0].message.content or ""
+                logger.info("OCR vision extracted %d chars from %s (attempt %d)", len(text), page_label, attempt)
+                print(f"📸 OCR vision extracted {len(text)} chars from {page_label} (attempt {attempt})", flush=True)
+                return text
+            except Exception as e:
+                logger.warning("OCR vision call failed for %s (attempt %d/%d): %s", page_label, attempt, max_retries, e)
+                print(f"❌ OCR vision call failed for {page_label} (attempt {attempt}/{max_retries}): {e}", flush=True)
+                if attempt < max_retries:
+                    _time.sleep(2)  # Brief pause before retry
+        return ""
     
     return _ocr
 
