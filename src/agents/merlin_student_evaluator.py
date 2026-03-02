@@ -165,7 +165,16 @@ class MerlinStudentEvaluator(BaseAgent):
                     data["status"] = "success"
                 data["agent"] = self.name
 
-                if self.db and application_id:
+                # Only persist to DB if we have meaningful content
+                # (prevents empty rows that block richer data from applications.agent_results)
+                merlin_has_content = (
+                    data.get("overall_score") is not None
+                    or data.get("recommendation")
+                    or data.get("rationale")
+                    or data.get("executive_summary")
+                    or data.get("applicant_summary")
+                )
+                if self.db and application_id and merlin_has_content:
                     self.db.save_merlin_evaluation(
                         application_id=application_id,
                         agent_name=self.name,
@@ -174,6 +183,11 @@ class MerlinStudentEvaluator(BaseAgent):
                         rationale=data.get("rationale"),
                         confidence=data.get("confidence"),
                         parsed_json=json.dumps(data, ensure_ascii=True)
+                    )
+                elif self.db and application_id and not merlin_has_content:
+                    logger.warning(
+                        "Merlin skipping DB save for application %s — no meaningful content",
+                        application_id,
                     )
                 if span:
                     span.set_attribute("agent.result.score", str(data.get("overall_score", "")))

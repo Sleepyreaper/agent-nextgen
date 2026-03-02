@@ -27,6 +27,15 @@
     .agent-summary { color: #334155; font-size: 1.05rem; margin-bottom: 0.7rem; }
     .agent-details { color: #64748b; font-size: 0.98rem; }
     .score-badge { display: inline-block; background: #38bdf8; color: #fff; border-radius: 4px; padding: 0.2rem 0.7rem; font-size: 1.1rem; font-weight: 600; margin-left: 0.5rem; }
+    /* Grade table styling for Rapunzel */
+    .grade-table-wrapper { max-height: 420px; overflow-y: auto; margin-top: 0.8rem; border: 1px solid #e2e8f0; border-radius: 6px; }
+    .grade-table { width: 100%; border-collapse: collapse; font-size: 0.92rem; }
+    .grade-table th { background: #f1f5f9; color: #334155; padding: 0.5rem 0.7rem; text-align: left; font-weight: 600; position: sticky; top: 0; border-bottom: 2px solid #cbd5e1; }
+    .grade-table td { padding: 0.4rem 0.7rem; border-bottom: 1px solid #f1f5f9; color: #475569; }
+    .grade-table tr:hover { background: #f8fafc; }
+    .rapunzel-perspective { margin-top: 0.8rem; padding: 0.8rem; background: #fefce8; border-left: 3px solid #eab308; border-radius: 4px; font-size: 0.98rem; color: #334155; line-height: 1.6; }
+    .rapunzel-stats { display: flex; gap: 1.2rem; flex-wrap: wrap; margin-top: 0.6rem; }
+    .rapunzel-stat { background: #eff6ff; padding: 0.3rem 0.8rem; border-radius: 4px; font-size: 0.9rem; color: #1e40af; }
 </style>
 {% endblock %}
 
@@ -126,14 +135,67 @@
             {% endif %}
 
             {# ── Rapunzel (Grade Reader) ── #}
-            {% if rapunzel and (rapunzel.human_summary or rapunzel.summary) %}
-            <div class="agent-card">
-                <h3>💇 Rapunzel {% if rapunzel.gpa %}<span class="score-badge">GPA: {{ rapunzel.gpa }}</span>{% endif %}</h3>
-                <div class="agent-summary">{{ rapunzel.human_summary or rapunzel.summary }}</div>
-                <div class="agent-details">
-                    {% if rapunzel.academic_strength %}<strong>Academic Strength:</strong> {{ rapunzel.academic_strength }}<br>{% endif %}
-                    {% if rapunzel.course_rigor_index %}<strong>Course Rigor:</strong> {{ rapunzel.course_rigor_index }}<br>{% endif %}
+            {% if rapunzel and (rapunzel.human_summary or rapunzel.summary or rapunzel.full_analysis) %}
+            <div class="agent-card agent-card-wide">
+                <h3>💇 Rapunzel {% if rapunzel.gpa %}<span class="score-badge">GPA: {{ rapunzel.gpa }}</span>{% endif %}{% if rapunzel.course_rigor_index %}<span class="score-badge" style="background:#8b5cf6;">Rigor: {{ rapunzel.course_rigor_index }}</span>{% endif %}</h3>
+
+                {# Stats row #}
+                <div class="rapunzel-stats">
+                    {% if rapunzel.academic_strength %}<div class="rapunzel-stat"><strong>Academic Strength:</strong> {{ rapunzel.academic_strength }}</div>{% endif %}
+                    {% if rapunzel.transcript_quality %}<div class="rapunzel-stat"><strong>Transcript Quality:</strong> {{ rapunzel.transcript_quality }}</div>{% endif %}
+                    {% if rapunzel.confidence_level %}<div class="rapunzel-stat"><strong>Confidence:</strong> {{ rapunzel.confidence_level }}</div>{% endif %}
+                    {% if rapunzel.detected_format %}<div class="rapunzel-stat"><strong>Format:</strong> {{ rapunzel.detected_format }}</div>{% endif %}
                 </div>
+
+                {# Rapunzel's perspective narrative #}
+                {% if rapunzel.rapunzel_perspective %}
+                <div class="rapunzel-perspective">{{ rapunzel.rapunzel_perspective | replace('\n', '<br>') | safe }}</div>
+                {% elif rapunzel.human_summary or rapunzel.summary %}
+                <div class="agent-summary">{{ rapunzel.human_summary or rapunzel.summary }}</div>
+                {% endif %}
+
+                {# Grade table #}
+                {% if rapunzel.standardized_transcript_rows and rapunzel.standardized_transcript_rows | length > 0 %}
+                <div class="grade-table-wrapper">
+                    <table class="grade-table">
+                        <thead><tr>
+                            <th>Year</th><th>Course</th><th>Level</th><th>Grade</th><th>Numeric</th><th>Credits</th>
+                        </tr></thead>
+                        <tbody>
+                        {% for row in rapunzel.standardized_transcript_rows %}
+                            <tr>
+                                <td>{{ row.year or row.Year or '' }}</td>
+                                <td>{{ row.course or row.Course or '' }}</td>
+                                <td>{{ row.level or row.Level or '' }}</td>
+                                <td>{{ row.grade or row.Grade or '' }}</td>
+                                <td>{{ row.numeric or row.Numeric or '' }}</td>
+                                <td>{{ row.credits or row.Credits or '' }}</td>
+                            </tr>
+                        {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                {% elif rapunzel.standardized_transcript %}
+                <div class="grade-table-wrapper" style="padding: 0.8rem; white-space: pre-wrap; font-family: monospace; font-size: 0.88rem;">
+                    {{ rapunzel.standardized_transcript }}
+                </div>
+                {% elif rapunzel.grade_table_markdown %}
+                <div class="grade-table-wrapper" style="padding: 0.8rem; white-space: pre-wrap; font-family: monospace; font-size: 0.88rem;">
+                    {{ rapunzel.grade_table_markdown }}
+                </div>
+                {% endif %}
+
+                {# Notable patterns #}
+                {% if rapunzel.notable_patterns %}
+                <div class="agent-details" style="margin-top: 0.6rem;">
+                    <strong>Notable Patterns:</strong>
+                    {% if rapunzel.notable_patterns is string %}
+                        {{ rapunzel.notable_patterns }}
+                    {% elif rapunzel.notable_patterns is iterable %}
+                        {{ rapunzel.notable_patterns | join(', ') }}
+                    {% endif %}
+                </div>
+                {% endif %}
             </div>
             {% endif %}
 

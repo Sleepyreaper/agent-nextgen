@@ -3383,10 +3383,39 @@ def student_detail(application_id):
         # precedence for individual agent records.
         try:
             app_agent_results = application.get('agent_results')
+            if isinstance(app_agent_results, str):
+                app_agent_results = safe_load_json(app_agent_results)
             if isinstance(app_agent_results, dict) and app_agent_results:
                 for k, v in app_agent_results.items():
                     if k not in agent_results:
+                        # Agent not in per-table results — use applications.agent_results
                         agent_results[k] = v
+                    elif k == 'merlin' and isinstance(v, dict):
+                        # Special handling: if merlin_evaluations row exists but has
+                        # no meaningful data (empty response saved earlier), prefer
+                        # the richer data from applications.agent_results
+                        existing = agent_results.get('merlin', {})
+                        existing_has_content = (
+                            existing.get('overall_score') is not None
+                            or existing.get('recommendation')
+                            or existing.get('executive_summary')
+                            or existing.get('human_summary')
+                        )
+                        app_has_content = (
+                            v.get('overall_score') is not None
+                            or v.get('recommendation')
+                            or v.get('executive_summary')
+                            or v.get('applicant_summary')
+                        )
+                        if not existing_has_content and app_has_content:
+                            logger.info(f"Merlin: preferring applications.agent_results (has content) over empty merlin_evaluations row")
+                            agent_results['merlin'] = v
+                        elif existing_has_content:
+                            # Merge supplementary keys from agent_results that
+                            # might not exist in the per-table row
+                            for mk, mv in v.items():
+                                if mk not in existing or not existing.get(mk):
+                                    existing[mk] = mv
         except Exception as e:
             logger.debug(f"Failed to merge application.agent_results: {e}")
 
