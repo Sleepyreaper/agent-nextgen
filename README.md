@@ -1,6 +1,6 @@
 # NextGen Multi-Agent Student Evaluation System
 
-> **Version 1.0.39** · Production-ready AI evaluation pipeline with 15+ Disney-themed agents, 4-tier model architecture, and enterprise security via Azure Front Door + WAF.
+> **Version 1.0.43** · Production-ready AI evaluation pipeline with 15+ Disney-themed agents, 4-tier model architecture, and enterprise security via Azure Front Door + WAF.
 
 An intelligent multi-agent system that evaluates high school internship applications using specialized Disney-themed agents coordinated in a 9-step workflow. Built on Azure AI Foundry with comprehensive audit trails, fairness-aware assessment, and school context enrichment.
 
@@ -12,7 +12,7 @@ An intelligent multi-agent system that evaluates high school internship applicat
 - **15+ Specialized Agents** — Disney-themed AI agents each handling a focused evaluation aspect
 - **4-Tier Model Architecture** — Premium, Merlin, Workhorse, and Lightweight tiers for cost/quality optimization
 - **Smart Student Matching** — Composite key matching (name + school + state) prevents duplicates
-- **School Context Enrichment** — NAVEEN + MOANA bidirectional validation loop for fair assessment
+- **School Context Enrichment** — Database-first NCES data with NAVEEN AI evaluation + MOANA contextual narratives
 - **Contextual Rigor Weighting** — RAPUNZEL calculates academic rigor adjusted by school opportunity (0–5 scale)
 - **Video Application Support** — MIRABEL analyzes video submissions with chunked upload (100KB for WAF compatibility)
 - **Interactive Q&A** — ARIEL answers natural language questions about any evaluated student
@@ -47,10 +47,10 @@ An intelligent multi-agent system that evaluates high school internship applicat
     │  Proactively validates/enriches school data
     │
 3️⃣  NAVEEN (School Data Scientist)
-    │  Enriches school context (AP courses, demographics, opportunity score)
+    │  Evaluates NCES database records → component scores + school summary
     │
-3️⃣➕ School Validation Loop (MOANA ↔ NAVEEN)
-    │  Bidirectional validation with up to 2 remediation attempts
+3️⃣➕ MOANA (School Context Analyzer)
+    │  Builds AI-powered contextual narrative using Naveen + student data
     │
 4️⃣  Core Agents (parallel, with per-agent validation gates):
     ├─ TIANA (Application Reader)
@@ -75,10 +75,10 @@ An intelligent multi-agent system that evaluates high school internship applicat
 | 📖 **BELLE** | `belle_document_analyzer.py` | Document extraction (PDF, DOCX, TXT, MP4) | Lightweight |
 | 👸 **TIANA** | `tiana_application_reader.py` | Application essay & communication analysis | Workhorse |
 | 👑 **RAPUNZEL** | `rapunzel_grade_reader.py` | Academic rigor with contextual weighting (0–5) | Premium |
-| 🌊 **MOANA** | `moana_school_context.py` | School validation & fairness-aware weighting | Workhorse |
+| 🌊 **MOANA** | `moana_school_context.py` | AI-powered student school context narratives | Workhorse |
 | 🥋 **MULAN** | `mulan_recommendation_reader.py` | Recommendation letter synthesis | Workhorse |
 | 📊 **MILO** | `milo_data_scientist.py` | Training data insights & pattern detection | Premium |
-| 🧑‍🔬 **NAVEEN** | `naveen_school_data_scientist.py` | School enrichment & demographic research | Workhorse |
+| 🧑‍🔬 **NAVEEN** | `naveen_school_data_scientist.py` | NCES database school evaluation & scoring | Workhorse |
 | 🧙 **MERLIN** | `merlin_student_evaluator.py` | Overall recommendation & rationale synthesis | Merlin |
 | ✨ **AURORA** | `aurora_agent.py` | Executive summary & report formatting | Workhorse |
 | 🎬 **MIRABEL** | `mirabel_video_analyzer.py` | Video application analysis (frame extraction) | Vision (gpt-4o) |
@@ -293,6 +293,23 @@ nano .env.local  # Add your credentials (never commit this file)
 | `agent_interactions` | 14 interaction types covering the full 9-step workflow (JSONB output, timestamps) |
 | `file_upload_audit` | AI-based student matching decisions with confidence scores and human review fields |
 
+### School Data (NCES)
+
+School data is sourced from the **NCES Common Core of Data (CCD)** — the U.S. Department of Education's annual census of public schools. Data is imported via CSV upload on the Training page (Schools tab) rather than fetched from external APIs at runtime.
+
+**Import workflow:**
+1. Download CCD data from [NCES](https://nces.ed.gov/ccd/)
+2. Upload the CSV via Training → Schools tab (supports NCES column names)
+3. Schools are fuzzy-matched to existing records (threshold 0.55) or created
+4. Naveen evaluates each school's NCES data to produce component scores
+5. Moana uses the evaluation + student transcript to build contextual narratives
+
+**Key NCES fields stored in `school_enriched_data`:**
+- Enrollment, student-teacher ratio, free/reduced lunch %
+- Title I status, charter/magnet flags, locale classification
+- Per-pupil expenditure, AP course count, graduation rate
+- District name, county, state
+
 ---
 
 ## 🤖 The 9-Step Workflow in Detail
@@ -306,17 +323,17 @@ Composite key lookup: `first_name + last_name + high_school + state_code`. Match
 ### Step 2+ — High School Pre-Enrichment
 Validates school record exists. If missing, NAVEEN proactively enriches before the validation loop begins.
 
-### Step 3 — School Enrichment (NAVEEN)
-Enriches school record with AP course counts, honors programs, community opportunity score (0–100), free/reduced lunch %, enrollment, and demographics.
+### Step 3 — School Evaluation (NAVEEN)
+Evaluates school from NCES database records imported via CSV. Produces a School Evaluation Report with component scores (Academic Rigor, Resource Investment, Student Outcomes, Equity & Access), a school summary narrative, key insights, and a context statement for downstream agents.
 
-### Step 3+ — School Validation Loop (MOANA ↔ NAVEEN)
-MOANA validates school against 7 required fields. On failure, NAVEEN remediates (up to 2 attempts). Outcome: school meets requirements or workflow pauses for additional data.
+### Step 3+ — School Context Narrative (MOANA)
+MOANA uses Naveen's school evaluation, NCES database fields (enrollment, student-teacher ratio, FRPL%, Title I status, locale, per-pupil expenditure), and the student's own coursework to produce an AI-powered contextual narrative — a 6–10 sentence data-grounded assessment of what the student's record means in context.
 
 ### Step 4 — Core Agent Evaluation (Parallel)
 Four agents run simultaneously with per-agent validation gates:
 1. **TIANA** — Application essays and communication
 2. **RAPUNZEL** — Grades with contextual rigor (base rigor × AP availability × opportunity score)
-3. **MOANA** — School context and fairness factor
+3. **MOANA** — Student school context narrative
 4. **MULAN** — Recommendation letter synthesis
 
 ### Step 5 — Pattern Analysis (MILO)
@@ -358,7 +375,7 @@ When a student already exists, new files are added to the same record and the fu
 ├── app.py                              # Flask web application (~7900 lines)
 ├── main.py                             # CLI interface
 ├── requirements.txt                    # Python dependencies
-├── VERSION                             # Current version (1.0.39)
+├── VERSION                             # Current version (1.0.43)
 ├── Dockerfile                          # Container configuration
 ├── Procfile                            # Process configuration
 ├── startup.sh / startup.py             # App Service startup
@@ -546,7 +563,45 @@ python testing/test_agent.py      # Test file upload handler
 
 ---
 
-## 📈 Observability
+## � Evaluating the Milo Model
+
+Milo (Data Scientist) builds ML models from historical training data and uses them to predict applicant outcomes. To evaluate model accuracy:
+
+### 1. Import Training Data
+Upload historical applications (PDF/DOCX) via the **Training** page, then import actual outcomes using **Import Historical Scores** (XLSX). Each training record needs both the application documents and the known result (Selected/Not Selected).
+
+### 2. Run Model Validation
+Navigate to **Training → Milo Insights → Validate Model**. This runs every training student through Milo's current model and compares the AI prediction against the known outcome. The validation runs asynchronously (file-based state for multi-worker compatibility) and produces:
+
+- **Confusion Matrix** — True positives, false positives, true negatives, false negatives
+- **Accuracy, Precision, Recall, F1 Score** — Standard classification metrics
+- **Per-Student Results** — Each student's predicted vs. actual outcome with confidence score
+- **Misclassification Analysis** — Which students were predicted incorrectly and why
+
+### 3. Generate Rankings
+Use **Training → Milo Insights → Generate Rankings** to rank all 2026 applicants using the trained model. Rankings include a predicted outcome, confidence score, and key factors.
+
+### API Endpoints
+```bash
+# Start validation (async)
+POST /api/milo/validate
+
+# Poll validation progress/results
+GET /api/milo/validate
+
+# Generate applicant rankings
+POST /api/milo/rank
+```
+
+### Improving Model Accuracy
+- **More training data** — Upload additional historical applications
+- **Better outcomes data** — Import accurate XLSX scores with clear Selected/Not Selected labels
+- **Reprocess documents** — Use **Training → Reprocess All** to re-extract training documents through the latest Belle pipeline
+- **Check diagnostics** — Use **Training → Diagnostic** to verify field extraction quality across all training records
+
+---
+
+## �📈 Observability
 
 ### OpenTelemetry Integration
 The application uses `azure-monitor-opentelemetry` for automatic instrumentation of Flask, requests, and psycopg2. Agent-level telemetry tracks:
@@ -620,7 +675,7 @@ Standalone terminal-style debugging interface for real-time agent execution moni
 | **9-Step Workflow** | Stages agents by dependency, enables validation gates, supports remediation loops, audit-friendly |
 | **Composite Key Matching** | Prevents duplicates, enables re-evaluation, handles multi-school scenarios |
 | **Contextual Rigor (RAPUNZEL)** | Fair assessment across school types — adjusts for AP/Honors availability and opportunity |
-| **Fairness Factor (MOANA)** | Evidence-based bias reduction using public school data, transparent and reviewable |
+| **Contextual Narratives (MOANA)** | AI-powered narratives using NCES data + Naveen evaluation to contextualize student records |
 | **4-Tier Models** | Cost optimization — use expensive models only for complex tasks, lightweight for simple extraction |
 | **Front Door + WAF** | Enterprise DDoS protection without EasyAuth complexity |
 | **ARM Zip Deploy** | Works with SCM basic auth disabled and Front Door blocking SCM |

@@ -396,7 +396,7 @@
         <div class="detail-section" style="border-left: 4px solid #667eea;">
             <div class="section-title">🔬 Naveen's School Profile <small style="font-weight: normal; color: #6b7280; font-size: 0.75rem;">(School Data Scientist)</small></div>
             <p style="color: #6b7280; font-size: 0.9rem; margin-bottom: 1.5rem;">
-                These are the fields Naveen analyzes and populates. Verify each field matches public school data.
+                These are the fields Naveen evaluates from NCES database records. Data is imported via CSV upload on the Training page.
             </p>
             
             <h4 style="color: #374151; margin: 1.5rem 0 0.75rem; font-size: 0.95rem;">Basic Information</h4>
@@ -508,7 +508,7 @@
                 </button>
             </div>
             <p style="color: #6b7280; font-size: 0.9rem; margin-bottom: 1rem;">
-                Moana validates that Naveen's data meets requirements for student evaluations, then generates a school context summary used by all agents.
+                Moana uses Naveen's evaluation and NCES data to produce an AI-powered contextual narrative about the student's school environment.
             </p>
 
             <!-- Validation Status Row -->
@@ -594,30 +594,16 @@
             <div id="moanaValidationResult" style="display: none; margin-top: 1rem;"></div>
         </div>
 
-        <!-- Web Sources -->
+        <!-- Data Source Notes -->
         <div class="detail-section">
-            <div class="section-title">🔗 Sources Analyzed by Naveen</div>
-            {% if school.web_sources_analyzed %}
-            <p style="color: #6b7280; margin-bottom: 1rem;">Data gathered from the following public sources:</p>
-            {% set sources = school.web_sources_analyzed %}
-            {% if sources is string %}
-                {% set sources = sources.split(',') %}
-            {% endif %}
-            <ul class="sources-list">
-                {% for source in sources %}
-                <li>
-                    {% if source.strip().startswith('http') %}
-                    <a href="{{ source.strip() }}" target="_blank" rel="noopener noreferrer">{{ source.strip() }}</a>
-                    {% elif source.strip().startswith('[') or source.strip().startswith('"') %}
-                    {{ source.strip().strip('[]"') }}
-                    {% else %}
-                    {{ source.strip() }}
-                    {% endif %}
-                </li>
-                {% endfor %}
-            </ul>
+            <div class="section-title">📝 Data Source Notes</div>
+            {% if school.data_source_notes %}
+            <p style="color: #6b7280; margin-bottom: 1rem;">Notes and context from NCES data import and agent analysis:</p>
+            <div style="padding: 1rem; background: #f9fafb; border-radius: 6px; white-space: pre-wrap; font-size: 0.9rem; color: #374151;">
+                {{ school.data_source_notes }}
+            </div>
             {% else %}
-            <p style="color: #9ca3af; font-style: italic;">No web sources recorded for this school.</p>
+            <p style="color: #9ca3af; font-style: italic;">No data source notes recorded for this school.</p>
             {% endif %}
         </div>
 
@@ -904,7 +890,7 @@ async function triggerAnalysis() {
     const btn = document.getElementById('analyzeBtn');
     const originalText = btn.innerHTML;
     
-    if (!confirm('Run Naveen school analysis? This will look up public data and populate enrichment fields.')) return;
+    if (!confirm('Run Naveen school evaluation? This will analyze the NCES database records and produce component scores.')) return;
     
     btn.disabled = true;
     btn.innerHTML = '⏳ Analyzing...';

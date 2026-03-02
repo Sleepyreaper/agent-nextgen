@@ -1,6 +1,6 @@
 # Agent System - Complete Overview
 
-**Last Updated**: June 2025  
+**Last Updated**: March 2026  
 **Status**: ✅ All 15 agents operational with 4-tier model architecture
 
 ---
@@ -13,7 +13,7 @@
 |---|---|---|---|---|
 | 1 | 👸 **Tiana** | `TianaApplicationReader` | Workhorse | Reads and extracts core application data |
 | 2 | 💇 **Rapunzel** | `RapunzelGradeReader` | Premium | Analyzes transcripts and grade trends |
-| 3 | 🌊 **Moana** | `MoanaSchoolContext` | Workhorse | Enriched school context analysis |
+| 3 | 🌊 **Moana** | `MoanaSchoolContext` | Workhorse | AI-powered student school context narratives |
 | 4 | 🗡️ **Mulan** | `MulanRecommendationReader` | Workhorse | Extracts recommendation letters |
 | 5 | 🧙 **Merlin** | `MerlinStudentEvaluator` | Merlin | Final comprehensive evaluation and scoring |
 | 6 | ✨ **Aurora** | `AuroraAgent` | N/A (local) | Formats final output |
@@ -25,7 +25,7 @@
 |---|---|---|---|---|
 | 8 | 📖 **Belle** | `BelleDocumentAnalyzer` | Lightweight | PDF/DOCX parsing, AI section detection, OCR |
 | 9 | 🔍 **Milo** | `MiloDataScientist` | Premium | ML training, validation, ranking |
-| 10 | 🏰 **Naveen** | `NaveenSchoolDataScientist` | Workhorse | School-level data science & enrichment |
+| 10 | 🏰 **Naveen** | `NaveenSchoolDataScientist` | Workhorse | NCES database school evaluation & component scoring |
 | 11 | 🧜 **Ariel** | `ArielQAAgent` | Workhorse | Conversational Q&A over student data |
 | 12 | 🌺 **Mirabel** | `MirabelVideoAnalyzer` | Vision | Video submission analysis (frame + audio) |
 | 13 | 😊 **Bashful** | `BashfulAgent` | Workhorse | Agent output summarization |
@@ -104,7 +104,7 @@ Each agent selects its model via: `self.model = model or config.model_tier_<tier
 | **Parse uploaded documents** | Belle | Lightweight | High-volume, classification + OCR |
 | **Read application metadata** | Tiana | Workhorse | Structured extraction |
 | **Parse complex transcripts** | Rapunzel | Premium | Complex document reasoning |
-| **School context analysis** | Moana | Workhorse | Profile enrichment |
+| **School context analysis** | Moana | Workhorse | AI-powered contextual narratives |
 | **Extract recommendations** | Mulan | Workhorse | Letter analysis |
 | **Final scoring decision** | Merlin | Merlin | Multi-factor comprehensive eval |
 | **Counter-evaluation** | Gaston | Workhorse | Bias detection |
@@ -113,7 +113,7 @@ Each agent selects its model via: `self.model = model or config.model_tier_<tier
 | **Video analysis** | Mirabel | Vision | Frame extraction + GPT-4o vision |
 | **Output summarization** | Bashful | Workhorse | Concise summaries |
 | **Feedback routing** | FeedbackTriage | Lightweight | Fast categorization |
-| **School enrichment** | Naveen | Workhorse | Data aggregation & scoring |
+| **School enrichment** | Naveen | Workhorse | NCES data evaluation & scoring |
 | **Document generation** | Fairy Godmother | Programmatic | Template-based |
 | **Format results** | Aurora | Local | Formatting only |
 
@@ -167,7 +167,7 @@ Each agent selects its model via: `self.model = model or config.model_tier_<tier
 **Application Analysis Pipeline:**
 - 👸 **Tiana** — Reads applications (efficient, practical)
 - 💇 **Rapunzel** — Analyzes grades (detail-oriented, precision)
-- 🌊 **Moana** — Explores school context (adventurous, contextual)
+- 🌊 **Moana** — Builds contextual narratives from NCES data + student records (adventurous, contextual)
 - 🗡️ **Mulan** — Reads recommendations (bold, insightful)
 - 🧙 **Merlin** — Makes final decisions (wise, evaluative)
 - ✨ **Aurora** — Formats beautifully (elegant, polished)
@@ -176,7 +176,7 @@ Each agent selects its model via: `self.model = model or config.model_tier_<tier
 **Support Agents:**
 - 📖 **Belle** — Analyzes documents (learned, analytical)
 - 🔍 **Milo** — Data science & ML (adventurous explorer — Atlantis)
-- 🏰 **Naveen** — School enrichment (sophisticated analyst)
+- 🏰 **Naveen** — School evaluation from NCES database (sophisticated analyst)
 - 🧜 **Ariel** — Q&A conversations (curious, communicative)
 - 🌺 **Mirabel** — Video analysis (sees what others miss — Encanto)
 - 😊 **Bashful** — Summarizes quietly (concise, modest)

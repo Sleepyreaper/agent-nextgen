@@ -2,7 +2,7 @@
 
 ## NextGen Agents — AI Scholarship Evaluation Platform
 
-Production Flask application (~7900 lines in `app.py`) that evaluates high-school scholarship applicants using 15+ Disney-themed AI agents backed by Azure AI Foundry. Deployed on Azure App Service behind Front Door + WAF with session-based authentication.
+Production Flask application (~8100 lines in `app.py`) that evaluates high-school scholarship applicants using 15+ Disney-themed AI agents backed by Azure AI Foundry. Deployed on Azure App Service behind Front Door + WAF with session-based authentication.
 
 ### Architecture
 
@@ -30,21 +30,21 @@ Production Flask application (~7900 lines in `app.py`) that evaluates high-schoo
 | Tiana | `TianaApplicationReader` | Application text extraction and scoring |
 | Rapunzel | `RapunzelGradeReader` | Transcript/grade analysis |
 | Mulan | `MulanRecommendationReader` | Recommendation letter analysis |
-| Moana | `MoanaSchoolContext` | School profile enrichment |
+| Moana | `MoanaSchoolContext` | AI-powered student school context narratives using NCES data |
 | Merlin | `MerlinStudentEvaluator` | Final comprehensive evaluation |
 | Gaston | `GastonEvaluator` | Counter-evaluation and bias check |
 | Aurora | `AuroraAgent` | Result formatting and presentation |
 | Milo | `MiloDataScientist` | ML training, validation, ranking |
 | Ariel | `ArielQAAgent` | Conversational Q&A over student data |
 | Mirabel | `MirabelVideoAnalyzer` | Video submission analysis (frame + audio) |
-| Naveen | `NaveenSchoolDataScientist` | School-level data science |
+| Naveen | `NaveenSchoolDataScientist` | NCES database school evaluation & component scoring |
 | Bashful | `BashfulAgent` | Agent output summarization |
 | FeedbackTriage | `FeedbackTriageAgent` | User feedback routing |
 | FairyGodmother | `FairyGodmotherDocumentGenerator` | Document generation |
 
 ### Key Files
 
-- `app.py` — Flask application with all routes (~7900 lines)
+- `app.py` — Flask application with all routes (~8100 lines)
 - `src/config.py` — Configuration from Key Vault / env vars
 - `src/agents/base_agent.py` — Abstract base class for all agents
 - `src/agents/belle_document_analyzer.py` — Document analysis with AI section detection
@@ -53,7 +53,7 @@ Production Flask application (~7900 lines in `app.py`) that evaluates high-schoo
 - `src/storage.py` — Azure Blob Storage operations
 - `src/document_processor.py` — PDF/DOCX text extraction with OCR fallback
 - `startup.sh` — Gunicorn launch script (4 workers, 2 threads, 600s timeout)
-- `VERSION` — Current version number (1.0.39)
+- `VERSION` — Current version number (1.0.43)
 
 ### Key API Endpoints
 
@@ -70,7 +70,7 @@ Production Flask application (~7900 lines in `app.py`) that evaluates high-schoo
 - **Production**: `nextgen-agents-web` (West US 2), Front Door origin timeout 240s
 - **Staging**: `nextgen-agents-web` slot `staging`
 - **SCM**: Locked by default; unlock with `az webapp config access-restriction set ... --use-same-restrictions-for-scm-site false`, deploy via `az webapp deploy --type zip`, then re-lock
-- **Git**: Branch `some-authentication`, pushed to GitHub
+- **Git**: Branch `main`, pushed to GitHub
 
 ### Development Guidelines
 

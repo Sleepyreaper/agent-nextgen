@@ -1,45 +1,44 @@
 # 🎯 Quick Reference - Disney Agents & Models
 
-## All 13 Agents at a Glance
+**Last Updated**: March 2, 2026 (v1.0.43)
+
+## All 15 Agents at a Glance
 
 ### Pipeline Agents (Auto-executes in order)
 ```
-👸 Tiana         → Reads app data        | GPT-4
-💇 Rapunzel      → Analyzes transcript   | GPT-4
-🌊 Moana         → School context ⭐    | GPT-4 (uses Naveen's enriched data)
-🗡️  Mulan         → Recommendations      | GPT-4
-🧙 Merlin        → Final evaluation      | GPT-4
-✨ Aurora        → Formats output        | Local
-💨 Smee          → Orchestrates all      | GPT-4
+📖 Belle          → Document extraction    | Lightweight (LightWork5Nano)
+👸 Tiana         → Reads application       | Workhorse (WorkForce4.1mini)
+👑 Rapunzel      → Transcript analysis     | Premium (gpt-4.1)
+🌊 Moana         → School context narrative| Workhorse (uses Naveen + NCES data)
+🥋 Mulan         → Recommendations         | Workhorse
+📊 Milo          → Training data patterns  | Premium (gpt-4.1)
+🧙 Merlin        → Final evaluation        | Merlin (MerlinGPT5Mini)
+✨ Aurora        → Formats output          | Local (no model)
+🎩 Smee          → Orchestrates all        | Workhorse
 ```
 
-### Support Agents (On-demand)
+### Support Agents
 ```
-🎭 Gaston        → Backup evaluation     | GPT-4
-📖 Belle         → Document analysis     | GPT-4
-🔍 Milo ⭐       → Pattern finder       | GPT-4.1 (mini - FAST)
-🏰 Naveen ⭐    → School enrichment    | GPT-4.1 (mini - FAST)
-🪶 Scuttle       → Feedback triage       | GPT-4
-🧚 Fairy GodMa   → Doc generator         | Programmatic
+🧑‍🔬 Naveen        → School evaluation       | Workhorse (NCES database records)
+🎭 Gaston        → Counter-evaluation      | Workhorse
+🧜 Ariel         → Student Q&A             | Workhorse
+🌺 Mirabel       → Video analysis          | Vision (gpt-4o)
+😊 Bashful       → Summarization           | Workhorse
+📎 FeedbackTriage→ Feedback routing        | Lightweight
+🧚 Fairy GodMa   → Doc generator           | Programmatic
 ```
-
-**⭐ = New or Updated**
 
 ---
 
-## Model Assignment - Simple
+## Model Tiers (4-Tier Architecture)
 
-### Use Standard (GPT-4):
-Tiana, Rapunzel, Moana, Mulan, Merlin, Belle, Gaston, Scuttle, Smee, Aurora
-
-### Use Mini (GPT-4.1):
-- **Milo** - `config.deployment_name_mini` 
-- **Naveen** - `config.deployment_name_mini`
-
-**Benefits of Mini:**
-- ✅ Faster (pattern recognition, data aggregation)
-- ✅ Lower cost
-- ✅ Same quality for focused tasks
+| Tier | Deployment | Used By |
+|------|------------|---------|
+| **Premium** | `gpt-4.1` | Rapunzel, Milo |
+| **Merlin** | `MerlinGPT5Mini` | Merlin |
+| **Workhorse** | `WorkForce4.1mini` | Tiana, Mulan, Moana, Gaston, Naveen, Ariel, Bashful |
+| **Lightweight** | `LightWork5Nano` | Belle, FeedbackTriage |
+| **Vision** | `gpt-4o` | Mirabel, Belle OCR fallback |
 
 ---
 
@@ -57,25 +56,24 @@ Every agent response now includes:
 
 ---
 
-## School Enrichment Flow
+## School Data Flow (Database-First)
 
 ```
-1. User visits /schools dashboard
+1. Upload NCES CCD CSV via Training → Schools tab
                 ↓
-2. Naveen (mini model) analyzes school
+2. Schools matched/created in database (fuzzy match 0.55)
                 ↓
-3. Data stored with opportunity_score (0-100)
+3. Naveen evaluates NCES records → component scores + summary
                 ↓
-4. Human reviews & approves
+4. Human reviews & approves (optional)
                 ↓
-5. Marked as "approved" in database
+5. Student from that school is uploaded:
+   Moana builds contextual narrative using Naveen + NCES + student data
                 ↓
-6. Next student from that school:
-   Moana checks enriched data FIRST
-                ↓
-7. Uses approved enriched data
-   (better context → better evaluation)
+6. Narrative flows to Merlin for fair evaluation
 ```
+
+**Key insight**: A 4.0 GPA at a school with 2 APs and 70% FRPL is categorically different from the same GPA at a school with 20 APs and 15% FRPL.
 
 ---
 
@@ -93,41 +91,26 @@ Every agent response now includes:
 ## Configuration
 
 ```python
-# .env or Key Vault
-AZURE_DEPLOYMENT_NAME=<your-gpt4>
-AZURE_DEPLOYMENT_NAME_MINI=o4miniagent  # Optional, defaults to this
-
-# In config.py (auto-loads both)
-config.deployment_name       # Standard GPT-4
-config.deployment_name_mini  # Mini (default: o4miniagent)
+# src/config.py (auto-loads from Key Vault or env vars)
+config.model_tier_premium      # gpt-4.1
+config.model_tier_merlin       # MerlinGPT5Mini
+config.model_tier_workhorse    # WorkForce4.1mini
+config.model_tier_lightweight  # LightWork5Nano
+config.foundry_vision_model_name  # gpt-4o
 ```
 
 ---
 
 ## Quick Commands
 
-### Seed initial schools
-```bash
-python scripts/seed_schools.py
-```
+### Import NCES school data
+Upload a CCD CSV file via Training → Schools tab in the web UI.
 
-### Check agent assignments
-```python
-from src.agents import NaveenSchoolDataScientist, MiloDataScientist
-naveen = NaveenSchoolDataScientist(model="o4miniagent")
-milo = MiloDataScientist(model="o4miniagent")
-print(f"Naveen: {naveen.model_display}")
-print(f"Milo: {milo.model_display}")
-```
+### Run Milo validation
+Training → Milo Insights → Validate Model (or `POST /api/milo/validate`)
 
-### Verify models in foundry
-```bash
-# Standard model available?
-curl https://<foundry>.openai.azure.com/deployments/<standard>/versions
-
-# Mini model available?
-curl https://<foundry>.openai.azure.com/deployments/o4miniagent/versions
-```
+### Generate rankings
+Training → Milo Insights → Generate Rankings (or `POST /api/milo/rank`)
 
 ---
 
@@ -139,9 +122,9 @@ curl https://<foundry>.openai.azure.com/deployments/o4miniagent/versions
 | `src/database.py` | School enrichment DB methods |
 | `app.py` | API routes for schools |
 | `src/agents/milo_data_scientist.py` | Pattern finder (mini model) |
-| `src/agents/school_detail_data_scientist.py` | Now: NaveenSchoolDataScientist (mini model) |
-| `src/agents/feedback_triage_agent.py` | Now: ScuttleFeedbackTriageAgent |
-| `src/agents/moana_school_context.py` | Enhanced to use enriched data |
+| `src/agents/naveen_school_data_scientist.py` | School evaluation from NCES data |
+| `src/agents/feedback_triage_agent.py` | Feedback triage and routing |
+| `src/agents/moana_school_context.py` | AI-powered contextual narratives |
 | `database/schema_school_enrichment.sql` | 7 tables for school data |
 | `scripts/seed_schools.py` | Bootstrap schools |
 
@@ -163,16 +146,12 @@ curl https://<foundry>.openai.azure.com/deployments/o4miniagent/versions
 
 ---
 
-## Status Overview
+## Status Overview (v1.0.43)
 
-✅ **School Enrichment System**: Complete (database + API + dashboard)
-✅ **Disney Character Names**: All agents named
-✅ **Model Assignments**: Standard (gpt-4) + Mini (gpt-4.1)
-✅ **Model Metadata**: In all outputs
-✅ **Moana Integration**: Queries enriched data
-✅ **Backwards Compatibility**: Maintained
-✅ **Documentation**: Comprehensive
-
----
-
-**🚀 Ready to push when you give the signal!**
+✅ **School Data**: NCES CCD CSV import → database-first approach
+✅ **Naveen**: AI evaluation of NCES records with component scores
+✅ **Moana**: Contextual narratives from database + student data
+✅ **4-Tier Models**: Premium, Merlin, Workhorse, Lightweight, Vision
+✅ **Milo**: Training, validation, ranking with async processing
+✅ **All 15 Agents**: Operational with Disney character names
+✅ **Documentation**: Comprehensive and current
