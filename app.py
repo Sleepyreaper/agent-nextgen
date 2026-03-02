@@ -5143,11 +5143,11 @@ def cleanup_test_endpoint():
     try:
         cleanup_test_data()
 
-        training_col = db.get_training_example_column()
+        test_col = db.get_test_data_column()
         
-        # Count remaining test data
+        # Count remaining test data (should be 0 after cleanup)
         remaining = db.execute_query(
-            f"SELECT COUNT(*) as count FROM Applications WHERE {training_col} = TRUE"
+            f"SELECT COUNT(*) as count FROM Applications WHERE {test_col} = TRUE"
         )
         count = remaining[0].get('count', 0) if remaining else 0
         
@@ -6001,10 +6001,10 @@ def verify_applications():
 
 @app.route('/api/test-data/list', methods=['GET'])
 def get_test_data_list():
-    """Get all test data (applications marked as training/test data)."""
+    """Get all test data (applications marked with is_test_data = TRUE)."""
     try:
         applications_table = db.get_table_name("applications")
-        training_col = db.get_training_example_column()
+        test_col = db.get_test_data_column()
         app_id_col = db.get_applications_column("application_id")
         applicant_col = db.get_applications_column("applicant_name")
         email_col = db.get_applications_column("email")
@@ -6027,7 +6027,7 @@ def get_test_data_list():
                 merlin_join = f"LEFT JOIN {merlin_table} m ON a.{app_id_col} = m.{merlin_app_id_col}"
                 merlin_score_select = f"m.{merlin_score_col} as merlin_score"
 
-        # Get all applications marked as training (includes both training and test uploads)
+        # Get all applications marked as test data (is_test_data = TRUE)
         # Filter out incomplete records (missing application_id or applicant_name)
         query = f"""
             SELECT 
@@ -6039,7 +6039,7 @@ def get_test_data_list():
                 {merlin_score_select}
             FROM {applications_table} a
             {merlin_join}
-            WHERE a.{training_col} = TRUE
+            WHERE a.{test_col} = TRUE
             AND a.{app_id_col} IS NOT NULL
             AND a.{applicant_col} IS NOT NULL
             ORDER BY a.{uploaded_col} DESC
