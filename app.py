@@ -5263,26 +5263,44 @@ def upload_test_files():
                 if school_name and not record.get('school_data'):
                     record['school_data'] = {'name': school_name}
 
-                if doc_type in app_doc_types:
-                    if record['application_text']:
-                        record['application_text'] += "\n\n--- Additional Application Document ---\n\n"
-                    record['application_text'] += application_text
-                elif doc_type in transcript_doc_types:
-                    if record['transcript_text']:
-                        record['transcript_text'] += "\n\n--- Additional Transcript Document ---\n\n"
-                    record['transcript_text'] += application_text
-                elif doc_type in recommendation_doc_types:
-                    record['recommendation_texts'].append(application_text)
-                    if record['recommendation_text']:
-                        record['recommendation_text'] += "\n\n--- Additional Recommendation Letter ---\n\n"
-                    record['recommendation_text'] += application_text
-                else:
-                    if not record['application_text']:
-                        record['application_text'] = application_text
-                    elif not record['recommendation_text']:
-                        record['recommendation_text'] = application_text
+                # ── Prefer Belle's section-detected agent_fields over doc_type ──
+                # Belle's _detect_document_sections() routes individual pages to
+                # transcript_text / recommendation_text / application_text.  Use
+                # those when available for precise multi-section routing.
+                used_agent_fields = False
+                for af_field in ('application_text', 'transcript_text', 'recommendation_text'):
+                    af_val = agent_fields.get(af_field)
+                    if af_val and isinstance(af_val, str) and len(af_val.strip()) > 20:
+                        label = af_field.replace('_text', '').title()
+                        if record[af_field]:
+                            record[af_field] += f"\n\n--- Additional {label} Document ---\n\n"
+                        record[af_field] += af_val
+                        if af_field == 'recommendation_text':
+                            record['recommendation_texts'].append(af_val)
+                        used_agent_fields = True
+
+                if not used_agent_fields:
+                    # Fallback: route whole document text by doc_type
+                    if doc_type in app_doc_types:
+                        if record['application_text']:
+                            record['application_text'] += "\n\n--- Additional Application Document ---\n\n"
+                        record['application_text'] += application_text
+                    elif doc_type in transcript_doc_types:
+                        if record['transcript_text']:
+                            record['transcript_text'] += "\n\n--- Additional Transcript Document ---\n\n"
+                        record['transcript_text'] += application_text
+                    elif doc_type in recommendation_doc_types:
+                        record['recommendation_texts'].append(application_text)
+                        if record['recommendation_text']:
+                            record['recommendation_text'] += "\n\n--- Additional Recommendation Letter ---\n\n"
+                        record['recommendation_text'] += application_text
                     else:
-                        record['transcript_text'] = record['transcript_text'] or application_text
+                        if not record['application_text']:
+                            record['application_text'] = application_text
+                        elif not record['recommendation_text']:
+                            record['recommendation_text'] = application_text
+                        else:
+                            record['transcript_text'] = record['transcript_text'] or application_text
 
         # ── Fallback: direct file upload (local dev without WAF) ──
         if has_direct_files and not has_blobs:
@@ -5356,26 +5374,40 @@ def upload_test_files():
                 if school_name and not record.get('school_data'):
                     record['school_data'] = {'name': school_name}
 
-                if doc_type in app_doc_types:
-                    if record['application_text']:
-                        record['application_text'] += "\n\n--- Additional Application Document ---\n\n"
-                    record['application_text'] += application_text
-                elif doc_type in transcript_doc_types:
-                    if record['transcript_text']:
-                        record['transcript_text'] += "\n\n--- Additional Transcript Document ---\n\n"
-                    record['transcript_text'] += application_text
-                elif doc_type in recommendation_doc_types:
-                    record['recommendation_texts'].append(application_text)
-                    if record['recommendation_text']:
-                        record['recommendation_text'] += "\n\n--- Additional Recommendation Letter ---\n\n"
-                    record['recommendation_text'] += application_text
-                else:
-                    if not record['application_text']:
-                        record['application_text'] = application_text
-                    elif not record['recommendation_text']:
-                        record['recommendation_text'] = application_text
+                # ── Prefer Belle's section-detected agent_fields over doc_type ──
+                used_agent_fields = False
+                for af_field in ('application_text', 'transcript_text', 'recommendation_text'):
+                    af_val = agent_fields.get(af_field)
+                    if af_val and isinstance(af_val, str) and len(af_val.strip()) > 20:
+                        label = af_field.replace('_text', '').title()
+                        if record[af_field]:
+                            record[af_field] += f"\n\n--- Additional {label} Document ---\n\n"
+                        record[af_field] += af_val
+                        if af_field == 'recommendation_text':
+                            record['recommendation_texts'].append(af_val)
+                        used_agent_fields = True
+
+                if not used_agent_fields:
+                    if doc_type in app_doc_types:
+                        if record['application_text']:
+                            record['application_text'] += "\n\n--- Additional Application Document ---\n\n"
+                        record['application_text'] += application_text
+                    elif doc_type in transcript_doc_types:
+                        if record['transcript_text']:
+                            record['transcript_text'] += "\n\n--- Additional Transcript Document ---\n\n"
+                        record['transcript_text'] += application_text
+                    elif doc_type in recommendation_doc_types:
+                        record['recommendation_texts'].append(application_text)
+                        if record['recommendation_text']:
+                            record['recommendation_text'] += "\n\n--- Additional Recommendation Letter ---\n\n"
+                        record['recommendation_text'] += application_text
                     else:
-                        record['transcript_text'] = record['transcript_text'] or application_text
+                        if not record['application_text']:
+                            record['application_text'] = application_text
+                        elif not record['recommendation_text']:
+                            record['recommendation_text'] = application_text
+                        else:
+                            record['transcript_text'] = record['transcript_text'] or application_text
         
         uploaded_students = list(uploaded_students_map.values())
 

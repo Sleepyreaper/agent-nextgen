@@ -588,6 +588,15 @@ class SmeeOrchestrator(BaseAgent):
                                belle_data.get('student_info', {}).get(field) or
                                belle_data.get('agent_fields', {}).get(field) or
                                belle_data.get('extracted_data', {}).get(field))
+            # For recommendation_text, also accept _original_document_text as
+            # a valid fallback source.  The _run_agent method already uses it
+            # as fallback for Mulan — let it through the gate so the fallback
+            # can fire instead of being blocked by the validation check.
+            if not has_in_app and not has_in_belle and field == 'recommendation_text':
+                orig_text = application.get('_original_document_text', '')
+                if orig_text and isinstance(orig_text, str) and len(orig_text.strip()) > 100:
+                    has_in_app = True
+                    logger.info("[Mulan] recommendation_text missing but _original_document_text available (%d chars) — passing gate", len(orig_text))
             if not has_in_app and not has_in_belle:
                 missing.append(field)
         
