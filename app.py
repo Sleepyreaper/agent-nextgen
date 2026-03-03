@@ -74,7 +74,7 @@ from src.agents.feedback_triage_agent import ScuttleFeedbackTriageAgent, Feedbac
 # Initialize Flask app
 app = Flask(__name__, template_folder='web/templates', static_folder='web/static')
 app.secret_key = config.flask_secret_key or os.urandom(32).hex()
-app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB max file size
+app.config['MAX_CONTENT_LENGTH'] = 100 * 1024 * 1024  # 100MB max file size (video support)
 app.config['UPLOAD_FOLDER'] = 'uploads'
 
 
@@ -8403,6 +8403,17 @@ def ask_question(application_id):
             'answer': None,
             'reference_data': {}
         }), 500
+
+
+@app.errorhandler(413)
+def request_entity_too_large(error):
+    """Handle file upload size limit exceeded."""
+    max_mb = app.config.get('MAX_CONTENT_LENGTH', 0) // (1024 * 1024)
+    return jsonify({
+        'status': 'error',
+        'error': f'File too large. Maximum upload size is {max_mb}MB.',
+        'max_size_mb': max_mb
+    }), 413
 
 
 if __name__ == '__main__':

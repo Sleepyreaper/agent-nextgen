@@ -272,6 +272,10 @@ class StorageManager:
         '.txt': 'text/plain',
         '.text': 'text/plain',
         '.mp4': 'video/mp4',
+        '.mov': 'video/quicktime',
+        '.avi': 'video/x-msvideo',
+        '.webm': 'video/webm',
+        '.mkv': 'video/x-matroska',
         '.xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
     }
 

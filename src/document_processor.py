@@ -297,13 +297,13 @@ class DocumentProcessor:
     @staticmethod
     def validate_file_type(filename: str) -> bool:
         """Check if the file type is supported (documents + video)."""
-        allowed_extensions = {'pdf', 'docx', 'doc', 'txt', 'mp4'}
+        allowed_extensions = {'pdf', 'docx', 'doc', 'txt', 'mp4', 'mov', 'avi', 'webm', 'mkv'}
         _, ext = os.path.splitext(filename)
         return ext.lower().lstrip('.') in allowed_extensions
 
     @staticmethod
     def is_video_file(filename: str) -> bool:
         """Check if the file is a video file (requires Mirabel video analyzer)."""
-        video_extensions = {'mp4'}
+        video_extensions = {'mp4', 'mov', 'avi', 'webm', 'mkv'}
         _, ext = os.path.splitext(filename)
         return ext.lower().lstrip('.') in video_extensions
