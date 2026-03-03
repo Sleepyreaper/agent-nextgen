@@ -404,6 +404,11 @@
             <div class="stat-value" id="statErrors">0</div>
             <div class="stat-label">Total Errors</div>
         </div>
+        <div class="stat-card purple">
+            <div class="stat-value" id="statTotalTokens">—</div>
+            <div class="stat-label">Total Tokens Used</div>
+            <div class="stat-sub" id="statTokenBreakdown"></div>
+        </div>
     </div>
 
     <!-- Main Grid -->
@@ -429,6 +434,22 @@
             <div class="section-header">🔧 Application Insights Configuration</div>
             <div class="section-body" id="appInsightsConfig">
                 <div class="loading-spinner">Loading config...</div>
+            </div>
+        </div>
+
+        <!-- Token Usage by Model -->
+        <div class="telem-section full-width">
+            <div class="section-header">🪙 Token Consumption by Model</div>
+            <div class="section-body" id="tokenUsageSection">
+                <div class="loading-spinner">Loading token data...</div>
+            </div>
+        </div>
+
+        <!-- Token Usage by Agent -->
+        <div class="telem-section full-width">
+            <div class="section-header">🤖 Token Consumption by Agent</div>
+            <div class="section-body" id="tokenUsageByAgent">
+                <div class="loading-spinner">Loading token data...</div>
             </div>
         </div>
 
@@ -472,13 +493,15 @@ function stopAutoRefresh() {
 
 async function loadTelemetry() {
     try {
-        const [overviewRes, telStatusRes] = await Promise.all([
+        const [overviewRes, telStatusRes, tokenRes] = await Promise.all([
             fetch('/api/telemetry/overview'),
-            fetch('/api/debug/telemetry-status')
+            fetch('/api/debug/telemetry-status'),
+            fetch('/api/telemetry/token-usage')
         ]);
 
         const overview = await overviewRes.json();
         const telStatus = await telStatusRes.json();
+        const tokenData = await tokenRes.json();
 
         renderStatusBanner(telStatus);
         renderStats(overview);
@@ -486,6 +509,8 @@ async function loadTelemetry() {
         renderSchoolPipeline(overview.school_enrichment || {});
         renderAppInsightsConfig(telStatus);
         renderRecentExecs(overview.recent_executions || []);
+        renderTokenUsageByModel(tokenData.by_model || {}, tokenData.totals || {});
+        renderTokenUsageByAgent(tokenData.by_agent || {}, tokenData.totals || {});
     } catch (error) {
         console.error('Telemetry load error:', error);
         document.getElementById('statusBanner').className = 'status-banner disconnected';
@@ -543,6 +568,12 @@ function renderStats(overview) {
 
     const schoolTotal = overview.school_enrichment?.total || 0;
     document.getElementById('statSchoolsTotal').textContent = schoolTotal;
+
+    const tokenTotal = overview.token_usage?.total_tokens || 0;
+    document.getElementById('statTotalTokens').textContent = tokenTotal > 0 ? (tokenTotal > 1000000 ? (tokenTotal / 1000000).toFixed(1) + 'M' : tokenTotal > 1000 ? (tokenTotal / 1000).toFixed(1) + 'K' : tokenTotal) : '—';
+    const inputT = overview.token_usage?.input_tokens || 0;
+    const outputT = overview.token_usage?.output_tokens || 0;
+    document.getElementById('statTokenBreakdown').textContent = tokenTotal > 0 ? `In: ${inputT.toLocaleString()} / Out: ${outputT.toLocaleString()}` : '';
 }
 
 function renderAgentPerformance(agents) {
@@ -699,5 +730,79 @@ function renderRecentExecs(executions) {
 
     container.innerHTML = html;
 }
+function renderTokenUsageByModel(byModel, totals) {
+    const container = document.getElementById('tokenUsageSection');
+    const entries = Object.entries(byModel);
+
+    if (entries.length === 0 && (!totals || totals.call_count === 0)) {
+        container.innerHTML = '<div style="color: #9ca3af; text-align: center; padding: 2rem;">No token usage recorded yet.<br><small>Model calls will be tracked here.</small></div>';
+        return;
+    }
+
+    entries.sort((a, b) => b[1].total_tokens - a[1].total_tokens);
+
+    let html = '';
+    if (totals && totals.call_count > 0) {
+        html += `<div style="display: flex; gap: 2rem; margin-bottom: 1.5rem; padding: 1rem; background: #f9fafb; border-radius: 8px;">
+            <div><strong style="font-size: 1.5rem;">${(totals.total_tokens || 0).toLocaleString()}</strong><br><span style="color: #6b7280; font-size: 0.8rem;">Total Tokens</span></div>
+            <div><strong style="font-size: 1.5rem;">${(totals.input_tokens || 0).toLocaleString()}</strong><br><span style="color: #6b7280; font-size: 0.8rem;">Input Tokens</span></div>
+            <div><strong style="font-size: 1.5rem;">${(totals.output_tokens || 0).toLocaleString()}</strong><br><span style="color: #6b7280; font-size: 0.8rem;">Output Tokens</span></div>
+            <div><strong style="font-size: 1.5rem;">${(totals.call_count || 0).toLocaleString()}</strong><br><span style="color: #6b7280; font-size: 0.8rem;">API Calls</span></div>
+        </div>`;
+    }
+
+    html += '<table class="agent-table"><thead><tr>';
+    html += '<th>Model</th><th>Input Tokens</th><th>Output Tokens</th><th>Total Tokens</th><th>Calls</th><th>Avg Tokens/Call</th>';
+    html += '</tr></thead><tbody>';
+
+    for (const [model, data] of entries) {
+        const avg = data.call_count > 0 ? Math.round(data.total_tokens / data.call_count) : 0;
+        const inputPct = data.total_tokens > 0 ? Math.round(data.input_tokens / data.total_tokens * 100) : 0;
+        html += `<tr>
+            <td class="agent-name">${model}</td>
+            <td>${(data.input_tokens || 0).toLocaleString()} <span style="color:#9ca3af; font-size:0.75rem;">(${inputPct}%)</span></td>
+            <td>${(data.output_tokens || 0).toLocaleString()}</td>
+            <td><strong>${(data.total_tokens || 0).toLocaleString()}</strong></td>
+            <td>${data.call_count || 0}</td>
+            <td style="color: #6b7280;">${avg.toLocaleString()}</td>
+        </tr>`;
+    }
+
+    html += '</tbody></table>';
+    container.innerHTML = html;
+}
+
+function renderTokenUsageByAgent(byAgent, totals) {
+    const container = document.getElementById('tokenUsageByAgent');
+    const entries = Object.entries(byAgent);
+
+    if (entries.length === 0) {
+        container.innerHTML = '<div style="color: #9ca3af; text-align: center; padding: 2rem;">No per-agent token data yet.</div>';
+        return;
+    }
+
+    entries.sort((a, b) => b[1].total_tokens - a[1].total_tokens);
+
+    let html = '<table class="agent-table"><thead><tr>';
+    html += '<th>Agent</th><th>Input Tokens</th><th>Output Tokens</th><th>Total Tokens</th><th>Calls</th><th>Avg Tokens/Call</th>';
+    html += '</tr></thead><tbody>';
+
+    for (const [agent, data] of entries) {
+        const avg = data.call_count > 0 ? Math.round(data.total_tokens / data.call_count) : 0;
+        const inputPct = data.total_tokens > 0 ? Math.round(data.input_tokens / data.total_tokens * 100) : 0;
+        html += `<tr>
+            <td class="agent-name">${agent}</td>
+            <td>${(data.input_tokens || 0).toLocaleString()} <span style="color:#9ca3af; font-size:0.75rem;">(${inputPct}%)</span></td>
+            <td>${(data.output_tokens || 0).toLocaleString()}</td>
+            <td><strong>${(data.total_tokens || 0).toLocaleString()}</strong></td>
+            <td>${data.call_count || 0}</td>
+            <td style="color: #6b7280;">${avg.toLocaleString()}</td>
+        </tr>`;
+    }
+
+    html += '</tbody></table>';
+    container.innerHTML = html;
+}
+
 </script>
 {% endblock %}
