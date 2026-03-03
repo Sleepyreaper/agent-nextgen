@@ -3,6 +3,7 @@
 import base64
 import logging
 import os
+import re
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from docx import Document
@@ -11,6 +12,12 @@ logger = logging.getLogger(__name__)
 
 # Minimum characters on a page before it's considered "image-based"
 _IMAGE_PAGE_TEXT_THRESHOLD = 100
+
+# Regex matching pagination-only footers like "Name - #1234\n7 of 13"
+_PAGINATION_FOOTER_RE = re.compile(
+    r'^\s*[\w\s,\'\-\.]+\s*-\s*#\d+\s*\n\s*\d+\s+of\s+\d+\s*$',
+    re.IGNORECASE,
+)
 
 
 class DocumentProcessor:
@@ -51,15 +58,26 @@ class DocumentProcessor:
                 page_num = page_idx + 1
                 page_text = page.get_text().strip()
                 
-                # Detect image-based pages: very little text
-                if len(page_text) < _IMAGE_PAGE_TEXT_THRESHOLD and ocr_callback:
+                # ── Detect image-based / scanned pages ──
+                # Many application PDFs contain scanned pages where the
+                # only extractable text is a pagination footer like
+                # "Thai, Brandon - #1807\n7 of 13".  These footers are
+                # typically 25-40 chars and should NOT count toward the
+                # "has real text" threshold.
+                is_pagination_only = bool(
+                    _PAGINATION_FOOTER_RE.match(page_text)
+                ) if page_text else False
+                effective_text_len = 0 if is_pagination_only else len(page_text)
+                
+                if effective_text_len < _IMAGE_PAGE_TEXT_THRESHOLD and ocr_callback:
                     images = page.get_images()
                     # Try OCR when:
                     # 1. Page has embedded images (common case), OR
                     # 2. Page has almost no text at all — likely a scanned
                     #    document where content is rendered as paths/XObjects
-                    #    rather than detectable images.
-                    should_ocr = bool(images) or len(page_text) < 20
+                    #    rather than detectable images, OR
+                    # 3. Only text is a pagination footer (content is in image)
+                    should_ocr = bool(images) or effective_text_len < 20 or is_pagination_only
                     if should_ocr:
                         try:
                             pix = page.get_pixmap(dpi=300)
@@ -75,7 +93,14 @@ class DocumentProcessor:
                                 f"(images={len(images) if images else 0}) — sending to OCR"
                             )
                             ocr_text = ocr_callback(img_bytes, page_label)
-                            if ocr_text and len(ocr_text.strip()) > len(page_text):
+                            # Accept OCR output if it's meaningfully longer
+                            # than the existing text (or if existing text was
+                            # just a pagination footer).
+                            ocr_has_content = (
+                                ocr_text
+                                and len(ocr_text.strip()) > effective_text_len
+                            )
+                            if ocr_has_content:
                                 page_text = ocr_text.strip()
                                 ocr_pages.append(page_num)
                                 print(
@@ -99,21 +124,23 @@ class DocumentProcessor:
                             logger.warning(
                                 f"⚠️ OCR failed for page {page_num}: {ocr_err}"
                             )
-                elif len(page_text) < _IMAGE_PAGE_TEXT_THRESHOLD:
+                elif effective_text_len < _IMAGE_PAGE_TEXT_THRESHOLD:
                     images = page.get_images()
-                    if images:
+                    if images or is_pagination_only:
                         print(
-                            f"⚠️ Page {page_num}/{total_pages}: only {len(page_text)} chars "
-                            f"with {len(images)} image(s) — NO OCR callback available, text may be incomplete",
+                            f"⚠️ Page {page_num}/{total_pages}: only {effective_text_len} effective chars "
+                            f"(raw={len(page_text)}, pagination_only={is_pagination_only}, "
+                            f"images={len(images) if images else 0}) — NO OCR callback available, text may be incomplete",
                             flush=True
                         )
                         logger.warning(
-                            f"⚠️ Page {page_num}/{total_pages}: only {len(page_text)} chars "
-                            f"with {len(images)} image(s) — no OCR callback, text may be incomplete"
+                            f"⚠️ Page {page_num}/{total_pages}: only {effective_text_len} effective chars "
+                            f"(pagination_only={is_pagination_only}, images={len(images) if images else 0}) "
+                            f"— no OCR callback, text may be incomplete"
                         )
-                    elif len(page_text) < 50:
+                    elif effective_text_len < 50:
                         print(
-                            f"⚠️ Page {page_num}/{total_pages}: sparse page ({len(page_text)} chars, 0 images, no OCR callback)",
+                            f"⚠️ Page {page_num}/{total_pages}: sparse page ({effective_text_len} chars, 0 images, no OCR callback)",
                             flush=True
                         )
                 
@@ -153,11 +180,63 @@ class DocumentProcessor:
     
     @staticmethod
     def extract_text_from_docx(file_path: str) -> str:
-        """Extract text from Word document."""
+        """Extract text from Word document, including tables.
+        
+        Extracts both paragraph text and tabular data (common in
+        transcripts, application forms, and recommendation letters
+        formatted with Word tables).
+        """
         try:
             doc = Document(file_path)
-            paragraphs = [paragraph.text for paragraph in doc.paragraphs if paragraph.text.strip()]
-            return "\n\n".join(paragraphs)
+            parts: List[str] = []
+            
+            # Extract paragraphs
+            for paragraph in doc.paragraphs:
+                text = paragraph.text.strip()
+                if text:
+                    parts.append(text)
+            
+            # Extract tables (transcripts, grade tables, forms)
+            for table_idx, table in enumerate(doc.tables):
+                table_rows: List[str] = []
+                for row in table.rows:
+                    cells = [cell.text.strip() for cell in row.cells]
+                    # Deduplicate merged cells (Word repeats text for merged cells)
+                    deduped: List[str] = []
+                    for c in cells:
+                        if not deduped or c != deduped[-1]:
+                            deduped.append(c)
+                    row_text = " | ".join(deduped)
+                    if row_text.replace("|", "").strip():
+                        table_rows.append(row_text)
+                if table_rows:
+                    parts.append(f"\n[Table {table_idx + 1}]")
+                    parts.extend(table_rows)
+            
+            # Extract headers and footers
+            for section in doc.sections:
+                try:
+                    header = section.header
+                    if header and not header.is_linked_to_previous:
+                        header_text = "\n".join(
+                            p.text.strip() for p in header.paragraphs if p.text.strip()
+                        )
+                        if header_text:
+                            parts.insert(0, header_text)
+                except Exception:
+                    pass
+                try:
+                    footer = section.footer
+                    if footer and not footer.is_linked_to_previous:
+                        footer_text = "\n".join(
+                            p.text.strip() for p in footer.paragraphs if p.text.strip()
+                        )
+                        if footer_text:
+                            parts.append(footer_text)
+                except Exception:
+                    pass
+            
+            return "\n\n".join(parts)
         except Exception as e:
             print(f"Error extracting text from DOCX: {str(e)}")
             return f"[Error reading DOCX: {str(e)}]"

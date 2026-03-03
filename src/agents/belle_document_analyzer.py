@@ -477,7 +477,20 @@ class BelleDocumentAnalyzer(BaseAgent):
             # Very sparse pages: likely image-only content that wasn't OCR'd well.
             # If there's *some* text (≥10 chars), try AI classification anyway
             # since even a few OCR fragments can hint at the section type.
-            if page_char_count < 50:
+            #
+            # Detect pagination-only footers like "Thai, Brandon - #1807\n7 of 13"
+            # These indicate scanned pages where OCR may have already been attempted
+            # but the text is just the footer overlay.
+            import re as _re
+            is_pagination_footer = bool(
+                _re.match(
+                    r'^\s*[\w\s,\'\-\.]+\s*-\s*#\d+\s*\n\s*\d+\s+of\s+\d+\s*$',
+                    page_text,
+                    _re.IGNORECASE
+                )
+            ) if page_text else False
+            
+            if page_char_count < 50 or is_pagination_footer:
                 print(f"📄 BELLE Page {page_num}: sparse ({page_char_count} chars, first 100: {repr(page_text[:100])})", flush=True)
                 if page_char_count >= 10:
                     ai_type = self._classify_page_with_ai(page_text, page_num)
@@ -693,6 +706,52 @@ class BelleDocumentAnalyzer(BaseAgent):
             }
         
         # Assemble section texts from detected pages
+        # ── ADJACENCY FILL: recover sparse/unknown pages ──
+        # If a sparse page sits between two pages of the same type,
+        # adopt that type (e.g., pages 7=transcript, 8=sparse, 9=transcript → 8=transcript).
+        # This handles scanned pages where OCR wasn't available and the page was
+        # dropped.  The content is still sparse, but routing it to the correct
+        # agent lets the agent see continuity across page breaks.
+        sorted_page_nums = sorted(pages.keys())
+        for idx, pn in enumerate(sorted_page_nums):
+            info = result["section_map"].get(pn, {})
+            if info.get('type') not in ('sparse', 'unknown'):
+                continue
+            # Look at neighbours
+            prev_type = None
+            next_type = None
+            if idx > 0:
+                prev_info = result["section_map"].get(sorted_page_nums[idx - 1], {})
+                prev_type = prev_info.get('type')
+            if idx < len(sorted_page_nums) - 1:
+                next_info = result["section_map"].get(sorted_page_nums[idx + 1], {})
+                next_type = next_info.get('type')
+            
+            # If both neighbours agree, adopt that type
+            if prev_type and prev_type == next_type and prev_type not in ('sparse', 'unknown'):
+                adopted_type = prev_type
+            elif prev_type and prev_type not in ('sparse', 'unknown') and next_type in (None, 'sparse', 'unknown'):
+                # Last page or next is also sparse — adopt previous
+                adopted_type = prev_type
+            elif next_type and next_type not in ('sparse', 'unknown') and prev_type in (None, 'sparse', 'unknown'):
+                adopted_type = next_type
+            else:
+                continue
+            
+            result["section_map"][pn] = {
+                'type': adopted_type,
+                'scores': info.get('scores', {'transcript': 0, 'recommendation': 0, 'application': 0}),
+                'adjacency_filled': True,
+                'note': f'sparse page adopted {adopted_type} from neighbours'
+            }
+            if adopted_type == 'transcript':
+                transcript_pages.append(pn)
+            elif adopted_type == 'recommendation':
+                recommendation_pages.append(pn)
+            else:
+                application_pages.append(pn)
+            logger.info(f"  Page {pn}: adjacency-filled as '{adopted_type}' from neighbours")
+        
         def _join_pages(page_nums):
             """Join page texts with page markers preserved."""
             parts = []
