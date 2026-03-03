@@ -31,30 +31,51 @@
         </form>
     </div>
 
-    {% if feedback_items and feedback_items|length > 0 %}
     <div class="section" style="margin-top:2rem;">
-        <h3 style="color: var(--emory-blue)">Recent Feedback / Issue Links</h3>
-        <table style="width:100%; border-collapse: collapse;">
-            <thead>
-                <tr>
-                    <th style="text-align:left; padding:0.5rem;">Type</th>
-                    <th style="text-align:left; padding:0.5rem;">Title</th>
-                    <th style="text-align:left; padding:0.5rem;">Issue</th>
-                </tr>
-            </thead>
-            <tbody>
-                {% for item in feedback_items %}
-                {% set triage = item.triage_json or item.TriageJson or {} %}
-                <tr>
-                    <td style="padding:0.5rem;"><span class="level-badge">{{ item.feedback_type or item.FeedbackType }}</span></td>
-                    <td style="padding:0.5rem;"><strong>{{ triage.title or 'Feedback' }}</strong><br>{{ item.message }}</td>
-                    <td style="padding:0.5rem;">{% if item.issue_url %}<a href="{{ item.issue_url }}" target="_blank">Link</a>{% else %}-{% endif %}</td>
-                </tr>
-                {% endfor %}
-            </tbody>
-        </table>
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+            <h3 style="color: var(--emory-blue); margin: 0;">Recent Feedback</h3>
+            <label style="font-size: 0.85rem; color: #6b7280;">
+                <input type="checkbox" id="autoRefreshFeedback" checked> Auto-refresh (30s)
+            </label>
+        </div>
+        <div id="feedbackList">
+            {% if feedback_items and feedback_items|length > 0 %}
+            <table style="width:100%; border-collapse: collapse;">
+                <thead>
+                    <tr>
+                        <th style="text-align:left; padding:0.5rem;">Type</th>
+                        <th style="text-align:left; padding:0.5rem;">Status</th>
+                        <th style="text-align:left; padding:0.5rem;">Title</th>
+                        <th style="text-align:left; padding:0.5rem;">Issue</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for item in feedback_items %}
+                    {% set triage = item.triage_json or item.TriageJson or {} %}
+                    <tr>
+                        <td style="padding:0.5rem;"><span class="level-badge">{{ item.feedback_type or item.FeedbackType }}</span></td>
+                        <td style="padding:0.5rem;">
+                            {% set status = item.status or item.Status or 'unknown' %}
+                            <span style="padding: 0.15rem 0.5rem; border-radius: 12px; font-size: 0.8rem; font-weight: 600;
+                                {% if status == 'submitted' %}background: #d1fae5; color: #065f46;
+                                {% elif status == 'triaged' %}background: #dbeafe; color: #1e40af;
+                                {% elif status == 'received' %}background: #fef3c7; color: #92400e;
+                                {% elif status == 'error' %}background: #fee2e2; color: #991b1b;
+                                {% else %}background: #f3f4f6; color: #6b7280;{% endif %}">
+                                {{ status }}
+                            </span>
+                        </td>
+                        <td style="padding:0.5rem;"><strong>{{ triage.title or 'Feedback' }}</strong><br><span style="color:#6b7280; font-size:0.85rem;">{{ item.message[:120] }}{% if item.message|length > 120 %}...{% endif %}</span></td>
+                        <td style="padding:0.5rem;">{% if item.issue_url or item.IssueUrl %}<a href="{{ item.issue_url or item.IssueUrl }}" target="_blank">Link</a>{% else %}—{% endif %}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+            {% else %}
+            <div style="color: #9ca3af; text-align: center; padding: 2rem;">No feedback submitted yet.</div>
+            {% endif %}
+        </div>
     </div>
-    {% endif %}
 </div>
 {% endblock %}
 
@@ -62,6 +83,7 @@
 <script>
 const feedbackForm = document.getElementById('feedbackForm');
 const feedbackStatus = document.getElementById('feedbackStatus');
+let feedbackRefreshInterval = null;
 
 if (feedbackForm) {
     feedbackForm.addEventListener('submit', async (event) => {
@@ -98,11 +120,80 @@ if (feedbackForm) {
             feedbackStatus.textContent = 'Thank you! Your feedback was captured.';
             feedbackStatus.style.color = '#059669';
             feedbackForm.reset();
+            // Refresh the list immediately to show the new submission
+            refreshFeedbackList();
         } catch (error) {
             feedbackStatus.textContent = error.message;
             feedbackStatus.style.color = '#b91c1c';
         }
     });
 }
+
+function statusStyle(status) {
+    switch (status) {
+        case 'submitted': return 'background: #d1fae5; color: #065f46;';
+        case 'triaged': return 'background: #dbeafe; color: #1e40af;';
+        case 'received': return 'background: #fef3c7; color: #92400e;';
+        case 'error': return 'background: #fee2e2; color: #991b1b;';
+        default: return 'background: #f3f4f6; color: #6b7280;';
+    }
+}
+
+async function refreshFeedbackList() {
+    try {
+        const res = await fetch('/api/feedback/recent');
+        const data = await res.json();
+        const items = data.feedback || [];
+        const container = document.getElementById('feedbackList');
+
+        if (items.length === 0) {
+            container.innerHTML = '<div style="color: #9ca3af; text-align: center; padding: 2rem;">No feedback submitted yet.</div>';
+            return;
+        }
+
+        let html = '<table style="width:100%; border-collapse: collapse;"><thead><tr>';
+        html += '<th style="text-align:left; padding:0.5rem;">Type</th>';
+        html += '<th style="text-align:left; padding:0.5rem;">Status</th>';
+        html += '<th style="text-align:left; padding:0.5rem;">Title</th>';
+        html += '<th style="text-align:left; padding:0.5rem;">Issue</th>';
+        html += '</tr></thead><tbody>';
+
+        for (const item of items) {
+            const msg = item.message.length > 120 ? item.message.slice(0, 120) + '...' : item.message;
+            const issueLink = item.issue_url ? `<a href="${item.issue_url}" target="_blank">Link</a>` : '—';
+            html += `<tr>
+                <td style="padding:0.5rem;"><span class="level-badge">${item.feedback_type}</span></td>
+                <td style="padding:0.5rem;"><span style="padding: 0.15rem 0.5rem; border-radius: 12px; font-size: 0.8rem; font-weight: 600; ${statusStyle(item.status)}">${item.status}</span></td>
+                <td style="padding:0.5rem;"><strong>${item.title}</strong><br><span style="color:#6b7280; font-size:0.85rem;">${msg}</span></td>
+                <td style="padding:0.5rem;">${issueLink}</td>
+            </tr>`;
+        }
+
+        html += '</tbody></table>';
+        container.innerHTML = html;
+    } catch (err) {
+        console.error('Feedback refresh error:', err);
+    }
+}
+
+// Auto-refresh
+function startFeedbackRefresh() {
+    stopFeedbackRefresh();
+    feedbackRefreshInterval = setInterval(refreshFeedbackList, 30000);
+}
+
+function stopFeedbackRefresh() {
+    if (feedbackRefreshInterval) {
+        clearInterval(feedbackRefreshInterval);
+        feedbackRefreshInterval = null;
+    }
+}
+
+document.getElementById('autoRefreshFeedback').addEventListener('change', function() {
+    if (this.checked) startFeedbackRefresh();
+    else stopFeedbackRefresh();
+});
+
+startFeedbackRefresh();
 </script>
 {% endblock %}

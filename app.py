@@ -820,8 +820,7 @@ def submit_feedback():
     if request.method == 'GET':
         # render submission page with existing GH-linked items
         try:
-            all_feedback = db.get_recent_user_feedback(limit=100) if db else []
-            feedback_items = [item for item in all_feedback if item.get('issue_url') or item.get('IssueUrl')]
+            feedback_items = db.get_recent_user_feedback(limit=100) if db else []
         except Exception:
             feedback_items = []
         return render_template('feedback.html', feedback_items=feedback_items)
@@ -944,13 +943,34 @@ def submit_feedback():
         }), 500
 
 
+@app.route('/api/feedback/recent')
+def api_feedback_recent():
+    """JSON endpoint for dynamically loading recent feedback items."""
+    try:
+        feedback_items = db.get_recent_user_feedback(limit=100) if db else []
+        items = []
+        for item in feedback_items:
+            triage = item.get('triage_json') or item.get('TriageJson') or {}
+            items.append({
+                'feedback_id': item.get('feedback_id') or item.get('FeedbackId'),
+                'feedback_type': item.get('feedback_type') or item.get('FeedbackType') or '',
+                'status': item.get('status') or item.get('Status') or '',
+                'title': triage.get('title') or 'Feedback',
+                'message': item.get('message') or item.get('Message') or '',
+                'issue_url': item.get('issue_url') or item.get('IssueUrl') or '',
+                'created_at': str(item.get('created_at') or item.get('CreatedAt') or ''),
+            })
+        return jsonify({'feedback': items})
+    except Exception as exc:
+        logger.error(f"Feedback API error: {exc}", exc_info=True)
+        return jsonify({'feedback': [], 'error': str(exc)}), 500
+
+
 @app.route('/feedback/admin')
 def feedback_admin():
     """View recent feedback submissions."""
     try:
-        all_feedback = db.get_recent_user_feedback(limit=100) if db else []
-        # Filter to only show GitHub issues (those with issue_url)
-        feedback_items = [item for item in all_feedback if item.get('issue_url') or item.get('IssueUrl')]
+        feedback_items = db.get_recent_user_feedback(limit=100) if db else []
         return render_template('feedback_admin.html', feedback_items=feedback_items)
     except Exception as exc:
         logger.error(f"Feedback admin error: {exc}", exc_info=True)
