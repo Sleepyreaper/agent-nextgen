@@ -5,6 +5,7 @@ Understands user feedback and prepares a concise issue summary.
 """
 
 import json
+import logging
 from typing import Any, Dict, Optional
 from src.utils import safe_load_json
 from src.config import config
@@ -13,12 +14,25 @@ from src.config import config
 # the application can start even when the `openai` package isn't present.
 from src.agents.base_agent import BaseAgent
 
+logger = logging.getLogger(__name__)
+
 
 class ScuttleFeedbackTriageAgent(BaseAgent):
     """
     Scuttle - Feedback Triage Agent
     Understands user feedback and prepares a concise issue summary.
     """
+
+    # Severity keywords used for auto-priority detection
+    _HIGH_PRIORITY_KEYWORDS = {
+        'crash', 'down', 'broken', 'error 500', 'data loss', 'security',
+        'cannot login', 'cannot access', 'urgent', 'critical', 'blocker',
+        'production', 'outage',
+    }
+    _LOW_PRIORITY_KEYWORDS = {
+        'typo', 'cosmetic', 'nice to have', 'suggestion', 'minor',
+        'color', 'colour', 'font', 'spacing',
+    }
 
     def __init__(self, name: str = "Scuttle Feedback Triage", client: Any = None, model: Optional[str] = None):
         super().__init__(name, client)
@@ -34,38 +48,107 @@ class ScuttleFeedbackTriageAgent(BaseAgent):
         page: Optional[str] = None,
         app_version: Optional[str] = None
     ) -> Dict[str, Any]:
-        """Analyze feedback and return structured issue fields."""
+        """Analyze feedback and return structured issue fields.
+
+        Uses AI for structured triage, falling back to keyword-based
+        heuristics if the model call fails.
+        """
         self.add_to_history("user", f"Triage {feedback_type} feedback")
 
         prompt = self._build_prompt(feedback_type, message, email, page, app_version)
-        response = self._create_chat_completion(
-            operation="feedback.triage",
-            model=self.model,
-            messages=[
-                {
-                    "role": "system",
-                    "content": (
-                        "You are a product triage assistant. Summarize user feedback into a concise "
-                        "issue report. Return JSON only."
-                    )
-                },
-                {
-                    "role": "user",
-                    "content": prompt
-                }
-            ],
-            max_completion_tokens=800,
-            temperature=1
-        )
 
-        response_text = response.choices[0].message.content
-        self.add_to_history("assistant", response_text)
-        return self._parse_response(response_text, feedback_type, message)
+        try:
+            response = self._create_chat_completion(
+                operation="feedback.triage",
+                model=self.model,
+                messages=[
+                    {
+                        "role": "system",
+                        "content": (
+                            "You are a product triage assistant. Summarize user feedback into a concise "
+                            "issue report. Return JSON only — no markdown fences."
+                        )
+                    },
+                    {
+                        "role": "user",
+                        "content": prompt
+                    }
+                ],
+                max_completion_tokens=800,
+                temperature=0.3
+            )
+
+            response_text = response.choices[0].message.content
+            self.add_to_history("assistant", response_text)
+            return self._parse_response(response_text, feedback_type, message)
+
+        except Exception as exc:
+            logger.warning(f"Feedback triage AI call failed, using fallback: {exc}")
+            return self._fallback_triage(feedback_type, message, email, page, app_version)
 
     async def process(self, message: str) -> str:
         """Generic process handler (unused)."""
         self.add_to_history("user", message)
         return "Feedback triage agent is ready."
+
+    def _detect_priority(self, message: str) -> str:
+        """Simple keyword-based priority detection as a fallback/sanity check."""
+        lower_msg = message.lower()
+        for kw in self._HIGH_PRIORITY_KEYWORDS:
+            if kw in lower_msg:
+                return 'high'
+        for kw in self._LOW_PRIORITY_KEYWORDS:
+            if kw in lower_msg:
+                return 'low'
+        return 'medium'
+
+    def _detect_category(self, feedback_type: str, message: str) -> str:
+        """Simple keyword-based category detection."""
+        lower_msg = message.lower()
+        if feedback_type == 'feature':
+            return 'feature'
+        if any(w in lower_msg for w in ('crash', 'error', 'broken', 'bug', 'fail', 'exception')):
+            return 'bug'
+        if any(w in lower_msg for w in ('slow', 'timeout', 'latency', 'performance')):
+            return 'performance'
+        if any(w in lower_msg for w in ('confusing', 'hard to', 'unclear', 'ux', 'ui')):
+            return 'ux'
+        if any(w in lower_msg for w in ('data', 'wrong number', 'incorrect', 'missing data')):
+            return 'data'
+        return 'other'
+
+    def _fallback_triage(
+        self,
+        feedback_type: str,
+        message: str,
+        email: Optional[str],
+        page: Optional[str],
+        app_version: Optional[str]
+    ) -> Dict[str, Any]:
+        """Produce a triage result without AI when the model call fails."""
+        category = self._detect_category(feedback_type, message)
+        priority = self._detect_priority(message)
+        title = f"[{feedback_type.upper()}] {message[:80]}"
+        summary = message[:300]
+
+        return {
+            "title": title,
+            "summary": summary,
+            "category": category,
+            "priority": priority,
+            "suggested_labels": ["feedback", category, feedback_type],
+            "steps_to_reproduce": "",
+            "expected_behavior": "",
+            "actual_behavior": "",
+            "user_context": {
+                "email": email or "Not provided",
+                "page": page or "Unknown",
+                "app_version": app_version or "Unknown",
+            },
+            "agent_name": self.name,
+            "model_used": "fallback-heuristic",
+            "model_display": "fallback",
+        }
 
     def _build_prompt(
         self,
@@ -113,7 +196,7 @@ class ScuttleFeedbackTriageAgent(BaseAgent):
         title = parsed.get("title") or f"User feedback: {fallback_type}"
         summary = parsed.get("summary") or fallback_message
         category = parsed.get("category") or "other"
-        priority = parsed.get("priority") or "medium"
+        priority = parsed.get("priority") or self._detect_priority(fallback_message)
         suggested_labels = parsed.get("suggested_labels") or ["feedback", category]
 
         return {
