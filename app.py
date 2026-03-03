@@ -6691,6 +6691,8 @@ def update_school_enrichment(school_id):
             'school_name': data.get('school_name'),
             'school_district': data.get('school_district'),
             'state_code': data.get('state_code'),
+            'school_url': data.get('school_url'),
+            'school_url_verified': data.get('school_url_verified'),
             'total_students': data.get('total_students'),
             'free_lunch_percentage': data.get('free_lunch_percentage'),
             'ap_course_count': data.get('ap_course_count'),
@@ -6735,6 +6737,88 @@ def update_school_enrichment(school_id):
         
     except Exception as e:
         logger.error(f"Error updating school {school_id}: {e}")
+        return jsonify({'status': 'error', 'error': str(e)}), 500
+
+
+@app.route('/api/school/<int:school_id>/website', methods=['POST'])
+def update_school_website(school_id):
+    """Set or verify a school's website URL.
+
+    Body JSON:
+        school_url: The website URL
+        verified: Optional bool marking the URL as human-verified
+    """
+    try:
+        school = db.get_school_enriched_data(school_id)
+        if not school:
+            return jsonify({'status': 'error', 'error': 'School not found'}), 404
+
+        data = request.json or {}
+        url = (data.get('school_url') or '').strip()
+        verified = data.get('verified', False)
+
+        if not url:
+            return jsonify({'status': 'error', 'error': 'school_url is required'}), 400
+
+        clauses = ["school_url = %s", "updated_at = CURRENT_TIMESTAMP"]
+        values = [url]
+        if verified:
+            clauses.append("school_url_verified = TRUE")
+            clauses.append("school_url_verified_date = CURRENT_TIMESTAMP")
+
+        values.append(school_id)
+        db.execute_non_query(
+            f"UPDATE school_enriched_data SET {', '.join(clauses)} WHERE school_enrichment_id = %s",
+            tuple(values)
+        )
+
+        logger.info(f"School {school_id} website updated to {url} (verified={verified})")
+        return jsonify({'status': 'success', 'school_url': url, 'verified': verified})
+    except Exception as e:
+        logger.error(f"Error updating school website: {e}", exc_info=True)
+        return jsonify({'status': 'error', 'error': str(e)}), 500
+
+
+@app.route('/api/school/<int:school_id>/enrichment-status', methods=['GET'])
+def get_school_enrichment_status(school_id):
+    """Return the enrichment status for a school record.
+
+    The response includes analysis_status, moana validation status,
+    whether a website is set, and an overall is_enriched flag.
+    """
+    try:
+        school = db.get_school_enriched_data(school_id)
+        if not school:
+            return jsonify({'status': 'error', 'error': 'School not found'}), 404
+
+        analysis_status = school.get('analysis_status', 'pending')
+        has_website = bool(school.get('school_url'))
+        website_verified = bool(school.get('school_url_verified'))
+        moana_met = school.get('moana_requirements_met', False)
+        confidence = school.get('data_confidence_score') or 0
+
+        # A school is considered "enriched" when analysis is complete with
+        # reasonable confidence
+        is_enriched = (
+            analysis_status == 'complete'
+            and confidence >= 0.5
+        )
+
+        return jsonify({
+            'status': 'success',
+            'school_id': school_id,
+            'school_name': school.get('school_name'),
+            'analysis_status': analysis_status,
+            'is_enriched': is_enriched,
+            'data_confidence_score': float(confidence),
+            'has_website': has_website,
+            'school_url': school.get('school_url') or '',
+            'website_verified': website_verified,
+            'moana_requirements_met': moana_met,
+            'human_review_status': school.get('human_review_status', 'pending'),
+        })
+    except Exception as e:
+        logger.error(f"Error getting enrichment status: {e}", exc_info=True)
         return jsonify({'status': 'error', 'error': str(e)}), 500
 
 
