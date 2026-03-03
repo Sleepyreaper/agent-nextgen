@@ -956,6 +956,26 @@ class Database:
                 except Exception as school_err:
                     logger.error(f"❌ Failed to create school_enriched_data table: {school_err}")
                     conn.rollback()
+
+                # School aliases table for smart matching (maps variant names to canonical names)
+                try:
+                    cursor.execute("""
+                        CREATE TABLE IF NOT EXISTS school_aliases (
+                            alias_id SERIAL PRIMARY KEY,
+                            alias_name VARCHAR(255) NOT NULL,
+                            canonical_name VARCHAR(255) NOT NULL,
+                            state_code VARCHAR(2),
+                            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                            UNIQUE(alias_name, state_code)
+                        )
+                    """)
+                    cursor.execute("CREATE INDEX IF NOT EXISTS idx_school_aliases_name ON school_aliases(LOWER(alias_name))")
+                    cursor.execute("CREATE INDEX IF NOT EXISTS idx_school_aliases_state ON school_aliases(state_code)")
+                    conn.commit()
+                    logger.info("✓ Created school_aliases table")
+                except Exception as alias_err:
+                    logger.error(f"❌ Failed to create school_aliases table: {alias_err}")
+                    conn.rollback()
             else:
                 # Ensure moana columns exist on existing tables
                 cursor.execute("""
@@ -3224,7 +3244,7 @@ class Database:
             return None
 
     def get_school_enriched_data_fuzzy(self, school_name: str, state_code: Optional[str] = None,
-                                       threshold: float = 0.72) -> Optional[Dict[str, Any]]:
+                                       threshold: float = 0.65) -> Optional[Dict[str, Any]]:
         """Retrieve enriched school data using fuzzy name matching.
 
         Tries exact match first, then falls back to token-set-ratio and
@@ -3239,6 +3259,27 @@ class Database:
         exact = self.get_school_enriched_data(school_name=school_name, state_code=state_code)
         if exact:
             return exact
+
+        # Try alias table if available
+        try:
+            if self.has_table("school_aliases"):
+                alias_query = """
+                    SELECT canonical_name FROM school_aliases
+                    WHERE LOWER(alias_name) = LOWER(%s)
+                """
+                alias_params = [school_name]
+                if state_code:
+                    alias_query += " AND state_code = %s"
+                    alias_params.append(state_code)
+                alias_query += " LIMIT 1"
+                alias_rows = self.execute_query(alias_query, tuple(alias_params))
+                if alias_rows:
+                    canonical = alias_rows[0]['canonical_name']
+                    canonical_result = self.get_school_enriched_data(school_name=canonical, state_code=state_code)
+                    if canonical_result:
+                        return canonical_result
+        except Exception:
+            pass
 
         try:
             if not self.has_table("school_enriched_data"):
@@ -3259,7 +3300,19 @@ class Database:
                 s2 = ''.join(ch for ch in s2 if not unicodedata.combining(ch))
                 s2 = s2.lower()
                 s2 = re.sub(r"[^a-z0-9\s]", ' ', s2)
-                s2 = re.sub(r"\b(high school|hs|highschool|school|academy|charter|magnet)\b", ' ', s2)
+                # Strip common school-type suffixes to compare core name
+                s2 = re.sub(
+                    r"\b(high school|hs|highschool|school|academy|charter|magnet|"
+                    r"preparatory|prep|collegiate|institute|center|centre|"
+                    r"middle school|ms|elementary|elem|of mathematics|of math|"
+                    r"of science|of technology|of the arts|stem|arts|"
+                    r"county|consolidated|public|private|international)\b",
+                    ' ', s2
+                )
+                # Normalize common abbreviations
+                s2 = re.sub(r'\bst\b', 'saint', s2)
+                s2 = re.sub(r'\bmt\b', 'mount', s2)
+                s2 = re.sub(r'\bft\b', 'fort', s2)
                 return re.sub(r"\s{2,}", ' ', s2).strip()
 
             def _token_set_ratio(a: str, b: str) -> float:
@@ -3300,7 +3353,7 @@ class Database:
             # 3) difflib close match
             norm_list = list(name_map.values())
             raw_list = list(name_map.keys())
-            matches = difflib.get_close_matches(cand_norm, norm_list, n=1, cutoff=0.80)
+            matches = difflib.get_close_matches(cand_norm, norm_list, n=1, cutoff=0.70)
             if matches:
                 idx = norm_list.index(matches[0])
                 return self.get_school_enriched_data(school_name=raw_list[idx], state_code=state_code)
@@ -3333,6 +3386,44 @@ class Database:
             return bool(rows)
         except Exception:
             return False
+
+    def add_school_alias(self, alias_name: str, canonical_name: str, state_code: Optional[str] = None) -> bool:
+        """Register an alias name that maps to a canonical school name.
+
+        When fuzzy matching encounters the alias, it will resolve to the
+        canonical name instead.  This is useful for known spelling variants
+        like 'Gwinnett School of Mathematics' vs 'Gwinnett School of Math and Science'.
+
+        Args:
+            alias_name: The variant/alternate school name
+            canonical_name: The authoritative school name in school_enriched_data
+            state_code: Optional state code filter
+
+        Returns:
+            True if alias was created, False if it already exists or failed
+        """
+        try:
+            if not self.has_table("school_aliases"):
+                return False
+            self.execute_query(
+                "INSERT INTO school_aliases (alias_name, canonical_name, state_code) "
+                "VALUES (%s, %s, %s) ON CONFLICT (alias_name, state_code) DO UPDATE SET canonical_name = %s",
+                (alias_name, canonical_name, state_code, canonical_name)
+            )
+            logger.info(f"✓ School alias registered: '{alias_name}' → '{canonical_name}'")
+            return True
+        except Exception as e:
+            logger.error(f"Error adding school alias: {e}")
+            return False
+
+    def auto_record_school_alias(self, matched_name: str, original_name: str, state_code: Optional[str] = None) -> None:
+        """Automatically record a fuzzy match as an alias for faster future lookups."""
+        if matched_name.lower().strip() == original_name.lower().strip():
+            return  # Don't alias exact matches
+        try:
+            self.add_school_alias(alias_name=original_name, canonical_name=matched_name, state_code=state_code)
+        except Exception:
+            pass  # Best-effort, don't break the workflow
 
     def get_school_names_for_state(self, state_code: str) -> List[str]:
         """Return all school names for a given state from the enriched data table."""

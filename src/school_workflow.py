@@ -453,6 +453,12 @@ class SchoolDataWorkflow:
                     f"School fuzzy-matched: '{school_name}' → '{matched_name}'",
                     extra={'school': school_name, 'matched': matched_name, 'state': state_code}
                 )
+                # Auto-record this alias for faster future lookups
+                self.db.auto_record_school_alias(
+                    matched_name=matched_name,
+                    original_name=school_name,
+                    state_code=state_code
+                )
                 return fuzzy_result
             
             logger.debug(
