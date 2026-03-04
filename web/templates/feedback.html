@@ -54,7 +54,7 @@
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
             <h3 style="color: var(--emory-blue); margin: 0;">Recent Feedback</h3>
             <label class="auto-refresh-toggle">
-                <input type="checkbox" id="autoRefreshToggle"> Auto-refresh (30s)
+                <input type="checkbox" id="autoRefreshToggle" checked> Auto-refresh (30s)
                 <span id="refreshIndicator" style="display:none;">🔄</span>
             </label>
         </div>
@@ -87,6 +87,21 @@ function escapeHtml(text) {
     return div.innerHTML;
 }
 
+function formatTimeAgo(isoString) {
+    try {
+        const date = new Date(isoString);
+        const now = new Date();
+        const diffMs = now - date;
+        const diffMin = Math.floor(diffMs / 60000);
+        if (diffMin < 1) return 'just now';
+        if (diffMin < 60) return diffMin + 'm ago';
+        const diffHr = Math.floor(diffMin / 60);
+        if (diffHr < 24) return diffHr + 'h ago';
+        const diffDay = Math.floor(diffHr / 24);
+        return diffDay + 'd ago';
+    } catch (e) { return '—'; }
+}
+
 function renderFeedbackTable(items) {
     if (!items || items.length === 0) {
         return '<p style="color: #6b7280;">No feedback submitted yet.</p>';
@@ -97,6 +112,7 @@ function renderFeedbackTable(items) {
     html += '<th style="text-align:left; padding:0.5rem;">Status</th>';
     html += '<th style="text-align:left; padding:0.5rem;">Title</th>';
     html += '<th style="text-align:left; padding:0.5rem;">Issue</th>';
+    html += '<th style="text-align:left; padding:0.5rem;">Updated</th>';
     html += '</tr></thead><tbody>';
     for (const item of items) {
         const triage = item.triage_json || {};
@@ -105,11 +121,14 @@ function renderFeedbackTable(items) {
         const title = triage.title || 'Feedback';
         const message = item.message || '';
         const issueUrl = item.issue_url || item.IssueUrl || '';
+        const updatedAt = item.updated_at || item.created_at || '';
+        const timeAgo = updatedAt ? formatTimeAgo(updatedAt) : '—';
         html += '<tr>';
         html += `<td style="padding:0.5rem;"><span class="${typeBadgeClass(feedbackType)}">${escapeHtml(feedbackType)}</span></td>`;
         html += `<td style="padding:0.5rem;"><span class="${statusBadgeClass(status)}">${escapeHtml(status)}</span></td>`;
         html += `<td style="padding:0.5rem;"><strong>${escapeHtml(title)}</strong><br><span style="color:#6b7280;font-size:0.9rem;">${escapeHtml(message.substring(0, 120))}${message.length > 120 ? '…' : ''}</span></td>`;
         html += `<td style="padding:0.5rem;">${issueUrl ? `<a href="${escapeHtml(issueUrl)}" target="_blank" rel="noopener">Link</a>` : '—'}</td>`;
+        html += `<td style="padding:0.5rem;"><span style="color:#6b7280;font-size:0.85rem;" title="${escapeHtml(updatedAt)}">${timeAgo}</span></td>`;
         html += '</tr>';
     }
     html += '</tbody></table>';
@@ -138,6 +157,12 @@ autoRefreshToggle.addEventListener('change', () => {
         if (refreshTimer) { clearInterval(refreshTimer); refreshTimer = null; }
     }
 });
+
+// Auto-refresh is enabled by default — start polling immediately
+if (autoRefreshToggle.checked) {
+    refreshFeedbackList();
+    refreshTimer = setInterval(refreshFeedbackList, 30000);
+}
 
 if (feedbackForm) {
     feedbackForm.addEventListener('submit', async (event) => {
