@@ -299,7 +299,7 @@
     </div>
 
     {% block extra_js %}{% endblock %}
-    <script>
+    <script nonce="{{ csp_nonce }}">
     // Auto-include CSRF token on all mutating fetch() requests
     (function() {
         const _origFetch = window.fetch;

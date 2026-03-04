@@ -322,7 +322,7 @@
         </div>
     </div>
     
-    <script>
+    <script nonce="{{ csp_nonce }}">
         let autoRefreshInterval;
         
         function formatTime(ms) {
@@ -432,7 +432,7 @@
         refreshStatus();
         startAutoRefresh();
     </script>
-    <script>
+    <script nonce="{{ csp_nonce }}">
     // Auto-include CSRF token on mutating fetch() requests
     (function() {
         const _origFetch = window.fetch;

@@ -107,7 +107,7 @@
         {% endif %}
         {% if merlin_text %}
             <div style="font-size:1.15rem; background:#f1f5f9; border-radius:8px; padding:1.2rem; border-left:4px solid #6366f1; color:#334155; line-height:1.7;">
-                {{ merlin_text | replace('\n', '<br>') | safe }}
+                {{ merlin_text | nl2br }}
             </div>
             {% if merlin and merlin.confidence %}
             <div style="margin-top:0.5rem; color:#64748b; font-size:0.9rem;">
@@ -149,7 +149,7 @@
 
                 {# Rapunzel's perspective narrative #}
                 {% if rapunzel.rapunzel_perspective %}
-                <div class="rapunzel-perspective">{{ rapunzel.rapunzel_perspective | replace('\n', '<br>') | safe }}</div>
+                <div class="rapunzel-perspective">{{ rapunzel.rapunzel_perspective | nl2br }}</div>
                 {% elif rapunzel.human_summary or rapunzel.summary %}
                 <div class="agent-summary">{{ rapunzel.human_summary or rapunzel.summary }}</div>
                 {% endif %}
@@ -296,7 +296,7 @@
         </div>
     </div>
 
-    <script>
+    <script nonce="{{ csp_nonce }}">
     function confirmDeleteThisStudent() {
         document.getElementById('detailDeleteModal').style.display = 'flex';
     }

@@ -40,7 +40,7 @@
 {% endblock %}
 
 {% block extra_js %}
-<script>
+<script nonce="{{ csp_nonce }}">
 const APPLICATION_ID = '{{ application_id }}';
 
 function processStudent() {

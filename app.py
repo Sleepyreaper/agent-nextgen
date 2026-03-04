@@ -9,9 +9,10 @@ import re
 import difflib
 import hashlib
 import threading
+import secrets
 import requests
 from datetime import datetime, timedelta, timezone
-from flask import Flask, flash, jsonify, render_template, redirect, url_for, request, Response, session, stream_with_context
+from flask import Flask, flash, g, jsonify, render_template, redirect, url_for, request, Response, session, stream_with_context
 from werkzeug.security import check_password_hash
 from werkzeug.utils import secure_filename
 from flask_wtf.csrf import CSRFProtect
@@ -124,10 +125,43 @@ _AUTH_WHITELIST = {
     'healthz',               # Azure Front Door health probe
 }
 
+# ---------------------------------------------------------------------------
+# Role-based authorization
+# ---------------------------------------------------------------------------
+# Currently single-user (admin only).  When multi-user auth is added, assign
+# roles during login and protect sensitive routes with @require_role().
+VALID_ROLES = {'admin', 'reviewer', 'readonly'}
+
+
+def require_role(*roles):
+    """Decorator: restrict a route to users whose session role is in *roles*.
+
+    Usage:
+        @app.route('/admin/settings')
+        @require_role('admin')
+        def admin_settings(): ...
+    """
+    from functools import wraps
+
+    def decorator(fn):
+        @wraps(fn)
+        def wrapper(*args, **kwargs):
+            user_role = session.get('role', 'readonly')
+            if user_role not in roles:
+                if request.path.startswith('/api/'):
+                    return jsonify({'error': 'Insufficient permissions'}), 403
+                return '<h1>403 — Forbidden</h1>', 403
+            return fn(*args, **kwargs)
+        return wrapper
+    return decorator
+
 
 @app.before_request
 def require_login():
     """Redirect unauthenticated requests to the login page."""
+    # Generate a CSP nonce for this request
+    g.csp_nonce = secrets.token_urlsafe(16)
+
     # Skip auth check if credentials are not configured
     if not config.auth_username or not config.auth_password_hash:
         if os.getenv('FLASK_ENV') == 'production':
@@ -170,6 +204,7 @@ def login():
             session.permanent = True
             session['authenticated'] = True
             session['username'] = username
+            session['role'] = 'admin'  # Single-user: always admin
             session['login_time'] = datetime.now(timezone.utc).isoformat()
             logger.info("User '%s' logged in successfully", username)
             # Validate redirect target to prevent open redirect
@@ -193,10 +228,25 @@ def logout():
     return redirect(url_for('login'))
 
 
+@app.template_filter('nl2br')
+def nl2br_filter(value):
+    """Convert newlines to <br> tags after escaping HTML to prevent XSS.
+    
+    Unlike |replace('\\n','<br>')|safe, this filter escapes the value first,
+    so any HTML/JS injected via student uploads is neutralised.
+    Fixes: #36, #37
+    """
+    from markupsafe import Markup, escape
+    if not value:
+        return value
+    return Markup(escape(str(value)).replace('\n', Markup('<br>')))
+
+
 @app.context_processor
 def inject_app_metadata():
     return {
-        'app_version': config.app_version
+        'app_version': config.app_version,
+        'csp_nonce': getattr(g, 'csp_nonce', ''),
     }
 
 
@@ -221,9 +271,10 @@ def add_security_headers(response):
     )
     # CSP — allow Google Fonts, inline styles/scripts used by the app,
     # and blob: URIs for PDF rendering.
+    nonce = getattr(g, 'csp_nonce', '')
     response.headers['Content-Security-Policy'] = (
         "default-src 'self'; "
-        "script-src 'self' 'unsafe-inline'; "
+        f"script-src 'self' 'nonce-{nonce}'; "
         "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
         "font-src 'self' https://fonts.gstatic.com; "
         "img-src 'self' data: blob:; "
@@ -483,7 +534,7 @@ def get_evaluator():
             client = get_ai_client()
         except Exception as e:
             app.logger.exception("Failed to construct AI client: %s", e)
-            return jsonify({"success": False, "error": str(e), "configured_provider": config.model_provider}), 500
+            return jsonify({"success": False, "error": "An internal error occurred", "configured_provider": config.model_provider}), 500
 
         # Introspect client for debugging (don't include secrets)
         try:
@@ -810,7 +861,7 @@ def index():
                              app_version=config.app_version)
     except Exception as e:
         logger.error(f"Index page error: {e}", exc_info=True)
-        flash(f'Error loading applications: {str(e)}', 'error')
+        logger.error('Error loading applications: %s', e, exc_info=True); flash('An error occurred while loading applications', 'error')
         return render_template('index.html', students=[], pending_count=0, evaluated_count=0, total_count=0)
 
 
@@ -1637,7 +1688,7 @@ def upload():
             return redirect(url_for('students'))
             
         except Exception as e:
-            flash(f'Error uploading file: {str(e)}', 'error')
+            logger.error('File upload failed: %s', e, exc_info=True); flash('An error occurred while uploading the file', 'error')
             import traceback
             traceback.print_exc()
             return redirect(request.url)
@@ -2079,7 +2130,8 @@ def evaluate(application_id):
         return jsonify(evaluation)
         
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        logger.error('Request failed: %s', e, exc_info=True)
+        return jsonify({'error': 'An internal error occurred'}), 500
 
 
 @app.route('/evaluate_all', methods=['POST'])
@@ -2124,7 +2176,8 @@ def evaluate_all():
         return jsonify({'success': True, 'evaluations': results})
         
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        logger.error('Request failed: %s', e, exc_info=True)
+        return jsonify({'error': 'An internal error occurred'}), 500
 
 
 @app.route('/students')
@@ -2155,7 +2208,7 @@ def students():
                              students=filtered_students,
                              search_query=search_query)
     except Exception as e:
-        flash(f'Error loading students: {str(e)}', 'error')
+        logger.error('Error loading students: %s', e, exc_info=True); flash('An error occurred while loading students', 'error')
         return render_template('students.html', students=[], search_query='')
 
 
@@ -2207,7 +2260,7 @@ def debug_dataset():
 
         return render_template('debug_dataset.html', rows=rows)
     except Exception as e:
-        flash(f'Error loading dataset: {str(e)}', 'error')
+        logger.error('Error loading dataset: %s', e, exc_info=True); flash('An error occurred while loading the dataset', 'error')
         return render_template('debug_dataset.html', rows=[])
 
 
@@ -2275,7 +2328,8 @@ def training():
                              school_count=school_count,
                              is_training_view=True)
     except Exception as e:
-        flash(f'Error loading training data: {str(e)}', 'error')
+        logger.error('Error loading training data: %s', e, exc_info=True)
+        flash('An error occurred while loading training data', 'error')
         return render_template('training.html', 
                              training_data=[], 
                              school_data=[],
@@ -2349,7 +2403,8 @@ def test_data():
                              test_students=formatted_students,
                              total_count=len(formatted_students))
     except Exception as e:
-        flash(f'Error loading test data: {str(e)}', 'error')
+        logger.error('Error loading test data: %s', e, exc_info=True)
+        flash('An error occurred while loading test data', 'error')
         return render_template('test_data.html',
                              test_students=[],
                              total_count=0)
@@ -2457,7 +2512,8 @@ def process_student(application_id):
                              application_id=application_id)
         
     except Exception as e:
-        flash(f'Error: {str(e)}', 'error')
+        logger.error('Operation failed: %s', e, exc_info=True)
+        flash('An error occurred', 'error')
         return redirect(url_for('students'))
 
 
@@ -2514,7 +2570,8 @@ def file_upload_chunk():
             return jsonify({'error': 'Storage not available – could not stage chunk'}), 500
     except Exception as e:
         logger.error("File chunk %d upload failed: %s", chunk_index, e)
-        return jsonify({'error': str(e)}), 500
+        logger.error('Request failed: %s', e, exc_info=True)
+        return jsonify({'error': 'An internal error occurred'}), 500
 
     result = {
         'upload_id': upload_id,
@@ -2540,7 +2597,8 @@ def file_upload_chunk():
                 return jsonify({'error': 'Failed to commit file upload'}), 500
         except Exception as e:
             logger.error("File commit failed for %s: %s", upload_id, e)
-            return jsonify({'error': str(e)}), 500
+            logger.error('Request failed: %s', e, exc_info=True)
+        return jsonify({'error': 'An internal error occurred'}), 500
 
     return jsonify(result)
 
@@ -2719,7 +2777,7 @@ def api_get_missing_fields(application_id):
         
     except Exception as e:
         return jsonify({
-            'error': str(e)
+            'error': 'An internal error occurred'
         }), 500
 
 
@@ -2814,7 +2872,7 @@ def api_debug_model_test():
 
     except Exception as e:
         app.logger.exception("Debug model test endpoint error: %s", e)
-        return jsonify({"success": False, "error": str(e)}), 500
+        return jsonify({"success": False, "error": "An internal error occurred"}), 500
 
 
 @app.route('/api/missing-fields/<int:application_id>', methods=['POST'])
@@ -2838,7 +2896,7 @@ def api_update_missing_fields(application_id):
         
     except Exception as e:
         return jsonify({
-            'error': str(e)
+            'error': 'An internal error occurred'
         }), 500
 
 
@@ -2879,7 +2937,7 @@ def api_get_agent_questions(application_id):
     except Exception as e:
         logger.error(f"Error getting agent questions: {e}", exc_info=True)
         return jsonify({
-            'error': str(e)
+            'error': 'An internal error occurred'
         }), 500
 
 
@@ -3000,7 +3058,7 @@ def api_categorize_upload(application_id):
     except Exception as e:
         logger.error(f"Error categorizing upload: {e}", exc_info=True)
         return jsonify({
-            'error': str(e)
+            'error': 'An internal error occurred'
         }), 500
 
 
@@ -3059,7 +3117,7 @@ def api_resume_evaluation(application_id):
     except Exception as e:
         logger.error(f"Error resuming evaluation for {application_id}: {e}", exc_info=True)
         return jsonify({
-            'error': str(e)
+            'error': 'An internal error occurred'
         }), 500
 def api_provide_missing_info(application_id):
     """
@@ -3144,7 +3202,7 @@ def api_provide_missing_info(application_id):
     except Exception as e:
         logger.error(f"Error providing missing info for {application_id}: {e}", exc_info=True)
         return jsonify({
-            'error': str(e)
+            'error': 'An internal error occurred'
         }), 500
 
 
@@ -3751,7 +3809,7 @@ def student_detail(application_id):
         
     except Exception as e:
         logger.error(f"Error in student_detail: {str(e)}", exc_info=True)
-        flash(f'Error loading student: {str(e)}', 'error')
+        flash('An error occurred while loading student details', 'error')
         return redirect(url_for('students'))
 
 
@@ -3785,7 +3843,8 @@ def student_agent_results(application_id):
         return jsonify(agent_results)
     except Exception as e:
         logger.error(f"Error in student_agent_results: {e}", exc_info=True)
-        return jsonify({'error': str(e)}), 500
+        logger.error('Request failed: %s', e, exc_info=True)
+        return jsonify({'error': 'An internal error occurred'}), 500
 
 
 def _synthesize_human_summary(agent_results: dict, application: dict) -> str:
@@ -3974,7 +4033,7 @@ def student_summary_json(application_id):
                                human_summary=human_summary)
     except Exception as e:
         logger.error(f"Error in student_summary_json: {e}", exc_info=True)
-        flash(f'Error loading summary: {str(e)}', 'error')
+        flash('An error occurred while loading the summary', 'error')
         return redirect(url_for('students'))
 
 
@@ -4053,7 +4112,7 @@ def download_evaluation(application_id):
         
     except Exception as e:
         logger.error(f"Error downloading evaluation: {str(e)}", exc_info=True)
-        flash(f'Error downloading document: {str(e)}', 'error')
+        flash('An error occurred while downloading the document', 'error')
         return redirect(url_for('student_detail', application_id=application_id))
 
 
@@ -4087,7 +4146,8 @@ def view_training_detail(application_id):
                              is_training=True)
         
     except Exception as e:
-        flash(f'Error loading training example: {str(e)}', 'error')
+        logger.error('Error loading training example: %s', e, exc_info=True)
+        flash('An error occurred while loading the training example', 'error')
         return redirect(url_for('training'))
 
 
@@ -4119,7 +4179,8 @@ def delete_training(application_id):
         return redirect(url_for('training'))
         
     except Exception as e:
-        flash(f'Error deleting training example: {str(e)}', 'error')
+        logger.error('Error deleting training example: %s', e, exc_info=True)
+        flash('An error occurred while deleting the training example', 'error')
         return redirect(url_for('training'))
 
 
@@ -4170,7 +4231,8 @@ def edit_student_record(application_id):
         })
     except Exception as e:
         logger.error(f"Error editing student {application_id}: {e}")
-        return jsonify({'status': 'error', 'error': str(e)}), 500
+        logger.error('Request failed: %s', e, exc_info=True)
+        return jsonify({'status': 'error', 'error': 'An internal error occurred'}), 500
 
 
 @app.route('/api/student/<int:application_id>/delete', methods=['DELETE'])
@@ -4202,7 +4264,8 @@ def delete_student_record(application_id):
         })
     except Exception as e:
         logger.error(f"Error deleting student {application_id}: {e}")
-        return jsonify({'status': 'error', 'error': str(e)}), 500
+        logger.error('Request failed: %s', e, exc_info=True)
+        return jsonify({'status': 'error', 'error': 'An internal error occurred'}), 500
 
 
 # API endpoint to clear all training data (excluding test data)
@@ -4272,7 +4335,7 @@ def clear_training_data():
         logger.error(f"Error clearing training data: {str(e)}", exc_info=True)
         return jsonify({
             'status': 'error',
-            'error': str(e)
+            'error': 'An internal error occurred'
         }), 500
 
 
@@ -4290,7 +4353,8 @@ def get_training_duplicates():
         })
     except Exception as e:
         logger.error(f"Error finding training duplicates: {e}", exc_info=True)
-        return jsonify({'status': 'error', 'error': str(e)}), 500
+        logger.error('Request failed: %s', e, exc_info=True)
+        return jsonify({'status': 'error', 'error': 'An internal error occurred'}), 500
 
 
 @app.route('/api/training-data/bulk-delete', methods=['POST'])
@@ -4330,7 +4394,8 @@ def bulk_delete_training():
                 db.delete_student(app_id)
                 deleted_count += 1
             except Exception as e:
-                errors.append(f"ID {app_id}: {str(e)}")
+                logger.error('Error deleting app_id %s: %s', app_id, e, exc_info=True)
+                errors.append(f"ID {app_id}: delete failed")
 
         if deleted_count > 0:
             refresh_foundry_dataset_async("training_bulk_delete")
@@ -4346,7 +4411,8 @@ def bulk_delete_training():
         })
     except Exception as e:
         logger.error(f"Error in bulk delete: {e}", exc_info=True)
-        return jsonify({'status': 'error', 'error': str(e)}), 500
+        logger.error('Request failed: %s', e, exc_info=True)
+        return jsonify({'status': 'error', 'error': 'An internal error occurred'}), 500
 
 
 # ============================================================================
@@ -4407,7 +4473,8 @@ def api_import_scores():
 
     except Exception as e:
         logger.error(f"Error importing historical scores: {e}", exc_info=True)
-        return jsonify({'status': 'error', 'error': str(e)}), 500
+        logger.error('Request failed: %s', e, exc_info=True)
+        return jsonify({'status': 'error', 'error': 'An internal error occurred'}), 500
 
 
 @app.route('/api/historical-scores/stats')
@@ -4573,7 +4640,8 @@ def api_reprocess_training():
 
     except Exception as e:
         logger.error(f"Error starting reprocess: {e}", exc_info=True)
-        return jsonify({'status': 'error', 'error': str(e)}), 500
+        logger.error('Request failed: %s', e, exc_info=True)
+        return jsonify({'status': 'error', 'error': 'An internal error occurred'}), 500
 
 
 @app.route('/api/training/reprocess', methods=['GET'])
@@ -4587,7 +4655,8 @@ def api_reprocess_training_status():
             state = json.load(f)
         return jsonify(state)
     except Exception as e:
-        return jsonify({'status': 'error', 'error': str(e)}), 500
+        logger.error('Request failed: %s', e, exc_info=True)
+        return jsonify({'status': 'error', 'error': 'An internal error occurred'}), 500
 
 
 @app.route('/api/training/diagnostic', methods=['GET'])
@@ -4635,7 +4704,8 @@ def api_training_diagnostic():
 
     except Exception as e:
         logger.error(f"Training diagnostic error: {e}", exc_info=True)
-        return jsonify({'status': 'error', 'error': str(e)}), 500
+        logger.error('Request failed: %s', e, exc_info=True)
+        return jsonify({'status': 'error', 'error': 'An internal error occurred'}), 500
 
 
 @app.route('/api/training/unmatched')
@@ -4646,7 +4716,8 @@ def api_unmatched_training():
         return jsonify({'status': 'success', 'students': students, 'count': len(students)})
     except Exception as e:
         logger.error(f"Error getting unmatched training students: {e}", exc_info=True)
-        return jsonify({'status': 'error', 'error': str(e)}), 500
+        logger.error('Request failed: %s', e, exc_info=True)
+        return jsonify({'status': 'error', 'error': 'An internal error occurred'}), 500
 
 
 @app.route('/api/historical-scores/unlinked')
@@ -4667,7 +4738,8 @@ def api_unlinked_historical_scores():
         return jsonify({'status': 'success', 'scores': serializable, 'count': len(serializable)})
     except Exception as e:
         logger.error(f"Error searching unlinked historical scores: {e}", exc_info=True)
-        return jsonify({'status': 'error', 'error': str(e)}), 500
+        logger.error('Request failed: %s', e, exc_info=True)
+        return jsonify({'status': 'error', 'error': 'An internal error occurred'}), 500
 
 
 @app.route('/api/training/link-score', methods=['POST'])
@@ -4697,7 +4769,8 @@ def api_link_training_score():
         return jsonify({'status': 'error', 'error': 'Failed to link records'}), 500
     except Exception as e:
         logger.error(f"Error linking training score: {e}", exc_info=True)
-        return jsonify({'status': 'error', 'error': str(e)}), 500
+        logger.error('Request failed: %s', e, exc_info=True)
+        return jsonify({'status': 'error', 'error': 'An internal error occurred'}), 500
 
 
 # ============================================================================
@@ -4929,7 +5002,7 @@ def _process_session(session_id):
                 'application_id': application_id
             }
         except Exception as e:
-            yield {'type': 'error', 'error': f'Failed to create student record: {str(e)}'}
+            yield {'type': 'error', 'error': 'Failed to create student record'}
 
     if not application_data_list:
         yield {'type': 'error', 'error': 'No students could be created'}
@@ -5004,7 +5077,7 @@ def _process_session(session_id):
                     )
                     import traceback
                     traceback.print_exc()
-                    update_queue.put({'_orchestration_error': True, 'error': str(e)})
+                    update_queue.put({'_orchestration_error': True, 'error': 'An internal error occurred'})
 
             orchestration_thread = threading.Thread(target=run_orchestration, daemon=True)
             orchestration_thread.start()
@@ -5085,7 +5158,7 @@ def _process_session(session_id):
                 'type': 'student_error',
                 'student_id': student_id,
                 'student_num': student_num,
-                'error': f'Processing failed: {str(e)}'
+                'error': 'Processing failed'
             }
 
     yield {'type': 'all_complete', 'application_ids': submission['application_ids']}
@@ -5102,7 +5175,7 @@ def _process_session(session_id):
         logger.warning(f"Failed to save test submission to database: {str(e)}")
         yield {
             'type': 'save_warning',
-            'message': f'Data saved in memory but database save failed: {str(e)}'
+            'message': 'Data saved in memory but database save failed'
         }
 
 
@@ -5160,7 +5233,7 @@ def _prepare_test_session(session_id: str, mode: str = 'dynamic') -> None:
         submission = test_submissions.get(session_id)
         if submission is not None:
             submission['status'] = 'error'
-            submission['queue'].put({'type': 'error', 'error': str(e)})
+            submission['queue'].put({'type': 'error', 'error': 'An internal error occurred'})
 
 
 @app.route('/api/test/submit', methods=['POST'])
@@ -5193,7 +5266,8 @@ def submit_test_data():
         })
     except Exception as e:
         logger.error("submit_test_data failed: %s", e, exc_info=True)
-        return jsonify({'error': str(e)}), 500
+        logger.error('Request failed: %s', e, exc_info=True)
+        return jsonify({'error': 'An internal error occurred'}), 500
 
 
 @app.route('/api/test/submit-preset', methods=['POST'])
@@ -5221,7 +5295,8 @@ def submit_preset_test_data():
         })
     except Exception as e:
         logger.error("submit_preset_test_data failed: %s", e, exc_info=True)
-        return jsonify({'error': str(e)}), 500
+        logger.error('Request failed: %s', e, exc_info=True)
+        return jsonify({'error': 'An internal error occurred'}), 500
 
 
 @app.route('/api/test/submit-single', methods=['POST'])
@@ -5248,7 +5323,8 @@ def submit_single_test_data():
         })
     except Exception as e:
         logger.error("submit_single_test_data failed: %s", e, exc_info=True)
-        return jsonify({'error': str(e)}), 500
+        logger.error('Request failed: %s', e, exc_info=True)
+        return jsonify({'error': 'An internal error occurred'}), 500
 
 
 @app.route('/api/test/cleanup', methods=['POST'])
@@ -5276,7 +5352,7 @@ def cleanup_test_endpoint():
     except Exception as e:
         return jsonify({
             'status': 'error',
-            'error': str(e)
+            'error': 'An internal error occurred'
         }), 500
 
 
@@ -5576,7 +5652,8 @@ def upload_test_files():
         
     except Exception as e:
         logger.error(f"Error uploading test files: {str(e)}", exc_info=True)
-        return jsonify({'status': 'error', 'error': str(e)}), 500
+        logger.error('Request failed: %s', e, exc_info=True)
+        return jsonify({'status': 'error', 'error': 'An internal error occurred'}), 500
 
 
 @app.route('/api/test/stats', methods=['GET'])
@@ -5616,7 +5693,7 @@ def test_stats():
     except Exception as e:
         return jsonify({
             'status': 'error',
-            'error': str(e)
+            'error': 'An internal error occurred'
         }), 500
 
 
@@ -5706,7 +5783,7 @@ def get_test_submissions():
         logger.error(f"Error retrieving test submissions: {str(e)}")
         return jsonify({
             'status': 'error',
-            'error': str(e)
+            'error': 'An internal error occurred'
         }), 500
 
 
@@ -5966,12 +6043,12 @@ def get_test_students():
         traceback.print_exc()
         return jsonify({
             'status': 'error',
-            'error': str(e)
+            'error': 'An internal error occurred'
         }), 500
 
         return jsonify({
             'status': 'error',
-            'error': str(e)
+            'error': 'An internal error occurred'
         }), 500
 
 
@@ -6078,7 +6155,8 @@ def get_application_status(application_id):
         })
     except Exception as e:
         logger.error(f"Error fetching application status: {e}", exc_info=True)
-        return jsonify({'error': str(e)}), 500
+        logger.error('Request failed: %s', e, exc_info=True)
+        return jsonify({'error': 'An internal error occurred'}), 500
 
 
 @app.route('/api/verify/applications', methods=['GET'])
@@ -6177,7 +6255,7 @@ def verify_applications():
         logger.error(f"Error verifying applications: {str(e)}", exc_info=True)
         return jsonify({
             'status': 'error',
-            'error': str(e)
+            'error': 'An internal error occurred'
         }), 500
 
 
@@ -6269,13 +6347,13 @@ def get_test_data_list():
         logger.error(f"Error retrieving test data: {str(e)}", exc_info=True)
         return jsonify({
             'status': 'error',
-            'error': str(e),
+            'error': 'An internal error occurred',
             'count': 0,
             'students': []
         }), 500
         return jsonify({
             'status': 'error',
-            'error': str(e)
+            'error': 'An internal error occurred'
         }), 500
 
 
@@ -6343,7 +6421,7 @@ def clear_test_data():
         logger.error(f"Error clearing test data: {str(e)}", exc_info=True)
         return jsonify({
             'status': 'error',
-            'error': str(e)
+            'error': 'An internal error occurred'
         }), 500
 
 
@@ -6390,7 +6468,8 @@ def admin_reset():
             return jsonify({'status': 'success', 'deleted': total})
     except Exception as e:
         logger.error(f"admin_reset error: {e}", exc_info=True)
-        return jsonify({'status': 'error', 'error': str(e)}), 500
+        logger.error('Request failed: %s', e, exc_info=True)
+        return jsonify({'status': 'error', 'error': 'An internal error occurred'}), 500
 
 
 @app.route('/api/milo/insights', methods=['GET'])
@@ -6410,7 +6489,8 @@ def milo_insights():
         return jsonify(result)
     except Exception as e:
         logger.error(f"Milo insights error: {e}", exc_info=True)
-        return jsonify({'status': 'error', 'error': str(e)}), 500
+        logger.error('Request failed: %s', e, exc_info=True)
+        return jsonify({'status': 'error', 'error': 'An internal error occurred'}), 500
 
 
 @app.route('/api/milo/rank', methods=['POST'])
@@ -6435,7 +6515,8 @@ def milo_rank_candidates():
         return jsonify(result)
     except Exception as e:
         logger.error(f"Milo ranking error: {e}", exc_info=True)
-        return jsonify({'status': 'error', 'error': str(e)}), 500
+        logger.error('Request failed: %s', e, exc_info=True)
+        return jsonify({'status': 'error', 'error': 'An internal error occurred'}), 500
 
 
 @app.route('/api/milo/ranking', methods=['GET'])
@@ -6465,7 +6546,8 @@ def milo_get_ranking():
         })
     except Exception as e:
         logger.error(f"Milo get ranking error: {e}", exc_info=True)
-        return jsonify({'status': 'error', 'error': str(e)}), 500
+        logger.error('Request failed: %s', e, exc_info=True)
+        return jsonify({'status': 'error', 'error': 'An internal error occurred'}), 500
 
 
 # --- Milo Validation (async job pattern with file-based state) ---
@@ -6563,7 +6645,7 @@ def _run_milo_validation_job(threshold: int):
             except Exception as e:
                 logger.error(f"Milo validation batch {batch_num} failed: {e}")
                 batch_results = [
-                    {"nextgen_match": 0, "tier": "ERROR", "explanation": str(e)}
+                    {"nextgen_match": 0, "tier": "ERROR", "explanation": "Validation failed"}
                     for _ in batch
                 ]
 
@@ -6670,7 +6752,7 @@ def _run_milo_validation_job(threshold: int):
 
     except Exception as e:
         logger.error(f"Milo validation job error: {e}", exc_info=True)
-        _write_validation_state({"state": "error", "error": str(e)})
+        _write_validation_state({"state": "error", "error": "An internal error occurred"})
 
 
 @app.route('/api/milo/validate', methods=['POST'])
@@ -6790,7 +6872,7 @@ def _run_agent_evaluation_job(agents=None, max_students=0):
 
     except Exception as e:
         logger.error(f"Agent evaluation job error: {e}", exc_info=True)
-        _write_eval_state({"state": "error", "error": str(e)})
+        _write_eval_state({"state": "error", "error": "An internal error occurred"})
 
 
 @app.route('/api/evaluations/run', methods=['POST'])
@@ -6866,7 +6948,8 @@ def agent_evaluation_results():
         return jsonify(evaluator.get_latest_results())
     except Exception as e:
         logger.error(f"Error fetching evaluation results: {e}", exc_info=True)
-        return jsonify({'status': 'error', 'error': str(e)}), 500
+        logger.error('Request failed: %s', e, exc_info=True)
+        return jsonify({'status': 'error', 'error': 'An internal error occurred'}), 500
 
 
 @app.route('/api/evaluations/consistency', methods=['GET'])
@@ -6879,7 +6962,8 @@ def agent_evaluation_consistency():
         return jsonify({'status': 'success', **metrics})
     except Exception as e:
         logger.error(f"Error computing consistency metrics: {e}", exc_info=True)
-        return jsonify({'status': 'error', 'error': str(e)}), 500
+        logger.error('Request failed: %s', e, exc_info=True)
+        return jsonify({'status': 'error', 'error': 'An internal error occurred'}), 500
 
 
 @app.route('/api/evaluations/history', methods=['GET'])
@@ -6892,7 +6976,8 @@ def agent_evaluation_history():
         return jsonify({'status': 'success', 'runs': evaluator.get_run_history(limit)})
     except Exception as e:
         logger.error(f"Error fetching evaluation history: {e}", exc_info=True)
-        return jsonify({'status': 'error', 'error': str(e)}), 500
+        logger.error('Request failed: %s', e, exc_info=True)
+        return jsonify({'status': 'error', 'error': 'An internal error occurred'}), 500
 
 
 # ==================== DATA MANAGEMENT ROUTES ====================
@@ -6938,7 +7023,7 @@ def view_school_enrichment(school_id):
         return render_template('school_enrichment_detail.html', school=school)
     except Exception as e:
         logger.error(f"Error viewing school {school_id}: {e}")
-        flash(f'Error loading school: {str(e)}', 'error')
+        flash('An error occurred while loading school data', 'error')
         return redirect(url_for('schools_dashboard'))
 
 
@@ -6968,7 +7053,8 @@ def get_schools_list():
         })
     except Exception as e:
         logger.error(f"Error getting schools list: {e}")
-        return jsonify({'status': 'error', 'error': str(e)}), 500
+        logger.error('Request failed: %s', e, exc_info=True)
+        return jsonify({'status': 'error', 'error': 'An internal error occurred'}), 500
 
 
 @app.route('/api/school/<int:school_id>', methods=['GET'])
@@ -6985,7 +7071,8 @@ def get_school_details(school_id):
         })
     except Exception as e:
         logger.error(f"Error getting school details: {e}")
-        return jsonify({'status': 'error', 'error': str(e)}), 500
+        logger.error('Request failed: %s', e, exc_info=True)
+        return jsonify({'status': 'error', 'error': 'An internal error occurred'}), 500
 
 
 @app.route('/api/school/<int:school_id>/update', methods=['POST'])
@@ -7047,7 +7134,8 @@ def update_school_enrichment(school_id):
         
     except Exception as e:
         logger.error(f"Error updating school {school_id}: {e}")
-        return jsonify({'status': 'error', 'error': str(e)}), 500
+        logger.error('Request failed: %s', e, exc_info=True)
+        return jsonify({'status': 'error', 'error': 'An internal error occurred'}), 500
 
 
 @app.route('/api/school/add', methods=['POST'])
@@ -7114,7 +7202,8 @@ def add_school_record():
 
     except Exception as e:
         logger.error(f"Error adding school: {e}")
-        return jsonify({'status': 'error', 'error': str(e)}), 500
+        logger.error('Request failed: %s', e, exc_info=True)
+        return jsonify({'status': 'error', 'error': 'An internal error occurred'}), 500
 
 
 @app.route('/api/school/<int:school_id>/delete', methods=['DELETE'])
@@ -7139,7 +7228,8 @@ def delete_school_record(school_id):
             return jsonify({'status': 'error', 'error': 'Failed to delete school record'}), 500
     except Exception as e:
         logger.error(f"Error deleting school {school_id}: {e}")
-        return jsonify({'status': 'error', 'error': str(e)}), 500
+        logger.error('Request failed: %s', e, exc_info=True)
+        return jsonify({'status': 'error', 'error': 'An internal error occurred'}), 500
 
 
 @app.route('/api/school/<int:school_id>/review', methods=['POST'])
@@ -7162,7 +7252,8 @@ def submit_school_review(school_id):
             
     except Exception as e:
         logger.error(f"Error submitting school review: {e}")
-        return jsonify({'status': 'error', 'error': str(e)}), 500
+        logger.error('Request failed: %s', e, exc_info=True)
+        return jsonify({'status': 'error', 'error': 'An internal error occurred'}), 500
 
 
 @app.route('/api/school/<int:school_id>/analyze', methods=['POST'])
@@ -7312,7 +7403,7 @@ def trigger_school_analysis(school_id):
                     model=config.model_tier_workhorse,
                     success=False,
                     processing_time_ms=(time.time() - _start) * 1000,
-                    result_summary={'school_id': school_id, 'error': str(e)}
+                    result_summary={'school_id': school_id, 'error': 'Analysis failed'}
                 )
                 # Update DB to reflect the error
                 try:
@@ -7334,7 +7425,8 @@ def trigger_school_analysis(school_id):
         
     except Exception as e:
         logger.error(f"Error triggering school analysis: {e}")
-        return jsonify({'status': 'error', 'error': str(e)}), 500
+        logger.error('Request failed: %s', e, exc_info=True)
+        return jsonify({'status': 'error', 'error': 'An internal error occurred'}), 500
 
 
 @app.route('/api/school/<int:school_id>/analyze-sync', methods=['POST'])
@@ -7525,9 +7617,10 @@ Write as a cohesive paragraph that other agents can reference when evaluating st
             model=getattr(config, 'deployment_name', 'gpt-4.1'),
             success=False,
             processing_time_ms=(time.time() - _moana_start) * 1000,
-            result_summary={'school_id': school_id, 'error': str(e)}
+            result_summary={'school_id': school_id, 'error': 'Validation failed'}
         )
-        return jsonify({'status': 'error', 'error': str(e)}), 500
+        logger.error('Request failed: %s', e, exc_info=True)
+        return jsonify({'status': 'error', 'error': 'An internal error occurred'}), 500
 
 
 @app.route('/api/school/lookup', methods=['POST'])
@@ -7567,7 +7660,8 @@ def lookup_or_create_school():
         
     except Exception as e:
         logger.error(f"Error in school lookup/create: {e}")
-        return jsonify({'status': 'error', 'error': str(e)}), 500
+        logger.error('Request failed: %s', e, exc_info=True)
+        return jsonify({'status': 'error', 'error': 'An internal error occurred'}), 500
 
 
 @app.route('/api/schools/enrich-pending', methods=['POST'])
@@ -7648,7 +7742,8 @@ def enrich_pending_schools():
         
     except Exception as e:
         logger.error(f"Error in bulk enrichment: {e}")
-        return jsonify({'status': 'error', 'error': str(e)}), 500
+        logger.error('Request failed: %s', e, exc_info=True)
+        return jsonify({'status': 'error', 'error': 'An internal error occurred'}), 500
 
 
 @app.route('/api/schools/batch-naveen-moana', methods=['POST'])
@@ -7915,7 +8010,8 @@ def batch_naveen_moana():
 
     except Exception as e:
         logger.error(f"Error in batch Naveen+Moana: {e}", exc_info=True)
-        return jsonify({'status': 'error', 'error': str(e)}), 500
+        logger.error('Request failed: %s', e, exc_info=True)
+        return jsonify({'status': 'error', 'error': 'An internal error occurred'}), 500
 
 
 @app.route('/api/schools/clear', methods=['POST'])
@@ -7939,7 +8035,8 @@ def clear_all_schools():
         
     except Exception as e:
         logger.error(f"Error clearing schools: {e}")
-        return jsonify({'status': 'error', 'error': str(e)}), 500
+        logger.error('Request failed: %s', e, exc_info=True)
+        return jsonify({'status': 'error', 'error': 'An internal error occurred'}), 500
 
 
 @app.route('/api/schools/backfill-honors', methods=['POST'])
@@ -7999,7 +8096,8 @@ def backfill_honors_and_moana():
         })
     except Exception as e:
         logger.error(f"Error in backfill: {e}", exc_info=True)
-        return jsonify({'status': 'error', 'error': str(e)}), 500
+        logger.error('Request failed: %s', e, exc_info=True)
+        return jsonify({'status': 'error', 'error': 'An internal error occurred'}), 500
 
 
 @app.route('/api/schools/bulk-seed', methods=['POST'])
@@ -8077,7 +8175,8 @@ def bulk_seed_schools():
         
     except Exception as e:
         logger.error(f"Error in bulk seed: {e}")
-        return jsonify({'status': 'error', 'error': str(e)}), 500
+        logger.error('Request failed: %s', e, exc_info=True)
+        return jsonify({'status': 'error', 'error': 'An internal error occurred'}), 500
 
 
 @app.route('/api/schools/import-csv', methods=['POST'])
@@ -8207,7 +8306,7 @@ def import_schools_csv():
                             state['errors'] += 1
                     except Exception as e:
                         state['errors'] += 1
-                        state['error_details'].append(str(e)[:100])
+                        state['error_details'].append('Import failed for record')
                         logger.error(f"  Error inserting {rec.get('school_name')}: {e}")
 
                     state['processed'] = i + 1
@@ -8240,7 +8339,8 @@ def import_schools_csv():
 
     except Exception as e:
         logger.error(f"Error in CSV import: {e}", exc_info=True)
-        return jsonify({'status': 'error', 'error': str(e)}), 500
+        logger.error('Request failed: %s', e, exc_info=True)
+        return jsonify({'status': 'error', 'error': 'An internal error occurred'}), 500
 
 
 @app.route('/api/schools/import-csv', methods=['GET'])
@@ -8255,7 +8355,8 @@ def import_schools_csv_progress():
             state = json.load(f)
         return jsonify(state)
     except Exception as e:
-        return jsonify({'status': 'error', 'error': str(e)}), 500
+        logger.error('Request failed: %s', e, exc_info=True)
+        return jsonify({'status': 'error', 'error': 'An internal error occurred'}), 500
 
 
 @app.route('/api/schools/purge', methods=['DELETE'])
@@ -8274,7 +8375,8 @@ def purge_schools():
         })
     except Exception as e:
         logger.error(f"Error purging schools: {e}", exc_info=True)
-        return jsonify({'status': 'error', 'error': str(e)}), 500
+        logger.error('Request failed: %s', e, exc_info=True)
+        return jsonify({'status': 'error', 'error': 'An internal error occurred'}), 500
 
 
 # ==================== TELEMETRY & MONITORING ====================
@@ -8375,7 +8477,8 @@ def telemetry_overview():
         })
     except Exception as e:
         logger.error(f"Telemetry overview error: {e}", exc_info=True)
-        return jsonify({'status': 'error', 'error': str(e)}), 500
+        logger.error('Request failed: %s', e, exc_info=True)
+        return jsonify({'status': 'error', 'error': 'An internal error occurred'}), 500
 
 
 @app.route('/api/telemetry/token-usage')
@@ -8391,7 +8494,8 @@ def telemetry_token_usage():
         return jsonify({'status': 'success', **usage})
     except Exception as e:
         logger.error(f"Token usage endpoint error: {e}", exc_info=True)
-        return jsonify({'status': 'error', 'error': str(e)}), 500
+        logger.error('Request failed: %s', e, exc_info=True)
+        return jsonify({'status': 'error', 'error': 'An internal error occurred'}), 500
 
 
 @app.route('/api/telemetry/token-usage/reset', methods=['POST'])
@@ -8401,7 +8505,8 @@ def telemetry_token_usage_reset():
         telemetry.reset_token_usage()
         return jsonify({'status': 'success', 'message': 'Token usage counters reset'})
     except Exception as e:
-        return jsonify({'status': 'error', 'error': str(e)}), 500
+        logger.error('Request failed: %s', e, exc_info=True)
+        return jsonify({'status': 'error', 'error': 'An internal error occurred'}), 500
 
 
 @app.route('/debug/agents')
@@ -8470,7 +8575,8 @@ def get_telemetry_status():
             }
         })
     except Exception as e:
-        return jsonify({'status': 'error', 'error': str(e)}), 500
+        logger.error('Request failed: %s', e, exc_info=True)
+        return jsonify({'status': 'error', 'error': 'An internal error occurred'}), 500
 
 
 @app.route('/admin/cleanup-test-data', methods=['POST'])
@@ -8549,7 +8655,7 @@ def admin_cleanup_test_data():
         logger.error(f"❌ Cleanup failed: {e}", exc_info=True)
         return jsonify({
             'status': 'error',
-            'message': str(e)
+            'message': 'An internal error occurred'
         }), 500
 
 
@@ -8592,6 +8698,15 @@ def ask_question(application_id):
                 'answer': None,
                 'reference_data': {}
             }), 400
+
+        # Guard against excessively long or suspicious questions
+        if len(question) > 2000:
+            return jsonify({
+                'success': False,
+                'error': 'Question is too long (max 2000 characters)',
+                'answer': None,
+                'reference_data': {}
+            }), 400
         
         # Initialize ARIEL Q&A agent (guard if missing in this deployment)
         if ArielQAAgent is None:
@@ -8627,7 +8742,7 @@ def ask_question(application_id):
         logger.error(f"Error in ask_question endpoint: {str(e)}")
         return jsonify({
             'success': False,
-            'error': f'Error processing question: {str(e)}',
+            'error': 'An error occurred while processing your question',
             'answer': None,
             'reference_data': {}
         }), 500

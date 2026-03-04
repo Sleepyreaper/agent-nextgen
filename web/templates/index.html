@@ -49,7 +49,7 @@
 {% endblock %}
 
 {% block extra_js %}
-<script>
+<script nonce="{{ csp_nonce }}">
 async function evaluateOne(button) {
     if (!confirm('Evaluate this application with AI?')) return;
     
