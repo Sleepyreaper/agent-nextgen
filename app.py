@@ -269,12 +269,19 @@ def add_security_headers(response):
     response.headers['Strict-Transport-Security'] = (
         'max-age=31536000; includeSubDomains'
     )
-    # CSP — allow Google Fonts, inline styles/scripts used by the app,
-    # and blob: URIs for PDF rendering.
+    # CSP — Use CSP Level 3 split directives for granular control:
+    #   script-src-elem: nonce-based — only <script> tags with the per-request
+    #                    nonce (or same-origin src) are allowed.
+    #   script-src-attr: unsafe-inline — allows onclick/onsubmit/onchange event
+    #                    handlers (98+ across templates; will be refactored later).
+    #   script-src:      fallback for CSP L1/L2 browsers that don't understand
+    #                    the split directives.
     nonce = getattr(g, 'csp_nonce', '')
     response.headers['Content-Security-Policy'] = (
         "default-src 'self'; "
-        f"script-src 'self' 'nonce-{nonce}'; "
+        "script-src 'self' 'unsafe-inline'; "
+        f"script-src-elem 'self' 'nonce-{nonce}'; "
+        "script-src-attr 'unsafe-inline'; "
         "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
         "font-src 'self' https://fonts.gstatic.com; "
         "img-src 'self' data: blob:; "
