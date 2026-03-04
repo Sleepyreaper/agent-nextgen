@@ -3,6 +3,23 @@
 {% block title %}Feedback Admin - NextGen{% endblock %}
 
 {% block content %}
+<style>
+    .feedback-badge {
+        display: inline-block;
+        padding: 0.15rem 0.5rem;
+        border-radius: 9999px;
+        font-size: 0.75rem;
+        font-weight: 600;
+        text-transform: capitalize;
+    }
+    .badge-received   { background: #dbeafe; color: #1e40af; }
+    .badge-triaged    { background: #fef3c7; color: #92400e; }
+    .badge-submitted  { background: #d1fae5; color: #065f46; }
+    .badge-error      { background: #fee2e2; color: #991b1b; }
+    .badge-awaiting_github { background: #e0e7ff; color: #3730a3; }
+    .badge-issue      { background: #fef3c7; color: #92400e; }
+    .badge-feature    { background: #ede9fe; color: #5b21b6; }
+</style>
 <div class="card">
     <h2 style="color: var(--emory-blue); margin-bottom: 0.5rem;">📝 Feedback Admin</h2>
     <p style="color: #6b7280;">Recent user feedback and GitHub issue status.</p>
@@ -22,10 +39,12 @@
             <tbody>
                 {% for item in feedback_items %}
                 {% set triage = item.triage_json or {} %}
+                {% set fb_type = item.feedback_type or item.FeedbackType or 'issue' %}
+                {% set fb_status = item.status or item.Status or 'received' %}
                 <tr>
                     <td>{{ item.created_at or item.CreatedAt or '—' }}</td>
-                    <td><span class="level-badge">{{ item.feedback_type or item.FeedbackType }}</span></td>
-                    <td>{{ item.status or item.Status }}</td>
+                    <td><span class="feedback-badge badge-{{ fb_type }}">{{ fb_type }}</span></td>
+                    <td><span class="feedback-badge badge-{{ fb_status }}">{{ fb_status }}</span></td>
                     <td style="max-width: 420px;">
                         <strong>{{ triage.title or 'Feedback' }}</strong><br>
                         <span style="color: #6b7280;">{{ triage.summary or item.message }}</span>

@@ -905,10 +905,9 @@ def submit_feedback():
     optionally create an issue.
     """
     if request.method == 'GET':
-        # render submission page with existing GH-linked items
+        # render submission page with ALL feedback items (not just GH-linked)
         try:
-            all_feedback = db.get_recent_user_feedback(limit=100) if db else []
-            feedback_items = [item for item in all_feedback if item.get('issue_url') or item.get('IssueUrl')]
+            feedback_items = db.get_recent_user_feedback(limit=50) if db else []
         except Exception:
             feedback_items = []
         return render_template('feedback.html', feedback_items=feedback_items)
@@ -1031,13 +1030,32 @@ def submit_feedback():
         }), 500
 
 
+@app.route('/api/feedback/recent')
+def feedback_recent_api():
+    """JSON endpoint for dynamic feedback polling."""
+    try:
+        items = db.get_recent_user_feedback(limit=50) if db else []
+        # Serialize for JSON — convert datetimes and triage dicts
+        serialized = []
+        for item in items:
+            row = {}
+            for k, v in item.items():
+                if hasattr(v, 'isoformat'):
+                    row[k] = v.isoformat()
+                else:
+                    row[k] = v
+            serialized.append(row)
+        return jsonify(serialized)
+    except Exception as exc:
+        logger.error(f"Feedback API error: {exc}", exc_info=True)
+        return jsonify([]), 500
+
+
 @app.route('/feedback/admin')
 def feedback_admin():
     """View recent feedback submissions."""
     try:
-        all_feedback = db.get_recent_user_feedback(limit=100) if db else []
-        # Filter to only show GitHub issues (those with issue_url)
-        feedback_items = [item for item in all_feedback if item.get('issue_url') or item.get('IssueUrl')]
+        feedback_items = db.get_recent_user_feedback(limit=100) if db else []
         return render_template('feedback_admin.html', feedback_items=feedback_items)
     except Exception as exc:
         logger.error(f"Feedback admin error: {exc}", exc_info=True)
