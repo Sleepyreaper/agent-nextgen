@@ -11,6 +11,7 @@ from typing import Optional
 from opentelemetry import trace, metrics
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import BatchSpanProcessor
+from opentelemetry.sdk.trace.sampling import TraceIdRatioBased, ParentBasedTraceIdRatio
 from opentelemetry.sdk.metrics import MeterProvider
 from opentelemetry.sdk.metrics.export import PeriodicExportingMetricReader
 from opentelemetry.sdk.resources import Resource
@@ -111,10 +112,19 @@ def configure_observability(
                             "service.name": service_name,
                             "service.version": service_version,
                         })
+                    # Sample 50% of traces to reduce Log Analytics ingestion
+                    # cost (~$2.76/GB).  Errors/exceptions are always captured
+                    # because ParentBasedTraceIdRatio respects parent decisions.
+                    sample_rate = float(os.getenv(
+                        "OTEL_TRACES_SAMPLER_ARG", "0.5"
+                    ))
+                    sampler = ParentBasedTraceIdRatio(sample_rate)
+
                     configure_azure_monitor(
                         connection_string=connection_string,
                         resource=resource,
                         enable_live_metrics=True,
+                        sampler=sampler,
                     )
                 except Exception as e:
                     _last_error = f"Azure Monitor configuration failed: {e}"
