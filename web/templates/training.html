@@ -462,7 +462,7 @@
 {% endblock %}
 
 {% block extra_js %}
-<script>
+<script nonce="{{ csp_nonce }}">
 /* ── Tab Switching ───────────────────────────────────────────────── */
 function switchTab(tab) {
     const studentsTab = document.getElementById('tabStudents');
@@ -1164,7 +1164,7 @@ async function linkScore(appId, scoreId, btn) {
 }
 </script>
 <script src="{{ url_for('static', filename='js/video-upload.js') }}?v={{ app_version }}"></script>
-<script>
+<script nonce="{{ csp_nonce }}">
 VideoUpload.init({
     fileInputId:   'trainingFileInput',
     formId:        'trainingUploadForm',
@@ -1175,7 +1175,7 @@ VideoUpload.init({
     appTypeGetter: () => 'training'
 });
 </script>
-<script>
+<script nonce="{{ csp_nonce }}">
 // ── Reprocess Documents ──
 function openReprocessModal() {
     document.getElementById('reprocessModal').style.display = 'flex';

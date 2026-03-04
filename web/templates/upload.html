@@ -146,7 +146,7 @@
     </div>
 </div>
 
-<script>
+<script nonce="{{ csp_nonce }}">
 function updateFileName(input) {
     const fileName = document.getElementById('fileName');
     if (input.files && input.files.length > 0) {
@@ -262,7 +262,7 @@ applyTrainingPreset();
 </script>
 
 <script src="{{ url_for('static', filename='js/video-upload.js') }}?v={{ app_version }}"></script>
-<script>
+<script nonce="{{ csp_nonce }}">
 VideoUpload.init({
     fileInputId:   'fileInput',
     formId:        'uploadForm',

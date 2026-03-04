@@ -319,7 +319,7 @@ Requires context:
     </div>
 </div>
 
-<script>
+<script nonce="{{ csp_nonce }}">
     // Application ID injected from Jinja template
     const APPLICATION_ID = {{ application_id or application.application_id or application.ApplicationID }};
     let conversationHistory = [];

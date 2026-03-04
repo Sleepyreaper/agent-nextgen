@@ -806,7 +806,7 @@
     </div>
 </div>
 
-<script>
+<script nonce="{{ csp_nonce }}">
 async function deleteSchool() {
     const schoolName = '{{ school.school_name|e }}';
     const schoolId = {{ school.school_enrichment_id }};
