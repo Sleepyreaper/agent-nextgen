@@ -3259,7 +3259,14 @@ class Database:
                 s2 = ''.join(ch for ch in s2 if not unicodedata.combining(ch))
                 s2 = s2.lower()
                 s2 = re.sub(r"[^a-z0-9\s]", ' ', s2)
-                s2 = re.sub(r"\b(high school|hs|highschool|school|academy|charter|magnet)\b", ' ', s2)
+                # Remove common school type suffixes and abbreviations
+                s2 = re.sub(r"\b(high school|hs|highschool|school|academy|charter|magnet|elem|elementary|middle|jr|junior|sr|senior|preparatory|prep|collegiate|college|center|ctr|international|intl)\b", ' ', s2)
+                # Normalize common abbreviations
+                s2 = re.sub(r"\bmath(?:ematics)?\b", "math", s2)
+                s2 = re.sub(r"\bsci(?:ence)?\b", "science", s2)
+                s2 = re.sub(r"\btech(?:nology)?\b", "tech", s2)
+                s2 = re.sub(r"\bst\b", "saint", s2)
+                s2 = re.sub(r"\bmt\b", "mount", s2)
                 return re.sub(r"\s{2,}", ' ', s2).strip()
 
             def _token_set_ratio(a: str, b: str) -> float:
@@ -3300,7 +3307,7 @@ class Database:
             # 3) difflib close match
             norm_list = list(name_map.values())
             raw_list = list(name_map.keys())
-            matches = difflib.get_close_matches(cand_norm, norm_list, n=1, cutoff=0.80)
+            matches = difflib.get_close_matches(cand_norm, norm_list, n=1, cutoff=0.70)
             if matches:
                 idx = norm_list.index(matches[0])
                 return self.get_school_enriched_data(school_name=raw_list[idx], state_code=state_code)
