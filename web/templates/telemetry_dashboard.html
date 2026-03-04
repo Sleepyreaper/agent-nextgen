@@ -464,6 +464,33 @@
             </div>
         </div>
 
+        <!-- Agent Quality & Accuracy -->
+        <div class="telem-section full-width">
+            <div class="section-header">
+                🎯 Agent Quality &amp; Accuracy
+                <button class="refresh-btn" style="margin-left:auto;font-size:0.75rem;padding:0.25rem 0.5rem;" onclick="runEvaluation()">▶ Run Evaluation</button>
+            </div>
+            <div class="section-body" id="agentAccuracy">
+                <div class="loading-spinner">Loading evaluation data...</div>
+            </div>
+        </div>
+
+        <!-- Consistency Metrics -->
+        <div class="telem-section">
+            <div class="section-header">⚖️ Consistency &amp; Outcome Accuracy</div>
+            <div class="section-body" id="consistencyMetrics">
+                <div class="loading-spinner">Loading consistency data...</div>
+            </div>
+        </div>
+
+        <!-- Evaluation History -->
+        <div class="telem-section">
+            <div class="section-header">📈 Evaluation Trend</div>
+            <div class="section-body" id="evalHistory">
+                <div class="loading-spinner">Loading history...</div>
+            </div>
+        </div>
+
         <!-- Application Insights Config -->
         <div class="telem-section">
             <div class="section-header">🔧 Application Insights Configuration</div>
@@ -540,6 +567,9 @@ async function loadTelemetry() {
         renderSchoolPipeline(overview.school_enrichment || {});
         renderAppInsightsConfig(telStatus);
         renderRecentExecs(overview.recent_executions || []);
+
+        // Load evaluation data (non-blocking)
+        loadEvaluationData();
     } catch (error) {
         console.error('Telemetry load error:', error);
         document.getElementById('statusBanner').className = 'status-banner disconnected';
@@ -875,6 +905,250 @@ async function resetTokenUsage() {
         }
     } catch (e) {
         alert('Reset failed: ' + e.message);
+    }
+}
+
+// ==================== AGENT EVALUATION FUNCTIONS ====================
+
+async function loadEvaluationData() {
+    try {
+        const [resultsRes, consistencyRes, historyRes] = await Promise.all([
+            fetch('/api/evaluations/results'),
+            fetch('/api/evaluations/consistency'),
+            fetch('/api/evaluations/history?limit=5'),
+        ]);
+
+        const results = await resultsRes.json();
+        const consistency = await consistencyRes.json();
+        const history = await historyRes.json();
+
+        renderAgentAccuracy(results);
+        renderConsistencyMetrics(consistency);
+        renderEvalHistory(history);
+    } catch (error) {
+        console.error('Evaluation data load error:', error);
+        document.getElementById('agentAccuracy').innerHTML =
+            '<div style="color: #9ca3af; text-align: center; padding: 2rem;">Could not load evaluation data.<br><small>' + error.message + '</small></div>';
+    }
+}
+
+function renderAgentAccuracy(results) {
+    const container = document.getElementById('agentAccuracy');
+
+    if (results.status === 'no_runs' || results.status === 'error') {
+        container.innerHTML = `
+            <div style="text-align: center; padding: 2rem;">
+                <div style="color: #6b7280; margin-bottom: 1rem;">No evaluation runs yet.</div>
+                <button onclick="runEvaluation()" style="background: #2563eb; color: white; border: none; padding: 0.5rem 1rem; border-radius: 6px; cursor: pointer; font-size: 0.9rem;">
+                    ▶ Run First Evaluation
+                </button>
+                <div style="color: #9ca3af; font-size: 0.8rem; margin-top: 0.5rem;">
+                    Evaluates agent output quality using Azure AI Evaluation SDK
+                </div>
+            </div>`;
+        return;
+    }
+
+    const perAgent = results.per_agent || {};
+    const agents = Object.keys(perAgent);
+
+    let html = '<div style="margin-bottom: 0.75rem; display: flex; justify-content: space-between; align-items: center;">';
+    html += '<span style="font-size: 0.8rem; color: #6b7280;">Batch: ' + (results.batch_id || '—').substring(0, 20) + '</span>';
+    html += '<span style="font-size: 0.8rem; color: #6b7280;">' + (results.total_students || 0) + ' students &bull; ' + (results.total_evaluations || 0) + ' evaluations</span>';
+    html += '</div>';
+
+    // Summary gauges
+    const metrics = [
+        { key: 'avg_groundedness', label: 'Groundedness', color: '#059669' },
+        { key: 'avg_coherence', label: 'Coherence', color: '#2563eb' },
+        { key: 'avg_relevance', label: 'Relevance', color: '#7c3aed' },
+        { key: 'avg_fluency', label: 'Fluency', color: '#d97706' },
+    ];
+
+    html += '<div style="display: flex; gap: 1rem; flex-wrap: wrap; margin-bottom: 1.5rem;">';
+    for (const m of metrics) {
+        const val = results[m.key];
+        if (val === null || val === undefined) continue;
+        const pct = (val / 5 * 100).toFixed(0);
+        html += `<div style="flex: 1; min-width: 120px; text-align: center;">
+            <div style="font-size: 2rem; font-weight: 700; color: ${m.color};">${val.toFixed(1)}<span style="font-size: 0.9rem; color: #9ca3af;">/5</span></div>
+            <div style="font-size: 0.8rem; color: #6b7280;">${m.label}</div>
+            <div style="background: #f3f4f6; border-radius: 4px; height: 6px; margin-top: 4px;">
+                <div style="background: ${m.color}; width: ${pct}%; height: 100%; border-radius: 4px; transition: width 0.5s;"></div>
+            </div>
+        </div>`;
+    }
+    html += '</div>';
+
+    // Per-agent breakdown table
+    if (agents.length > 0) {
+        const evalNames = new Set();
+        for (const agentData of Object.values(perAgent)) {
+            for (const k of Object.keys(agentData)) {
+                if (k !== 'evaluations') evalNames.add(k);
+            }
+        }
+        const evalList = [...evalNames].sort();
+
+        html += '<table class="agent-table"><thead><tr><th>Agent</th>';
+        for (const e of evalList) {
+            html += '<th>' + e.charAt(0).toUpperCase() + e.slice(1) + '</th>';
+        }
+        html += '<th>Evals</th></tr></thead><tbody>';
+
+        for (const [agent, data] of Object.entries(perAgent)) {
+            html += '<tr><td class="agent-name">' + agent + '</td>';
+            for (const e of evalList) {
+                const m = data[e];
+                if (m && m.avg !== undefined) {
+                    const cls = m.avg >= 4 ? 'good' : m.avg >= 3 ? 'warn' : 'bad';
+                    html += '<td><span class="success-rate ' + cls + '">' + m.avg.toFixed(1) + '</span></td>';
+                } else {
+                    html += '<td style="color: #9ca3af;">—</td>';
+                }
+            }
+            html += '<td>' + (data.evaluations || 0) + '</td></tr>';
+        }
+        html += '</tbody></table>';
+    }
+
+    container.innerHTML = html;
+}
+
+function renderConsistencyMetrics(data) {
+    const container = document.getElementById('consistencyMetrics');
+
+    if (data.status === 'error') {
+        container.innerHTML = '<div style="color: #ef4444; padding: 1rem;">Error: ' + (data.error || 'Unknown') + '</div>';
+        return;
+    }
+
+    let html = '';
+
+    // Merlin vs Gaston agreement
+    const agreement = data.merlin_gaston_agreement;
+    const correlation = data.merlin_gaston_score_correlation;
+
+    html += '<div style="margin-bottom: 1rem;"><strong style="color: #374151;">Merlin vs Gaston</strong></div>';
+    if (agreement !== null && agreement !== undefined) {
+        const cls = agreement >= 80 ? 'good' : agreement >= 60 ? 'warn' : 'bad';
+        html += `<div class="config-row">
+            <span class="config-key">Agreement Rate</span>
+            <span class="success-rate ${cls}">${agreement}%</span>
+        </div>`;
+    } else {
+        html += '<div style="color: #9ca3af; font-size: 0.85rem;">No Merlin/Gaston comparison data available.</div>';
+    }
+
+    if (correlation !== null && correlation !== undefined) {
+        const cls = Math.abs(correlation) >= 0.7 ? 'good' : Math.abs(correlation) >= 0.4 ? 'warn' : 'bad';
+        html += `<div class="config-row">
+            <span class="config-key">Score Correlation</span>
+            <span class="success-rate ${cls}">${correlation}</span>
+        </div>`;
+    }
+
+    // Outcome accuracy
+    const outcome = data.outcome_accuracy;
+    if (outcome) {
+        html += '<div style="margin: 1rem 0 0.5rem; border-top: 1px solid #f3f4f6; padding-top: 0.75rem;"><strong style="color: #374151;">Outcome Accuracy (vs was_selected)</strong></div>';
+        const accCls = outcome.accuracy >= 80 ? 'good' : outcome.accuracy >= 60 ? 'warn' : 'bad';
+        html += `<div class="config-row"><span class="config-key">Accuracy</span><span class="success-rate ${accCls}">${outcome.accuracy}%</span></div>`;
+        html += `<div class="config-row"><span class="config-key">Precision</span><span class="config-val">${outcome.precision}%</span></div>`;
+        html += `<div class="config-row"><span class="config-key">Recall</span><span class="config-val">${outcome.recall}%</span></div>`;
+        html += `<div class="config-row"><span class="config-key">F1 Score</span><span class="config-val">${outcome.f1}%</span></div>`;
+
+        const cm = outcome.confusion_matrix;
+        if (cm) {
+            html += '<div style="margin-top: 0.75rem; font-size: 0.8rem; color: #6b7280;">';
+            html += `TP: ${cm.true_positives} &bull; FP: ${cm.false_positives} &bull; TN: ${cm.true_negatives} &bull; FN: ${cm.false_negatives}`;
+            html += ` &bull; Total: ${outcome.total}</div>`;
+        }
+    } else {
+        html += '<div style="margin-top: 1rem; color: #9ca3af; font-size: 0.85rem;">No training examples with outcomes found.</div>';
+    }
+
+    // Score distributions
+    const dist = data.score_distributions;
+    if (dist && (dist.accepted || dist.rejected)) {
+        html += '<div style="margin: 1rem 0 0.5rem; border-top: 1px solid #f3f4f6; padding-top: 0.75rem;"><strong style="color: #374151;">Score Distributions</strong></div>';
+        if (dist.accepted) {
+            html += `<div class="config-row"><span class="config-key">Accepted (n=${dist.accepted.count})</span><span class="config-val">μ=${dist.accepted.mean} med=${dist.accepted.median} [${dist.accepted.min}–${dist.accepted.max}]</span></div>`;
+        }
+        if (dist.rejected) {
+            html += `<div class="config-row"><span class="config-key">Rejected (n=${dist.rejected.count})</span><span class="config-val">μ=${dist.rejected.mean} med=${dist.rejected.median} [${dist.rejected.min}–${dist.rejected.max}]</span></div>`;
+        }
+    }
+
+    container.innerHTML = html || '<div style="color: #9ca3af; text-align: center; padding: 2rem;">No consistency data available.</div>';
+}
+
+function renderEvalHistory(data) {
+    const container = document.getElementById('evalHistory');
+    const runs = data.runs || [];
+
+    if (runs.length === 0) {
+        container.innerHTML = '<div style="color: #9ca3af; text-align: center; padding: 2rem;">No evaluation history yet.<br><small>Run an evaluation to start tracking trends.</small></div>';
+        return;
+    }
+
+    let html = '<table class="agent-table"><thead><tr>';
+    html += '<th>Run</th><th>Status</th><th>Students</th><th>Ground.</th><th>Coher.</th><th>Accuracy</th>';
+    html += '</tr></thead><tbody>';
+
+    for (const run of runs) {
+        const shortId = (run.batch_id || '').substring(5, 17) || '—';
+        const statusCls = run.status === 'completed' ? 'completed' : run.status === 'failed' ? 'failed' : 'running';
+        html += `<tr>
+            <td style="font-family: monospace; font-size: 0.8rem;">${shortId}</td>
+            <td><span class="exec-status ${statusCls}">${run.status}</span></td>
+            <td>${run.total_students || 0}</td>
+            <td>${run.avg_groundedness !== null ? run.avg_groundedness.toFixed(1) : '—'}</td>
+            <td>${run.avg_coherence !== null ? run.avg_coherence.toFixed(1) : '—'}</td>
+            <td>${run.outcome_accuracy !== null ? run.outcome_accuracy.toFixed(0) + '%' : '—'}</td>
+        </tr>`;
+    }
+
+    html += '</tbody></table>';
+    container.innerHTML = html;
+}
+
+let _evalPollInterval = null;
+
+async function runEvaluation() {
+    if (!confirm('Run agent quality evaluation on training students? This may take several minutes and consume AI tokens.')) return;
+    try {
+        const res = await fetch('/api/evaluations/run', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+        const data = await res.json();
+        if (data.status === 'started' || data.status === 'already_running') {
+            document.getElementById('agentAccuracy').innerHTML =
+                '<div style="text-align: center; padding: 2rem;"><div class="loading-spinner">Evaluation running...</div><div id="evalProgress" style="margin-top: 0.5rem; color: #6b7280; font-size: 0.85rem;"></div></div>';
+            _evalPollInterval = setInterval(pollEvaluation, 3000);
+        } else {
+            alert('Failed to start evaluation: ' + JSON.stringify(data));
+        }
+    } catch (e) {
+        alert('Error: ' + e.message);
+    }
+}
+
+async function pollEvaluation() {
+    try {
+        const res = await fetch('/api/evaluations/status');
+        const data = await res.json();
+
+        if (data.status === 'running') {
+            const prog = document.getElementById('evalProgress');
+            if (prog) prog.textContent = data.progress || 'Working...';
+        } else {
+            // Done, error, or idle
+            clearInterval(_evalPollInterval);
+            _evalPollInterval = null;
+            loadEvaluationData();
+        }
+    } catch (e) {
+        clearInterval(_evalPollInterval);
+        _evalPollInterval = null;
     }
 }
 </script>

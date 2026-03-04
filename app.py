@@ -6739,6 +6739,162 @@ def milo_validate_status():
     return jsonify({'status': 'error', 'error': 'Results not available'}), 500
 
 
+# --- Agent Evaluations (Azure AI Evaluation SDK quality metrics) ---
+
+_EVAL_STATE_FILE = os.path.join(tempfile.gettempdir(), "agent_evaluation_state.json")
+_EVAL_RESULT_FILE = os.path.join(tempfile.gettempdir(), "agent_evaluation_result.json")
+
+
+def _write_eval_state(state: dict):
+    try:
+        with open(_EVAL_STATE_FILE, 'w') as f:
+            json.dump(state, f, default=str)
+    except Exception:
+        pass
+
+
+def _read_eval_state() -> dict:
+    try:
+        with open(_EVAL_STATE_FILE, 'r') as f:
+            return json.load(f)
+    except Exception:
+        return {"state": "idle"}
+
+
+def _run_agent_evaluation_job(agents=None, max_students=0):
+    """Background thread: run agent quality evaluations."""
+    try:
+        from src.evaluations.agent_evaluator import AgentEvaluator
+
+        _write_eval_state({"state": "running", "started_at": time.time(), "progress": "initialising evaluators"})
+
+        evaluator = AgentEvaluator(db)
+
+        def progress_cb(state_dict):
+            _write_eval_state({**state_dict, "started_at": time.time()})
+
+        result = evaluator.run_batch_evaluation(
+            agents=agents,
+            max_students=max_students,
+            progress_callback=progress_cb,
+        )
+
+        # Persist result to temp file for polling
+        try:
+            with open(_EVAL_RESULT_FILE, 'w') as f:
+                json.dump(result, f, default=str)
+        except Exception:
+            pass
+
+        _write_eval_state({"state": "done", "finished_at": time.time()})
+
+    except Exception as e:
+        logger.error(f"Agent evaluation job error: {e}", exc_info=True)
+        _write_eval_state({"state": "error", "error": str(e)})
+
+
+@app.route('/api/evaluations/run', methods=['POST'])
+def start_agent_evaluations():
+    """Start agent quality evaluations as a background job.
+
+    POST body (optional): {"agents": ["Merlin", "Tiana"], "max_students": 10}
+    Returns immediately. Poll GET /api/evaluations/status for progress.
+    """
+    current = _read_eval_state()
+    if current.get("state") == "running":
+        return jsonify({
+            'status': 'already_running',
+            'message': 'Evaluation is already in progress.',
+            'progress': current.get('progress', ''),
+        })
+
+    body = request.get_json(silent=True) or {}
+    agents = body.get('agents')  # None = all
+    max_students = body.get('max_students', 0)
+
+    thread = threading.Thread(
+        target=_run_agent_evaluation_job,
+        args=(agents, max_students),
+        daemon=True,
+    )
+    thread.start()
+
+    return jsonify({
+        'status': 'started',
+        'message': 'Evaluation started. Poll GET /api/evaluations/status for progress.',
+    })
+
+
+@app.route('/api/evaluations/status', methods=['GET'])
+def agent_evaluation_status():
+    """Poll the status of a running evaluation job."""
+    current = _read_eval_state()
+    state = current.get("state", "idle")
+
+    if state == "idle":
+        return jsonify({'status': 'idle', 'message': 'No evaluation running. POST /api/evaluations/run to start.'})
+
+    if state == "running":
+        elapsed = time.time() - current.get("started_at", time.time())
+        return jsonify({
+            'status': 'running',
+            'progress': current.get('progress', ''),
+            'agent': current.get('agent', ''),
+            'student_index': current.get('student_index'),
+            'total_students': current.get('total_students'),
+            'elapsed_seconds': round(elapsed, 1),
+        })
+
+    if state == "error":
+        return jsonify({'status': 'error', 'error': current.get('error', 'Unknown error')}), 500
+
+    # state == "done"
+    try:
+        with open(_EVAL_RESULT_FILE, 'r') as f:
+            result = json.load(f)
+        return jsonify(result)
+    except Exception:
+        return jsonify({'status': 'error', 'error': 'Results not available'}), 500
+
+
+@app.route('/api/evaluations/results', methods=['GET'])
+def agent_evaluation_results():
+    """Get the latest stored evaluation results from the database."""
+    try:
+        from src.evaluations.agent_evaluator import AgentEvaluator
+        evaluator = AgentEvaluator(db)
+        return jsonify(evaluator.get_latest_results())
+    except Exception as e:
+        logger.error(f"Error fetching evaluation results: {e}", exc_info=True)
+        return jsonify({'status': 'error', 'error': str(e)}), 500
+
+
+@app.route('/api/evaluations/consistency', methods=['GET'])
+def agent_evaluation_consistency():
+    """Get consistency metrics (Merlin vs Gaston, outcome accuracy) — no AI calls needed."""
+    try:
+        from src.evaluations.agent_evaluator import AgentEvaluator
+        evaluator = AgentEvaluator(db)
+        metrics = evaluator.compute_consistency_metrics()
+        return jsonify({'status': 'success', **metrics})
+    except Exception as e:
+        logger.error(f"Error computing consistency metrics: {e}", exc_info=True)
+        return jsonify({'status': 'error', 'error': str(e)}), 500
+
+
+@app.route('/api/evaluations/history', methods=['GET'])
+def agent_evaluation_history():
+    """Get historical evaluation runs for trend analysis."""
+    try:
+        from src.evaluations.agent_evaluator import AgentEvaluator
+        evaluator = AgentEvaluator(db)
+        limit = request.args.get('limit', 10, type=int)
+        return jsonify({'status': 'success', 'runs': evaluator.get_run_history(limit)})
+    except Exception as e:
+        logger.error(f"Error fetching evaluation history: {e}", exc_info=True)
+        return jsonify({'status': 'error', 'error': str(e)}), 500
+
+
 # ==================== DATA MANAGEMENT ROUTES ====================
 
 @app.route('/data-management')
