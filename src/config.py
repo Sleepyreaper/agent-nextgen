@@ -110,11 +110,11 @@ class Config:
         self.model_tier_merlin: str = self._get_secret(
             "model-tier-merlin", "MODEL_TIER_MERLIN"
         ) or os.getenv("MODEL_TIER_MERLIN") or "MerlinGPT5Mini"
-        # Tier 2 (Workhorse): structured extraction — Tiana, Mulan, Moana, Gaston, Smee, Naveen, Ariel
+        # Tier 2 (Workhorse): structured extraction — Belle, Tiana, Mulan, Moana, Gaston, Smee, Naveen, Ariel
         self.model_tier_workhorse: str = self._get_secret(
             "model-tier-workhorse", "MODEL_TIER_WORKHORSE"
         ) or os.getenv("MODEL_TIER_WORKHORSE") or "WorkForce4.1mini"
-        # Tier 3 (Lightweight): classification/triage — Belle, Scuttle
+        # Tier 3 (Lightweight): classification/triage — Scuttle, inline classifiers
         self.model_tier_lightweight: str = self._get_secret(
             "model-tier-lightweight", "MODEL_TIER_LIGHTWEIGHT"
         ) or os.getenv("MODEL_TIER_LIGHTWEIGHT") or "LightWork5Nano"

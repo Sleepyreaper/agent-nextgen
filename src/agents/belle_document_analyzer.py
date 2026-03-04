@@ -44,7 +44,10 @@ class BelleDocumentAnalyzer(BaseAgent):
             db_connection: Database connection (optional)
         """
         super().__init__(name=name, client=client)
-        self.model = model or config.model_tier_lightweight or config.foundry_model_name or config.deployment_name
+        # Belle upgraded from lightweight (5-Nano) to workhorse (4.1mini) —
+        # she makes 7 AI calls including multi-step JSON extraction and
+        # candidate ranking, and her output feeds every downstream agent.
+        self.model = model or config.model_tier_workhorse or config.foundry_model_name or config.deployment_name
         self.db_connection = db_connection
         self.emoji = "📖"
         self.description = "Analyzes documents and extracts structured data"
