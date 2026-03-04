@@ -1,7 +1,14 @@
-"""OpenTelemetry setup for agent tracing - Enhanced with event tracking."""
+"""OpenTelemetry setup for agent tracing - Enhanced with event tracking.
+
+Telemetry data is persisted to the ``telemetry_events`` PostgreSQL table so
+it survives process restarts and is consistent across gunicorn workers.
+In-memory counters are still maintained for sub-second dashboard updates
+within a single worker's lifetime.
+"""
 
 import os
 import json
+import logging
 import time
 import threading
 from collections import defaultdict
@@ -17,6 +24,8 @@ from src.observability import (
     should_capture_sensitive_data,
     is_observability_enabled,
 )
+
+_logger = logging.getLogger(__name__)
 
 _telemetry_initialized = False
 
@@ -45,7 +54,13 @@ def initialize_telemetry(service_name: str = "agent-framework", capture_sensitiv
 
 
 class NextGenTelemetry:
-    """Wrapper for application telemetry tracking using OpenTelemetry."""
+    """Wrapper for application telemetry tracking using OpenTelemetry.
+
+    Model-call telemetry is persisted to the ``telemetry_events`` PostgreSQL
+    table so the dashboard survives deploys and is consistent across workers.
+    """
+
+    _db_table_ready = False  # class-level flag — one-time table creation
 
     def __init__(self):
         # Cache counters to avoid re-creating on every call
@@ -65,6 +80,293 @@ class NextGenTelemetry:
         self._recent_calls: List[Dict[str, Any]] = []  # last N model calls
         self._max_recent = 200
         self._tracking_since = datetime.now(timezone.utc).isoformat()
+
+    # ── Database persistence ──────────────────────────────────────────
+
+    @classmethod
+    def _ensure_db_table(cls) -> bool:
+        """Create ``telemetry_events`` table if it doesn't exist (idempotent)."""
+        if cls._db_table_ready:
+            return True
+        try:
+            from src.database import db
+            db.execute_non_query("""
+                CREATE TABLE IF NOT EXISTS telemetry_events (
+                    id              SERIAL PRIMARY KEY,
+                    event_type      VARCHAR(50) NOT NULL DEFAULT 'model_call',
+                    agent_name      VARCHAR(200),
+                    model           VARCHAR(200),
+                    input_tokens    INTEGER DEFAULT 0,
+                    output_tokens   INTEGER DEFAULT 0,
+                    total_tokens    INTEGER DEFAULT 0,
+                    duration_ms     REAL    DEFAULT 0,
+                    success         BOOLEAN DEFAULT TRUE,
+                    created_at      TIMESTAMPTZ DEFAULT NOW()
+                )
+            """)
+            # Indexes for fast dashboard queries
+            for idx_sql in [
+                "CREATE INDEX IF NOT EXISTS idx_telem_created ON telemetry_events (created_at DESC)",
+                "CREATE INDEX IF NOT EXISTS idx_telem_agent   ON telemetry_events (agent_name)",
+                "CREATE INDEX IF NOT EXISTS idx_telem_model   ON telemetry_events (model)",
+            ]:
+                try:
+                    db.execute_non_query(idx_sql)
+                except Exception:
+                    pass  # OK if index already exists
+            cls._db_table_ready = True
+            return True
+        except Exception as exc:
+            _logger.debug("telemetry_events table creation skipped: %s", exc)
+            return False
+
+    def _persist_to_db(
+        self,
+        model: str,
+        agent_name: str,
+        input_tokens: int,
+        output_tokens: int,
+        duration_ms: float,
+        success: bool,
+    ) -> None:
+        """Write a model call to the DB (fire-and-forget)."""
+        try:
+            if not self._ensure_db_table():
+                return
+            from src.database import db
+            db.execute_non_query(
+                """INSERT INTO telemetry_events
+                       (event_type, agent_name, model,
+                        input_tokens, output_tokens, total_tokens,
+                        duration_ms, success)
+                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s)""",
+                ('model_call', agent_name, model,
+                 input_tokens, output_tokens, input_tokens + output_tokens,
+                 round(duration_ms, 1), success),
+            )
+        except Exception as exc:
+            _logger.debug("telemetry DB write failed: %s", exc)
+
+    # ── DB query helpers (for API endpoints) ──────────────────────────
+
+    @classmethod
+    def query_db_token_usage(cls) -> Dict[str, Any]:
+        """Query aggregated token usage from the ``telemetry_events`` table.
+
+        Returns the same structure as ``get_token_usage()`` but sourced from
+        the persistent database instead of in-memory counters.
+        """
+        empty = {
+            "totals": {"input_tokens": 0, "output_tokens": 0, "total_tokens": 0, "call_count": 0},
+            "by_model": {},
+            "by_agent": {},
+            "by_agent_model": {},
+            "recent_calls": [],
+            "tracking_since": None,
+        }
+        try:
+            if not cls._ensure_db_table():
+                return empty
+            from src.database import db
+
+            # Grand totals
+            rows = db.execute_query("""
+                SELECT COALESCE(SUM(input_tokens),0) AS input_tokens,
+                       COALESCE(SUM(output_tokens),0) AS output_tokens,
+                       COALESCE(SUM(total_tokens),0) AS total_tokens,
+                       COUNT(*) AS call_count,
+                       MIN(created_at) AS first_event
+                FROM telemetry_events
+            """)
+            totals = rows[0] if rows else {}
+            empty["totals"] = {
+                "input_tokens": int(totals.get("input_tokens", 0)),
+                "output_tokens": int(totals.get("output_tokens", 0)),
+                "total_tokens": int(totals.get("total_tokens", 0)),
+                "call_count": int(totals.get("call_count", 0)),
+            }
+            if totals.get("first_event"):
+                empty["tracking_since"] = str(totals["first_event"])
+
+            # By model
+            rows = db.execute_query("""
+                SELECT model,
+                       COALESCE(SUM(input_tokens),0) AS input_tokens,
+                       COALESCE(SUM(output_tokens),0) AS output_tokens,
+                       COALESCE(SUM(total_tokens),0) AS total_tokens,
+                       COUNT(*) AS call_count
+                FROM telemetry_events GROUP BY model ORDER BY total_tokens DESC
+            """)
+            for r in (rows or []):
+                empty["by_model"][r["model"] or "unknown"] = {
+                    "input_tokens": int(r["input_tokens"]),
+                    "output_tokens": int(r["output_tokens"]),
+                    "total_tokens": int(r["total_tokens"]),
+                    "call_count": int(r["call_count"]),
+                }
+
+            # By agent
+            rows = db.execute_query("""
+                SELECT agent_name,
+                       COALESCE(SUM(input_tokens),0) AS input_tokens,
+                       COALESCE(SUM(output_tokens),0) AS output_tokens,
+                       COALESCE(SUM(total_tokens),0) AS total_tokens,
+                       COUNT(*) AS call_count
+                FROM telemetry_events GROUP BY agent_name ORDER BY total_tokens DESC
+            """)
+            for r in (rows or []):
+                empty["by_agent"][r["agent_name"] or "unknown"] = {
+                    "input_tokens": int(r["input_tokens"]),
+                    "output_tokens": int(r["output_tokens"]),
+                    "total_tokens": int(r["total_tokens"]),
+                    "call_count": int(r["call_count"]),
+                }
+
+            # By agent+model combo
+            rows = db.execute_query("""
+                SELECT agent_name, model,
+                       COALESCE(SUM(input_tokens),0) AS input_tokens,
+                       COALESCE(SUM(output_tokens),0) AS output_tokens,
+                       COALESCE(SUM(total_tokens),0) AS total_tokens,
+                       COUNT(*) AS call_count
+                FROM telemetry_events GROUP BY agent_name, model
+                ORDER BY total_tokens DESC
+            """)
+            for r in (rows or []):
+                key = f"{r['agent_name'] or 'unknown'}::{r['model'] or 'unknown'}"
+                empty["by_agent_model"][key] = {
+                    "input_tokens": int(r["input_tokens"]),
+                    "output_tokens": int(r["output_tokens"]),
+                    "total_tokens": int(r["total_tokens"]),
+                    "call_count": int(r["call_count"]),
+                }
+
+            # Recent calls (last 50)
+            rows = db.execute_query("""
+                SELECT agent_name, model, input_tokens, output_tokens,
+                       total_tokens, duration_ms, success, created_at
+                FROM telemetry_events
+                ORDER BY created_at DESC LIMIT 50
+            """)
+            for r in (rows or []):
+                empty["recent_calls"].append({
+                    "timestamp": str(r.get("created_at", "")),
+                    "model": r.get("model", "unknown"),
+                    "agent": r.get("agent_name", "unknown"),
+                    "input_tokens": int(r.get("input_tokens", 0)),
+                    "output_tokens": int(r.get("output_tokens", 0)),
+                    "total_tokens": int(r.get("total_tokens", 0)),
+                    "duration_ms": round(float(r.get("duration_ms", 0)), 1),
+                    "success": r.get("success", True),
+                })
+
+            return empty
+        except Exception as exc:
+            _logger.debug("query_db_token_usage failed: %s", exc)
+            return empty
+
+    @classmethod
+    def query_db_agent_summary(cls) -> Dict[str, Dict[str, Any]]:
+        """Query per-agent summary statistics from the DB.
+
+        Returns a dict keyed by agent_name with totals, success rate, avg
+        duration, and models used — the same shape the dashboard expects.
+        """
+        try:
+            if not cls._ensure_db_table():
+                return {}
+            from src.database import db
+            rows = db.execute_query("""
+                SELECT agent_name,
+                       COUNT(*)                     AS total,
+                       SUM(CASE WHEN success THEN 1 ELSE 0 END) AS success_count,
+                       SUM(CASE WHEN NOT success THEN 1 ELSE 0 END) AS fail_count,
+                       ROUND(AVG(duration_ms)::numeric, 1)      AS avg_duration_ms,
+                       MIN(duration_ms)             AS min_duration_ms,
+                       MAX(duration_ms)             AS max_duration_ms,
+                       COALESCE(SUM(total_tokens),0) AS total_tokens,
+                       MAX(created_at)              AS last_run,
+                       ARRAY_AGG(DISTINCT model)    AS models_used
+                FROM telemetry_events
+                GROUP BY agent_name
+                ORDER BY total DESC
+            """)
+            result: Dict[str, Dict[str, Any]] = {}
+            for r in (rows or []):
+                name = r.get("agent_name") or "unknown"
+                total = int(r.get("total", 0))
+                success = int(r.get("success_count", 0))
+                result[name] = {
+                    "total": total,
+                    "success": success,
+                    "failed": int(r.get("fail_count", 0)),
+                    "total_duration_ms": 0,
+                    "min_duration_ms": float(r.get("min_duration_ms") or 0),
+                    "max_duration_ms": float(r.get("max_duration_ms") or 0),
+                    "avg_duration_ms": float(r.get("avg_duration_ms") or 0),
+                    "success_rate": round((success / total) * 100, 1) if total > 0 else 0,
+                    "total_tokens": int(r.get("total_tokens", 0)),
+                    "last_run": str(r.get("last_run", "")),
+                    "models_used": [m for m in (r.get("models_used") or []) if m],
+                }
+            return result
+        except Exception as exc:
+            _logger.debug("query_db_agent_summary failed: %s", exc)
+            return {}
+
+    @classmethod
+    def query_db_recent_executions(cls, limit: int = 20) -> List[Dict[str, Any]]:
+        """Return the most recent model calls for the Recent Executions panel."""
+        try:
+            if not cls._ensure_db_table():
+                return []
+            from src.database import db
+            rows = db.execute_query("""
+                SELECT agent_name, model AS model_used,
+                       duration_ms, success,
+                       created_at AS timestamp
+                FROM telemetry_events
+                ORDER BY created_at DESC
+                LIMIT %s
+            """, (limit,))
+            results = []
+            for r in (rows or []):
+                results.append({
+                    "agent_name": r.get("agent_name", "unknown"),
+                    "model_used": r.get("model_used", ""),
+                    "duration_ms": round(float(r.get("duration_ms", 0)), 1),
+                    "status": "completed" if r.get("success", True) else "failed",
+                    "timestamp": str(r.get("timestamp", "")),
+                })
+            return results
+        except Exception as exc:
+            _logger.debug("query_db_recent_executions failed: %s", exc)
+            return []
+
+    @classmethod
+    def query_db_overview_stats(cls) -> Dict[str, Any]:
+        """Return aggregate stats for the overview endpoint."""
+        try:
+            if not cls._ensure_db_table():
+                return {}
+            from src.database import db
+            rows = db.execute_query("""
+                SELECT COUNT(*)                     AS total_calls,
+                       SUM(CASE WHEN NOT success THEN 1 ELSE 0 END) AS total_errors,
+                       ROUND(AVG(duration_ms)::numeric, 1) AS avg_duration_ms
+                FROM telemetry_events
+            """)
+            if rows:
+                r = rows[0]
+                return {
+                    "total_calls": int(r.get("total_calls", 0)),
+                    "total_errors": int(r.get("total_errors", 0)),
+                    "avg_duration_ms": float(r.get("avg_duration_ms") or 0),
+                }
+            return {}
+        except Exception as exc:
+            _logger.debug("query_db_overview_stats failed: %s", exc)
+            return {}
 
     def _get_counter(self, name: str):
         """Get or create a cached counter instrument."""
@@ -248,7 +550,7 @@ class NextGenTelemetry:
         duration_ms: float,
         success: bool,
     ) -> None:
-        """Accumulate token usage in memory for the /api/telemetry/token-usage endpoint."""
+        """Accumulate token usage in memory AND persist to DB."""
         total = input_tokens + output_tokens
         with self._lock:
             # By model
@@ -293,17 +595,19 @@ class NextGenTelemetry:
             if len(self._recent_calls) > self._max_recent:
                 self._recent_calls = self._recent_calls[-self._max_recent:]
 
+        # Persist to DB outside the lock (fire-and-forget)
+        self._persist_to_db(model, agent_name, input_tokens, output_tokens, duration_ms, success)
+
     def get_token_usage(self) -> Dict[str, Any]:
         """Return accumulated token usage statistics.
 
-        Returns a dict with:
-          - totals: grand totals across all models/agents
-          - by_model: {model_name: {input_tokens, output_tokens, total_tokens, call_count}}
-          - by_agent: {agent_name: {input_tokens, output_tokens, total_tokens, call_count}}
-          - by_agent_model: {"agent::model": {...}}
-          - recent_calls: last N model invocations
-          - tracking_since: ISO timestamp when tracking started
+        Prefers the persistent DB data.  Falls back to in-memory counters
+        when the DB is unavailable (e.g. local dev / SQLite).
         """
+        db_data = self.query_db_token_usage()
+        if db_data.get("totals", {}).get("call_count", 0) > 0:
+            return db_data
+        # Fallback: in-memory
         with self._lock:
             return {
                 "totals": dict(self._token_total),
@@ -315,7 +619,7 @@ class NextGenTelemetry:
             }
 
     def reset_token_usage(self) -> None:
-        """Reset all accumulated token usage counters."""
+        """Reset all accumulated token usage counters (in-memory + DB)."""
         with self._lock:
             self._token_by_model.clear()
             self._token_by_agent.clear()
@@ -323,6 +627,13 @@ class NextGenTelemetry:
             self._token_total = {"input_tokens": 0, "output_tokens": 0, "total_tokens": 0, "call_count": 0}
             self._recent_calls.clear()
             self._tracking_since = datetime.now(timezone.utc).isoformat()
+        # Also truncate the DB table
+        try:
+            if self._ensure_db_table():
+                from src.database import db
+                db.execute_non_query("DELETE FROM telemetry_events")
+        except Exception:
+            pass
 
     def log_school_enrichment(
         self,

@@ -8396,43 +8396,24 @@ def telemetry_dashboard():
 
 @app.route('/api/telemetry/overview')
 def telemetry_overview():
-    """Comprehensive telemetry overview for the dashboard."""
+    """Comprehensive telemetry overview for the dashboard.
+
+    Reads persistent telemetry from the ``telemetry_events`` DB table so
+    data survives restarts and is consistent across gunicorn workers.
+    Falls back to the in-memory AgentMonitor for live "currently running"
+    data only.
+    """
     try:
+        from src.telemetry import NextGenTelemetry
+
+        # ── Persistent DB stats ──
+        db_stats = NextGenTelemetry.query_db_overview_stats()
+        agent_summary = NextGenTelemetry.query_db_agent_summary()
+        recent_execs = NextGenTelemetry.query_db_recent_executions(limit=20)
+
+        # ── Live "currently running" from in-memory monitor ──
         monitor = get_agent_monitor()
-        status = monitor.get_status()
-
-        # Get per-agent summary from history
-        all_history = monitor.get_all_history()
-        agent_summary = {}
-        for exec_rec in all_history:
-            name = exec_rec.get('agent_name', 'unknown')
-            if name not in agent_summary:
-                agent_summary[name] = {
-                    'total': 0, 'success': 0, 'failed': 0,
-                    'total_duration_ms': 0, 'min_duration_ms': float('inf'),
-                    'max_duration_ms': 0, 'last_run': None, 'models_used': set()
-                }
-            s = agent_summary[name]
-            s['total'] += 1
-            if exec_rec.get('status') == 'completed':
-                s['success'] += 1
-            elif exec_rec.get('status') == 'failed':
-                s['failed'] += 1
-            dur = exec_rec.get('duration_ms', 0)
-            s['total_duration_ms'] += dur
-            s['min_duration_ms'] = min(s['min_duration_ms'], dur) if dur > 0 else s['min_duration_ms']
-            s['max_duration_ms'] = max(s['max_duration_ms'], dur)
-            if exec_rec.get('model_used'):
-                s['models_used'].add(exec_rec['model_used'])
-            s['last_run'] = exec_rec.get('timestamp')
-
-        # Convert sets to lists for JSON
-        for name, s in agent_summary.items():
-            s['models_used'] = list(s['models_used'])
-            s['avg_duration_ms'] = round(s['total_duration_ms'] / s['total'], 1) if s['total'] > 0 else 0
-            s['success_rate'] = round((s['success'] / s['total']) * 100, 1) if s['total'] > 0 else 0
-            if s['min_duration_ms'] == float('inf'):
-                s['min_duration_ms'] = 0
+        live_status = monitor.get_status()
 
         # School enrichment stats from DB
         school_stats = {}
@@ -8467,10 +8448,10 @@ def telemetry_overview():
             'timestamp': _dt_now.utcnow().isoformat(),
             'observability': obs_status,
             'agent_monitor': {
-                'total_calls': status.get('total_calls', 0),
-                'total_errors': status.get('total_errors', 0),
-                'currently_running': status.get('running_count', 0),
-                'avg_duration_ms': round(status.get('average_duration_ms', 0), 1),
+                'total_calls': db_stats.get('total_calls', 0),
+                'total_errors': db_stats.get('total_errors', 0),
+                'currently_running': live_status.get('running_count', 0),
+                'avg_duration_ms': round(db_stats.get('avg_duration_ms', 0), 1),
             },
             'agents': agent_summary,
             'token_usage': token_usage.get('totals', {}),
@@ -8480,7 +8461,7 @@ def telemetry_overview():
                 'moana_validation': moana_stats,
                 'total': sum(school_stats.values()),
             },
-            'recent_executions': status.get('recent_executions', [])[-20:],
+            'recent_executions': recent_execs,
         })
     except Exception as e:
         logger.error(f"Telemetry overview error: {e}", exc_info=True)
