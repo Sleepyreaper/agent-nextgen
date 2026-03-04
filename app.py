@@ -15,6 +15,8 @@ from flask import Flask, flash, jsonify, render_template, redirect, url_for, req
 from werkzeug.security import check_password_hash
 from werkzeug.utils import secure_filename
 from flask_wtf.csrf import CSRFProtect
+from flask_limiter import Limiter
+from flask_limiter.util import get_remote_address
 
 from typing import Dict, Any, Optional
 import queue
@@ -74,7 +76,12 @@ from src.agents.feedback_triage_agent import ScuttleFeedbackTriageAgent, Feedbac
 
 # Initialize Flask app
 app = Flask(__name__, template_folder='web/templates', static_folder='web/static')
-app.secret_key = config.flask_secret_key or os.urandom(32).hex()
+if config.flask_secret_key:
+    app.secret_key = config.flask_secret_key
+elif os.getenv('FLASK_ENV') == 'production':
+    raise RuntimeError("FLASK_SECRET_KEY must be configured in production (set in Key Vault)")
+else:
+    app.secret_key = os.urandom(32).hex()  # random per-start in dev only
 app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB max file size
 app.config['UPLOAD_FOLDER'] = 'uploads'
 
@@ -89,6 +96,16 @@ app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'    # prevent cross-site POST attac
 # CSRF protection (Flask-WTF)
 # ---------------------------------------------------------------------------
 csrf = CSRFProtect(app)
+
+# ---------------------------------------------------------------------------
+# Rate limiting — prevent brute-force and abuse
+# ---------------------------------------------------------------------------
+limiter = Limiter(
+    get_remote_address,
+    app=app,
+    default_limits=["200 per minute"],              # global default
+    storage_uri="memory://",                         # in-process; upgrade to Redis for multi-node
+)
 
 
 # ---------------------------------------------------------------------------
@@ -111,9 +128,11 @@ _AUTH_WHITELIST = {
 @app.before_request
 def require_login():
     """Redirect unauthenticated requests to the login page."""
-    # Skip auth check if credentials are not configured (local dev / not yet set up)
+    # Skip auth check if credentials are not configured
     if not config.auth_username or not config.auth_password_hash:
-        return  # auth disabled
+        if os.getenv('FLASK_ENV') == 'production':
+            return jsonify({'error': 'Authentication not configured'}), 503
+        return  # auth disabled in dev only
 
     # Allow whitelisted endpoints through
     if request.endpoint in _AUTH_WHITELIST:
@@ -136,6 +155,7 @@ def require_login():
 
 
 @app.route('/login', methods=['GET', 'POST'])
+@limiter.limit("10 per minute", methods=["POST"])
 def login():
     """Login page and form handler."""
     error = None
@@ -145,12 +165,17 @@ def login():
 
         if (username == config.auth_username and
                 check_password_hash(config.auth_password_hash, password)):
+            # Regenerate session to prevent session fixation
+            session.clear()
             session.permanent = True
             session['authenticated'] = True
             session['username'] = username
             session['login_time'] = datetime.now(timezone.utc).isoformat()
             logger.info("User '%s' logged in successfully", username)
+            # Validate redirect target to prevent open redirect
             next_url = request.args.get('next') or url_for('index')
+            if not next_url.startswith('/') or next_url.startswith('//'):
+                next_url = url_for('index')
             return redirect(next_url)
         else:
             error = 'Invalid username or password.'
@@ -206,6 +231,32 @@ def add_security_headers(response):
         "frame-ancestors 'none';"
     )
     return response
+
+
+# ---------------------------------------------------------------------------
+# Custom error handlers — never leak framework details
+# ---------------------------------------------------------------------------
+@app.errorhandler(404)
+def page_not_found(e):
+    if request.path.startswith('/api/'):
+        return jsonify({'error': 'Not found'}), 404
+    return '<h1>404 — Page Not Found</h1>', 404
+
+
+@app.errorhandler(500)
+def internal_server_error(e):
+    logger.error("Unhandled 500 error: %s", e, exc_info=True)
+    if request.path.startswith('/api/'):
+        return jsonify({'error': 'An internal error occurred'}), 500
+    return '<h1>500 — Internal Server Error</h1>', 500
+
+
+@app.errorhandler(429)
+def rate_limit_exceeded(e):
+    if request.path.startswith('/api/'):
+        return jsonify({'error': 'Rate limit exceeded. Please try again later.'}), 429
+    return '<h1>429 — Too Many Requests</h1><p>Please slow down and try again.</p>', 429
+
 
 # Initialize telemetry FIRST so the TracerProvider is set before instrumentors run.
 # When Azure Monitor is configured, configure_azure_monitor() auto-instruments
@@ -2225,7 +2276,7 @@ def test():
         return render_template('test.html')
     except Exception as e:
         logger.error(f'Error loading test page: {e}', exc_info=True)
-        return f'<h1>Error loading test page</h1><p>{str(e)}</p>', 500
+        return '<h1>Error loading test page</h1><p>An internal error occurred.</p>', 500
 
 
 @app.route('/test-data')
@@ -2395,6 +2446,7 @@ def process_student(application_id):
 # ── Chunked Video Upload API ─────────────────────────────────────────
 @app.route('/api/file/upload-chunk', methods=['POST'])
 @app.route('/api/video/upload-chunk', methods=['POST'])  # backward compat
+@limiter.limit("300 per minute")
 def file_upload_chunk():
     """Accept a chunk of file data and stage it in Azure Blob Storage.
 
@@ -2425,6 +2477,12 @@ def file_upload_chunk():
 
     if not upload_id:
         return jsonify({'error': 'upload_id is required'}), 400
+
+    # Guard against unbounded chunked uploads (max 5000 chunks ≈ 500 MB)
+    if total_chunks > 5000:
+        return jsonify({'error': 'File too large (exceeds chunk limit)'}), 400
+    if chunk_index < 0 or chunk_index >= total_chunks:
+        return jsonify({'error': 'Invalid chunk_index'}), 400
 
     try:
         ok = storage.stage_chunked_upload(
@@ -2509,11 +2567,8 @@ def api_process_student(application_id):
         })
         
     except Exception as e:
-        import traceback
-        return jsonify({
-            'error': str(e),
-            'traceback': traceback.format_exc()
-        }), 500
+        logger.error("API process failed for application %s: %s", application_id, e, exc_info=True)
+        return jsonify({'error': 'An internal error occurred'}), 500
 
 
 def generate_process_updates(application_id: int):
@@ -2622,11 +2677,8 @@ def api_get_status(application_id):
         })
         
     except Exception as e:
-        import traceback
-        return jsonify({
-            'error': str(e),
-            'traceback': traceback.format_exc()
-        }), 500
+        logger.error("API debug model_test failed: %s", e, exc_info=True)
+        return jsonify({'error': 'An internal error occurred'}), 500
 
 
 @app.route('/api/missing-fields/<int:application_id>', methods=['GET'])
@@ -6210,6 +6262,7 @@ def clear_test_data():
 
 # Admin endpoint for full/reset operation
 @app.route('/api/admin/reset', methods=['POST'])
+@limiter.limit("3 per minute")
 def admin_reset():
     """One‑click database reset. Accepts JSON {keep_production: bool}.
 
@@ -7087,8 +7140,8 @@ def trigger_school_analysis_sync(school_id):
             'result_keys': list(result.keys())
         })
     except Exception as e:
-        import traceback
-        return jsonify({'status': 'error', 'error': str(e), 'traceback': traceback.format_exc()}), 500
+        logger.error("School analyze-sync failed for school %s: %s", school_id, e, exc_info=True)
+        return jsonify({'status': 'error', 'error': 'An internal error occurred'}), 500
 
 
 @app.route('/api/school/<int:school_id>/validate-moana', methods=['POST'])
@@ -8338,8 +8391,8 @@ def ask_question(application_id):
 
 
 if __name__ == '__main__':
-    # Only use debug mode for local development
-    debug_mode = os.getenv('FLASK_ENV') != 'production'
+    # Debug mode requires explicit opt-in (never default to True)
+    debug_mode = os.getenv('FLASK_DEBUG', '').lower() in ('1', 'true')
     port = int(os.getenv('PORT', 5002))  # Changed to 5002 to avoid port conflict
     print(f" * Starting Flask on port {port}")
     app.run(debug=debug_mode, host='0.0.0.0', port=port)
