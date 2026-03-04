@@ -318,7 +318,7 @@ def rate_limit_exceeded(e):
 
 # Initialize telemetry FIRST so the TracerProvider is set before instrumentors run.
 # When Azure Monitor is configured, configure_azure_monitor() auto-instruments
-# Flask, requests, psycopg2, and urllib — so manual instrumentors are a safe no-op.
+# Flask, requests, psycopg, and urllib — so manual instrumentors are a safe no-op.
 init_telemetry(service_name=os.getenv("OTEL_SERVICE_NAME", "agent-framework"))
 
 # Instrument Flask and outbound HTTP calls for App Insights.

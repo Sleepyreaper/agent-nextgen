@@ -45,7 +45,6 @@ packaging==26.0
 propcache==0.4.1
 psycopg==3.2.13
 psycopg-binary==3.2.13
-psycopg2-binary==2.9.11
 pycparser==2.23
 pydantic==2.12.5
 pydantic_core==2.41.5
@@ -64,7 +63,7 @@ typing_extensions==4.15.0
 urllib3==2.6.3
 
 # Azure Monitor OpenTelemetry distro — connects to Application Insights
-# (bundles Flask, requests, psycopg2, urllib3 instrumentors automatically)
+# (bundles Flask, requests, psycopg, urllib3 instrumentors automatically)
 azure-monitor-opentelemetry==1.6.4
 
 # OpenTelemetry core (version must satisfy azure-monitor-opentelemetry ~=1.28)
