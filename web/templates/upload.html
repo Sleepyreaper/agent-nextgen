@@ -12,6 +12,7 @@
 
 <div class="card">
     <form method="POST" enctype="multipart/form-data" style="margin-top: 1.5rem;" id="uploadForm">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <!-- File Upload -->
         <div id="applicationTypeSection" style="margin-bottom: 2rem;">
             <label style="display: block; font-weight: 600; margin-bottom: 0.75rem; color: #1f2937;">

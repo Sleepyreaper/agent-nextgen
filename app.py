@@ -14,6 +14,7 @@ from datetime import datetime, timedelta, timezone
 from flask import Flask, flash, jsonify, render_template, redirect, url_for, request, Response, session, stream_with_context
 from werkzeug.security import check_password_hash
 from werkzeug.utils import secure_filename
+from flask_wtf.csrf import CSRFProtect
 
 from typing import Dict, Any, Optional
 import queue
@@ -76,6 +77,18 @@ app = Flask(__name__, template_folder='web/templates', static_folder='web/static
 app.secret_key = config.flask_secret_key or os.urandom(32).hex()
 app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB max file size
 app.config['UPLOAD_FOLDER'] = 'uploads'
+
+# ---------------------------------------------------------------------------
+# Session cookie hardening
+# ---------------------------------------------------------------------------
+app.config['SESSION_COOKIE_SECURE'] = True       # only send over HTTPS
+app.config['SESSION_COOKIE_HTTPONLY'] = True      # no JavaScript access
+app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'    # prevent cross-site POST attacks
+
+# ---------------------------------------------------------------------------
+# CSRF protection (Flask-WTF)
+# ---------------------------------------------------------------------------
+csrf = CSRFProtect(app)
 
 
 # ---------------------------------------------------------------------------
@@ -163,12 +176,35 @@ def inject_app_metadata():
 
 
 @app.after_request
-def add_no_cache_headers(response):
-    """Prevent browser caching of HTML pages so template changes take effect immediately."""
+def add_security_headers(response):
+    """Add security headers and prevent browser caching of HTML pages."""
+    # -- Cache control for HTML pages --
     if response.content_type and 'text/html' in response.content_type:
         response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
         response.headers['Pragma'] = 'no-cache'
         response.headers['Expires'] = '0'
+
+    # -- Security headers --
+    response.headers['X-Content-Type-Options'] = 'nosniff'
+    response.headers['X-Frame-Options'] = 'DENY'
+    response.headers['Referrer-Policy'] = 'strict-origin-when-cross-origin'
+    response.headers['Permissions-Policy'] = (
+        'camera=(), microphone=(), geolocation=(), payment=()'
+    )
+    response.headers['Strict-Transport-Security'] = (
+        'max-age=31536000; includeSubDomains'
+    )
+    # CSP — allow Google Fonts, inline styles/scripts used by the app,
+    # and blob: URIs for PDF rendering.
+    response.headers['Content-Security-Policy'] = (
+        "default-src 'self'; "
+        "script-src 'self' 'unsafe-inline'; "
+        "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
+        "font-src 'self' https://fonts.gstatic.com; "
+        "img-src 'self' data: blob:; "
+        "connect-src 'self'; "
+        "frame-ancestors 'none';"
+    )
     return response
 
 # Initialize telemetry FIRST so the TracerProvider is set before instrumentors run.
