@@ -86,3 +86,7 @@ openpyxl>=3.1.0
 # Video frame extraction for Mirabel Video Analyzer
 opencv-python-headless>=4.8.0
 
+# Azure AI Evaluation SDK — agent output quality metrics
+# (groundedness, coherence, relevance, fluency, similarity)
+azure-ai-evaluation>=1.0.0
+
