@@ -445,5 +445,25 @@ WHERE a.is_training_example = FALSE
 ORDER BY a.uploaded_date DESC;
 
 -- =====================================================================
+-- Telemetry Events — Persisted model-call metrics for the dashboard
+-- =====================================================================
+CREATE TABLE IF NOT EXISTS telemetry_events (
+    id              SERIAL PRIMARY KEY,
+    event_type      VARCHAR(50)     NOT NULL DEFAULT 'model_call',
+    agent_name      VARCHAR(200),
+    model           VARCHAR(200),
+    input_tokens    INTEGER         DEFAULT 0,
+    output_tokens   INTEGER         DEFAULT 0,
+    total_tokens    INTEGER         DEFAULT 0,
+    duration_ms     REAL            DEFAULT 0,
+    success         BOOLEAN         DEFAULT TRUE,
+    created_at      TIMESTAMPTZ     DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_telem_created ON telemetry_events (created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_telem_agent   ON telemetry_events (agent_name);
+CREATE INDEX IF NOT EXISTS idx_telem_model   ON telemetry_events (model);
+
+-- =====================================================================
 -- End of Schema Definition
 -- =====================================================================
