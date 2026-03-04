@@ -353,7 +353,7 @@ class SchoolDataWorkflow:
             monitor.end_execution("Naveen (School Data Scientist)", status=AgentStatus.FAILED, error_message=str(e))
             # Mark as failed so we can retry later
             self.db.execute_non_query(
-                "UPDATE school_enriched_data SET analysis_status = 'failed', updated_at = CURRENT_TIMESTAMP WHERE school_enrichment_id = %s",
+                "UPDATE school_enriched_data SET analysis_status = 'failed', enrichment_status = 'failed', updated_at = CURRENT_TIMESTAMP WHERE school_enrichment_id = %s",
                 (school_id,)
             )
             return {**school_dict, 'analysis_status': 'failed', 'error': str(e)}
@@ -385,6 +385,14 @@ class SchoolDataWorkflow:
                     values.append(val)
                 
                 set_parts.append("updated_at = CURRENT_TIMESTAMP")
+                set_parts.append("enrichment_status = 'enriched'")
+                set_parts.append("enrichment_date = CURRENT_TIMESTAMP")
+                set_parts.append("enrichment_source = 'naveen_analysis'")
+                # Capture school website if discovered during enrichment
+                school_url = enriched_result.get('school_url') or enriched_result.get('website')
+                if school_url:
+                    set_parts.append("school_url = %s")
+                    values.append(school_url)
                 values.append(school_id)
                 
                 query = f"UPDATE school_enriched_data SET {', '.join(set_parts)} WHERE school_enrichment_id = %s"

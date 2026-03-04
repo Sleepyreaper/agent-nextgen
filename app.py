@@ -7651,6 +7651,105 @@ def enrich_pending_schools():
         return jsonify({'status': 'error', 'error': str(e)}), 500
 
 
+@app.route('/api/schools/<int:school_id>/website', methods=['POST'])
+def set_school_website(school_id):
+    """Set or auto-discover a school's website URL.
+
+    Request body:
+        { "url": "https://..." }  -- set manually
+        OR
+        { "auto_discover": true }  -- attempt to find the website via search
+    """
+    try:
+        data = request.get_json() or {}
+        url = data.get('url')
+
+        if url:
+            # Manual URL assignment
+            db.update_school_enrichment_status(
+                school_id, status='partial', source='manual', website=url
+            )
+            return jsonify({'status': 'success', 'school_url': url})
+
+        if data.get('auto_discover'):
+            school = db.get_school_enriched_data(school_id)
+            if not school:
+                return jsonify({'status': 'error', 'error': 'School not found'}), 404
+
+            name = school.get('school_name', '')
+            state = school.get('state_code', '')
+            city = school.get('city', '')
+            search_query = f"{name} {city} {state} official website"
+
+            # Use the AI client to search for the school website
+            try:
+                client = get_ai_client_mini()
+                messages = [
+                    {"role": "system", "content": "You are a helpful assistant. Given a school search query, return ONLY the most likely official school website URL. Return just the URL, nothing else. If you cannot determine it, return 'UNKNOWN'."},
+                    {"role": "user", "content": f"Find the official website for: {search_query}"}
+                ]
+                response = client.chat.completions.create(
+                    model=config.model_tier_mini,
+                    messages=messages,
+                    max_tokens=100,
+                    temperature=0
+                )
+                discovered_url = response.choices[0].message.content.strip()
+
+                if discovered_url and discovered_url != 'UNKNOWN' and discovered_url.startswith('http'):
+                    db.update_school_enrichment_status(
+                        school_id, status='partial', source='auto_discover', website=discovered_url
+                    )
+                    return jsonify({'status': 'success', 'school_url': discovered_url, 'source': 'auto_discover'})
+                else:
+                    return jsonify({'status': 'not_found', 'message': 'Could not auto-discover website'}), 404
+            except Exception as e:
+                logger.error(f"Auto-discover error for school {school_id}: {e}")
+                return jsonify({'status': 'error', 'error': str(e)}), 500
+        else:
+            return jsonify({'status': 'error', 'error': 'Provide url or auto_discover=true'}), 400
+
+    except Exception as e:
+        logger.error(f"Error setting school website: {e}")
+        return jsonify({'status': 'error', 'error': str(e)}), 500
+
+
+@app.route('/api/schools/<int:school_id>/enrichment-status', methods=['POST'])
+def update_school_enrichment_status(school_id):
+    """Update a school's enrichment status.
+
+    Request body:
+        { "status": "enriched", "source": "web_scrape" }
+
+    Valid statuses: pending, partial, enriched, failed
+    """
+    try:
+        data = request.get_json() or {}
+        status = data.get('status')
+        if status not in ('pending', 'partial', 'enriched', 'failed'):
+            return jsonify({'status': 'error', 'error': 'Invalid status. Use: pending, partial, enriched, failed'}), 400
+        source = data.get('source')
+        ok = db.update_school_enrichment_status(school_id, status=status, source=source)
+        if ok:
+            return jsonify({'status': 'success', 'enrichment_status': status})
+        return jsonify({'status': 'error', 'error': 'School not found or update failed'}), 404
+    except Exception as e:
+        logger.error(f"Error updating enrichment status: {e}")
+        return jsonify({'status': 'error', 'error': str(e)}), 500
+
+
+@app.route('/api/schools/needs-enrichment', methods=['GET'])
+def schools_needs_enrichment():
+    """Get schools that still need enrichment."""
+    try:
+        limit = min(int(request.args.get('limit', 50)), 200)
+        schools = db.get_schools_needing_enrichment(limit=limit)
+        return jsonify({'status': 'success', 'count': len(schools), 'schools': schools})
+    except Exception as e:
+        logger.error(f"Error fetching schools needing enrichment: {e}")
+        return jsonify({'status': 'error', 'error': str(e)}), 500
+
+
 @app.route('/api/schools/batch-naveen-moana', methods=['POST'])
 def batch_naveen_moana():
     """Batch-process up to N schools through Naveen analysis + Moana validation.

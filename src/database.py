@@ -996,6 +996,9 @@ class Database:
                     'years_of_data': 'INTEGER',
                     'latest_school_year': 'VARCHAR(10)',
                     'csv_import_date': 'TIMESTAMP',
+                    'enrichment_status': "VARCHAR(50) DEFAULT 'pending'",
+                    'enrichment_date': 'TIMESTAMP',
+                    'enrichment_source': 'VARCHAR(255)',
                 }.items():
                     if col_name not in school_columns:
                         try:
@@ -3406,6 +3409,56 @@ class Database:
         except Exception as e:
             logger.error(f"Error deleting school enrichment {school_id}: {e}")
             return False
+
+    def update_school_enrichment_status(self, school_id: int, status: str,
+                                         source: Optional[str] = None,
+                                         website: Optional[str] = None) -> bool:
+        """Update the enrichment status of a school record.
+
+        Args:
+            school_id: The school_enrichment_id
+            status: One of 'pending', 'partial', 'enriched', 'failed'
+            source: Description of enrichment source (e.g. 'web_scrape', 'manual')
+            website: Optional school website URL to set
+        """
+        try:
+            set_clauses = ["enrichment_status = %s", "enrichment_date = CURRENT_TIMESTAMP",
+                           "updated_at = CURRENT_TIMESTAMP"]
+            params: list = [status]
+            if source is not None:
+                set_clauses.append("enrichment_source = %s")
+                params.append(source)
+            if website is not None:
+                set_clauses.append("school_url = %s")
+                params.append(website)
+            params.append(school_id)
+            self.execute_non_query(
+                f"UPDATE school_enriched_data SET {', '.join(set_clauses)} WHERE school_enrichment_id = %s",
+                tuple(params)
+            )
+            logger.info(f"Updated enrichment status for school {school_id} → {status}")
+            return True
+        except Exception as e:
+            logger.error(f"Error updating enrichment status for school {school_id}: {e}")
+            return False
+
+    def get_schools_needing_enrichment(self, limit: int = 50) -> List[Dict[str, Any]]:
+        """Get schools that still need enrichment (no website or pending status)."""
+        try:
+            if not self.has_table("school_enriched_data"):
+                return []
+            query = """
+                SELECT * FROM school_enriched_data
+                WHERE is_active = TRUE
+                  AND (enrichment_status IS NULL OR enrichment_status = 'pending')
+                ORDER BY created_at ASC
+                LIMIT %s
+            """
+            results = self.execute_query(query, (limit,))
+            return [self._add_school_field_aliases(dict(r)) for r in results]
+        except Exception as e:
+            logger.error(f"Error getting schools needing enrichment: {e}")
+            return []
 
     def get_all_schools_enriched(self, filters: Optional[Dict[str, Any]] = None, 
                                 limit: int = 5000) -> List[Dict[str, Any]]:
