@@ -1,5 +1,10 @@
 #!/usr/bin/env python3
-"""Clear all data from the database - fresh start."""
+"""
+⚠️  DANGER — This script WIPES ALL DATA from the production database.
+
+Only run this if you truly want a fresh start. There is no undo.
+Moved from testing/ to scripts/admin/ for safety.
+"""
 
 from src.database import Database
 

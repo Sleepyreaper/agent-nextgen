@@ -1,5 +1,10 @@
 #!/usr/bin/env python3
-"""Manual script to clear test data from the database."""
+"""
+⚠️  DANGER — This script deletes test data from the production database.
+
+Review carefully before running. There is no undo.
+Moved from testing/ to scripts/admin/ for safety.
+"""
 
 from src.database import Database
 from dotenv import load_dotenv
