@@ -41,6 +41,17 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@v4
 
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.11'
+        cache: 'pip'
+
+    - name: Validate dependencies
+      run: |
+        pip install -r requirements.txt
+        python -c "import flask; import psycopg; import openai; print('\u2705 All key imports OK')"
+
     - name: Stamp version
       run: |
         echo "${GITHUB_SHA::7}-staging" > VERSION
@@ -120,6 +131,17 @@ jobs:
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.11'
+        cache: 'pip'
+
+    - name: Validate dependencies
+      run: |
+        pip install -r requirements.txt
+        python -c "import flask; import psycopg; import openai; print('\u2705 All key imports OK')"
 
     - name: Stamp version
       run: |

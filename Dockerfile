@@ -38,6 +38,7 @@ EXPOSE 8000
 HEALTHCHECK --interval=30s --timeout=10s --start-period=20s --retries=3 \
     CMD curl -f http://localhost:8000/ || exit 1
 
-# Run with Gunicorn — single worker for container mode (scale via replicas).
-# Timeout matches startup.sh (600s) for long-running agent evaluations.
-CMD ["gunicorn", "--workers=1", "--threads=2", "--worker-class=gthread", "--timeout=600", "--bind=0.0.0.0:8000", "--access-logfile=-", "--error-logfile=-", "wsgi:app"]
+# Gunicorn — single worker for container mode (scale via replicas).
+# Override defaults from gunicorn.conf.py via environment variables.
+ENV GUNICORN_WORKERS=1 GUNICORN_THREADS=2
+CMD ["gunicorn", "-c", "gunicorn.conf.py", "wsgi:app"]

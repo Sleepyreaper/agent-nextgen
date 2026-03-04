@@ -52,4 +52,4 @@ export PYTHONUNBUFFERED=1
 
 # Start gunicorn
 echo "[$(date '+%Y-%m-%d %H:%M:%S')] Starting gunicorn..."
-exec gunicorn --bind=0.0.0.0:8000 --timeout 600 --workers 2 --threads 4 --worker-class=gthread wsgi:app
+exec gunicorn -c gunicorn.conf.py wsgi:app
