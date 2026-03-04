@@ -26,6 +26,11 @@ COPY --from=builder /install /usr/local
 # Copy application code
 COPY . .
 
+# Run as non-root user
+RUN addgroup --system appgroup && adduser --system --ingroup appgroup appuser \
+    && chown -R appuser:appgroup /app
+USER appuser
+
 # Expose port
 EXPOSE 8000
 

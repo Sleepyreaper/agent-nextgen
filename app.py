@@ -193,6 +193,15 @@ def logout():
     return redirect(url_for('login'))
 
 
+@app.template_filter('nl2br')
+def nl2br_filter(value):
+    """Convert newlines to <br> tags while escaping HTML to prevent XSS."""
+    from markupsafe import Markup, escape
+    if not value:
+        return value
+    return Markup(escape(value).replace('\n', Markup('<br>')))
+
+
 @app.context_processor
 def inject_app_metadata():
     return {
