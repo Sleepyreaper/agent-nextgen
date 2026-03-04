@@ -3,6 +3,25 @@
 {% block title %}Feedback - NextGen{% endblock %}
 
 {% block content %}
+<style>
+    .feedback-badge {
+        display: inline-block;
+        padding: 0.15rem 0.5rem;
+        border-radius: 9999px;
+        font-size: 0.75rem;
+        font-weight: 600;
+        text-transform: capitalize;
+    }
+    .badge-received   { background: #dbeafe; color: #1e40af; }
+    .badge-triaged    { background: #fef3c7; color: #92400e; }
+    .badge-submitted  { background: #d1fae5; color: #065f46; }
+    .badge-error      { background: #fee2e2; color: #991b1b; }
+    .badge-awaiting_github { background: #e0e7ff; color: #3730a3; }
+    .badge-issue      { background: #fef3c7; color: #92400e; }
+    .badge-feature    { background: #ede9fe; color: #5b21b6; }
+    .auto-refresh-toggle { display: flex; align-items: center; gap: 0.5rem; font-size: 0.85rem; color: #6b7280; }
+    .auto-refresh-toggle input { cursor: pointer; }
+</style>
 <div class="dashboard-container">
     <div class="section">
         <h2 style="color: var(--emory-blue); margin-bottom: 0.5rem;">💬 Feedback</h2>
@@ -31,30 +50,18 @@
         </form>
     </div>
 
-    {% if feedback_items and feedback_items|length > 0 %}
     <div class="section" style="margin-top:2rem;">
-        <h3 style="color: var(--emory-blue)">Recent Feedback / Issue Links</h3>
-        <table style="width:100%; border-collapse: collapse;">
-            <thead>
-                <tr>
-                    <th style="text-align:left; padding:0.5rem;">Type</th>
-                    <th style="text-align:left; padding:0.5rem;">Title</th>
-                    <th style="text-align:left; padding:0.5rem;">Issue</th>
-                </tr>
-            </thead>
-            <tbody>
-                {% for item in feedback_items %}
-                {% set triage = item.triage_json or item.TriageJson or {} %}
-                <tr>
-                    <td style="padding:0.5rem;"><span class="level-badge">{{ item.feedback_type or item.FeedbackType }}</span></td>
-                    <td style="padding:0.5rem;"><strong>{{ triage.title or 'Feedback' }}</strong><br>{{ item.message }}</td>
-                    <td style="padding:0.5rem;">{% if item.issue_url %}<a href="{{ item.issue_url }}" target="_blank">Link</a>{% else %}-{% endif %}</td>
-                </tr>
-                {% endfor %}
-            </tbody>
-        </table>
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+            <h3 style="color: var(--emory-blue); margin: 0;">Recent Feedback</h3>
+            <label class="auto-refresh-toggle">
+                <input type="checkbox" id="autoRefreshToggle"> Auto-refresh (30s)
+                <span id="refreshIndicator" style="display:none;">🔄</span>
+            </label>
+        </div>
+        <div id="feedbackTableWrap">
+            {% include "feedback_table_rows.html" %}
+        </div>
     </div>
-    {% endif %}
 </div>
 {% endblock %}
 
@@ -62,6 +69,75 @@
 <script>
 const feedbackForm = document.getElementById('feedbackForm');
 const feedbackStatus = document.getElementById('feedbackStatus');
+const autoRefreshToggle = document.getElementById('autoRefreshToggle');
+const refreshIndicator = document.getElementById('refreshIndicator');
+let refreshTimer = null;
+
+function statusBadgeClass(status) {
+    return 'feedback-badge badge-' + (status || 'received').replace(/\s+/g, '_');
+}
+
+function typeBadgeClass(type) {
+    return 'feedback-badge badge-' + (type || 'issue');
+}
+
+function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text || '';
+    return div.innerHTML;
+}
+
+function renderFeedbackTable(items) {
+    if (!items || items.length === 0) {
+        return '<p style="color: #6b7280;">No feedback submitted yet.</p>';
+    }
+    let html = '<table style="width:100%; border-collapse: collapse;">';
+    html += '<thead><tr>';
+    html += '<th style="text-align:left; padding:0.5rem;">Type</th>';
+    html += '<th style="text-align:left; padding:0.5rem;">Status</th>';
+    html += '<th style="text-align:left; padding:0.5rem;">Title</th>';
+    html += '<th style="text-align:left; padding:0.5rem;">Issue</th>';
+    html += '</tr></thead><tbody>';
+    for (const item of items) {
+        const triage = item.triage_json || {};
+        const feedbackType = item.feedback_type || item.FeedbackType || 'issue';
+        const status = item.status || item.Status || 'received';
+        const title = triage.title || 'Feedback';
+        const message = item.message || '';
+        const issueUrl = item.issue_url || item.IssueUrl || '';
+        html += '<tr>';
+        html += `<td style="padding:0.5rem;"><span class="${typeBadgeClass(feedbackType)}">${escapeHtml(feedbackType)}</span></td>`;
+        html += `<td style="padding:0.5rem;"><span class="${statusBadgeClass(status)}">${escapeHtml(status)}</span></td>`;
+        html += `<td style="padding:0.5rem;"><strong>${escapeHtml(title)}</strong><br><span style="color:#6b7280;font-size:0.9rem;">${escapeHtml(message.substring(0, 120))}${message.length > 120 ? '…' : ''}</span></td>`;
+        html += `<td style="padding:0.5rem;">${issueUrl ? `<a href="${escapeHtml(issueUrl)}" target="_blank" rel="noopener">Link</a>` : '—'}</td>`;
+        html += '</tr>';
+    }
+    html += '</tbody></table>';
+    return html;
+}
+
+async function refreshFeedbackList() {
+    try {
+        refreshIndicator.style.display = 'inline';
+        const resp = await fetch('/api/feedback/recent');
+        if (!resp.ok) return;
+        const items = await resp.json();
+        document.getElementById('feedbackTableWrap').innerHTML = renderFeedbackTable(items);
+    } catch (e) {
+        // silently fail on refresh
+    } finally {
+        setTimeout(() => { refreshIndicator.style.display = 'none'; }, 500);
+    }
+}
+
+autoRefreshToggle.addEventListener('change', () => {
+    if (autoRefreshToggle.checked) {
+        refreshFeedbackList();
+        refreshTimer = setInterval(refreshFeedbackList, 30000);
+    } else {
+        if (refreshTimer) { clearInterval(refreshTimer); refreshTimer = null; }
+    }
+});
 
 if (feedbackForm) {
     feedbackForm.addEventListener('submit', async (event) => {
@@ -77,7 +153,7 @@ if (feedbackForm) {
             return;
         }
 
-        feedbackStatus.textContent = 'Submitting...';
+        feedbackStatus.textContent = 'Submitting…';
         feedbackStatus.style.color = '#6b7280';
 
         try {
@@ -98,6 +174,8 @@ if (feedbackForm) {
             feedbackStatus.textContent = 'Thank you! Your feedback was captured.';
             feedbackStatus.style.color = '#059669';
             feedbackForm.reset();
+            // Immediately refresh the list so the new item appears
+            setTimeout(refreshFeedbackList, 500);
         } catch (error) {
             feedbackStatus.textContent = error.message;
             feedbackStatus.style.color = '#b91c1c';
