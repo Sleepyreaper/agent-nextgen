@@ -46,10 +46,34 @@ class _SimpleChoice:
         self.message = type("M", (), {"content": text})()
 
 
+class _SimpleUsage:
+    """Minimal usage object so BaseAgent.call_model can extract token counts."""
+    def __init__(self, prompt_tokens: int = 0, completion_tokens: int = 0, total_tokens: int = 0):
+        self.prompt_tokens = prompt_tokens
+        self.completion_tokens = completion_tokens
+        self.total_tokens = total_tokens
+
+
 class _SimpleResponse:
     def __init__(self, text: str, raw: Dict[str, Any]):
         self.choices = [_SimpleChoice(text)]
         self.raw = raw
+        # Extract usage from raw response if available
+        self.usage = self._extract_usage(raw)
+
+    @staticmethod
+    def _extract_usage(raw) -> Optional["_SimpleUsage"]:
+        """Extract token usage from raw API response dict."""
+        if not isinstance(raw, dict):
+            return None
+        usage = raw.get("usage")
+        if not isinstance(usage, dict):
+            return None
+        return _SimpleUsage(
+            prompt_tokens=usage.get("prompt_tokens", 0) or usage.get("input_tokens", 0),
+            completion_tokens=usage.get("completion_tokens", 0) or usage.get("output_tokens", 0),
+            total_tokens=usage.get("total_tokens", 0),
+        )
 
 
 class FoundryChatCompletions:
@@ -269,7 +293,12 @@ class FoundryClient:
                 except Exception:
                     raw = client_resp
 
-                return _SimpleResponse(text=text, raw=raw)
+                resp = _SimpleResponse(text=text, raw=raw)
+                # Preserve the SDK response's usage object if _extract_usage
+                # didn't find one in the raw dict (e.g. raw was not a dict)
+                if resp.usage is None and hasattr(client_resp, 'usage') and client_resp.usage is not None:
+                    resp.usage = client_resp.usage
+                return resp
             except Exception:
                 # If the SDK call failed, log and continue to the HTTP fallback
                 logger.exception("OpenAI SDK call failed; falling back to HTTP requests-based call")
