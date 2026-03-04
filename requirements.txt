@@ -89,3 +89,6 @@ opencv-python-headless>=4.8.0
 # (groundedness, coherence, relevance, fluency, similarity)
 azure-ai-evaluation>=1.0.0
 
+# ── Testing ──
+pytest>=8.0
+
