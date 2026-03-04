@@ -30,6 +30,7 @@
             <div class="card" style="padding:1rem; background:#f9fafb;">
                 <h3 style="margin-top:0;">➕ Upload Training Files</h3>
                 <form method="POST" action="{{ url_for('upload') }}" enctype="multipart/form-data" id="trainingUploadForm">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                     <input type="hidden" name="app_type" value="training" />
                     <div style="border:2px dashed #f59e0b; border-radius:8px; padding:1.5rem; text-align:center; cursor:pointer;" 
                          onclick="document.getElementById('trainingFileInput').click()">
