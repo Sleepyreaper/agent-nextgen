@@ -406,6 +406,30 @@
         </div>
     </div>
 
+    <!-- Token Usage Stats -->
+    <div class="stats-row" id="tokenStatsRow">
+        <div class="stat-card purple">
+            <div class="stat-value" id="statTotalTokens">—</div>
+            <div class="stat-label">Total Tokens</div>
+            <div class="stat-sub" id="statTokenBreakdown">input / output</div>
+        </div>
+        <div class="stat-card blue">
+            <div class="stat-value" id="statInputTokens">—</div>
+            <div class="stat-label">Input Tokens</div>
+            <div class="stat-sub">prompt tokens sent</div>
+        </div>
+        <div class="stat-card orange">
+            <div class="stat-value" id="statOutputTokens">—</div>
+            <div class="stat-label">Output Tokens</div>
+            <div class="stat-sub">completion tokens received</div>
+        </div>
+        <div class="stat-card green">
+            <div class="stat-value" id="statModelCalls">—</div>
+            <div class="stat-label">Model Calls</div>
+            <div class="stat-sub" id="statTrackingSince">since startup</div>
+        </div>
+    </div>
+
     <!-- Main Grid -->
     <div class="telem-grid">
         <!-- Agent Performance -->
@@ -424,11 +448,35 @@
             </div>
         </div>
 
+        <!-- Token Usage by Model -->
+        <div class="telem-section">
+            <div class="section-header">🪙 Token Usage by Model</div>
+            <div class="section-body" id="tokenByModel">
+                <div class="loading-spinner">Loading token data...</div>
+            </div>
+        </div>
+
+        <!-- Token Usage by Agent -->
+        <div class="telem-section">
+            <div class="section-header">🤖 Token Usage by Agent</div>
+            <div class="section-body" id="tokenByAgent">
+                <div class="loading-spinner">Loading token data...</div>
+            </div>
+        </div>
+
         <!-- Application Insights Config -->
         <div class="telem-section">
             <div class="section-header">🔧 Application Insights Configuration</div>
             <div class="section-body" id="appInsightsConfig">
                 <div class="loading-spinner">Loading config...</div>
+            </div>
+        </div>
+
+        <!-- Recent Model Calls -->
+        <div class="telem-section full-width">
+            <div class="section-header">⚡ Recent Model Calls <button class="refresh-btn" style="margin-left:auto;font-size:0.75rem;padding:0.25rem 0.5rem;" onclick="resetTokenUsage()">🗑️ Reset Counters</button></div>
+            <div class="section-body" style="padding: 0; max-height: 350px; overflow-y: auto;" id="recentModelCalls">
+                <div class="loading-spinner">Loading...</div>
             </div>
         </div>
 
@@ -472,17 +520,23 @@ function stopAutoRefresh() {
 
 async function loadTelemetry() {
     try {
-        const [overviewRes, telStatusRes] = await Promise.all([
+        const [overviewRes, telStatusRes, tokenRes] = await Promise.all([
             fetch('/api/telemetry/overview'),
-            fetch('/api/debug/telemetry-status')
+            fetch('/api/debug/telemetry-status'),
+            fetch('/api/telemetry/token-usage')
         ]);
 
         const overview = await overviewRes.json();
         const telStatus = await telStatusRes.json();
+        const tokenData = await tokenRes.json();
 
         renderStatusBanner(telStatus);
         renderStats(overview);
+        renderTokenStats(tokenData);
         renderAgentPerformance(overview.agents || {});
+        renderTokenByModel(tokenData.by_model || {});
+        renderTokenByAgent(tokenData.by_agent || {});
+        renderRecentModelCalls(tokenData.recent_calls || []);
         renderSchoolPipeline(overview.school_enrichment || {});
         renderAppInsightsConfig(telStatus);
         renderRecentExecs(overview.recent_executions || []);
@@ -698,6 +752,130 @@ function renderRecentExecs(executions) {
     }
 
     container.innerHTML = html;
+}
+
+function fmtTokens(n) {
+    if (n === null || n === undefined) return '—';
+    if (n >= 1_000_000) return (n / 1_000_000).toFixed(1) + 'M';
+    if (n >= 1_000) return (n / 1_000).toFixed(1) + 'K';
+    return n.toLocaleString();
+}
+
+function renderTokenStats(tokenData) {
+    const totals = tokenData.totals || {};
+    document.getElementById('statTotalTokens').textContent = fmtTokens(totals.total_tokens || 0);
+    document.getElementById('statInputTokens').textContent = fmtTokens(totals.input_tokens || 0);
+    document.getElementById('statOutputTokens').textContent = fmtTokens(totals.output_tokens || 0);
+    document.getElementById('statModelCalls').textContent = fmtTokens(totals.call_count || 0);
+    document.getElementById('statTokenBreakdown').textContent =
+        `${fmtTokens(totals.input_tokens || 0)} in / ${fmtTokens(totals.output_tokens || 0)} out`;
+
+    if (tokenData.tracking_since) {
+        const since = new Date(tokenData.tracking_since);
+        document.getElementById('statTrackingSince').textContent = 'since ' + since.toLocaleString();
+    }
+}
+
+function renderTokenByModel(byModel) {
+    const container = document.getElementById('tokenByModel');
+    const entries = Object.entries(byModel);
+
+    if (entries.length === 0) {
+        container.innerHTML = '<div style="color: #9ca3af; text-align: center; padding: 2rem;">No model usage recorded yet.<br><small>Process a student to see token data here.</small></div>';
+        return;
+    }
+
+    entries.sort((a, b) => b[1].total_tokens - a[1].total_tokens);
+
+    let html = '<table class="agent-table"><thead><tr>';
+    html += '<th>Model</th><th>Calls</th><th>Input</th><th>Output</th><th>Total</th>';
+    html += '</tr></thead><tbody>';
+
+    for (const [model, data] of entries) {
+        html += `<tr>
+            <td class="agent-name">${model}</td>
+            <td>${data.call_count.toLocaleString()}</td>
+            <td>${fmtTokens(data.input_tokens)}</td>
+            <td>${fmtTokens(data.output_tokens)}</td>
+            <td style="font-weight: 700;">${fmtTokens(data.total_tokens)}</td>
+        </tr>`;
+    }
+
+    html += '</tbody></table>';
+    container.innerHTML = html;
+}
+
+function renderTokenByAgent(byAgent) {
+    const container = document.getElementById('tokenByAgent');
+    const entries = Object.entries(byAgent);
+
+    if (entries.length === 0) {
+        container.innerHTML = '<div style="color: #9ca3af; text-align: center; padding: 2rem;">No agent token usage recorded yet.</div>';
+        return;
+    }
+
+    entries.sort((a, b) => b[1].total_tokens - a[1].total_tokens);
+
+    let html = '<table class="agent-table"><thead><tr>';
+    html += '<th>Agent</th><th>Calls</th><th>Input</th><th>Output</th><th>Total</th>';
+    html += '</tr></thead><tbody>';
+
+    for (const [agent, data] of entries) {
+        html += `<tr>
+            <td class="agent-name">${agent}</td>
+            <td>${data.call_count.toLocaleString()}</td>
+            <td>${fmtTokens(data.input_tokens)}</td>
+            <td>${fmtTokens(data.output_tokens)}</td>
+            <td style="font-weight: 700;">${fmtTokens(data.total_tokens)}</td>
+        </tr>`;
+    }
+
+    html += '</tbody></table>';
+    container.innerHTML = html;
+}
+
+function renderRecentModelCalls(calls) {
+    const container = document.getElementById('recentModelCalls');
+
+    if (!calls || calls.length === 0) {
+        container.innerHTML = '<div style="color: #9ca3af; text-align: center; padding: 2rem;">No recent model calls.</div>';
+        return;
+    }
+
+    const reversed = [...calls].reverse();
+    let html = '';
+
+    for (const call of reversed) {
+        const dur = call.duration_ms ? Math.round(call.duration_ms).toLocaleString() + 'ms' : '—';
+        const time = call.timestamp ? new Date(call.timestamp).toLocaleTimeString() : '';
+        const statusCls = call.success ? 'completed' : 'failed';
+        const statusLabel = call.success ? 'ok' : 'fail';
+
+        html += `<div class="exec-item">
+            <div>
+                <div class="exec-agent">${call.agent || 'unknown'}</div>
+                <div class="exec-meta">${call.model || ''} &bull; ${dur} &bull; ${call.input_tokens || 0} in / ${call.output_tokens || 0} out &bull; ${time}</div>
+            </div>
+            <span class="exec-status ${statusCls}">${statusLabel}</span>
+        </div>`;
+    }
+
+    container.innerHTML = html;
+}
+
+async function resetTokenUsage() {
+    if (!confirm('Reset all token usage counters? This cannot be undone.')) return;
+    try {
+        const res = await fetch('/api/telemetry/token-usage/reset', { method: 'POST' });
+        const data = await res.json();
+        if (data.status === 'success') {
+            loadTelemetry();
+        } else {
+            alert('Reset failed: ' + (data.error || 'Unknown error'));
+        }
+    } catch (e) {
+        alert('Reset failed: ' + e.message);
+    }
 }
 </script>
 {% endblock %}
