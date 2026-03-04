@@ -41,7 +41,10 @@ class RapunzelGradeReader(BaseAgent):
             db_connection: Database connection for saving results
         """
         super().__init__(name, client)
-        self.model = model or config.model_tier_premium or config.foundry_model_name or config.deployment_name
+        # Rapunzel downgraded from premium (gpt-4.1) to workhorse (4.1mini) —
+        # grade extraction is structured tabular parsing, not complex reasoning.
+        # Savings: ~60% per call with no quality loss on extraction tasks.
+        self.model = model or config.model_tier_workhorse or config.foundry_model_name or config.deployment_name
         self.db = db_connection
         self.extraction_focus = [
             "GPA/Grade Point Average",

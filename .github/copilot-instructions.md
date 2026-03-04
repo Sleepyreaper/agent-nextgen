@@ -16,9 +16,9 @@ Production Flask application (~8100 lines in `app.py`) that evaluates high-schoo
 
 | Tier | Default Deployment | Config Key | Used By |
 |------|-------------------|------------|---------|
-| Premium | `gpt-4.1` | `model_tier_premium` | Rapunzel (grades), Milo (data science) |
+| Premium | `gpt-4.1` | `model_tier_premium` | Milo (data science) |
 | Merlin | `MerlinGPT5Mini` | `model_tier_merlin` | Merlin (final evaluation) |
-| Workhorse | `WorkForce4.1mini` | `model_tier_workhorse` | Belle (document analysis), Tiana, Mulan, Moana, Gaston, Ariel, Naveen, Bashful |
+| Workhorse | `WorkForce4.1mini` | `model_tier_workhorse` | Rapunzel (grades), Belle (document analysis), Tiana, Mulan, Moana, Gaston, Ariel, Naveen, Bashful |
 | Lightweight | `LightWork5Nano` | `model_tier_lightweight` | FeedbackTriage, inline classifiers |
 | Vision | `gpt-4o` | `foundry_vision_model_name` | Mirabel (video), Belle OCR fallback |
 
