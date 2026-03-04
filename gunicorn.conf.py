@@ -6,7 +6,7 @@ scale via replicas).
 
   GUNICORN_WORKERS  — number of worker processes  (default: 2)
   GUNICORN_THREADS  — threads per worker           (default: 4)
-  GUNICORN_TIMEOUT  — request timeout in seconds   (default: 600)
+  GUNICORN_TIMEOUT  — request timeout in seconds   (default: 120)
   PORT              — bind port                    (default: 8000)
 """
 import os
@@ -18,7 +18,7 @@ worker_class = "gthread"
 
 # ── Networking ─────────────────────────────────────────────────────
 bind = f"0.0.0.0:{os.environ.get('PORT', '8000')}"
-timeout = int(os.environ.get("GUNICORN_TIMEOUT", "600"))
+timeout = int(os.environ.get("GUNICORN_TIMEOUT", "120"))
 
 # ── Logging ────────────────────────────────────────────────────────
 accesslog = "-"
