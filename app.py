@@ -5848,6 +5848,13 @@ def get_test_students():
         if aurora_id_col and aurora_join:
             aurora_select = f"COUNT(DISTINCT CASE WHEN au.{aurora_id_col} IS NOT NULL THEN au.{aurora_id_col} END) as has_aurora"
 
+        # Resolve file_type column for Mirabel (video) detection
+        file_type_select = "NULL as file_type"
+        file_type_group = None
+        if db.has_applications_column('file_type'):
+            file_type_select = "a.file_type"
+            file_type_group = "a.file_type"
+
         # Get all test students (marked with is_test_data = TRUE)
         group_by_parts = [
             f"a.{app_id_col}",
@@ -5858,6 +5865,8 @@ def get_test_students():
         ]
         if student_id_group:
             group_by_parts.append(student_id_group)
+        if file_type_group:
+            group_by_parts.append(file_type_group)
 
         group_by_clause = ", ".join(group_by_parts)
 
@@ -5869,6 +5878,7 @@ def get_test_students():
                 a.{status_col} as status,
                 a.{uploaded_col} as uploaded_date,
                 {student_id_select},
+                {file_type_select},
                 {merlin_select},
                 {tiana_select},
                 {rapunzel_select},
@@ -5892,20 +5902,48 @@ def get_test_students():
         # Format student data with agent status
         formatted = []
         for student in students:
-            agent_status = {
-                'smee': 'complete' if all([student.get('has_tiana'), student.get('has_rapunzel'), student.get('has_mulan'), 
-                                           student.get('has_moana'), student.get('has_merlin')]) else 'pending',
-                'application_reader': 'complete' if student.get('has_tiana') else 'pending',
-                'grade_reader': 'complete' if student.get('has_rapunzel') else 'pending',
-                'school_context': 'complete' if student.get('has_moana') else 'pending',
-                'recommendation_reader': 'complete' if student.get('has_mulan') else 'pending',
-                'student_evaluator': 'complete' if student.get('has_merlin') else 'pending',
-                'aurora': 'complete' if student.get('has_aurora') else 'pending',
-                'fairy_godmother': 'pending'  # Fairy Godmother completion not tracked in DB
-            }
-            
-            is_complete = (student.get('has_tiana') and student.get('has_rapunzel') and student.get('has_mulan') and 
-                          student.get('has_moana') and student.get('has_merlin'))
+            has_merlin = bool(student.get('has_merlin'))
+            has_any_downstream = any([
+                student.get('has_tiana'), student.get('has_rapunzel'),
+                student.get('has_mulan'), student.get('has_moana'), has_merlin
+            ])
+            is_video = (student.get('file_type') or '').lower() in ('mp4', 'video', 'mov', 'avi', 'webm')
+
+            # When Merlin is done, the full pipeline completed — mark all agents done
+            if has_merlin:
+                agent_status = {
+                    'belle': 'complete',
+                    'mirabel': 'complete' if is_video else 'skipped',
+                    'smee': 'complete',
+                    'naveen': 'complete',
+                    'application_reader': 'complete',
+                    'grade_reader': 'complete',
+                    'school_context': 'complete',
+                    'recommendation_reader': 'complete',
+                    'data_scientist': 'complete',
+                    'student_evaluator': 'complete',
+                    'aurora': 'complete' if student.get('has_aurora') else 'pending',
+                    'fairy_godmother': 'complete' if student.get('has_aurora') else 'pending',
+                }
+            else:
+                agent_status = {
+                    'belle': 'complete' if has_any_downstream else 'pending',
+                    'mirabel': ('complete' if has_any_downstream else 'pending') if is_video else 'skipped',
+                    'smee': 'complete' if all([student.get('has_tiana'), student.get('has_rapunzel'), student.get('has_mulan'),
+                                               student.get('has_moana'), has_merlin]) else 'pending',
+                    'naveen': 'complete' if student.get('has_moana') else 'pending',
+                    'application_reader': 'complete' if student.get('has_tiana') else 'pending',
+                    'grade_reader': 'complete' if student.get('has_rapunzel') else 'pending',
+                    'school_context': 'complete' if student.get('has_moana') else 'pending',
+                    'recommendation_reader': 'complete' if student.get('has_mulan') else 'pending',
+                    'data_scientist': 'pending',
+                    'student_evaluator': 'pending',
+                    'aurora': 'complete' if student.get('has_aurora') else 'pending',
+                    'fairy_godmother': 'pending',
+                }
+
+            is_complete = (student.get('has_tiana') and student.get('has_rapunzel') and student.get('has_mulan') and
+                          student.get('has_moana') and has_merlin)
             
             formatted.append({
                 'application_id': student.get('application_id'),
@@ -5946,6 +5984,7 @@ def get_application_status(application_id):
                 a.application_id,
                 a.applicant_name,
                 a.status,
+                a.file_type,
                 COUNT(DISTINCT CASE WHEN t.tiana_application_id IS NOT NULL THEN t.tiana_application_id END) as has_tiana,
                 COUNT(DISTINCT CASE WHEN rg.rapunzel_grade_id IS NOT NULL THEN rg.rapunzel_grade_id END) as has_rapunzel,
                 COUNT(DISTINCT CASE WHEN r.mulan_recommendation_id IS NOT NULL THEN r.mulan_recommendation_id END) as has_mulan,
@@ -5960,7 +5999,7 @@ def get_application_status(application_id):
             LEFT JOIN merlin_evaluations m ON a.application_id = m.application_id
             LEFT JOIN aurora_evaluations au ON a.application_id = au.application_id
             WHERE a.application_id = %s
-            GROUP BY a.application_id, a.applicant_name, a.status
+            GROUP BY a.application_id, a.applicant_name, a.status, a.file_type
         """
         rows = db.execute_query(query, (application_id,))
         if not rows:
@@ -5974,14 +6013,44 @@ def get_application_status(application_id):
             except Exception:
                 missing_fields = [missing_fields]
 
-        agent_status = {
-            'application_reader': 'complete' if row.get('has_tiana') else 'pending',
-            'grade_reader': 'complete' if row.get('has_rapunzel') else 'pending',
-            'school_context': 'complete' if row.get('has_moana') else 'pending',
-            'recommendation_reader': 'complete' if row.get('has_mulan') else 'pending',
-            'student_evaluator': 'complete' if row.get('has_merlin') else 'pending',
-            'aurora': 'complete' if row.get('has_aurora') else 'pending'
-        }
+        has_merlin = bool(row.get('has_merlin'))
+        has_any_downstream = any([
+            row.get('has_tiana'), row.get('has_rapunzel'),
+            row.get('has_mulan'), row.get('has_moana'), has_merlin
+        ])
+        is_video = (row.get('file_type') or '').lower() in ('mp4', 'video', 'mov', 'avi', 'webm')
+
+        # When Merlin is done, the full pipeline completed — mark all agents done
+        if has_merlin:
+            agent_status = {
+                'belle': 'complete',
+                'mirabel': 'complete' if is_video else 'skipped',
+                'smee': 'complete',
+                'naveen': 'complete',
+                'application_reader': 'complete',
+                'grade_reader': 'complete',
+                'school_context': 'complete',
+                'recommendation_reader': 'complete',
+                'data_scientist': 'complete',
+                'student_evaluator': 'complete',
+                'aurora': 'complete' if row.get('has_aurora') else 'pending',
+                'fairy_godmother': 'complete' if row.get('has_aurora') else 'pending',
+            }
+        else:
+            agent_status = {
+                'belle': 'complete' if has_any_downstream else 'pending',
+                'mirabel': ('complete' if has_any_downstream else 'pending') if is_video else 'skipped',
+                'smee': 'pending',
+                'naveen': 'complete' if row.get('has_moana') else 'pending',
+                'application_reader': 'complete' if row.get('has_tiana') else 'pending',
+                'grade_reader': 'complete' if row.get('has_rapunzel') else 'pending',
+                'school_context': 'complete' if row.get('has_moana') else 'pending',
+                'recommendation_reader': 'complete' if row.get('has_mulan') else 'pending',
+                'data_scientist': 'pending',
+                'student_evaluator': 'pending',
+                'aurora': 'complete' if row.get('has_aurora') else 'pending',
+                'fairy_godmother': 'pending',
+            }
 
         waiting_for = {}
         for agent_id in agent_status.keys():
@@ -5995,7 +6064,7 @@ def get_application_status(application_id):
             row.get('has_rapunzel'),
             row.get('has_moana'),
             row.get('has_mulan'),
-            row.get('has_merlin')
+            has_merlin
         ])
 
         return jsonify({

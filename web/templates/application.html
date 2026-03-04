@@ -1396,10 +1396,15 @@ async function evaluateApplication() {
 <script>
 const APPLICATION_STATUS_ID = '{{ application.application_id or application.ApplicationID }}';
 const AGENT_PROGRESS_LABELS = {
+    belle: '📖 Belle - Document Extraction',
+    mirabel: '🔮 Mirabel - Video Analysis',
+    smee: '🎩 Smee - Orchestrator',
+    naveen: '🧑‍🔬 Naveen - School Evaluation',
     application_reader: '👸 Tiana - Application Reader',
     grade_reader: '💇 Rapunzel - Grade Reader',
     recommendation_reader: '🗡️ Mulan - Recommendation Reader',
     school_context: '🌊 Moana - School Context',
+    data_scientist: '📊 Milo - Next Gen Match',
     student_evaluator: '🧙 Merlin - Final Evaluator',
     aurora: '✨ Aurora - Summary'
 };
@@ -1430,9 +1435,11 @@ async function refreshAgentProgress() {
                 ? '✅'
                 : status === 'error'
                     ? '❌'
-                    : status === 'working'
-                        ? '🟢'
-                        : '🟡';
+                    : status === 'skipped'
+                        ? '⏭️'
+                        : status === 'working'
+                            ? '🟢'
+                            : '🟡';
             const detail = waitingFor ? ` (waiting for ${waitingFor})` : '';
             items.push(
                 `<li class="agent-progress-item">${icon} ${label} - <span class="agent-progress-status ${status}">${status}</span>${detail}</li>`
@@ -1455,6 +1462,7 @@ function normalizeAgentStatus(status) {
     if (normalized === 'starting' || normalized === 'working') return 'working';
     if (normalized === 'completed' || normalized === 'complete' || normalized === 'success') return 'complete';
     if (normalized === 'failed' || normalized === 'error') return 'error';
+    if (normalized === 'skipped') return 'skipped';
     if (normalized === 'blocked' || normalized === 'waiting' || normalized === 'pending' || normalized === 'asking_for_info') return 'waiting';
     return normalized;
 }
