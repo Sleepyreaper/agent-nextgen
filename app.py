@@ -954,6 +954,48 @@ def _create_github_issue(title: str, body: str, labels: list[str]) -> Dict[str, 
     return response.json()
 
 
+@app.route('/api/github/issues', methods=['GET'])
+def github_issues_api():
+    """Return open and recently closed GitHub issues for the feedback page."""
+    if not config.github_token or not config.github_repo:
+        return jsonify({'open': [], 'closed': []})
+
+    headers = {
+        "Authorization": f"Bearer {config.github_token}",
+        "Accept": "application/vnd.github+json",
+        "X-GitHub-Api-Version": "2022-11-28",
+        "User-Agent": "nextgen-feedback-bot"
+    }
+    base_url = f"https://api.github.com/repos/{config.github_repo}/issues"
+
+    results = {'open': [], 'closed': []}
+    try:
+        for state in ('open', 'closed'):
+            resp = requests.get(
+                base_url,
+                headers=headers,
+                params={'state': state, 'per_page': 20, 'sort': 'updated', 'direction': 'desc'},
+                timeout=10,
+            )
+            if resp.status_code == 200:
+                for issue in resp.json():
+                    if issue.get('pull_request'):
+                        continue
+                    results[state].append({
+                        'number': issue['number'],
+                        'title': issue['title'],
+                        'state': issue['state'],
+                        'html_url': issue['html_url'],
+                        'created_at': issue['created_at'],
+                        'updated_at': issue['updated_at'],
+                        'labels': [l['name'] for l in issue.get('labels', [])],
+                    })
+    except Exception as e:
+        logger.warning(f"GitHub issues fetch failed: {e}")
+
+    return jsonify(results)
+
+
 @app.route('/feedback', methods=['GET','POST'])
 def submit_feedback():
     """Capture user feedback (POST) or display the feedback page (GET).

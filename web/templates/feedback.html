@@ -21,6 +21,16 @@
     .badge-feature    { background: #ede9fe; color: #5b21b6; }
     .auto-refresh-toggle { display: flex; align-items: center; gap: 0.5rem; font-size: 0.85rem; color: #6b7280; }
     .auto-refresh-toggle input { cursor: pointer; }
+    .issue-list { list-style: none; padding: 0; margin: 0; }
+    .issue-list li { padding: 0.5rem 0; border-bottom: 1px solid #f3f4f6; display: flex; align-items: baseline; gap: 0.5rem; }
+    .issue-list li:last-child { border-bottom: none; }
+    .issue-number { color: #6b7280; font-size: 0.85rem; min-width: 2.5rem; }
+    .issue-label { display: inline-block; padding: 0.1rem 0.4rem; border-radius: 9999px; font-size: 0.7rem; font-weight: 600; background: #e0e7ff; color: #3730a3; margin-left: 0.25rem; }
+    .issue-tabs { display: flex; gap: 0; margin-bottom: 1rem; }
+    .issue-tab { padding: 0.5rem 1.25rem; cursor: pointer; border: 1px solid #e5e7eb; background: #f9fafb; font-weight: 600; font-size: 0.9rem; color: #6b7280; }
+    .issue-tab:first-child { border-radius: 6px 0 0 6px; }
+    .issue-tab:last-child { border-radius: 0 6px 6px 0; }
+    .issue-tab.active { background: var(--emory-blue, #012169); color: white; border-color: var(--emory-blue, #012169); }
 </style>
 <div class="dashboard-container">
     <div class="section">
@@ -48,6 +58,16 @@
                 <span id="feedbackStatus" style="color: #6b7280;"></span>
             </div>
         </form>
+    </div>
+
+    <div class="section" style="margin-top:2rem;">
+        <h3 style="color: var(--emory-blue); margin: 0 0 0.75rem 0;">📋 Roadmap & Fixes</h3>
+        <div class="issue-tabs">
+            <div class="issue-tab active" data-tab="open" onclick="switchIssueTab('open')">Planned</div>
+            <div class="issue-tab" data-tab="closed" onclick="switchIssueTab('closed')">Completed</div>
+        </div>
+        <div id="issuesOpen"><p style="color: #9ca3af;">Loading...</p></div>
+        <div id="issuesClosed" style="display:none;"><p style="color: #9ca3af;">Loading...</p></div>
     </div>
 
     <div class="section" style="margin-top:2rem;">
@@ -185,5 +205,36 @@ if (feedbackForm) {
         }
     });
 }
+
+function switchIssueTab(tab) {
+    document.querySelectorAll('.issue-tab').forEach(t => t.classList.toggle('active', t.dataset.tab === tab));
+    document.getElementById('issuesOpen').style.display = tab === 'open' ? '' : 'none';
+    document.getElementById('issuesClosed').style.display = tab === 'closed' ? '' : 'none';
+}
+
+function renderIssueList(issues) {
+    if (!issues || issues.length === 0) return '<p style="color: #9ca3af;">No items yet.</p>';
+    let html = '<ul class="issue-list">';
+    for (const issue of issues) {
+        const labels = (issue.labels || []).map(l => `<span class="issue-label">${escapeHtml(l)}</span>`).join('');
+        html += `<li>
+            <span class="issue-number">#${issue.number}</span>
+            <span><a href="${escapeHtml(issue.html_url)}" target="_blank" rel="noopener">${escapeHtml(issue.title)}</a>${labels}</span>
+        </li>`;
+    }
+    html += '</ul>';
+    return html;
+}
+
+async function loadGithubIssues() {
+    try {
+        const resp = await fetch('/api/github/issues');
+        if (!resp.ok) return;
+        const data = await resp.json();
+        document.getElementById('issuesOpen').innerHTML = renderIssueList(data.open);
+        document.getElementById('issuesClosed').innerHTML = renderIssueList(data.closed);
+    } catch (e) { /* silently fail */ }
+}
+loadGithubIssues();
 </script>
 {% endblock %}
