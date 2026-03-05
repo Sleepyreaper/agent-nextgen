@@ -1100,6 +1100,13 @@ def feedback_recent_api():
             for k, v in item.items():
                 if hasattr(v, 'isoformat'):
                     row[k] = v.isoformat()
+                elif k.lower() == 'triage_json' and isinstance(v, str):
+                    # Ensure triage_json is always a dict for the frontend
+                    try:
+                        row[k] = json.loads(v)
+                    except (json.JSONDecodeError, TypeError):
+                        row[k] = {}
+                    continue
                 else:
                     row[k] = v
             serialized.append(row)
