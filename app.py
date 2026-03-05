@@ -1100,6 +1100,13 @@ def feedback_recent_api():
             for k, v in item.items():
                 if hasattr(v, 'isoformat'):
                     row[k] = v.isoformat()
+                elif k.lower() == 'triage_json' and isinstance(v, str):
+                    # Ensure triage_json is always a dict for the frontend
+                    try:
+                        row[k] = json.loads(v)
+                    except (json.JSONDecodeError, TypeError):
+                        row[k] = {}
+                    continue
                 else:
                     row[k] = v
             serialized.append(row)
@@ -2531,9 +2538,10 @@ def process_student(application_id):
 def file_upload_chunk():
     """Accept a chunk of file data and stage it in Azure Blob Storage.
 
-    ALL file types (PDF, DOCX, TXT, MP4, etc.) are uploaded in small
-    chunks (≤100 KB) that stay under the Azure Front Door WAF 128 KB
-    body inspection limit.
+    ALL file types (PDF, DOCX, TXT, MP4, etc.) are uploaded in chunks
+    (default 4 MB on the client). Configure Azure Front Door WAF to
+    exclude /api/file/upload-chunk from body inspection, or set the
+    request body size limit to at least 8 MB for this route.
 
     The client sends:
       - chunk      : the binary chunk (file part)
@@ -2559,8 +2567,8 @@ def file_upload_chunk():
     if not upload_id:
         return jsonify({'error': 'upload_id is required'}), 400
 
-    # Guard against unbounded chunked uploads (max 5000 chunks ≈ 500 MB)
-    if total_chunks > 5000:
+    # Guard against unbounded chunked uploads (max 500 chunks × 4 MB ≈ 2 GB)
+    if total_chunks > 500:
         return jsonify({'error': 'File too large (exceeds chunk limit)'}), 400
     if chunk_index < 0 or chunk_index >= total_chunks:
         return jsonify({'error': 'Invalid chunk_index'}), 400
@@ -7052,7 +7060,13 @@ def get_schools_list():
             filters['search_text'] = request.args.get('search')
         
         schools = db.get_all_schools_enriched(filters=filters, limit=5000)
-        
+
+        # Attach enrichment completeness score to each school
+        for s in schools:
+            score_info = _compute_enrichment_completeness(s)
+            s['enrichment_score'] = score_info['overall_percentage']
+            s['is_enriched'] = score_info['is_enriched']
+
         return jsonify({
             'status': 'success',
             'schools': schools,
@@ -7112,7 +7126,8 @@ def update_school_enrichment(school_id):
             'opportunity_score': data.get('opportunity_score'),
             'data_source_notes': data.get('data_source_notes'),
             'human_review_status': data.get('human_review_status'),
-            'human_notes': data.get('human_notes')
+            'human_notes': data.get('human_notes'),
+            'school_url': data.get('school_url'),
         }
         
         # Build UPDATE query
@@ -7627,6 +7642,90 @@ Write as a cohesive paragraph that other agents can reference when evaluating st
             result_summary={'school_id': school_id, 'error': 'Validation failed'}
         )
         logger.error('Request failed: %s', e, exc_info=True)
+        return jsonify({'status': 'error', 'error': 'An internal error occurred'}), 500
+
+
+def _compute_enrichment_completeness(school: dict) -> dict:
+    """Compute enrichment completeness score for a school record.
+
+    Returns a dict with overall percentage, breakdown by category,
+    and a list of missing fields.
+    """
+    categories = {
+        'basic': {
+            'fields': ['school_name', 'state_code', 'school_district', 'county_name'],
+            'weight': 0.15,
+        },
+        'demographics': {
+            'fields': ['total_students', 'free_lunch_percentage', 'graduation_rate'],
+            'weight': 0.20,
+        },
+        'academics': {
+            'fields': ['ap_course_count', 'honors_course_count', 'college_acceptance_rate',
+                       'stem_program_available', 'ib_program_available', 'dual_enrollment_available'],
+            'weight': 0.25,
+        },
+        'web_presence': {
+            'fields': ['school_url', 'school_url_verified', 'web_sources_analyzed'],
+            'weight': 0.15,
+        },
+        'analysis': {
+            'fields': ['opportunity_score', 'data_confidence_score', 'analysis_status'],
+            'weight': 0.15,
+        },
+        'review': {
+            'fields': ['human_review_status', 'moana_requirements_met'],
+            'weight': 0.10,
+        },
+    }
+
+    missing = []
+    category_scores = {}
+    weighted_total = 0.0
+
+    for cat_name, cat in categories.items():
+        filled = 0
+        total = len(cat['fields'])
+        for field in cat['fields']:
+            val = school.get(field)
+            if val is not None and val != '' and val != 0:
+                # analysis_status='pending' doesn't count as filled
+                if field == 'analysis_status' and val == 'pending':
+                    missing.append(field)
+                    continue
+                # human_review_status='pending' doesn't count
+                if field == 'human_review_status' and val == 'pending':
+                    missing.append(field)
+                    continue
+                filled += 1
+            else:
+                missing.append(field)
+        pct = (filled / total * 100) if total > 0 else 0
+        category_scores[cat_name] = round(pct, 1)
+        weighted_total += (filled / total) * cat['weight'] if total > 0 else 0
+
+    overall = round(weighted_total * 100, 1)
+    is_enriched = overall >= 60 and school.get('analysis_status') in ('complete', 'csv_imported')
+
+    return {
+        'overall_percentage': overall,
+        'is_enriched': is_enriched,
+        'categories': category_scores,
+        'missing_fields': missing,
+    }
+
+
+@app.route('/api/school/<int:school_id>/enrichment-score', methods=['GET'])
+def school_enrichment_score(school_id):
+    """Return the enrichment completeness score for a school."""
+    try:
+        school = db.get_school_enriched_data(school_id)
+        if not school:
+            return jsonify({'status': 'error', 'error': 'School not found'}), 404
+        score = _compute_enrichment_completeness(school)
+        return jsonify({'status': 'success', 'school_id': school_id, **score})
+    except Exception as e:
+        logger.error(f"Enrichment score error for school {school_id}: {e}", exc_info=True)
         return jsonify({'status': 'error', 'error': 'An internal error occurred'}), 500
 
 

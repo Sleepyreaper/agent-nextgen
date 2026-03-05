@@ -18,7 +18,7 @@
             <td style="padding:0.5rem;"><span class="feedback-badge badge-{{ fb_type }}">{{ fb_type }}</span></td>
             <td style="padding:0.5rem;"><span class="feedback-badge badge-{{ fb_status }}">{{ fb_status }}</span></td>
             <td style="padding:0.5rem;">
-                <strong>{{ triage.title or 'Feedback' }}</strong><br>
+                <strong>{{ triage.title or item.message[:60] or 'Feedback' }}</strong><br>
                 <span style="color:#6b7280; font-size:0.9rem;">{{ item.message[:120] }}{% if item.message|length > 120 %}…{% endif %}</span>
             </td>
             <td style="padding:0.5rem;">

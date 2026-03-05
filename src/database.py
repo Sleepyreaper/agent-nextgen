@@ -3259,7 +3259,18 @@ class Database:
                 s2 = ''.join(ch for ch in s2 if not unicodedata.combining(ch))
                 s2 = s2.lower()
                 s2 = re.sub(r"[^a-z0-9\s]", ' ', s2)
-                s2 = re.sub(r"\b(high school|hs|highschool|school|academy|charter|magnet)\b", ' ', s2)
+                # Expand common abbreviations
+                abbrevs = {
+                    'hs': 'high school', 'elem': 'elementary', 'ms': 'middle school',
+                    'acad': 'academy', 'prep': 'preparatory', 'tech': 'technology',
+                    'sci': 'science', 'intl': 'international', 'jr': 'junior',
+                    'sr': 'senior', 'st': 'saint', 'mt': 'mount', 'ft': 'fort',
+                    'cty': 'county', 'co': 'county', 'twp': 'township',
+                }
+                words = s2.split()
+                words = [abbrevs.get(w, w) for w in words]
+                s2 = ' '.join(words)
+                s2 = re.sub(r"\b(high school|highschool|school|academy|charter|magnet|preparatory)\b", ' ', s2)
                 return re.sub(r"\s{2,}", ' ', s2).strip()
 
             def _token_set_ratio(a: str, b: str) -> float:
@@ -3300,7 +3311,7 @@ class Database:
             # 3) difflib close match
             norm_list = list(name_map.values())
             raw_list = list(name_map.keys())
-            matches = difflib.get_close_matches(cand_norm, norm_list, n=1, cutoff=0.80)
+            matches = difflib.get_close_matches(cand_norm, norm_list, n=1, cutoff=0.72)
             if matches:
                 idx = norm_list.index(matches[0])
                 return self.get_school_enriched_data(school_name=raw_list[idx], state_code=state_code)

@@ -102,8 +102,8 @@ function renderFeedbackTable(items) {
         const triage = item.triage_json || {};
         const feedbackType = item.feedback_type || item.FeedbackType || 'issue';
         const status = item.status || item.Status || 'received';
-        const title = triage.title || 'Feedback';
         const message = item.message || '';
+        const title = triage.title || (message ? message.substring(0, 60) : 'Feedback');
         const issueUrl = item.issue_url || item.IssueUrl || '';
         html += '<tr>';
         html += `<td style="padding:0.5rem;"><span class="${typeBadgeClass(feedbackType)}">${escapeHtml(feedbackType)}</span></td>`;
@@ -174,8 +174,11 @@ if (feedbackForm) {
             feedbackStatus.textContent = 'Thank you! Your feedback was captured.';
             feedbackStatus.style.color = '#059669';
             feedbackForm.reset();
-            // Immediately refresh the list so the new item appears
-            setTimeout(refreshFeedbackList, 500);
+            // Poll a few times so the user sees status transitions
+            // (received → triaged → submitted)
+            for (const delay of [500, 2000, 5000]) {
+                setTimeout(refreshFeedbackList, delay);
+            }
         } catch (error) {
             feedbackStatus.textContent = error.message;
             feedbackStatus.style.color = '#b91c1c';

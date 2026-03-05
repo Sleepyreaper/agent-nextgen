@@ -1,9 +1,8 @@
 /**
  * video-upload.js – Chunked file upload to Azure Blob Storage
  *
- * ALL files are uploaded in small chunks (≤100 KB) to stay under the
- * Azure Front Door WAF 128 KB body inspection limit.  This applies to
- * every file type — PDF, DOCX, TXT, MP4, etc.
+ * ALL files are uploaded in chunks (default 4 MB) with parallel upload
+ * support to maximize throughput on Azure Front Door Premium.
  *
  * Flow:
  *   1. User selects files via <input type=file>
@@ -28,7 +27,8 @@
  *   </script>
  */
 const VideoUpload = (() => {
-  const CHUNK_SIZE = 100 * 1024; // 100 KB per chunk (must stay under Front Door WAF 128 KB body inspection limit)
+  const CHUNK_SIZE = 4 * 1024 * 1024; // 4 MB per chunk (Front Door Premium supports larger bodies; configure WAF exclusion for /api/file/upload-chunk)
+  const PARALLEL_UPLOADS = 3; // Upload up to 3 chunks concurrently
 
   let _cfg = {};
   let _pendingFiles = []; // [{file, uploadId, blobPath, container, status}]
@@ -40,13 +40,15 @@ const VideoUpload = (() => {
     });
   }
 
-  /* ── Upload a single file in chunks ──────────────────────────── */
+  /* ── Upload a single file in chunks (with parallelism) ─────── */
   async function _uploadFile(entry, onProgress) {
     const file = entry.file;
     const totalChunks = Math.ceil(file.size / CHUNK_SIZE);
     const appType = _cfg.appTypeGetter ? _cfg.appTypeGetter() : '2026';
 
-    for (let i = 0; i < totalChunks; i++) {
+    let completedChunks = 0;
+
+    async function _sendChunk(i) {
       const start = i * CHUNK_SIZE;
       const end = Math.min(start + CHUNK_SIZE, file.size);
       const chunk = file.slice(start, end);
@@ -70,7 +72,7 @@ const VideoUpload = (() => {
           if (resp.ok) break;
         } catch (_) { /* retry */ }
         retries--;
-        if (retries > 0) await new Promise(r => setTimeout(r, 1000));
+        if (retries > 0) await new Promise(r => setTimeout(r, 1000 * (4 - retries)));
       }
 
       if (!resp || !resp.ok) {
@@ -88,13 +90,32 @@ const VideoUpload = (() => {
         throw new Error(`Chunk ${i + 1}/${totalChunks}: unexpected response type "${contentType}"`);
       }
       data = await resp.json();
-      onProgress(data.progress || 0);
+      completedChunks++;
+      onProgress(Math.round((completedChunks / totalChunks) * 100));
 
       if (data.complete) {
         entry.blobPath = data.blob_path;
         entry.container = data.container;
         entry.status = 'done';
       }
+    }
+
+    // Upload non-final chunks in parallel batches, then send the final chunk last
+    // (server commits on final chunk, so it must arrive after all others)
+    const nonFinalChunks = [];
+    for (let i = 0; i < totalChunks - 1; i++) {
+      nonFinalChunks.push(i);
+    }
+
+    // Process in batches of PARALLEL_UPLOADS
+    for (let b = 0; b < nonFinalChunks.length; b += PARALLEL_UPLOADS) {
+      const batch = nonFinalChunks.slice(b, b + PARALLEL_UPLOADS);
+      await Promise.all(batch.map(i => _sendChunk(i)));
+    }
+
+    // Send the final chunk (triggers server-side commit)
+    if (totalChunks > 0) {
+      await _sendChunk(totalChunks - 1);
     }
   }
 

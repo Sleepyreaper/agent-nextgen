@@ -464,6 +464,14 @@
             </div>
         </div>
 
+        <!-- Token Usage by Agent+Model -->
+        <div class="telem-section full-width">
+            <div class="section-header">🔬 Token Usage by Agent × Model</div>
+            <div class="section-body" id="tokenByAgentModel">
+                <div class="loading-spinner">Loading token data...</div>
+            </div>
+        </div>
+
         <!-- Agent Quality & Accuracy -->
         <div class="telem-section full-width">
             <div class="section-header">
@@ -563,6 +571,7 @@ async function loadTelemetry() {
         renderAgentPerformance(overview.agents || {});
         renderTokenByModel(tokenData.by_model || {});
         renderTokenByAgent(tokenData.by_agent || {});
+        renderTokenByAgentModel(tokenData.by_agent_model || {});
         renderRecentModelCalls(tokenData.recent_calls || []);
         renderSchoolPipeline(overview.school_enrichment || {});
         renderAppInsightsConfig(telStatus);
@@ -857,6 +866,43 @@ function renderTokenByAgent(byAgent) {
             <td>${fmtTokens(data.input_tokens)}</td>
             <td>${fmtTokens(data.output_tokens)}</td>
             <td style="font-weight: 700;">${fmtTokens(data.total_tokens)}</td>
+        </tr>`;
+    }
+
+    html += '</tbody></table>';
+    container.innerHTML = html;
+}
+
+function renderTokenByAgentModel(byAgentModel) {
+    const container = document.getElementById('tokenByAgentModel');
+    const entries = Object.entries(byAgentModel);
+
+    if (entries.length === 0) {
+        container.innerHTML = '<div style="color: #9ca3af; text-align: center; padding: 2rem;">No agent×model usage recorded yet.</div>';
+        return;
+    }
+
+    entries.sort((a, b) => b[1].total_tokens - a[1].total_tokens);
+
+    let html = '<table class="agent-table"><thead><tr>';
+    html += '<th>Agent</th><th>Model</th><th>Calls</th><th>Input</th><th>Output</th><th>Total</th><th>In/Out Ratio</th>';
+    html += '</tr></thead><tbody>';
+
+    for (const [key, data] of entries) {
+        const parts = key.split('::');
+        const agent = parts[0] || 'unknown';
+        const model = parts[1] || 'unknown';
+        const ratio = data.output_tokens > 0
+            ? (data.input_tokens / data.output_tokens).toFixed(1) + ':1'
+            : '—';
+        html += `<tr>
+            <td class="agent-name">${agent}</td>
+            <td style="font-size: 0.85rem; color: #6b7280;">${model}</td>
+            <td>${data.call_count.toLocaleString()}</td>
+            <td>${fmtTokens(data.input_tokens)}</td>
+            <td>${fmtTokens(data.output_tokens)}</td>
+            <td style="font-weight: 700;">${fmtTokens(data.total_tokens)}</td>
+            <td style="font-size: 0.85rem; color: #6b7280;">${ratio}</td>
         </tr>`;
     }
 
