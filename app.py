@@ -2680,7 +2680,7 @@ def file_upload_chunk():
         except Exception as e:
             logger.error("File commit failed for %s: %s", upload_id, e)
             logger.error('Request failed: %s', e, exc_info=True)
-        return jsonify({'error': 'An internal error occurred'}), 500
+            return jsonify({'error': 'An internal error occurred'}), 500
 
     return jsonify(result)
 
