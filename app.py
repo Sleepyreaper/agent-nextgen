@@ -8739,6 +8739,7 @@ def admin_cleanup_test_data():
             cursor.execute("UPDATE applications SET is_training_example = FALSE WHERE is_training_example IS NULL")
             training_fixed = cursor.rowcount
             conn.commit()
+            db._putconn(conn)
             
             return jsonify({
                 'status': 'success',
@@ -8768,6 +8769,7 @@ def admin_cleanup_test_data():
         
         conn.commit()
         cursor.close()
+        db._putconn(conn)
         
         logger.info(f"✓ Cleaned up {updated_count} contaminated test records: {', '.join(record_names)}")
         

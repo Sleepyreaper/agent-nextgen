@@ -45,6 +45,7 @@ packaging==26.0
 propcache==0.4.1
 psycopg==3.2.13
 psycopg-binary==3.2.13
+psycopg-pool==3.2.6
 pycparser==2.23
 pydantic==2.12.5
 pydantic_core==2.41.5

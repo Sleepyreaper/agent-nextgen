@@ -11,6 +11,13 @@ except Exception:
     PSYCOPG_AVAILABLE = False
 
 try:
+    from psycopg_pool import ConnectionPool
+    POOL_AVAILABLE = True
+except Exception:
+    ConnectionPool = None
+    POOL_AVAILABLE = False
+
+try:
     from config import config
 except Exception:
     from .config import config
@@ -176,6 +183,7 @@ class Database:
     def __init__(self):
         self.connection_params = None
         self.connection = None
+        self._pool = None
         self._params_validated = False
         self._table_columns_cache = {}
         self._table_names_cache = None
@@ -486,20 +494,83 @@ class Database:
         updated_query = urlencode(params, doseq=True, quote_via=quote)
         return urlunparse(parsed._replace(query=updated_query))
     
+    def _ensure_pool(self):
+        """Lazily initialize the connection pool on first use."""
+        if self._pool is not None:
+            return
+        if not PSYCOPG_AVAILABLE or not POOL_AVAILABLE:
+            return
+        params = self._build_connection_params()
+        if not params:
+            return
+        try:
+            if 'conninfo' in params:
+                conninfo = params['conninfo']
+            else:
+                # Build a libpq-style conninfo string from individual params
+                parts = []
+                key_map = {'dbname': 'dbname', 'host': 'host', 'port': 'port',
+                           'user': 'user', 'password': 'password',
+                           'sslmode': 'sslmode', 'connect_timeout': 'connect_timeout',
+                           'options': 'options'}
+                for k, v in params.items():
+                    if k in key_map and v is not None:
+                        escaped = str(v).replace("'", "\\'")
+                        parts.append(f"{key_map[k]}='{escaped}'")
+                conninfo = ' '.join(parts)
+            # 4 workers × 2 threads = 8 max concurrent; min 2 idle connections
+            self._pool = ConnectionPool(
+                conninfo=conninfo,
+                min_size=2,
+                max_size=10,
+                max_idle=300,
+                open=True,
+            )
+            logger.info("✓ Database connection pool initialized (min=2, max=10)")
+            # Run migrations once using a pool connection
+            if not self._migrations_run:
+                try:
+                    conn = self._pool.getconn()
+                    self.connection = conn
+                    self._run_migrations()
+                    self._migrations_run = True
+                    self.connection = None
+                    self._pool.putconn(conn)
+                except Exception as mig_err:
+                    logger.warning(f"Pool migration failed: {mig_err}")
+                    self.connection = None
+                    try:
+                        self._pool.putconn(conn)
+                    except Exception:
+                        pass
+        except Exception as e:
+            logger.warning(f"Connection pool init failed, falling back to single connection: {e}")
+            self._pool = None
+
     def connect(self):
-        """Establish database connection."""
+        """Return a database connection (from pool or single fallback).
+
+        For backward compatibility with code that calls db.connect() directly.
+        When using the pool, the caller is responsible for committing/closing.
+        Prefer execute_query / execute_non_query instead.
+        """
+        # Try pool first
+        self._ensure_pool()
+        if self._pool is not None:
+            try:
+                conn = self._pool.getconn()
+                return conn
+            except Exception as e:
+                logger.warning(f"Pool getconn failed, falling back: {e}")
+
+        # Fallback: single connection (original logic)
         if not self.connection or self.connection.closed:
-            # Validate and build params if not done yet
             params = self._build_connection_params()
             
             if not params:
-                # If psycopg is not available or no connection params provided, fall back to a lightweight
-                # in-memory SQLite database for local prototype runs. This avoids hard failures when
-                # Postgres is not configured in local development.
                 if not PSYCOPG_AVAILABLE:
                     self._using_sqlite_fallback = True
                     self.connection = sqlite3.connect(":memory:")
-                    # Return rows as tuples but provide cursor.description for mapping
                     self.connection.row_factory = None
                     return self.connection
 
@@ -514,15 +585,11 @@ class Database:
                 else:
                     self.connection = psycopg.connect(**params)
                 
-                # Run migrations on first successful connection
                 if not self._migrations_run:
                     try:
                         self._run_migrations()
                         self._migrations_run = True
                     except Exception as mig_err:
-                        # if migrations fail, close the connection so future
-                        # calls will make a fresh one instead of reusing the
-                        # aborted/errored session.
                         try:
                             if self.connection and not self.connection.closed:
                                 self.connection.close()
@@ -531,7 +598,6 @@ class Database:
                         self.connection = None
                         raise mig_err
             except Exception as e:
-                # ensure we don't keep a bad connection alive
                 if self.connection:
                     try:
                         self.connection.close()
@@ -540,9 +606,23 @@ class Database:
                     self.connection = None
                 raise ConnectionError(f"Failed to connect to PostgreSQL: {e}")
         return self.connection
+
+    def _putconn(self, conn):
+        """Return a connection to the pool, or no-op for single connection mode."""
+        if self._pool is not None and conn is not self.connection:
+            try:
+                self._pool.putconn(conn)
+            except Exception:
+                pass
     
     def close(self):
-        """Close database connection."""
+        """Close database connection(s) and pool."""
+        if self._pool is not None:
+            try:
+                self._pool.close()
+            except Exception:
+                pass
+            self._pool = None
         if self.connection and not self.connection.closed:
             self.connection.close()
             self.connection = None
@@ -1215,6 +1295,7 @@ class Database:
     
     def execute_query(self, query: str, params: tuple = None) -> List[Dict[str, Any]]:
         """Execute a SELECT query and return results."""
+        conn = None
         try:
             conn = self.connect()
             cursor = conn.cursor()
@@ -1259,19 +1340,21 @@ class Database:
             
             cursor.close()
             # Commit to close the implicit transaction opened by psycopg3.
-            # Without this, SELECT leaves an idle-in-transaction session that
-            # PostgreSQL will kill after idle_in_transaction_session_timeout,
-            # and INSERT…RETURNING data is never persisted.
             conn.commit()
+            self._putconn(conn)
+            conn = None
             return results
         except Exception as e:
-            # rollback and drop connection to avoid reuse of bad session
-            if self.connection:
+            # rollback and release the connection
+            if conn:
                 try:
-                    self.connection.rollback()
+                    conn.rollback()
                 except:
                     pass
-                self.connection = None
+                self._putconn(conn)
+                conn = None
+            # also clear single-connection fallback
+            self.connection = None
             # if the failure was due to a previous aborted transaction, we
             # can safely attempt the query one more time after reconnecting.
             try:
@@ -1287,6 +1370,7 @@ class Database:
     
     def execute_non_query(self, query: str, params: tuple = None) -> int:
         """Execute INSERT, UPDATE, or DELETE and return affected rows."""
+        conn = None
         try:
             conn = self.connect()
             cursor = conn.cursor()
@@ -1304,17 +1388,23 @@ class Database:
             conn.commit()
             rowcount = cursor.rowcount
             cursor.close()
+            self._putconn(conn)
+            conn = None
             return rowcount
         except Exception as e:
-            try:
-                conn.rollback()
-            except:
-                pass
+            if conn:
+                try:
+                    conn.rollback()
+                except:
+                    pass
+                self._putconn(conn)
+                conn = None
             self.connection = None
             raise e
     
     def execute_scalar(self, query: str, params: tuple = None) -> Any:
         """Execute a query and return a single value."""
+        conn = None
         try:
             conn = self.connect()
             cursor = conn.cursor()
@@ -1331,18 +1421,20 @@ class Database:
             
             result = cursor.fetchone()
             
-            # Always commit to close the implicit psycopg3 transaction.
-            # This persists INSERT/UPDATE/DELETE and releases idle-in-transaction
-            # locks for SELECT queries.
             conn.commit()
             
             cursor.close()
+            self._putconn(conn)
+            conn = None
             return result[0] if result else None
         except Exception as e:
-            try:
-                self.connection.rollback()
-            except:
-                pass
+            if conn:
+                try:
+                    conn.rollback()
+                except:
+                    pass
+                self._putconn(conn)
+                conn = None
             self.connection = None
             raise e
     
