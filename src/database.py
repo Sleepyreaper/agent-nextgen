@@ -1905,6 +1905,50 @@ class Database:
         )
         return {"deleted": deleted, "total": total}
 
+    def cleanup_old_records(self, retention_days: int = 730) -> Dict[str, Any]:
+        """Delete old telemetry, audit, and test records beyond the retention window.
+
+        Does NOT touch Applications or agent evaluation tables — those are
+        retained for historical analysis. Only purges high-volume operational
+        tables that grow unbounded.
+
+        Args:
+            retention_days: Number of days to keep (default 730 = 2 years)
+
+        Returns:
+            Dict with deleted counts per table
+        """
+        cutoff_param = (retention_days,)
+        targets = [
+            ("telemetry_events", "created_at"),
+            ("agent_audit_logs", "created_at"),
+            ("test_submissions", "created_at"),
+            ("training_feedback", "created_at"),
+        ]
+
+        deleted: Dict[str, int] = {}
+        total = 0
+
+        for table, date_col in targets:
+            table_name = self.get_table_name(table)
+            if not table_name:
+                continue
+            try:
+                count = self.execute_non_query(
+                    f"DELETE FROM {table_name} WHERE {date_col} < NOW() - make_interval(days => %s)",
+                    cutoff_param,
+                )
+                if count and count > 0:
+                    deleted[table] = count
+                    total += count
+            except Exception as e:
+                logger.debug(f"Retention cleanup skipped {table}: {e}")
+
+        logger.info(
+            f"Retention cleanup (>{retention_days}d): {total} rows deleted across {len(deleted)} tables"
+        )
+        return {"deleted": deleted, "total": total, "retention_days": retention_days}
+
     def find_training_duplicates(self) -> List[Dict[str, Any]]:
         """Find duplicate training records grouped by name.
 

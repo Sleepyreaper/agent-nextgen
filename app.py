@@ -8746,6 +8746,19 @@ def admin_cleanup_test_data():
         }), 500
 
 
+@app.route('/api/admin/retention-cleanup', methods=['POST'])
+def admin_retention_cleanup():
+    """Purge old telemetry, audit logs, and test records beyond retention window."""
+    try:
+        retention_days = request.json.get('retention_days', 730) if request.is_json else 730
+        retention_days = max(90, min(int(retention_days), 3650))
+        result = db.cleanup_old_records(retention_days=retention_days)
+        return jsonify({'status': 'success', **result})
+    except Exception as e:
+        logger.error(f"Retention cleanup failed: {e}", exc_info=True)
+        return jsonify({'status': 'error', 'error': 'An internal error occurred'}), 500
+
+
 @app.route('/api/ask-question/<int:application_id>', methods=['POST'])
 def ask_question(application_id):
     """
