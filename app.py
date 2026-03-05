@@ -11,6 +11,31 @@ import hashlib
 import threading
 import secrets
 import requests
+
+# ---------------------------------------------------------------------------
+# Shared background event loop (Issue #52)
+# One persistent loop in a daemon thread replaces per-request asyncio.run()
+# calls, avoiding event-loop creation overhead and reducing thread starvation.
+# ---------------------------------------------------------------------------
+_bg_loop: asyncio.AbstractEventLoop = asyncio.new_event_loop()
+
+def _start_bg_loop(loop: asyncio.AbstractEventLoop) -> None:
+    asyncio.set_event_loop(loop)
+    loop.run_forever()
+
+_bg_thread = threading.Thread(target=_start_bg_loop, args=(_bg_loop,), daemon=True)
+_bg_thread.start()
+
+
+def run_async(coro, timeout: float = 600.0):
+    """Submit a coroutine to the shared event loop and block until done.
+
+    This replaces asyncio.run() — it reuses a single loop instead of
+    creating/tearing down one per call, and the calling thread blocks
+    via Future.result() so it stays compatible with synchronous Flask.
+    """
+    future = asyncio.run_coroutine_threadsafe(coro, _bg_loop)
+    return future.result(timeout=timeout)
 from datetime import datetime, timedelta, timezone
 from flask import Flask, flash, g, jsonify, render_template, redirect, url_for, request, Response, session, stream_with_context
 from werkzeug.security import check_password_hash
@@ -764,7 +789,7 @@ def refresh_foundry_dataset_async(reason: str) -> None:
                 logger.warning("Milo agent not available for dataset refresh")
                 return
 
-            result = asyncio.run(milo.build_and_upload_foundry_dataset())
+            result = run_async(milo.build_and_upload_foundry_dataset())
             if result.get("status") == "success":
                 logger.info(
                     "Foundry dataset refreshed",
@@ -1044,7 +1069,7 @@ def submit_feedback():
             )
 
         triage_agent = get_feedback_agent()
-        triage = asyncio.run(
+        triage = run_async(
             triage_agent.analyze_feedback(
                 feedback_type=feedback_type,
                 message=message,
@@ -2160,7 +2185,7 @@ def evaluate(application_id):
         
         # Get evaluator and run evaluation
         evaluator = get_evaluator()
-        evaluation = asyncio.run(evaluator.evaluate_application(application))
+        evaluation = run_async(evaluator.evaluate_application(application))
         
         # Save evaluation to database
         db.save_evaluation(
@@ -2199,7 +2224,7 @@ def evaluate_all():
         
         results = []
         for application in pending:
-            evaluation = asyncio.run(evaluator.evaluate_application(application))
+            evaluation = run_async(evaluator.evaluate_application(application))
             
             # Save to database
             db.save_evaluation(
@@ -2672,7 +2697,7 @@ def api_process_student(application_id):
         orchestrator = get_orchestrator()
         
         # Run full agent pipeline
-        result = asyncio.run(
+        result = run_async(
             orchestrator.coordinate_evaluation(
                 application=application,
                 evaluation_steps=['application_reader', 'grade_reader', 'recommendation_reader', 'school_context', 'data_scientist', 'student_evaluator', 'aurora']
@@ -2734,7 +2759,7 @@ def generate_process_updates(application_id: int):
                 'aurora'
             ]
 
-            result = asyncio.run(orchestrator.coordinate_evaluation(
+            result = run_async(orchestrator.coordinate_evaluation(
                 application=application,
                 evaluation_steps=evaluation_steps,
                 progress_callback=progress_callback
@@ -3144,7 +3169,7 @@ def api_resume_evaluation(application_id):
         
         # All information available - run evaluation
         orchestrator = get_orchestrator()
-        result = asyncio.run(
+        result = run_async(
             orchestrator.coordinate_evaluation(
                 application=application,
                 evaluation_steps=['application_reader', 'grade_reader', 'recommendation_reader', 'school_context', 'data_scientist', 'student_evaluator', 'aurora']
@@ -3220,7 +3245,7 @@ def api_provide_missing_info(application_id):
             logger.info(f"All information provided for {application.get('applicant_name')}. Resuming evaluation...")
             
             orchestrator = get_orchestrator()
-            result = asyncio.run(
+            result = run_async(
                 orchestrator.coordinate_evaluation(
                     application=application,
                     evaluation_steps=['application_reader', 'grade_reader', 'recommendation_reader', 'school_context', 'data_scientist', 'student_evaluator', 'aurora']
@@ -4851,7 +4876,7 @@ def start_application_processing(application_id: int) -> None:
                 return
 
             orchestrator = get_orchestrator()
-            result = asyncio.run(
+            result = run_async(
                 orchestrator.coordinate_evaluation(
                     application=application,
                     evaluation_steps=[
@@ -4890,7 +4915,7 @@ def start_training_processing(application_id: int) -> None:
                 return
 
             orchestrator = get_orchestrator()
-            result = asyncio.run(
+            result = run_async(
                 orchestrator.coordinate_evaluation(
                     application=application,
                     evaluation_steps=[
@@ -5116,7 +5141,7 @@ def _process_session(session_id):
 
                     logger.debug(f"Evaluation steps: {evaluation_steps}")
 
-                    result = asyncio.run(orchestrator.coordinate_evaluation(
+                    result = run_async(orchestrator.coordinate_evaluation(
                         application=application_data,
                         evaluation_steps=evaluation_steps,
                         progress_callback=progress_callback
@@ -6542,7 +6567,7 @@ def milo_insights():
         milo = orchestrator.agents.get('data_scientist') if orchestrator else None
         if not milo:
             return jsonify({'status': 'error', 'error': 'Milo agent not available'})
-        result = asyncio.run(milo.analyze_training_insights())
+        result = run_async(milo.analyze_training_insights())
         return jsonify(result)
     except Exception as e:
         logger.error(f"Milo insights error: {e}", exc_info=True)
@@ -6568,7 +6593,7 @@ def milo_rank_candidates():
         body = request.get_json(silent=True) or {}
         force_refresh = body.get('force_refresh', False)
 
-        result = asyncio.run(milo.rank_all_candidates(force_refresh=force_refresh))
+        result = run_async(milo.rank_all_candidates(force_refresh=force_refresh))
         return jsonify(result)
     except Exception as e:
         logger.error(f"Milo ranking error: {e}", exc_info=True)
@@ -6652,7 +6677,7 @@ def _read_validation_result() -> dict:
 
 def _run_milo_validation_job(threshold: int):
     """Background thread: score all training students with Milo."""
-    import asyncio, statistics
+    import statistics
 
     try:
         _write_validation_state({"state": "running", "started_at": time.time(), "progress": "initializing"})
@@ -6675,13 +6700,10 @@ def _run_milo_validation_job(threshold: int):
                                  "progress": f"building insights from {total_students} students"})
 
         # Step 2: Build insights (may already be cached)
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
         try:
-            insights = loop.run_until_complete(milo.analyze_training_insights())
+            insights = run_async(milo.analyze_training_insights())
         except Exception as e:
             _write_validation_state({"state": "error", "error": f"Insights failed: {e}"})
-            loop.close()
             return
 
         # Step 3: Evaluate in batches
@@ -6698,7 +6720,7 @@ def _run_milo_validation_job(threshold: int):
             })
 
             try:
-                batch_results = loop.run_until_complete(milo._evaluate_batch(batch, insights))
+                batch_results = run_async(milo._evaluate_batch(batch, insights))
             except Exception as e:
                 logger.error(f"Milo validation batch {batch_num} failed: {e}")
                 batch_results = [
@@ -6718,8 +6740,6 @@ def _run_milo_validation_job(threshold: int):
                     f"{app_data.get('first_name', '')} {app_data.get('last_name', '')}".strip()
                 )
                 all_results.append(result)
-
-        loop.close()
 
         # Step 4: Compute metrics
         accepted_scores = []
@@ -8864,18 +8884,13 @@ def ask_question(application_id):
         ariel = ArielQAAgent()
         
         # Process question
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        try:
-            result = loop.run_until_complete(
-                ariel.answer_question(
-                    application_id=application_id,
-                    question=question,
-                    conversation_history=conversation_history
-                )
+        result = run_async(
+            ariel.answer_question(
+                application_id=application_id,
+                question=question,
+                conversation_history=conversation_history
             )
-        finally:
-            loop.close()
+        )
         
         if result['success']:
             return jsonify(result), 200
