@@ -2538,9 +2538,10 @@ def process_student(application_id):
 def file_upload_chunk():
     """Accept a chunk of file data and stage it in Azure Blob Storage.
 
-    ALL file types (PDF, DOCX, TXT, MP4, etc.) are uploaded in small
-    chunks (≤100 KB) that stay under the Azure Front Door WAF 128 KB
-    body inspection limit.
+    ALL file types (PDF, DOCX, TXT, MP4, etc.) are uploaded in chunks
+    (default 4 MB on the client). Configure Azure Front Door WAF to
+    exclude /api/file/upload-chunk from body inspection, or set the
+    request body size limit to at least 8 MB for this route.
 
     The client sends:
       - chunk      : the binary chunk (file part)
@@ -2566,8 +2567,8 @@ def file_upload_chunk():
     if not upload_id:
         return jsonify({'error': 'upload_id is required'}), 400
 
-    # Guard against unbounded chunked uploads (max 5000 chunks ≈ 500 MB)
-    if total_chunks > 5000:
+    # Guard against unbounded chunked uploads (max 500 chunks × 4 MB ≈ 2 GB)
+    if total_chunks > 500:
         return jsonify({'error': 'File too large (exceeds chunk limit)'}), 400
     if chunk_index < 0 or chunk_index >= total_chunks:
         return jsonify({'error': 'Invalid chunk_index'}), 400
