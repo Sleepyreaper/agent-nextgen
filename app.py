@@ -1714,6 +1714,23 @@ def upload():
                     db.set_missing_fields(application_id, [])
                     start_training_processing(application_id)
 
+                if is_test:
+                    application_record = db.get_application(application_id) or {}
+                    placeholder_fields = {}
+
+                    if not application_record.get('application_text'):
+                        placeholder_fields['application_text'] = 'No application essay provided for this test run.'
+                    if not application_record.get('transcript_text'):
+                        placeholder_fields['transcript_text'] = 'No transcript provided for this test run.'
+                    if not application_record.get('recommendation_text'):
+                        placeholder_fields['recommendation_text'] = 'No recommendation letter provided for this test run.'
+
+                    if placeholder_fields:
+                        db.update_application_fields(application_id, placeholder_fields)
+
+                    db.set_missing_fields(application_id, [])
+                    start_application_processing(application_id)
+
                 results.append({
                     'application_id': application_id,
                     'action': 'created',
