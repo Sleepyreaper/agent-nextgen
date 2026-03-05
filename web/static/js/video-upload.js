@@ -1,7 +1,7 @@
 /**
  * video-upload.js – Chunked file upload to Azure Blob Storage
  *
- * ALL files are uploaded in chunks (default 4 MB) with parallel upload
+ * ALL files are uploaded in chunks (100 KB) with parallel upload
  * support to maximize throughput on Azure Front Door Premium.
  *
  * Flow:
@@ -27,7 +27,7 @@
  *   </script>
  */
 const VideoUpload = (() => {
-  const CHUNK_SIZE = 4 * 1024 * 1024; // 4 MB per chunk (Front Door Premium supports larger bodies; configure WAF exclusion for /api/file/upload-chunk)
+  const CHUNK_SIZE = 100 * 1024; // 100 KB per chunk – stays under Front Door WAF 128 KB body inspection limit
   const PARALLEL_UPLOADS = 3; // Upload up to 3 chunks concurrently
 
   let _cfg = {};
