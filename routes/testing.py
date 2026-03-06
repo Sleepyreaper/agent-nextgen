@@ -291,7 +291,7 @@ def upload_test_files():
 
                 student_id = storage.generate_student_id()
                 temp_id = uuid.uuid4().hex
-                temp_path = os.path.join(app.config['UPLOAD_FOLDER'], f"temp_{temp_id}_{cfilename}")
+                temp_path = os.path.join(current_app.config['UPLOAD_FOLDER'], f"temp_{temp_id}_{cfilename}")
 
                 try:
                     ok = storage.download_blob_to_file(
@@ -401,7 +401,7 @@ def upload_test_files():
 
                 student_id = storage.generate_student_id()
                 filename = secure_filename(file.filename)
-                temp_path = os.path.join(app.config['UPLOAD_FOLDER'], f"temp_{student_id}_{filename}")
+                temp_path = os.path.join(current_app.config['UPLOAD_FOLDER'], f"temp_{student_id}_{filename}")
                 file.save(temp_path)
 
                 ocr_callback = _make_ocr_callback()

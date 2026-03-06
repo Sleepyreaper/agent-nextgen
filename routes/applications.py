@@ -7,7 +7,7 @@ import queue
 import threading
 import time
 
-from flask import Blueprint, Response, flash, jsonify, redirect, render_template, request, stream_with_context, url_for
+from flask import Blueprint, Response, current_app, flash, jsonify, redirect, render_template, request, stream_with_context, url_for
 
 from extensions import (
     csrf, limiter, run_async,
@@ -366,7 +366,7 @@ def api_debug_model_test():
         except Exception:
             result_text = str(resp)
 
-        app.logger.info("Model test result: %s", result_text)
+        logger.info("Model test result: %s", result_text)
         return jsonify({
             "success": True,
             "model": model_name,
@@ -377,7 +377,7 @@ def api_debug_model_test():
         })
 
     except Exception as e:
-        app.logger.exception("Debug model test endpoint error: %s", e)
+        logger.exception("Debug model test endpoint error: %s", e)
         return jsonify({"success": False, "error": "An internal error occurred"}), 500
 
 

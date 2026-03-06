@@ -91,7 +91,7 @@ def upload():
                 valid_files += 1
                 filename = secure_filename(file.filename)
                 temp_id = uuid.uuid4().hex
-                temp_path = os.path.join(app.config['UPLOAD_FOLDER'], f"temp_{temp_id}_{filename}")
+                temp_path = os.path.join(current_app.config['UPLOAD_FOLDER'], f"temp_{temp_id}_{filename}")
                 file.save(temp_path)
 
                 # ── Route: Video files → Mirabel, Documents → Belle ──
@@ -228,7 +228,7 @@ def upload():
 
                     temp_id = uuid.uuid4().hex
                     temp_path = os.path.join(
-                        app.config['UPLOAD_FOLDER'],
+                        current_app.config['UPLOAD_FOLDER'],
                         f"temp_{temp_id}_{cfilename}"
                     )
 
