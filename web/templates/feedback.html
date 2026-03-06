@@ -236,5 +236,7 @@ async function loadGithubIssues() {
     } catch (e) { /* silently fail */ }
 }
 loadGithubIssues();
+// Refresh feedback list on page load to ensure latest data
+refreshFeedbackList();
 </script>
 {% endblock %}
