@@ -4,7 +4,7 @@ from typing import Dict, List, Any, Optional
 from openai import AzureOpenAI
 from src.agents.base_agent import BaseAgent
 from src.agents.telemetry_helpers import agent_run
-from src import config
+from src.config import config
 import re
 import json
 import logging
@@ -212,6 +212,7 @@ Also include:
                 'confidence_level': parsed_data.get('confidence_level'),
                 'summary': parsed_data.get('summary'),
                 'course_rigor_index': parsed_data.get('course_rigor_index'),
+                'academic_record_score': parsed_data.get('academic_record_score'),
                 'grade_table_markdown': parsed_data.get('grade_table_markdown'),
                 'grade_table_headers': parsed_data.get('grade_table_headers'),
                 'grade_table_rows': parsed_data.get('grade_table_rows'),
@@ -531,7 +532,18 @@ Return DETAILED, STRUCTURED analysis with:
 ✓ Confidence assessment for each data point
 ✓ Clear summary that an AI colleague could use for further analysis
 ✓ Course rigor index (1-5) with detailed justification
-✓ Overall transcript assessment (Exceptional/Strong/Solid/Average/Below Average)"""
+✓ Overall transcript assessment (Exceptional/Strong/Solid/Average/Below Average)
+
+REQUIRED METRICS BLOCK — at the END of your response, include this EXACT format:
+
+## METRICS
+Unweighted GPA: [value or N/A]
+Weighted GPA: [value or N/A]
+Course Rigor Index: [1-5]
+Transcript Quality: [Exceptional/Strong/Solid/Average/Below Average]
+Confidence: [High/Medium/Low]
+Academic Record Score: [0-3]
+Detected Format: [format description]"""
     
     def _build_parsing_prompt(
         self,
@@ -813,6 +825,7 @@ OUTPUT STRUCTURE:
             'grade_table_headers': None,
             'grade_table_rows': None,
             'course_rigor_index': None,
+            'academic_record_score': None,
             'rapunzel_perspective': None,
             'standardized_transcript': None,
             'standardized_transcript_rows': None,
@@ -822,15 +835,16 @@ OUTPUT STRUCTURE:
         # Extract GPA — prefer unweighted, then cumulative, then any labeled GPA.
         # Use multiple patterns in order of preference to avoid grabbing
         # weighted GPA, HOPE GPA, or example numbers from prompt text.
+        # Patterns handle markdown bold (**label**) and plain text.
         gpa_patterns = [
-            # "Unweighted GPA: 3.85" or "Unweighted GPA (4.0 scale): 3.85"
-            r'[Uu]nweighted\s+GPA\s*(?:\([^)]*\))?\s*[:\s]+([0-9]+\.[0-9]+)',
-            # "Cumulative GPA: 3.85"
-            r'[Cc]umulative\s+GPA\s*[:\s]+([0-9]+\.[0-9]+)',
+            # "Unweighted GPA: 3.85" or "**Unweighted GPA:** 3.85"
+            r'\*{0,2}[Uu]nweighted\s+GPA\*{0,2}\s*(?:\([^)]*\))?\s*[:\s]+([0-9]+\.[0-9]+)',
+            # "Cumulative GPA: 3.85" or "**Cumulative GPA:** 3.85"
+            r'\*{0,2}[Cc]umulative\s+GPA\*{0,2}\s*[:\s]+([0-9]+\.[0-9]+)',
             # "GPA estimation" or "GPA (unweighted)" etc. near a number
-            r'GPA\s*(?:\(unweighted\))?\s*(?:estimation)?\s*[:\s]+([0-9]+\.[0-9]+)',
+            r'\*{0,2}GPA\*{0,2}\s*(?:\(unweighted\))?\s*(?:estimation)?\s*[:\s]+([0-9]+\.[0-9]+)',
             # Fallback: any "GPA: X.XX" but only if value looks like a real GPA (0.0-5.0)
-            r'GPA\s*[:\s]+([0-4]\.[0-9]+)',
+            r'\*{0,2}GPA\*{0,2}\s*[:\s]+([0-4]\.[0-9]+)',
         ]
         for gpa_pat in gpa_patterns:
             gpa_match = re.search(gpa_pat, response_text)
@@ -843,29 +857,56 @@ OUTPUT STRUCTURE:
                 except ValueError:
                     continue
         
-        # Extract confidence level
-        confidence_match = re.search(r'Confidence[:\s]+(High|Medium|Low)', response_text, re.IGNORECASE)
+        # Extract confidence level — handles "Confidence: High" and "**Confidence:** High"
+        confidence_match = re.search(r'\*{0,2}Confidence\*{0,2}\s*[:\s]+(High|Medium|Low)', response_text, re.IGNORECASE)
         if confidence_match:
             parsed['confidence_level'] = confidence_match.group(1)
         
-        # Extract transcript quality
+        # Extract transcript quality — handles markdown bold labels
         quality_match = re.search(
-            r'Transcript Quality[:\s]+(Exceptional|Strong|Solid|Average|Below Average)',
+            r'\*{0,2}Transcript\s+Quality\*{0,2}\s*[:\s]+(Exceptional|Strong|Solid|Average|Below\s*Average)',
             response_text,
             re.IGNORECASE
         )
         if quality_match:
-            parsed['transcript_quality'] = quality_match.group(1)
+            parsed['transcript_quality'] = quality_match.group(1).strip()
+        else:
+            # Fallback: look for "Overall:" or "Assessment:" followed by quality terms
+            quality_match2 = re.search(
+                r'(?:overall|assessment|quality)\*{0,2}\s*[:\s]+(Exceptional|Strong|Solid|Average|Below\s*Average)',
+                response_text,
+                re.IGNORECASE
+            )
+            if quality_match2:
+                parsed['transcript_quality'] = quality_match2.group(1).strip()
 
-        # Extract course rigor index
+        # Extract course rigor index — handles "Course Rigor Index: 3" and "**Course Rigor Index:** 3/5"
         rigor_match = re.search(
-            r'Course Rigor Index[:\s]+([1-5])',
+            r'\*{0,2}Course\s+Rigor\s+Index\*{0,2}\s*[:\s]+([1-5])(?:\s*/\s*5)?',
             response_text,
             re.IGNORECASE
         )
         if rigor_match:
             parsed['course_rigor_index'] = int(rigor_match.group(1))
+        else:
+            # Fallback: "Rigor Index: 3" or "rigor: 3/5"
+            rigor_match2 = re.search(
+                r'\*{0,2}(?:Rigor|Rigor\s+Index)\*{0,2}\s*[:\s]+([1-5])(?:\s*/\s*5)?',
+                response_text,
+                re.IGNORECASE
+            )
+            if rigor_match2:
+                parsed['course_rigor_index'] = int(rigor_match2.group(1))
         
+        # Extract academic record score (0-3)
+        score_match = re.search(
+            r'\*{0,2}Academic\s+Record\s+Score\*{0,2}\s*[:\s]+([0-3])',
+            response_text,
+            re.IGNORECASE
+        )
+        if score_match:
+            parsed['academic_record_score'] = int(score_match.group(1))
+
         # Extract first mention of academic strength/weakness
         strength_section = re.search(
             r'(?:Strongest subject|Academic Strength)[:\s]*([^.]+\.[^.]*)',
