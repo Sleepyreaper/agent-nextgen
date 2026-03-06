@@ -11,7 +11,7 @@
                 Upload a NextGen scoring spreadsheet (.xlsx) to give the Data Scientist access to real human rubric scores for calibration.
             </p>
         </div>
-        <a href="{{ url_for('training') }}" class="btn" style="background: #6b7280; color: white; padding: 0.5rem 1rem; border-radius: 6px; text-decoration: none;">
+        <a href="{{ url_for('training.training') }}" class="btn" style="background: #6b7280; color: white; padding: 0.5rem 1rem; border-radius: 6px; text-decoration: none;">
             ← Back to Training
         </a>
     </div>
@@ -64,7 +64,7 @@
         <div style="margin-top: 1rem; padding: 0.75rem; background: #fefce8; border: 1px solid #fde68a; border-radius: 6px;">
             <p style="margin: 0; color: #92400e; font-size: 0.85rem;">
                 <strong>⚠️ No selection data yet.</strong> The "Eligible" count only shows students who had the right files, correct age, and submitted on time — 
-                NOT who was actually chosen. Upload 2024 applications on the <a href="{{ url_for('training') }}">Training page</a> and mark who was selected 
+                NOT who was actually chosen. Upload 2024 applications on the <a href="{{ url_for('training.training') }}">Training page</a> and mark who was selected 
                 to let the system build a model student profile.
             </p>
         </div>

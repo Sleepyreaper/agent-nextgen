@@ -20,7 +20,7 @@
                 Status badges show selection outcomes and whether training data is fully captured.
             </p>
             <div style="margin-top: 0.75rem;">
-                <a href="{{ url_for('import_scores_page') }}" style="display: inline-flex; align-items: center; gap: 0.4rem; background: #f59e0b; color: #78350f; padding: 0.4rem 1rem; border-radius: 6px; text-decoration: none; font-weight: 600; font-size: 0.85rem;">
+                <a href="{{ url_for('training.import_scores_page') }}" style="display: inline-flex; align-items: center; gap: 0.4rem; background: #f59e0b; color: #78350f; padding: 0.4rem 1rem; border-radius: 6px; text-decoration: none; font-weight: 600; font-size: 0.85rem;">
                     📊 Import Historical Scores
                 </a>
             </div>
@@ -29,7 +29,7 @@
             <!-- inline upload form for training files -->
             <div class="card" style="padding:1rem; background:#f9fafb;">
                 <h3 style="margin-top:0;">➕ Upload Training Files</h3>
-                <form method="POST" action="{{ url_for('upload') }}" enctype="multipart/form-data" id="trainingUploadForm">
+                <form method="POST" action="{{ url_for('upload.upload') }}" enctype="multipart/form-data" id="trainingUploadForm">
                     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                     <input type="hidden" name="app_type" value="training" />
                     <div style="border:2px dashed #f59e0b; border-radius:8px; padding:1.5rem; text-align:center; cursor:pointer;" 
@@ -118,7 +118,7 @@
             <button type="button" class="btn" style="background:#059669; color:white;" onclick="openReprocessModal()">
                 🔄 Reprocess Documents
             </button>
-            <a id="trainingUploadLink" href="{{ url_for('upload', app_type='training') }}" class="btn btn-primary">
+            <a id="trainingUploadLink" href="{{ url_for('upload.upload', app_type='training') }}" class="btn btn-primary">
                 ➕ Add Training Example
             </a>
         </div>
@@ -255,7 +255,7 @@
                         </td>
                         <td>
                             {% if school.school_enrichment_id %}
-                            <a href="{{ url_for('view_school_enrichment', school_id=school.school_enrichment_id) }}"
+                            <a href="{{ url_for('schools.view_school_enrichment', school_id=school.school_enrichment_id) }}"
                                class="btn btn-info" style="font-size: 0.8rem; padding: 0.3rem 0.6rem;">View</a>
                             {% endif %}
                         </td>

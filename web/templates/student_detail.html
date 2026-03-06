@@ -280,7 +280,7 @@
 
     {# ════════════════════  ACTIONS  ════════════════════ #}
     <div class="section" style="display:flex; justify-content:flex-end; gap:1rem;">
-        <a href="{{ url_for('students') }}" class="btn btn-secondary" style="padding:0.6rem 1.2rem;">← Back to Students</a>
+        <a href="{{ url_for('applications.students') }}" class="btn btn-secondary" style="padding:0.6rem 1.2rem;">← Back to Students</a>
         <button onclick="confirmDeleteThisStudent()" class="btn" style="padding:0.6rem 1.2rem; background:#ef4444; color:white; border:none; border-radius:4px; cursor:pointer;">🗑️ Delete Student</button>
     </div>
 
@@ -308,7 +308,7 @@
             .then(function(r) { return r.json(); })
             .then(function(data) {
                 if (data.status === 'success') {
-                    window.location.href = '{{ url_for("students") }}';
+                    window.location.href = '{{ url_for("applications.students") }}';
                 } else {
                     alert('Error: ' + (data.error || 'Unknown error'));
                     btn.textContent = '🗑️ Delete Permanently';

@@ -10,7 +10,7 @@
             <p style="color: #64748b; margin-top: 0.5rem;">Students created via Quick Test for development and testing</p>
         </div>
         <div style="display: flex; gap: 1rem;">
-            <a href="{{ url_for('test') }}" class="btn btn-primary">+ Create Quick Test</a>
+            <a href="{{ url_for('testing.test') }}" class="btn btn-primary">+ Create Quick Test</a>
             <a href="{{ url_for('index') }}" class="btn btn-secondary">← Back to Dashboard</a>
         </div>
     </div>
@@ -44,7 +44,7 @@
                 <tr>
                     <td>{{ student.application_id }}</td>
                     <td>
-                        <a href="{{ url_for('student_detail', application_id=student.application_id) }}" 
+                        <a href="{{ url_for('applications.student_detail', application_id=student.application_id) }}" 
                            style="color: #3b82f6; text-decoration: none; font-weight: 500;">
                             {{ student.applicant_name }}
                         </a>
@@ -57,7 +57,7 @@
                     </td>
                     <td>{{ student.uploaded_date.strftime('%Y-%m-%d %H:%M') if student.uploaded_date else 'N/A' }}</td>
                     <td>
-                        <a href="{{ url_for('student_detail', application_id=student.application_id) }}" 
+                        <a href="{{ url_for('applications.student_detail', application_id=student.application_id) }}" 
                            class="btn btn-sm btn-primary">
                             View Details
                         </a>
@@ -72,7 +72,7 @@
         <div style="font-size: 3rem; margin-bottom: 1rem;">🧪</div>
         <h3 style="color: #64748b;">No Test Students Yet</h3>
         <p>Create quick test students to verify agent functionality</p>
-        <a href="{{ url_for('test') }}" class="btn btn-primary" style="margin-top: 1rem;">
+        <a href="{{ url_for('testing.test') }}" class="btn btn-primary" style="margin-top: 1rem;">
             Create Quick Test Student
         </a>
     </div>

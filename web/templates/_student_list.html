@@ -277,18 +277,18 @@
             {% endif %}
             <td>
                 <div class="student-actions">
-                    <a href="{{ url_for('student_detail', application_id=student.application_id) }}" 
+                    <a href="{{ url_for('applications.student_detail', application_id=student.application_id) }}" 
                        class="btn btn-secondary">
                         📄 Details
                     </a>
                     {% if student.high_school %}
-                    <a href="{{ url_for('schools_dashboard') }}?search={{ student.high_school|urlencode }}" 
+                    <a href="{{ url_for('schools.schools_dashboard') }}?search={{ student.high_school|urlencode }}" 
                        class="btn btn-info" title="View school enrichment data">
                         🏫 School
                     </a>
                     {% endif %}
                     {% if student.status != 'Completed' and student.status != 'Processing' %}
-                    <a href="{{ url_for('process_student', application_id=student.application_id) }}" 
+                    <a href="{{ url_for('applications.process_student', application_id=student.application_id) }}" 
                        class="btn btn-success">
                         ▶️ Evaluate
                     </a>
@@ -468,7 +468,7 @@ function saveStudentEdit() {
     <div class="empty-state-icon">👥</div>
     <h3 style="color: #2c3e50; margin-bottom: 0.5rem;">No Students Found</h3>
     <p>{% if search_query %}No students match "{{ search_query }}".{% else %}No students uploaded yet.{% endif %}</p>
-    <a href="{{ url_for('upload') }}" class="btn btn-primary" style="margin-top: 1rem;">
+    <a href="{{ url_for('upload.upload') }}" class="btn btn-primary" style="margin-top: 1rem;">
         ➕ Upload First Student
     </a>
 </div>

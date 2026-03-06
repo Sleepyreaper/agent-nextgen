@@ -11,11 +11,11 @@
                 All applications sorted by last name. Status badges show upload, missing docs, processing, and completion.
             </p>
         </div>
-        <a href="{{ url_for('upload') }}" class="btn btn-primary">+ Add New Application</a>
+        <a href="{{ url_for('upload.upload') }}" class="btn btn-primary">+ Add New Application</a>
     </div>
 
     <!-- Search Bar -->
-    <form method="get" action="{{ url_for('students') }}" style="margin-bottom: 2rem;">
+    <form method="get" action="{{ url_for('applications.students') }}" style="margin-bottom: 2rem;">
         <div style="display: flex; gap: 1rem;">
             <input type="text" 
                    name="search" 
@@ -24,7 +24,7 @@
                    style="flex: 1; padding: 0.75rem; border: 1px solid #d1d5db; border-radius: 5px; font-size: 1rem;">
             <button type="submit" class="btn">🔍 Search</button>
             {% if search_query %}
-            <a href="{{ url_for('students') }}" class="btn btn-secondary">Clear</a>
+            <a href="{{ url_for('applications.students') }}" class="btn btn-secondary">Clear</a>
             {% endif %}
         </div>
     </form>

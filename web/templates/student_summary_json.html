@@ -75,5 +75,5 @@
     {% endfor %}
 </div>
 
-<div style="margin-top:1rem;"><a href="{{ url_for('student_detail', application_id=application.application_id) }}">Back to full detail</a></div>
+<div style="margin-top:1rem;"><a href="{{ url_for('applications.student_detail', application_id=application.application_id) }}">Back to full detail</a></div>
 {% endblock %}

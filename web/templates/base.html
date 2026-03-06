@@ -273,16 +273,16 @@
             <p>Secure, evidence-based reviews powered by Azure AI</p>
             <nav>
                 <a href="{{ url_for('index') }}">📊 Dashboard</a>
-                <a href="{{ url_for('students') }}">👥 2026 Applicants</a>
-                <a href="{{ url_for('test_data') }}">🧪 Test Data</a>
-                <a href="{{ url_for('training') }}">📚 Training</a>
-                <a href="{{ url_for('telemetry_dashboard') }}">📡 Telemetry</a>
-                <a href="{{ url_for('data_management') }}">🗄️ Data Management</a>
-                <a href="{{ url_for('upload') }}">📤 Upload Application</a>
-                <a href="{{ url_for('submit_feedback') }}">📝 Feedback</a>
-                <a href="{{ url_for('test') }}" style="color: #fbbf24; font-weight: bold;">⚡ Quick Test</a>
+                <a href="{{ url_for('applications.students') }}">👥 2026 Applicants</a>
+                <a href="{{ url_for('testing.test_data') }}">🧪 Test Data</a>
+                <a href="{{ url_for('training.training') }}">📚 Training</a>
+                <a href="{{ url_for('telemetry.telemetry_dashboard') }}">📡 Telemetry</a>
+                <a href="{{ url_for('admin.data_management') }}">🗄️ Data Management</a>
+                <a href="{{ url_for('upload.upload') }}">📤 Upload Application</a>
+                <a href="{{ url_for('feedback.submit_feedback') }}">📝 Feedback</a>
+                <a href="{{ url_for('testing.test') }}" style="color: #fbbf24; font-weight: bold;">⚡ Quick Test</a>
                 {% if session.get('authenticated') %}
-                <a href="{{ url_for('logout') }}" style="margin-left: auto; background: rgba(239,68,68,0.18); border-color: rgba(239,68,68,0.35); color: #fca5a5;">🔒 Logout</a>
+                <a href="{{ url_for('auth.logout') }}" style="margin-left: auto; background: rgba(239,68,68,0.18); border-color: rgba(239,68,68,0.35); color: #fca5a5;">🔒 Logout</a>
                 {% endif %}
             </nav>
         </header>

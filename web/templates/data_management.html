@@ -125,7 +125,7 @@
         <h3>🏫 School Management</h3>
         <p>View, search, and enrich the school database. Run school evaluation and context analysis on pending schools or seed new school records from training data.</p>
         <div class="dm-actions">
-            <a href="{{ url_for('schools_dashboard') }}" class="btn btn-secondary">🏫 Manage Schools</a>
+            <a href="{{ url_for('schools.schools_dashboard') }}" class="btn btn-secondary">🏫 Manage Schools</a>
             <button class="btn" onclick="seedSchools()" id="btnSeed">🌱 Seed Schools</button>
         </div>
     </div>
@@ -135,7 +135,7 @@
         <h3>📚 Training Data</h3>
         <p>View historical applications used for agent calibration. Upload new examples or clear existing training records.</p>
         <div class="dm-actions">
-            <a href="{{ url_for('training') }}" class="btn btn-secondary">📚 View Training</a>
+            <a href="{{ url_for('training.training') }}" class="btn btn-secondary">📚 View Training</a>
             <button class="btn" style="background: var(--champagne); color: var(--ink-navy);" onclick="clearTrainingData()" id="btnClearTraining">🧹 Clear Training Data</button>
         </div>
     </div>

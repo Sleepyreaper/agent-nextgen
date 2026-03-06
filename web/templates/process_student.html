@@ -33,7 +33,7 @@
             <div style="font-size: 4rem; margin-bottom: 1rem;">✅</div>
             <h2 style="color: #10b981;">Processing Complete!</h2>
             <p style="color: #6b7280; margin: 1rem 0;">All agents have finished analyzing {{ application.applicantname }}'s application.</p>
-            <a href="{{ url_for('student_detail', application_id=application_id) }}" class="btn btn-success">View Student Summary →</a>
+            <a href="{{ url_for('applications.student_detail', application_id=application_id) }}" class="btn btn-success">View Student Summary →</a>
         </div>
     </div>
 </div>
