@@ -41,10 +41,12 @@ class RapunzelGradeReader(BaseAgent):
             db_connection: Database connection for saving results
         """
         super().__init__(name, client)
-        # Rapunzel downgraded from premium (gpt-4.1) to workhorse (4.1mini) —
-        # grade extraction is structured tabular parsing, not complex reasoning.
-        # Savings: ~60% per call with no quality loss on extraction tasks.
-        self.model = model or config.model_tier_workhorse or config.foundry_model_name or config.deployment_name
+        # Rapunzel upgraded to premium (gpt-4.1) — transcript extraction requires
+        # complex reasoning across varied formats (semester/quarter/block/narrative),
+        # multiple grading scales, OCR artifacts, and multi-page documents.
+        # The workhorse tier (4.1-mini) was producing incomplete course lists and
+        # misclassifying course levels on non-standard transcript formats.
+        self.model = model or config.model_tier_premium or config.foundry_model_name or config.deployment_name
         self.db = db_connection
         self.extraction_focus = [
             "GPA/Grade Point Average",
@@ -101,10 +103,11 @@ class RapunzelGradeReader(BaseAgent):
             
             # Determine transcript input size:
             # - If Belle's section detection isolated transcript pages, the input is already focused
-            #   and typically 1000-3000 chars. Use up to 12000 chars for safety.
-            # - If no section detection occurred (full document passed), use 12000 chars to capture
+            #   and typically 1000-3000 chars. Use up to 20000 chars for safety.
+            # - If no section detection occurred (full document passed), use 20000 chars to capture
             #   transcripts that may appear later in multi-page PDFs (e.g., page 8 of 12).
-            max_transcript_chars = 12000
+            # - Scanned/OCR'd multi-page transcripts can easily exceed 12000 chars.
+            max_transcript_chars = 20000
             transcript_input = transcript_text[:max_transcript_chars]
             
             # If input was truncated, log a warning
@@ -114,17 +117,45 @@ class RapunzelGradeReader(BaseAgent):
                 )
             
             query_messages = [
-                {"role": "system", "content": """You are an expert transcript extractor. From the provided transcript text:
-1. IDENTIFY the transcript format (semester-based, year-long, quarter-based, block, tabular, narrative)
-2. IDENTIFY the grading scale (10-point, 7-point, plus/minus, numeric-only, pass/fail)
-3. Extract EVERY course with: year/grade-level, course name, course level (AP/Honors/DE/IB/Standard), grade received, numeric percentage if shown, credits
-4. Extract any GPAs (weighted and unweighted)
-5. Note any special markings, attendance data, test scores, or honors
-6. If page markers (--- PAGE N ---) are present, note which pages contain transcript data
+                {"role": "system", "content": """You are an expert high school transcript extractor. Your job is to extract EVERY piece of academic data from the provided text with perfect accuracy.
 
-IMPORTANT: The text may contain page markers like '--- PAGE 8 of 12 ---'. Focus on sections that contain actual transcript/grade data. Ignore non-transcript content (essays, recommendations, cover pages) if present.
+STEP 1 — FORMAT DETECTION (do this FIRST):
+- What LAYOUT is this? (Semester-based / Year-long / Quarter-based / Block / Tabular / Narrative)
+- What GRADING SCALE? (10-point / 7-point / Plus-Minus / Numeric-only / Mixed)
+- Any weighted GPA system? What multipliers?
+- Georgia-specific elements? (Milestones EOC, HOPE GPA, CTAE, MOWR)
+State: "Detected Format: [layout] with [grading scale]"
 
-Be thorough — capture every single course entry."""},
+STEP 2 — COMPLETE COURSE EXTRACTION:
+Extract EVERY course as a structured entry:
+- Year/Grade-level (9, 10, 11, 12)
+- Course name (exact as listed)
+- Course level: AP | Honors | Accelerated | DE/MOWR | IB | Gifted | Standard
+  Detection clues: "AP" prefix, "Hon"/"Honors"/"H" suffix, "Accel", "DE"/"Dual Enrollment"/"MOWR", "IB", "CTAE", "Gifted"
+- Grade received (letter and/or numeric)
+- Numeric percentage if shown
+- Credits/units earned
+- Semester or term if shown
+
+STEP 3 — GPA AND STANDING:
+- Unweighted GPA (value and scale)
+- Weighted GPA (value and scale)
+- Class rank and percentile if shown
+- Honor roll, Latin honors, or other recognitions
+
+STEP 4 — ADDITIONAL DATA:
+- Standardized test scores (SAT, ACT, PSAT, AP exam scores, Georgia Milestones)
+- Attendance data (days absent, tardy)
+- Special markings (W/WP/WF, I/INC, AU, CR/NC, T for transfer, * or #)
+- Graduation pathway or endorsements
+
+IMPORTANT:
+- The text may contain page markers like '--- PAGE 8 of 12 ---'. Focus on actual transcript data.
+- If semester grades are shown separately (Fall/Spring), note BOTH.
+- If courses appear in multiple terms, capture each occurrence.
+- Do NOT skip any course. Completeness is more important than analysis.
+- For numeric-only transcripts, note the raw numbers — do NOT convert yet.
+- Output as structured text with clear labels, NOT narrative prose."""},
                 {"role": "user", "content": f"Transcript text:\n{transcript_input}"}
             ]
 
@@ -156,8 +187,8 @@ Also include:
                 model=self.model,
                 query_messages=query_messages,
                 format_messages_template=format_template,
-                query_kwargs={"max_completion_tokens": 1200, "temperature": 0},
-                format_kwargs={"max_completion_tokens": 5000, "temperature": 1, "refinements": 2, "refinement_instruction": "Refine the analysis to improve accuracy of GPA, course-level detection, grade normalization, and trend identification. Ensure the STANDARDIZED TRANSCRIPT table includes every course with Year/Course/Level/Grade/Numeric/Credits columns. Preserve format and tables."}
+                query_kwargs={"max_completion_tokens": 4000, "temperature": 0},
+                format_kwargs={"max_completion_tokens": 5000, "temperature": 0, "refinements": 2, "refinement_instruction": "Refine the analysis to improve accuracy of GPA, course-level detection, grade normalization, and trend identification. Ensure the STANDARDIZED TRANSCRIPT table includes every course with Year/Course/Level/Grade/Numeric/Credits columns. Verify all numeric percentages match letter grades. Preserve format and tables."}
             )
 
             response_text = response.choices[0].message.content
@@ -788,13 +819,29 @@ OUTPUT STRUCTURE:
             'detected_format': None
         }
         
-        # Extract GPA with regex
-        gpa_match = re.search(r'(?:unweighted\s+)?GPA[:\s]+([0-9.]+)', response_text, re.IGNORECASE)
-        if gpa_match:
-            try:
-                parsed['gpa'] = float(gpa_match.group(1))
-            except ValueError:
-                pass
+        # Extract GPA — prefer unweighted, then cumulative, then any labeled GPA.
+        # Use multiple patterns in order of preference to avoid grabbing
+        # weighted GPA, HOPE GPA, or example numbers from prompt text.
+        gpa_patterns = [
+            # "Unweighted GPA: 3.85" or "Unweighted GPA (4.0 scale): 3.85"
+            r'[Uu]nweighted\s+GPA\s*(?:\([^)]*\))?\s*[:\s]+([0-9]+\.[0-9]+)',
+            # "Cumulative GPA: 3.85"
+            r'[Cc]umulative\s+GPA\s*[:\s]+([0-9]+\.[0-9]+)',
+            # "GPA estimation" or "GPA (unweighted)" etc. near a number
+            r'GPA\s*(?:\(unweighted\))?\s*(?:estimation)?\s*[:\s]+([0-9]+\.[0-9]+)',
+            # Fallback: any "GPA: X.XX" but only if value looks like a real GPA (0.0-5.0)
+            r'GPA\s*[:\s]+([0-4]\.[0-9]+)',
+        ]
+        for gpa_pat in gpa_patterns:
+            gpa_match = re.search(gpa_pat, response_text)
+            if gpa_match:
+                try:
+                    val = float(gpa_match.group(1))
+                    if 0.0 <= val <= 5.0:
+                        parsed['gpa'] = val
+                        break
+                except ValueError:
+                    continue
         
         # Extract confidence level
         confidence_match = re.search(r'Confidence[:\s]+(High|Medium|Low)', response_text, re.IGNORECASE)
@@ -847,20 +894,39 @@ OUTPUT STRUCTURE:
             patterns = [p.strip() for p in re.split(r'[-•*]\s+', pattern_text) if p.strip()]
             parsed['notable_patterns'] = patterns[:5]  # Keep top 5
         
-        # Extract summary (usually last paragraph)
-        summary_match = re.search(
-            r'Summary[:\s]*(.+?)$',
+        # Extract summary — look for Executive Summary section first, then any Summary
+        exec_summary_match = re.search(
+            r'Executive\s+Summary[:\s]*(.+?)(?=\n##|\n={3,}|$)',
             response_text,
             re.IGNORECASE | re.DOTALL
         )
-        if summary_match:
-            parsed['summary'] = summary_match.group(1).strip()[:500]  # Limit to 500 chars
+        if exec_summary_match:
+            parsed['summary'] = exec_summary_match.group(1).strip()[:500]
+        else:
+            summary_match = re.search(
+                r'Summary[:\s]*(.+?)(?=\n##|\n={3,}|$)',
+                response_text,
+                re.IGNORECASE | re.DOTALL
+            )
+            if summary_match:
+                parsed['summary'] = summary_match.group(1).strip()[:500]
 
-        table_data = self._extract_markdown_table(response_text)
-        if table_data:
-            parsed['grade_table_markdown'] = table_data['markdown']
-            parsed['grade_table_headers'] = table_data['headers']
-            parsed['grade_table_rows'] = table_data['rows']
+        # Extract Standardized Transcript table FIRST — it's the canonical table
+        std_table = self._extract_standardized_transcript(response_text)
+        if std_table:
+            parsed['standardized_transcript'] = std_table['markdown']
+            parsed['standardized_transcript_rows'] = std_table['rows']
+            # Use standardized transcript as the primary grade table too
+            parsed['grade_table_markdown'] = std_table['markdown']
+            parsed['grade_table_headers'] = std_table['headers']
+            parsed['grade_table_rows'] = std_table['rows']
+        else:
+            # Fallback: use the first markdown table found
+            table_data = self._extract_markdown_table(response_text)
+            if table_data:
+                parsed['grade_table_markdown'] = table_data['markdown']
+                parsed['grade_table_headers'] = table_data['headers']
+                parsed['grade_table_rows'] = table_data['rows']
 
         # Extract Rapunzel's Perspective section
         perspective_match = re.search(
@@ -870,12 +936,6 @@ OUTPUT STRUCTURE:
         )
         if perspective_match:
             parsed['rapunzel_perspective'] = perspective_match.group(1).strip()
-
-        # Extract Standardized Transcript table
-        std_table = self._extract_standardized_transcript(response_text)
-        if std_table:
-            parsed['standardized_transcript'] = std_table['markdown']
-            parsed['standardized_transcript_rows'] = std_table['rows']
 
         # Extract detected format
         format_match = re.search(
@@ -892,44 +952,58 @@ OUTPUT STRUCTURE:
         """Extract the Standardized Transcript table specifically.
 
         Looks for the table that appears after the STANDARDIZED TRANSCRIPT header
-        and has Year/Course/Level/Grade columns.
+        and has Year/Course/Level/Grade columns. Falls back to finding any table
+        with those columns anywhere in the response.
         """
-        # Find the standardized transcript section
+        # Strategy 1: Find section after STANDARDIZED TRANSCRIPT header
         section_match = re.search(
-            r'(?:##\s*)?STANDARDIZED\s+TRANSCRIPT[:\s]*(.+?)(?=(?:##|\n(?:Detected|GPA|Course Rigor|Transcript Quality|Confidence|Notable|Executive|$))|$)',
+            r'(?:##\s*)?STANDARDIZED\s+TRANSCRIPT[:\s]*(.+?)(?=\n##\s|\Z)',
             response_text,
             re.IGNORECASE | re.DOTALL
         )
-        if not section_match:
-            return None
+        if section_match:
+            section = section_match.group(1)
+            table_data = self._extract_markdown_table(section)
+            if table_data:
+                headers_lower = [h.lower() for h in table_data['headers']]
+                has_year = any('year' in h for h in headers_lower)
+                has_course = any('course' in h for h in headers_lower)
+                has_grade = any('grade' in h for h in headers_lower)
+                if has_year and has_course and has_grade:
+                    return table_data
+                # Still return even with imperfect headers
+                return table_data
 
-        section = section_match.group(1)
-        # Extract the markdown table within this section
-        table_data = self._extract_markdown_table(section)
-        if not table_data:
-            return None
+        # Strategy 2: Find any table with Year/Course/Grade headers anywhere
+        all_tables = self._extract_all_markdown_tables(response_text)
+        for table_data in reversed(all_tables):  # prefer later tables
+            headers_lower = [h.lower() for h in table_data['headers']]
+            has_year = any('year' in h for h in headers_lower)
+            has_course = any('course' in h for h in headers_lower)
+            has_grade = any('grade' in h for h in headers_lower)
+            if has_year and has_course and has_grade:
+                return table_data
 
-        # Validate it looks like a standardized transcript table
-        headers_lower = [h.lower() for h in table_data['headers']]
-        has_year = any('year' in h for h in headers_lower)
-        has_course = any('course' in h for h in headers_lower)
-        has_grade = any('grade' in h for h in headers_lower)
-
-        if has_year and has_course and has_grade:
-            return table_data
-
-        # Even if headers don't match perfectly, return what we found
-        return table_data
+        return None
 
     def _extract_markdown_table(self, response_text: str) -> Optional[Dict[str, Any]]:
         """Extract the first Markdown table from the response."""
+        tables = self._extract_all_markdown_tables(response_text)
+        return tables[0] if tables else None
+
+    def _extract_all_markdown_tables(self, response_text: str) -> List[Dict[str, Any]]:
+        """Extract ALL Markdown tables from the response."""
+        tables = []
         lines = [line.rstrip() for line in response_text.splitlines()]
-        for idx in range(len(lines) - 1):
+        idx = 0
+        while idx < len(lines) - 1:
             header_line = lines[idx]
             divider_line = lines[idx + 1]
             if '|' not in header_line:
+                idx += 1
                 continue
             if not re.match(r'^\s*\|?\s*[-:|\s]+\|\s*$', divider_line):
+                idx += 1
                 continue
 
             table_lines = [header_line, divider_line]
@@ -943,12 +1017,13 @@ OUTPUT STRUCTURE:
 
             headers = self._parse_markdown_row(table_lines[0])
             rows = [self._normalize_row(self._parse_markdown_row(line), len(headers)) for line in table_lines[2:]]
-            return {
+            tables.append({
                 'markdown': "\n".join(table_lines),
                 'headers': headers,
                 'rows': rows
-            }
-        return None
+            })
+            idx = row_idx  # skip past this table
+        return tables
 
     def _parse_markdown_row(self, row_line: str) -> List[str]:
         """Parse a Markdown table row into cells."""

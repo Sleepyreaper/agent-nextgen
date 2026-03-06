@@ -637,6 +637,17 @@ class SmeeOrchestrator(BaseAgent):
                 result = await agent.parse_application(application)
             elif agent_id == 'grade_reader':
                 transcript = application.get('transcript_text', '')
+                # Fallback: if Belle's section detection didn't isolate transcript
+                # pages (or isolated too little), use the full document text so
+                # Rapunzel can still attempt extraction from the complete PDF.
+                if not transcript or len(transcript.strip()) < 50:
+                    fallback = application.get('_original_document_text', '')
+                    if fallback and len(fallback.strip()) > len(transcript.strip()):
+                        logger.warning(
+                            f"Rapunzel: transcript_text too short ({len(transcript)} chars), "
+                            f"falling back to _original_document_text ({len(fallback)} chars)"
+                        )
+                        transcript = fallback
                 result = await agent.parse_grades(
                     transcript,
                     application.get('applicant_name', ''),
