@@ -3,19 +3,20 @@
 set -e
 
 HOOKS_DIR=".git/hooks"
-SOURCE_HOOK="scripts/git-hooks/pre-push"
 
 if [ ! -d "$HOOKS_DIR" ]; then
   echo "No .git/hooks directory found."
   exit 1
 fi
 
-if [ ! -f "$SOURCE_HOOK" ]; then
-  echo "Missing $SOURCE_HOOK"
-  exit 1
-fi
+# Install all hooks from scripts/git-hooks/
+for hook in scripts/git-hooks/*; do
+  hook_name=$(basename "$hook")
+  if [ -f "$hook" ]; then
+    cp "$hook" "$HOOKS_DIR/$hook_name"
+    chmod +x "$HOOKS_DIR/$hook_name"
+    echo "Installed $hook_name hook."
+  fi
+done
 
-cp "$SOURCE_HOOK" "$HOOKS_DIR/pre-push"
-chmod +x "$HOOKS_DIR/pre-push"
-
-echo "Installed pre-push hook."
+echo "All git hooks installed."

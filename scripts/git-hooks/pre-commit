@@ -1,0 +1,49 @@
+#!/bin/sh
+# Pre-commit hook: block commits containing secrets or credentials.
+# Install via: scripts/install_git_hooks.sh
+
+set -e
+
+STAGED=$(git diff --cached --name-only --diff-filter=ACM)
+if [ -z "$STAGED" ]; then
+  exit 0
+fi
+
+# Get staged diff, excluding git-hooks dir (contains pattern defs) and docs
+DIFF_CONTENT=$(git diff --cached -U0 --no-color -- . ':!scripts/git-hooks/' ':!docs/' ':!documents/' 2>/dev/null || true)
+
+if [ -z "$DIFF_CONTENT" ]; then
+  exit 0
+fi
+
+FAILED=0
+
+# Check for the specific leaked password
+if echo "$DIFF_CONTENT" | grep -qF "NextGen2026"; then
+  echo "BLOCKED: Leaked production password detected"
+  echo "$DIFF_CONTENT" | grep -nF "NextGen2026" | head -5
+  FAILED=1
+fi
+
+# Check for hardcoded password assignments
+PASS_MATCHES=$(echo "$DIFF_CONTENT" | grep -Ei 'PASSWORD\s*=\s*"[^"]+"' | grep -v 'os\.getenv\|os\.environ\|config\.\|_get_secret\|get_secret' || true)
+if [ -n "$PASS_MATCHES" ]; then
+  echo "BLOCKED: Hardcoded password assignment detected"
+  echo "$PASS_MATCHES" | head -5
+  FAILED=1
+fi
+
+# Check for PEM private keys
+if echo "$DIFF_CONTENT" | grep -q "BEGIN.*PRIVATE KEY"; then
+  echo "BLOCKED: Private key material detected"
+  FAILED=1
+fi
+
+if [ "$FAILED" -eq 1 ]; then
+  echo ""
+  echo "Commit blocked. Remove secrets before committing."
+  echo "If this is a false positive, use: git commit --no-verify"
+  exit 1
+fi
+
+exit 0
