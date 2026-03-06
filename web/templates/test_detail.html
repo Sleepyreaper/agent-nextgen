@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 
-{% block title %}Test Results - {{ student.name }}{% endblock %}
+{% block title %}{{ student.name }} — Test Results{% endblock %}
+{% block page_title %}Test Results{% endblock %}
 
 {% block extra_css %}
 <style>
@@ -36,7 +37,7 @@
 </div>
 
 <!-- Overall Assessment (Paragraph Format) -->
-<div class="card" style="border-left: 4px solid #667eea; background: linear-gradient(to bottom right, #f0f9ff, #f5f7fa);">
+<div class="card" style="border-left: 4px solid var(--emory-medium-blue); background: linear-gradient(to bottom right, #f0f9ff, #f5f7fa);">
     <div style="display: flex; align-items: start; margin-bottom: 1rem;">
         <span style="font-size: 2rem; margin-right: 1rem;">🧙</span>
         <div style="flex: 1;">

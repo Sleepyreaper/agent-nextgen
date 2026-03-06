@@ -35,13 +35,13 @@
 </style>
 <div class="dashboard-container">
     <div class="section">
-        <h2 style="color: var(--emory-blue); margin-bottom: 0.5rem;">💬 Feedback</h2>
+        <h2 style="color: var(--emory-dark-blue); margin-bottom: 0.5rem;">💬 Feedback</h2>
         <p style="margin:0 0 0.5rem 0; font-size:0.9rem;"><a href="{{ url_for('feedback.feedback_admin') }}">View admin list</a></p>
         <p style="color: #6b7280; margin-bottom: 1rem;">Report an issue or request a feature; we'll open a GitHub issue automatically.</p>
         <form id="feedbackForm" style="display: grid; gap: 1rem; max-width: 600px;">
             <div>
                 <label for="feedbackType" style="font-weight: 600;">Type</label>
-                <select id="feedbackType" name="feedbackType" class="btn" style="background: white; color: var(--ink-navy); border: 1px solid #e5e7eb; width: 100%;">
+                <select id="feedbackType" name="feedbackType" class="btn" style="background: white; color: var(--emory-dark); border: 1px solid #e5e7eb; width: 100%;">
                     <option value="issue">Issue</option>
                     <option value="feature">Feature Request</option>
                 </select>
@@ -62,7 +62,7 @@
     </div>
 
     <div class="section" style="margin-top:2rem;">
-        <h3 style="color: var(--emory-blue); margin: 0 0 0.75rem 0;">📋 Roadmap & Fixes</h3>
+        <h3 style="color: var(--emory-dark-blue); margin: 0 0 0.75rem 0;">📋 Roadmap & Fixes</h3>
         <div class="issue-tabs">
             <div class="issue-tab active" data-tab="open" onclick="switchIssueTab('open')">Planned</div>
             <div class="issue-tab" data-tab="closed" onclick="switchIssueTab('closed')">Completed</div>
@@ -73,7 +73,7 @@
 
     <div class="section" style="margin-top:2rem;">
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
-            <h3 style="color: var(--emory-blue); margin: 0;">Recent Feedback</h3>
+            <h3 style="color: var(--emory-dark-blue); margin: 0;">Recent Feedback</h3>
             <label class="auto-refresh-toggle">
                 <input type="checkbox" id="autoRefreshToggle"> Auto-refresh (30s)
                 <span id="refreshIndicator" style="display:none;">🔄</span>

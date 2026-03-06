@@ -1,17 +1,18 @@
 {% extends "base.html" %}
 
-{% block title %}Application Details{% endblock %}
+{% block title %}Application Details — NextGen{% endblock %}
+{% block page_title %}Application Details{% endblock %}
 
 {% block extra_css %}
 <style>
     .executive-summary {
         background: linear-gradient(135deg, #f8fafc 0%, #eef2f7 100%);
-        border-left: 4px solid #0b7f8f;
+        border-left: 4px solid var(--emory-medium-blue);
     }
 
     .executive-summary h2 {
         margin-bottom: 0.75rem;
-        color: #0b1f36;
+        color: var(--emory-dark);
     }
 
     .executive-summary .summary-grid {
@@ -49,7 +50,7 @@
     }
 
     .aurora-evaluation {
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        background: linear-gradient(135deg, var(--emory-dark-blue) 0%, var(--emory-medium-blue) 100%);
         color: white;
         padding: 2rem;
         border-radius: 8px;
@@ -81,7 +82,7 @@
     }
     
     .agent-summary strong {
-        color: #667eea;
+        color: var(--emory-medium-blue);
     }
     
     .strengths-box {
@@ -512,13 +513,13 @@
         <!-- Document Download & Quick Summary -->
         <div>
             {% if document_available %}
-            <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 1.5rem; border-radius: 12px; margin-bottom: 1rem;">
+            <div style="background: linear-gradient(135deg, var(--emory-dark-blue) 0%, var(--emory-medium-blue) 100%); color: white; padding: 1.5rem; border-radius: 12px; margin-bottom: 1rem;">
                 <div style="text-align: center; font-size: 2.5rem; margin-bottom: 0.5rem;">🪄</div>
                 <h3 style="color: white; text-align: center; margin: 0.5rem 0;">Evaluation Complete!</h3>
                 <p style="text-align: center; margin: 0.5rem 0; opacity: 0.9;">Document Generator has prepared your document</p>
                 <a href="{{ url_for('applications.download_evaluation', application_id=application.application_id or application.ApplicationID) }}" 
                    class="btn" 
-                   style="display: block; background: white; color: #667eea; margin-top: 1rem; text-align: center; font-weight: bold;">
+                   style="display: block; background: white; color: var(--emory-medium-blue); margin-top: 1rem; text-align: center; font-weight: bold;">
                     📥 Download Full Evaluation Report
                 </a>
             </div>
@@ -740,7 +741,7 @@
             <h3>🤖 Overall Evaluation</h3>
             <div style="margin-top: 1rem; text-align: center;">
                 {% if merlin_evaluation.OverallScore %}
-                <div style="font-size: 3rem; font-weight: bold; color: #667eea;">
+                <div style="font-size: 3rem; font-weight: bold; color: var(--emory-medium-blue);">
                     {{ "%.1f"|format(merlin_evaluation.OverallScore) }}
                 </div>
                 <div style="color: #6b7280; margin-top: 0.5rem;">
@@ -749,7 +750,7 @@
                 {% endif %}
                 {% if merlin_evaluation.Recommendation %}
                 <div style="text-align: center; margin-top: 1rem;">
-                    <span class="badge" style="background: #667eea; color: white; padding: 0.5rem 1rem; font-size: 1rem;">
+                    <span class="badge" style="background: var(--emory-medium-blue); color: white; padding: 0.5rem 1rem; font-size: 1rem;">
                         {{ merlin_evaluation.Recommendation }}
                     </span>
                 </div>
@@ -799,7 +800,7 @@
                 {{ aurora.agents.tiana.analysis or aurora.agents.tiana.strengths_found or 'Analysis not available' }}
             </div>
             {% if aurora.agents.tiana.score %}
-            <div style="margin-top: 0.5rem; color: #667eea;">Score: <strong>{{ aurora.agents.tiana.score }}/100</strong></div>
+            <div style="margin-top: 0.5rem; color: var(--emory-medium-blue);">Score: <strong>{{ aurora.agents.tiana.score }}/100</strong></div>
             {% endif %}
         </div>
         {% endif %}
@@ -1056,7 +1057,7 @@ async function evaluateApplication() {
             <h3>🤖 AI Evaluation</h3>
             <div style="margin-top: 1rem;">
                 {% if evaluation.OverallScore %}
-                <div style="font-size: 3rem; font-weight: bold; color: #667eea; text-align: center;">
+                <div style="font-size: 3rem; font-weight: bold; color: var(--emory-medium-blue); text-align: center;">
                     {{ "%.1f"|format(evaluation.OverallScore) }}
                 </div>
                 <div style="text-align: center; color: #6b7280; margin-top: 0.5rem;">
@@ -1065,7 +1066,7 @@ async function evaluateApplication() {
                 {% endif %}
                 {% if evaluation.Recommendation %}
                 <div style="text-align: center; margin-top: 1rem;">
-                    <span class="badge" style="background: #667eea; color: white; padding: 0.5rem 1rem; font-size: 1rem;">
+                    <span class="badge" style="background: var(--emory-medium-blue); color: white; padding: 0.5rem 1rem; font-size: 1rem;">
                         {{ evaluation.Recommendation }}
                     </span>
                 </div>
@@ -1087,7 +1088,7 @@ async function evaluateApplication() {
         <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 1rem; margin-top: 1rem;">
             {% if evaluation.TechnicalSkillsScore %}
             <div style="text-align: center;">
-                <div style="font-size: 1.5rem; font-weight: bold; color: #667eea;">
+                <div style="font-size: 1.5rem; font-weight: bold; color: var(--emory-medium-blue);">
                     {{ "%.0f"|format(evaluation.TechnicalSkillsScore) }}
                 </div>
                 <div style="color: #6b7280; font-size: 0.875rem;">Technical Skills</div>

@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 
-{% block title %}Training Data{% endblock %}
+{% block title %}Training Data — NextGen{% endblock %}
+{% block page_title %}Training Data{% endblock %}
 
 {% block content %}
 <style>
@@ -9,16 +10,26 @@
     50% { opacity: 0.5; }
 }
 </style>
-<div class="card">
+
+<!-- Hero Banner -->
+<div class="relative rounded-xl overflow-hidden mb-6 h-32" style="background: linear-gradient(135deg, var(--emory-dark-blue) 0%, var(--emory-gold) 100%);">
+    <img src="{{ url_for('static', filename='img/training-data.jpg') }}" class="absolute inset-0 w-full h-full object-cover opacity-15" alt="">
+    <div class="absolute inset-0 bg-genome-dots opacity-20"></div>
+    <div class="relative z-10 p-6 flex items-center gap-4">
+        <span class="text-3xl">📚</span>
+        <div>
+            <h2 class="font-heading text-xl font-bold text-white">Training Data</h2>
+            <p class="text-white/60 text-sm">Historical applications for agent calibration · {{ total_count }} students · {{ selected_count }} selected · {{ matched_count }} with XLSX</p>
+        </div>
+        <div class="ml-auto flex gap-2">
+            <a href="{{ url_for('training.import_scores_page') }}" class="btn-emory btn-emory-sm btn-emory-gold">📊 Import Scores</a>
+        </div>
+    </div>
+</div>
+
+<div class="card-nextgen">
     <div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 2rem; gap: 1rem;">
         <div>
-            <h2>📚 Training Data</h2>
-            <p style="color: #6b7280; margin-top: 0.5rem;">
-                Historical applications sorted by last name. Students marked "Selected" became our successful interns.
-            </p>
-            <p style="color: #6b7280; margin-top: 0.5rem;">
-                Status badges show selection outcomes and whether training data is fully captured.
-            </p>
             <div style="margin-top: 0.75rem;">
                 <a href="{{ url_for('training.import_scores_page') }}" style="display: inline-flex; align-items: center; gap: 0.4rem; background: #f59e0b; color: #78350f; padding: 0.4rem 1rem; border-radius: 6px; text-decoration: none; font-weight: 600; font-size: 0.85rem;">
                     📊 Import Historical Scores
@@ -126,7 +137,7 @@
 
     <!-- Statistics -->
     <div style="display: grid; grid-template-columns: repeat(5, 1fr); gap: 1rem; margin-bottom: 2rem;">
-        <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 1.5rem; border-radius: 8px; text-align: center;">
+        <div style="background: linear-gradient(135deg, var(--emory-dark-blue) 0%, var(--emory-medium-blue) 100%); color: white; padding: 1.5rem; border-radius: 8px; text-align: center;">
             <div style="font-size: 2rem; font-weight: bold;">{{ total_count }}</div>
             <div style="opacity: 0.9; margin-top: 0.5rem;">Total Students</div>
         </div>
@@ -151,7 +162,7 @@
     <!-- Tab Navigation -->
     <div style="display: flex; gap: 0; margin-bottom: 0; border-bottom: 2px solid #e5e7eb;">
         <button id="tabBtnStudents" class="training-tab active" onclick="switchTab('students')"
-                style="padding: 0.75rem 1.5rem; font-weight: 600; font-size: 1rem; border: none; background: none; cursor: pointer; border-bottom: 3px solid #667eea; color: #667eea; margin-bottom: -2px;">
+                style="padding: 0.75rem 1.5rem; font-weight: 600; font-size: 1rem; border: none; background: none; cursor: pointer; border-bottom: 3px solid #667eea; color: var(--emory-medium-blue); margin-bottom: -2px;">
             👥 Students ({{ total_count }})
         </button>
         <button id="tabBtnSchools" class="training-tab" onclick="switchTab('schools')"

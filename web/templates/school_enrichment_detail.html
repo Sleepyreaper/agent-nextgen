@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 
-{% block title %}School Enrichment Details - {{ school.school_name }}{% endblock %}
+{% block title %}{{ school.school_name }} — NextGen{% endblock %}
+{% block page_title %}School Details{% endblock %}
 
 {% block extra_css %}
 <style>
@@ -11,7 +12,7 @@
     }
 
     .school-header {
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        background: linear-gradient(135deg, var(--emory-dark-blue) 0%, var(--emory-medium-blue) 100%);
         color: white;
         padding: 2rem;
         border-radius: 8px;
@@ -33,7 +34,7 @@
 
     .edit-button {
         background: white;
-        color: #667eea;
+        color: var(--emory-medium-blue);
         padding: 0.75rem 1.5rem;
         border: none;
         border-radius: 6px;
@@ -116,7 +117,7 @@
     }
 
     .sources-list a {
-        color: #667eea;
+        color: var(--emory-medium-blue);
         text-decoration: none;
         word-break: break-word;
     }
@@ -128,7 +129,7 @@
     .opportunity-score {
         font-size: 2rem;
         font-weight: bold;
-        color: #667eea;
+        color: var(--emory-medium-blue);
     }
 
     .modal {
@@ -213,7 +214,7 @@
     }
 
     .btn-primary {
-        background: #667eea;
+        background: var(--emory-medium-blue);
         color: white;
         padding: 0.75rem 1.5rem;
         border: none;
@@ -267,7 +268,7 @@
     .back-link {
         display: inline-block;
         margin-bottom: 1.5rem;
-        color: #667eea;
+        color: var(--emory-medium-blue);
         text-decoration: none;
         font-weight: 500;
     }
@@ -309,10 +310,11 @@
 
 {% block content %}
 <div class="school-detail-container">
-    <a href="{{ url_for('schools.schools_dashboard') }}" class="back-link">← Back to Schools</a>
+    <a href="{{ url_for('schools.schools_dashboard') }}" class="text-sm text-emory-medium-blue hover:text-emory-dark-blue mb-4 inline-block">← Back to Schools</a>
 
-    <div class="school-header">
-        <div>
+    <div class="school-header" style="background: linear-gradient(135deg, var(--emory-dark-blue) 0%, var(--emory-medium-blue) 100%);">
+        <img src="{{ url_for('static', filename='img/school-campus.jpg') }}" style="position:absolute; inset:0; width:100%; height:100%; object-fit:cover; opacity:0.1;">
+        <div style="position:relative; z-index:2;">
             <h1>{{ school.school_name }}</h1>
             <div class="info">
                 {{ school.school_district or 'Unknown District' }} &bull; {{ school.state_code or 'Unknown State' }}
@@ -393,7 +395,7 @@
         </div>
 
         <!-- School Analysis: Fields Used for School Evaluation -->
-        <div class="detail-section" style="border-left: 4px solid #667eea;">
+        <div class="detail-section" style="border-left: 4px solid var(--emory-medium-blue);">
             <div class="section-title">🔬 School Profile <small style="font-weight: normal; color: #6b7280; font-size: 0.75rem;">(School Data Scientist)</small></div>
             <p style="color: #6b7280; font-size: 0.9rem; margin-bottom: 1.5rem;">
                 These are the fields evaluated from NCES database records. Data is imported via CSV upload on the Training page.
@@ -421,7 +423,7 @@
                     <div class="field-label">School URL</div>
                     <div class="field-value {% if not school.school_url %}empty{% endif %}">
                         {% if school.school_url %}
-                        <a href="{{ school.school_url }}" target="_blank" style="color: #667eea;">{{ school.school_url }}</a>
+                        <a href="{{ school.school_url }}" target="_blank" style="color: var(--emory-medium-blue);">{{ school.school_url }}</a>
                         {% if school.school_url_verified %}<span style="color: #10b981; margin-left: 0.5rem;">✓ Verified</span>{% endif %}
                         {% else %}—{% endif %}
                     </div>

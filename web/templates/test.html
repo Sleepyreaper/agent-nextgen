@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 
-{% block title %}Real-Time Test System{% endblock %}
+{% block title %}Quick Test — NextGen{% endblock %}
+{% block page_title %}Quick Test{% endblock %}
 
 {% block extra_css %}
 <style>
@@ -18,13 +19,13 @@
         background: white;
         padding: 1.5rem;
         border-radius: 8px;
-        border-left: 4px solid #667eea;
+        border-left: 4px solid var(--emory-medium-blue);
         margin-bottom: 2rem;
         box-shadow: 0 1px 3px rgba(0,0,0,0.1);
     }
 
     .btn-start-test {
-        background: #667eea;
+        background: var(--emory-medium-blue);
         color: white;
         padding: 0.75rem 2rem;
         border: none;
@@ -183,7 +184,7 @@
         width: 14px;
         height: 14px;
         border: 2px solid #f3f4f6;
-        border-top-color: #667eea;
+        border-top-color: var(--emory-medium-blue);
         border-radius: 50%;
         animation: spin 0.8s linear infinite;
         margin-right: 0.5rem;
@@ -428,7 +429,7 @@
     }
     
     .btn-test-quick {
-        background: #667eea;
+        background: var(--emory-medium-blue);
         color: white;
     }
     
@@ -450,7 +451,7 @@
         width: 16px;
         height: 16px;
         border: 3px solid #f3f4f6;
-        border-top-color: #667eea;
+        border-top-color: var(--emory-medium-blue);
         border-radius: 50%;
         animation: spin 0.8s linear infinite;
         margin-right: 0.5rem;
@@ -470,12 +471,17 @@
 
 {% block content %}
 <div class="test-container">
-    <!-- Header -->
-    <div class="test-header">
-        <h1>🧪 Real-Time Test System</h1>
-        <p style="color: #6b7280; margin-top: 0.5rem;">
-            Test the full 9-step evaluation pipeline: Extract → Match → Enrich → Validate → Evaluate → Synthesize → Report
-        </p>
+    <!-- Hero Banner -->
+    <div class="relative rounded-xl overflow-hidden mb-6 h-32" style="background: linear-gradient(135deg, var(--emory-dark-blue) 0%, var(--emory-medium-blue) 80%, var(--emory-green) 100%);">
+        <img src="{{ url_for('static', filename='img/test-lab.jpg') }}" class="absolute inset-0 w-full h-full object-cover opacity-12" alt="">
+        <div class="absolute inset-0 bg-genome-dots opacity-20"></div>
+        <div class="relative z-10 p-6 flex items-center gap-4">
+            <span class="text-3xl">🧪</span>
+            <div>
+                <h1 class="font-heading text-xl font-bold text-white m-0">Real-Time Test System</h1>
+                <p class="text-white/60 text-sm mt-1">Full 9-step evaluation pipeline: Extract → Match → Enrich → Validate → Evaluate → Synthesize → Report</p>
+            </div>
+        </div>
     </div>
 
     <!-- Info Box -->
@@ -502,7 +508,7 @@
         <div style="display: flex; gap: 1rem; flex-wrap: wrap;">
             <div>
                 <h4 style="margin: 0 0 0.5rem 0; font-size: 0.9rem; color: #6b7280;">🎲 Random Fake Applications</h4>
-                <button class="btn-start-test" id="btnStartTest" onclick="startTest('dynamic')" style="background: #667eea;">
+                <button class="btn-start-test" id="btnStartTest" onclick="startTest('dynamic')" style="background: var(--emory-medium-blue);">
                     🚀 Random Students
                 </button>
                 <p style="font-size: 0.8rem; color: #9ca3af; margin: 0.5rem 0 0 0;">Generate new synthetic data each run</p>

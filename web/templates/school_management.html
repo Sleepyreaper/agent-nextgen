@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 
-{% block title %}School Data Management{% endblock %}
+{% block title %}Schools — NextGen{% endblock %}
+{% block page_title %}School Management{% endblock %}
 
 {% block extra_css %}
 <style>
@@ -84,7 +85,7 @@
         flex-direction: column;
         align-items: center;
         padding: 0.75rem 1.5rem;
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        background: linear-gradient(135deg, var(--emory-dark-blue) 0%, var(--emory-medium-blue) 100%);
         color: white;
         border-radius: 8px;
         min-width: 120px;
@@ -243,8 +244,8 @@
     }
 
     .tab.active {
-        color: #667eea;
-        border-bottom-color: #667eea;
+        color: var(--emory-medium-blue);
+        border-bottom-color: var(--emory-medium-blue);
     }
 
     .tab-content {
@@ -262,7 +263,7 @@
     }
 
     .btn-analyze {
-        background: #667eea;
+        background: var(--emory-medium-blue);
         color: white;
     }
 
@@ -307,7 +308,7 @@
         padding: 1rem;
         background: #f9fafb;
         border-radius: 6px;
-        border-left: 4px solid #667eea;
+        border-left: 4px solid var(--emory-medium-blue);
     }
 
     .score-component-label {
@@ -321,7 +322,7 @@
     .score-component-value {
         font-size: 1.75rem;
         font-weight: bold;
-        color: #667eea;
+        color: var(--emory-medium-blue);
     }
 
     .progress-bar {
@@ -367,14 +368,14 @@
         background: white;
         padding: 1.5rem;
         border-radius: 8px;
-        border-left: 4px solid #667eea;
+        border-left: 4px solid var(--emory-medium-blue);
         box-shadow: 0 1px 3px rgba(0,0,0,0.1);
     }
 
     .stat-value {
         font-size: 2rem;
         font-weight: bold;
-        color: #667eea;
+        color: var(--emory-medium-blue);
     }
 
     .stat-label {
@@ -465,12 +466,20 @@
 
 {% block content %}
 <div class="school-management-container">
-    <div style="margin-bottom: 2rem; display: flex; justify-content: space-between; align-items: flex-start;">
-        <div>
-            <h1 style="color: #1f2937; margin-bottom: 0.5rem;">🏫 School Data Management</h1>
-            <p style="color: #6b7280;">Comprehensive school profiles, opportunity scores, and human review</p>
+    <!-- Hero Banner -->
+    <div class="relative rounded-xl overflow-hidden mb-6 h-32" style="background: linear-gradient(135deg, var(--emory-dark-blue) 0%, var(--emory-green) 100%);">
+        <img src="{{ url_for('static', filename='img/school-campus.jpg') }}" class="absolute inset-0 w-full h-full object-cover opacity-15" alt="">
+        <div class="absolute inset-0 bg-genome-dots opacity-20"></div>
+        <div class="relative z-10 p-6 flex items-center justify-between">
+            <div class="flex items-center gap-4">
+                <span class="text-3xl">🏫</span>
+                <div>
+                    <h1 class="font-heading text-xl font-bold text-white m-0">School Data Management</h1>
+                    <p class="text-white/60 text-sm mt-1">School profiles, opportunity scores, and human review</p>
+                </div>
+            </div>
+            <button onclick="openAddSchoolModal()" class="btn-emory btn-emory-sm btn-emory-gold">+ Add School</button>
         </div>
-        <button onclick="openAddSchoolModal()" style="padding: 0.6rem 1.2rem; background: linear-gradient(135deg, #667eea, #764ba2); color: white; border: none; border-radius: 8px; font-size: 0.9rem; font-weight: 600; cursor: pointer; white-space: nowrap;">+ Add School</button>
     </div>
 
     <!-- Statistics -->
