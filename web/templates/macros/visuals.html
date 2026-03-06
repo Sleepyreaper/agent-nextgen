@@ -1,0 +1,83 @@
+{# Reusable Jinja macros for agent avatars and decorative SVGs #}
+
+{# ── Agent Avatar ────────────────────────────────────────── #}
+{# Usage: {{ macros.agent_avatar('merlin', '🧙') }}          #}
+{% macro agent_avatar(agent_name, emoji, size='') %}
+{% set cls = 'agent-avatar' + (' agent-avatar-lg' if size == 'lg' else '') + ' agent-avatar-' + agent_name %}
+<span class="{{ cls }}">{{ emoji }}</span>
+{% endmacro %}
+
+{# ── Agent Name + Avatar inline ──────────────────────────── #}
+{% macro agent_badge(agent_name, display_name, emoji) %}
+<span class="inline-flex items-center gap-2">
+    {{ agent_avatar(agent_name, emoji) }}
+    <span class="font-semibold text-sm">{{ display_name }}</span>
+</span>
+{% endmacro %}
+
+{# ── DNA Helix SVG (decorative) ──────────────────────────── #}
+{% macro dna_helix(width=200, height=60, color='#012169', opacity=0.08) %}
+<svg width="{{ width }}" height="{{ height }}" viewBox="0 0 200 60" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+  <path d="M0 30 Q25 5 50 30 T100 30 T150 30 T200 30" stroke="{{ color }}" stroke-opacity="{{ opacity }}" stroke-width="2" fill="none"/>
+  <path d="M0 30 Q25 55 50 30 T100 30 T150 30 T200 30" stroke="{{ color }}" stroke-opacity="{{ opacity }}" stroke-width="2" fill="none"/>
+  <circle cx="25" cy="17" r="3" fill="{{ color }}" fill-opacity="{{ opacity * 1.5 }}"/>
+  <circle cx="75" cy="43" r="3" fill="{{ color }}" fill-opacity="{{ opacity * 1.5 }}"/>
+  <circle cx="125" cy="17" r="3" fill="{{ color }}" fill-opacity="{{ opacity * 1.5 }}"/>
+  <circle cx="175" cy="43" r="3" fill="{{ color }}" fill-opacity="{{ opacity * 1.5 }}"/>
+  <line x1="25" y1="17" x2="25" y2="43" stroke="{{ color }}" stroke-opacity="{{ opacity }}" stroke-width="1"/>
+  <line x1="75" y1="17" x2="75" y2="43" stroke="{{ color }}" stroke-opacity="{{ opacity }}" stroke-width="1"/>
+  <line x1="125" y1="17" x2="125" y2="43" stroke="{{ color }}" stroke-opacity="{{ opacity }}" stroke-width="1"/>
+  <line x1="175" y1="17" x2="175" y2="43" stroke="{{ color }}" stroke-opacity="{{ opacity }}" stroke-width="1"/>
+</svg>
+{% endmacro %}
+
+{# ── Microscope SVG (empty state for no students) ────────── #}
+{% macro empty_microscope() %}
+<svg class="empty-illustration" viewBox="0 0 120 120" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+  <circle cx="60" cy="60" r="55" fill="#F2F2F0" stroke="#D0D0CE" stroke-width="2"/>
+  <rect x="52" y="25" width="16" height="45" rx="3" fill="#012169" fill-opacity="0.15"/>
+  <rect x="48" y="18" width="24" height="10" rx="3" fill="#007DBA" fill-opacity="0.2"/>
+  <circle cx="60" cy="78" r="8" fill="#012169" fill-opacity="0.1" stroke="#012169" stroke-opacity="0.2" stroke-width="2"/>
+  <rect x="35" y="90" width="50" height="6" rx="3" fill="#D0D0CE"/>
+  <rect x="42" y="84" width="36" height="8" rx="2" fill="#012169" fill-opacity="0.12"/>
+  <circle cx="60" cy="78" r="3" fill="#F2A900" fill-opacity="0.4"/>
+</svg>
+{% endmacro %}
+
+{# ── Document SVG (empty state for no uploads) ──────────── #}
+{% macro empty_documents() %}
+<svg class="empty-illustration" viewBox="0 0 120 120" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+  <circle cx="60" cy="60" r="55" fill="#F2F2F0" stroke="#D0D0CE" stroke-width="2"/>
+  <rect x="35" y="22" width="42" height="56" rx="4" fill="white" stroke="#D0D0CE" stroke-width="2"/>
+  <rect x="43" y="22" width="42" height="56" rx="4" fill="white" stroke="#007DBA" stroke-opacity="0.3" stroke-width="2"/>
+  <line x1="51" y1="35" x2="77" y2="35" stroke="#D0D0CE" stroke-width="2" stroke-linecap="round"/>
+  <line x1="51" y1="43" x2="73" y2="43" stroke="#D0D0CE" stroke-width="2" stroke-linecap="round"/>
+  <line x1="51" y1="51" x2="75" y2="51" stroke="#D0D0CE" stroke-width="2" stroke-linecap="round"/>
+  <line x1="51" y1="59" x2="68" y2="59" stroke="#D0D0CE" stroke-width="2" stroke-linecap="round"/>
+  <circle cx="78" cy="80" r="16" fill="#012169" fill-opacity="0.1" stroke="#012169" stroke-opacity="0.2" stroke-width="2"/>
+  <path d="M74 80l3 3 7-7" stroke="#348338" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>
+{% endmacro %}
+
+{# ── Chart SVG (empty state for no metrics) ──────────────── #}
+{% macro empty_chart() %}
+<svg class="empty-illustration" viewBox="0 0 120 120" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+  <circle cx="60" cy="60" r="55" fill="#F2F2F0" stroke="#D0D0CE" stroke-width="2"/>
+  <rect x="28" y="75" width="12" height="20" rx="2" fill="#012169" fill-opacity="0.15"/>
+  <rect x="44" y="55" width="12" height="40" rx="2" fill="#007DBA" fill-opacity="0.2"/>
+  <rect x="60" y="40" width="12" height="55" rx="2" fill="#F2A900" fill-opacity="0.25"/>
+  <rect x="76" y="30" width="12" height="65" rx="2" fill="#348338" fill-opacity="0.2"/>
+  <line x1="25" y1="95" x2="95" y2="95" stroke="#D0D0CE" stroke-width="2"/>
+  <line x1="25" y1="25" x2="25" y2="95" stroke="#D0D0CE" stroke-width="2"/>
+</svg>
+{% endmacro %}
+
+{# ── Full agent roster with emoji mapping ────────────────── #}
+{% macro agent_roster_map() %}
+{# Returns nothing — this documents the emoji mapping for reference:
+   belle: 📖   tiana: 📝   rapunzel: 🎓   mulan: 💌
+   moana: 🌊   merlin: 🧙   gaston: ⚔️   milo: 📊
+   ariel: 💬   mirabel: 🎬   naveen: 🏫   bashful: 😊
+   aurora: ✨   smee: 🧭   fairy_godmother: 📄   scuttle: 🐦
+#}
+{% endmacro %}

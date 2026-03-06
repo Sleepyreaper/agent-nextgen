@@ -20,16 +20,67 @@
     }
     </script>
     <link rel="stylesheet" href="{{ url_for('static', filename='css/nextgen.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/agents.css') }}">
 </head>
 
-<body class="h-full bg-emory-gray-100 font-body flex items-center justify-center">
-    <!-- Subtle background decoration -->
-    <div class="fixed inset-0 overflow-hidden pointer-events-none" aria-hidden="true">
-        <div class="absolute -top-40 -right-40 w-[600px] h-[600px] rounded-full bg-emory-dark-blue/[0.03]"></div>
-        <div class="absolute -bottom-40 -left-40 w-[500px] h-[500px] rounded-full bg-emory-gold/[0.05]"></div>
+<body class="h-full font-body flex">
+    <!-- Left panel: hero image area (hidden on mobile) -->
+    <div class="hidden lg:flex lg:w-1/2 relative bg-emory-dark-blue overflow-hidden">
+        <!-- Decorative background pattern -->
+        <div class="absolute inset-0 bg-genome-dots"></div>
+        <div class="absolute inset-0" style="background: linear-gradient(135deg, rgba(1,33,105,0.95) 0%, rgba(0,125,186,0.85) 50%, rgba(52,131,56,0.75) 100%);"></div>
+        
+        <!-- Content overlay -->
+        <div class="relative z-10 flex flex-col justify-between p-12 text-white">
+            <div>
+                <div class="flex items-center gap-3 mb-2">
+                    <div class="w-10 h-10 rounded-lg bg-emory-gold flex items-center justify-center">
+                        <span class="text-emory-dark font-bold text-lg font-heading">NG</span>
+                    </div>
+                    <span class="text-white/60 text-sm">Emory University</span>
+                </div>
+            </div>
+            
+            <div>
+                <!-- DNA Helix decorative SVG -->
+                <svg width="280" height="80" viewBox="0 0 280 80" fill="none" xmlns="http://www.w3.org/2000/svg" class="mb-8 opacity-20" aria-hidden="true">
+                    <path d="M0 40 Q35 5 70 40 T140 40 T210 40 T280 40" stroke="white" stroke-width="2" fill="none"/>
+                    <path d="M0 40 Q35 75 70 40 T140 40 T210 40 T280 40" stroke="white" stroke-width="2" fill="none"/>
+                    <circle cx="35" cy="22" r="4" fill="#F2A900" fill-opacity="0.6"/>
+                    <circle cx="105" cy="58" r="4" fill="#41B6E6" fill-opacity="0.6"/>
+                    <circle cx="175" cy="22" r="4" fill="#F2A900" fill-opacity="0.6"/>
+                    <circle cx="245" cy="58" r="4" fill="#41B6E6" fill-opacity="0.6"/>
+                    <line x1="35" y1="22" x2="35" y2="58" stroke="white" stroke-opacity="0.15" stroke-width="1"/>
+                    <line x1="105" y1="22" x2="105" y2="58" stroke="white" stroke-opacity="0.15" stroke-width="1"/>
+                    <line x1="175" y1="22" x2="175" y2="58" stroke="white" stroke-opacity="0.15" stroke-width="1"/>
+                    <line x1="245" y1="22" x2="245" y2="58" stroke="white" stroke-opacity="0.15" stroke-width="1"/>
+                </svg>
+                
+                <h1 class="font-heading text-3xl font-bold leading-tight mb-4">NextGen High School<br>Internship Program</h1>
+                <p class="text-white/70 text-sm leading-relaxed max-w-md">
+                    AI-powered scholarship evaluation for the Department of Human Genetics. 
+                    Recognizing that our differences make us stronger, we recruit and support 
+                    learners from all backgrounds in STEM.
+                </p>
+                <div class="flex items-center gap-6 mt-8 text-white/40 text-xs">
+                    <span>🧬 15 AI Agents</span>
+                    <span>📊 Evidence-Based</span>
+                    <span>🔒 Secure</span>
+                </div>
+            </div>
+            
+            <div class="text-white/30 text-xs">
+                Department of Human Genetics · School of Medicine
+            </div>
+        </div>
+        
+        <!-- Optional: replace this with a real photo -->
+        <!-- To add a hero image, place it at web/static/img/login-hero.jpg and uncomment: -->
+        <!-- <img src="{{ url_for('static', filename='img/login-hero.jpg') }}" class="absolute inset-0 w-full h-full object-cover opacity-20" alt=""> -->
     </div>
 
-    <div class="relative w-full max-w-md px-4">
+    <!-- Right panel: login form -->
+    <div class="flex-1 flex items-center justify-center bg-emory-gray-100 p-4">
         <!-- Card -->
         <div class="bg-white rounded-2xl shadow-xl overflow-hidden">
             <!-- Header -->
@@ -83,6 +134,7 @@
             © 2026 Emory University · Department of Human Genetics<br>
             <span class="text-emory-gray-300">v{{ app_version }}</span>
         </p>
+    </div>
     </div>
 </body>
 </html>

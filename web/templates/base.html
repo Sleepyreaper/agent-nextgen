@@ -41,6 +41,7 @@
 
     <!-- NextGen custom styles -->
     <link rel="stylesheet" href="{{ url_for('static', filename='css/nextgen.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/agents.css') }}">
 
     {% block extra_css %}{% endblock %}
 </head>
@@ -107,6 +108,13 @@
 
         <!-- Footer -->
         <div class="px-4 py-3 border-t border-white/10">
+            <!-- Decorative DNA helix -->
+            <svg width="100%" height="24" viewBox="0 0 200 24" preserveAspectRatio="none" fill="none" xmlns="http://www.w3.org/2000/svg" class="mb-2 opacity-20" aria-hidden="true">
+                <path d="M0 12 Q25 2 50 12 T100 12 T150 12 T200 12" stroke="white" stroke-width="1" fill="none"/>
+                <path d="M0 12 Q25 22 50 12 T100 12 T150 12 T200 12" stroke="white" stroke-width="1" fill="none"/>
+                <circle cx="50" cy="6" r="2" fill="#F2A900" fill-opacity="0.5"/>
+                <circle cx="150" cy="18" r="2" fill="#41B6E6" fill-opacity="0.5"/>
+            </svg>
             <div class="sidebar-footer-text text-white/40 text-[0.7rem]">
                 <div>Emory Dept. of Human Genetics</div>
                 <div class="mt-0.5">v{{ app_version }}</div>
