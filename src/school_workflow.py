@@ -414,10 +414,8 @@ class SchoolDataWorkflow:
         """
         Look up school in enriched data table.
 
-        Tries exact match first, then falls back to fuzzy matching.  For
-        states with CSV-imported definitive school lists (e.g. GA), fuzzy
-        matching is critical because application text may abbreviate or
-        slightly misspell the school name.
+        Tries alias resolution first, then exact match, then fuzzy matching.
+        When a fuzzy match succeeds, stores the alias for faster future lookups.
         
         Args:
             school_name: School name to search
@@ -427,7 +425,21 @@ class SchoolDataWorkflow:
             School enrichment record if found, None otherwise
         """
         try:
-            # Try exact match first
+            # Try alias resolution first (instant lookup for previously matched names)
+            canonical = self.db.resolve_school_alias(school_name, state_code)
+            if canonical and canonical.lower() != school_name.lower():
+                result = self.db.get_school_enriched_data(
+                    school_name=canonical,
+                    state_code=state_code
+                )
+                if result:
+                    logger.info(
+                        f"School lookup via alias: '{school_name}' → '{canonical}'",
+                        extra={'school': school_name, 'canonical': canonical}
+                    )
+                    return dict(result) if hasattr(result, 'items') else result
+
+            # Try exact match
             result = self.db.get_school_enriched_data(
                 school_name=school_name,
                 state_code=state_code
@@ -453,6 +465,14 @@ class SchoolDataWorkflow:
                     f"School fuzzy-matched: '{school_name}' → '{matched_name}'",
                     extra={'school': school_name, 'matched': matched_name, 'state': state_code}
                 )
+                # Store alias for faster future lookups
+                if school_name.lower() != matched_name.lower():
+                    self.db.save_school_alias(
+                        alias_name=school_name,
+                        canonical_name=matched_name,
+                        state_code=state_code,
+                        match_score=0.0,
+                    )
                 return fuzzy_result
             
             logger.debug(

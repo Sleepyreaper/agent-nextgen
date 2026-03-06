@@ -1114,6 +1114,29 @@ class Database:
                     except Exception:
                         pass
 
+            # ===== SCHOOL NAME ALIASES TABLE =====
+            try:
+                cursor.execute("""
+                    CREATE TABLE IF NOT EXISTS school_name_aliases (
+                        alias_id        SERIAL PRIMARY KEY,
+                        alias_name      VARCHAR(500) NOT NULL,
+                        canonical_name  VARCHAR(500) NOT NULL,
+                        state_code      VARCHAR(10),
+                        match_score     REAL DEFAULT 0,
+                        created_at      TIMESTAMPTZ DEFAULT NOW(),
+                        UNIQUE (LOWER(alias_name), state_code)
+                    )
+                """)
+                cursor.execute("CREATE INDEX IF NOT EXISTS idx_school_alias_name ON school_name_aliases(LOWER(alias_name))")
+                conn.commit()
+                logger.info("✓ Ensured school_name_aliases table")
+            except Exception as alias_err:
+                logger.warning(f"Could not create school_name_aliases table: {alias_err}")
+                try:
+                    conn.rollback()
+                except Exception:
+                    pass
+
             # ===== STUDENT SCHOOL CONTEXT TABLE MIGRATIONS =====
             cursor.execute("""
                 SELECT EXISTS(
@@ -3460,6 +3483,43 @@ class Database:
             return None
         except Exception as e:
             logger.error(f"Error in fuzzy school lookup: {e}")
+            return None
+
+    def save_school_alias(self, alias_name: str, canonical_name: str,
+                          state_code: Optional[str] = None,
+                          match_score: float = 0.0) -> None:
+        """Store a school name alias mapping for faster future lookups."""
+        try:
+            if not self.has_table("school_name_aliases"):
+                return
+            self.execute_non_query(
+                """INSERT INTO school_name_aliases
+                       (alias_name, canonical_name, state_code, match_score)
+                   VALUES (%s, %s, %s, %s)
+                   ON CONFLICT (LOWER(alias_name), state_code)
+                   DO UPDATE SET canonical_name = EXCLUDED.canonical_name,
+                                 match_score = EXCLUDED.match_score""",
+                (alias_name, canonical_name, state_code, match_score),
+            )
+        except Exception as exc:
+            logger.debug(f"Could not save school alias: {exc}")
+
+    def resolve_school_alias(self, school_name: str,
+                             state_code: Optional[str] = None) -> Optional[str]:
+        """Return the canonical school name if an alias exists, else None."""
+        try:
+            if not self.has_table("school_name_aliases"):
+                return None
+            query = "SELECT canonical_name FROM school_name_aliases WHERE LOWER(alias_name) = LOWER(%s)"
+            params: list = [school_name]
+            if state_code:
+                query += " AND state_code = %s"
+                params.append(state_code)
+            rows = self.execute_query(query, tuple(params))
+            if rows:
+                return rows[0].get('canonical_name')
+            return None
+        except Exception:
             return None
 
     def state_has_csv_school_data(self, state_code: str) -> bool:
