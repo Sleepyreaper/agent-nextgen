@@ -8634,6 +8634,8 @@ def telemetry_overview():
             'agents': agent_summary,
             'token_usage': token_usage.get('totals', {}),
             'token_usage_by_model': token_usage.get('by_model', {}),
+            'token_usage_by_agent': token_usage.get('by_agent', {}),
+            'token_usage_by_agent_model': token_usage.get('by_agent_model', {}),
             'school_enrichment': {
                 'by_status': school_stats,
                 'moana_validation': moana_stats,
@@ -8656,8 +8658,10 @@ def telemetry_token_usage():
     recent model calls for diagnostics.
     """
     try:
+        from src.telemetry import NextGenTelemetry
         usage = telemetry.get_token_usage()
-        return jsonify({'status': 'success', **usage})
+        cost_estimate = NextGenTelemetry.estimate_costs(usage)
+        return jsonify({'status': 'success', 'cost_estimate': cost_estimate, **usage})
     except Exception as e:
         logger.error(f"Token usage endpoint error: {e}", exc_info=True)
         logger.error('Request failed: %s', e, exc_info=True)

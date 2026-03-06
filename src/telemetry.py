@@ -150,6 +150,49 @@ class NextGenTelemetry:
     # ── DB query helpers (for API endpoints) ──────────────────────────
 
     @classmethod
+    def estimate_costs(cls, token_usage: Dict[str, Any]) -> Dict[str, Any]:
+        """Estimate dollar costs from token usage, broken down by model.
+
+        Pricing is approximate (Azure OpenAI list pricing per 1M tokens).
+        Returns a dict with per-model cost estimates and a grand total.
+        """
+        # Approximate $/1M tokens — input / output
+        MODEL_PRICING = {
+            'gpt-4.1': (2.00, 8.00),
+            'gpt-4.1-2025-04-14': (2.00, 8.00),
+            'gpt-4.1-mini': (0.40, 1.60),
+            'gpt-4.1-mini-2025-04-14': (0.40, 1.60),
+            'gpt-4.1-nano': (0.10, 0.40),
+            'gpt-4.1-nano-2025-04-14': (0.10, 0.40),
+            'gpt-4o': (2.50, 10.00),
+            'gpt-4o-2024-08-06': (2.50, 10.00),
+            'gpt-4o-mini': (0.15, 0.60),
+            'o3-mini': (1.10, 4.40),
+        }
+        DEFAULT_PRICING = (2.50, 10.00)  # conservative default
+
+        by_model = token_usage.get('by_model', {})
+        cost_by_model: Dict[str, float] = {}
+        total_cost = 0.0
+
+        for model, data in by_model.items():
+            inp = data.get('input_tokens', 0)
+            out = data.get('output_tokens', 0)
+            price = DEFAULT_PRICING
+            for key, p in MODEL_PRICING.items():
+                if key in (model or '').lower():
+                    price = p
+                    break
+            cost = (inp * price[0] + out * price[1]) / 1_000_000
+            cost_by_model[model] = round(cost, 4)
+            total_cost += cost
+
+        return {
+            'total_estimated_cost_usd': round(total_cost, 4),
+            'by_model': cost_by_model,
+        }
+
+    @classmethod
     def query_db_token_usage(cls) -> Dict[str, Any]:
         """Query aggregated token usage from the ``telemetry_events`` table.
 

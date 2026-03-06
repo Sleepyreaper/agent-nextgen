@@ -428,6 +428,11 @@
             <div class="stat-label">Model Calls</div>
             <div class="stat-sub" id="statTrackingSince">since startup</div>
         </div>
+        <div class="stat-card red">
+            <div class="stat-value" id="statEstCost">—</div>
+            <div class="stat-label">Est. Cost (USD)</div>
+            <div class="stat-sub">approximate pricing</div>
+        </div>
     </div>
 
     <!-- Main Grid -->
@@ -568,6 +573,7 @@ async function loadTelemetry() {
         renderStatusBanner(telStatus);
         renderStats(overview);
         renderTokenStats(tokenData);
+        renderCostEstimate(tokenData.cost_estimate || {});
         renderAgentPerformance(overview.agents || {});
         renderTokenByModel(tokenData.by_model || {});
         renderTokenByAgent(tokenData.by_agent || {});
@@ -813,6 +819,13 @@ function renderTokenStats(tokenData) {
         const since = new Date(tokenData.tracking_since);
         document.getElementById('statTrackingSince').textContent = 'since ' + since.toLocaleString();
     }
+}
+
+function renderCostEstimate(costData) {
+    const el = document.getElementById('statEstCost');
+    if (!el) return;
+    const total = costData.total_estimated_cost_usd || 0;
+    el.textContent = '$' + total.toFixed(2);
 }
 
 function renderTokenByModel(byModel) {
