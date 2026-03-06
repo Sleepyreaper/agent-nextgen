@@ -23,8 +23,8 @@ Reset PostgreSQL admin password to numeric format without special characters.
 ## Verification
 Tested direct connection to PostgreSQL:
 ```
-Host: nextgenagentpostgres.postgres.database.azure.com:5432
-Database: nextgenagentpostgres
+Host: <your-postgres>.postgres.database.azure.com:5432
+Database: <your-postgres>
 User: sleepy
 Password: [STORED IN AZURE KEY VAULT - See nextgen-agents-kv]
 Result: ✓ Connection successful
@@ -36,6 +36,6 @@ After Web App finishes restarting (5-10 minutes), applications should load witho
 
 ## Next Steps
 1. Wait for Web App to fully restart
-2. Refresh the web app at https://nextgen-agents-web.azurewebsites.net
+2. Refresh the web app at https://<your-webapp>.azurewebsites.net
 3. Verify applications load successfully
 4. If errors persist, check Azure Web App logs for connection details

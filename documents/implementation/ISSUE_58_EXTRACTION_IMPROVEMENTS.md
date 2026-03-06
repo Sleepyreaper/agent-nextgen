@@ -146,9 +146,9 @@ If you want a repeatable test:
 
 1. **Enable OCR** for scanned transcripts: Would recover Annan, Allen, Ablante cases (~10% of files). Requires vision model access (gpt-4o) which costs more per page.
 2. **GPA regex expansion**: Handle `91.00/100` format and weighted-only GPAs as fallback.
-3. **Re-disable public network access** on `nextgenagentfoundry` when done with local testing:
+3. **Re-disable public network access** on `<your-foundry>` when done with local testing:
    ```bash
-   az resource update --ids /subscriptions/b1672fa6-8e52-45d0-bf79-ceccc352177d/resourceGroups/NextGen_Agents/providers/Microsoft.CognitiveServices/accounts/nextgenagentfoundry --set properties.publicNetworkAccess=Disabled
+   az resource update --ids /subscriptions/<your-subscription-id>/resourceGroups/<your-resource-group>/providers/Microsoft.CognitiveServices/accounts/<your-foundry> --set properties.publicNetworkAccess=Disabled
    ```
 
 ---

@@ -108,7 +108,7 @@ All agents include model information in their output:
 To change a model deployment for a tier:
 
 1. Update the secret in Key Vault: `az keyvault secret set --vault-name nextgen-agents-kv --name model-tier-workhorse --value "new-deployment-name"`
-2. Restart the app: `az webapp restart -g NextGen_Agents -n nextgen-agents-web`
+2. Restart the app: `az webapp restart -g <your-resource-group> -n <your-webapp>`
 3. All agents using that tier will automatically pick up the new deployment
 
 To change a single agent's tier, edit its `__init__` method to reference a different `config.model_tier_*` property.

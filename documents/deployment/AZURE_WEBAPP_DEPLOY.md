@@ -283,7 +283,7 @@ az webapp config appsettings set \
   --resource-group your-resource-group \
   --name your-webapp-name \
   --settings APPLICATIONINSIGHTS_CONNECTION_STRING="<connection-string>" \
-             APPLICATIONINSIGHTS_ROLE_NAME=nextgen-agents-web \
+             APPLICATIONINSIGHTS_ROLE_NAME=<your-webapp> \
              ApplicationInsightsAgent_EXTENSION_VERSION=~3
 ```
 

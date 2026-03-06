@@ -107,7 +107,7 @@ configure_observability(
 from src.telemetry import telemetry, init_telemetry
 
 # Initialize at app startup
-init_telemetry(service_name="nextgen-agents-web")
+init_telemetry(service_name="<your-webapp>")
 
 # Throughout the app, use telemetry methods:
 telemetry.log_agent_execution(

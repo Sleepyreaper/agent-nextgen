@@ -35,7 +35,7 @@ jobs:
     runs-on: ubuntu-latest
     environment:
       name: staging
-      url: https://nextgen-agents-web-staging.azurewebsites.net
+      url: ${{ vars.STAGING_URL }}
 
     steps:
     - name: Checkout code
@@ -78,14 +78,14 @@ jobs:
       run: |
         set -euo pipefail
         SLOT_PRINCIPAL=$(az webapp identity show \
-          --resource-group NextGen_Agents \
+          --resource-group ${{ secrets.AZURE_RESOURCE_GROUP }} \
           --name ${{ secrets.AZURE_WEBAPP_NAME }} \
           --slot staging \
           --query "principalId" -o tsv)
 
         STORAGE_ID=$(az storage account show \
-          --resource-group NextGen_Agents \
-          --name nextgendata2452 \
+          --resource-group ${{ secrets.AZURE_RESOURCE_GROUP }} \
+          --name ${{ secrets.AZURE_STORAGE_ACCOUNT }} \
           --query "id" -o tsv)
 
         # Check if Storage Blob Data Contributor is assigned
@@ -115,7 +115,7 @@ jobs:
     - name: Post deployment URL
       run: |
         echo "## 🚀 Deployed to Staging" >> $GITHUB_STEP_SUMMARY
-        echo "**URL:** https://nextgen-agents-web-staging.azurewebsites.net" >> $GITHUB_STEP_SUMMARY
+        echo "**URL:** ${{ vars.STAGING_URL }}" >> $GITHUB_STEP_SUMMARY
         echo "**Commit:** \`${GITHUB_SHA::7}\`" >> $GITHUB_STEP_SUMMARY
 
   # ── Deploy to PRODUCTION (main branch) ──────────────────────────
@@ -126,7 +126,7 @@ jobs:
     runs-on: ubuntu-latest
     environment:
       name: production
-      url: https://nextgen-agents-web.azurewebsites.net
+      url: ${{ vars.PRODUCTION_URL }}
 
     steps:
     - name: Checkout code
@@ -157,5 +157,5 @@ jobs:
     - name: Post deployment URL
       run: |
         echo "## ✅ Deployed to Production" >> $GITHUB_STEP_SUMMARY
-        echo "**URL:** https://nextgen-agents-web.azurewebsites.net" >> $GITHUB_STEP_SUMMARY
+        echo "**URL:** ${{ vars.PRODUCTION_URL }}" >> $GITHUB_STEP_SUMMARY
         echo "**Commit:** \`${GITHUB_SHA::7}\`" >> $GITHUB_STEP_SUMMARY

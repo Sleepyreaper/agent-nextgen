@@ -219,7 +219,7 @@ Azure Storage (nextgendata2452)
 ├── applications-test/{student_id}/* (Quick Test)
 └── applications-training/{student_id}/* (Training)
 
-PostgreSQL (nextgenagentpostgres)
+PostgreSQL (<your-postgres>)
 ├── applications (student_id column)
 ├── tiana_applications
 ├── rapunzel_grades

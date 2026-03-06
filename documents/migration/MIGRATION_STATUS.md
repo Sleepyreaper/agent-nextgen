@@ -366,7 +366,7 @@ value = data.get('snake_case_key') or data.get('PascalCaseKey', default)
 # PostgreSQL Connection
 POSTGRES_SERVER=your-postgres-host
 POSTGRES_PORT=5432
-POSTGRES_DATABASE=nextgenagentpostgres
+POSTGRES_DATABASE=<your-postgres>
 POSTGRES_USER=agent_app_user
 POSTGRES_PASSWORD=<your-db-password>
 

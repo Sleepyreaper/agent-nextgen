@@ -101,7 +101,7 @@ Place in root directory:
 # Database Configuration (Use actual values in .env - never commit)
 POSTGRES_HOST=localhost
 POSTGRES_PORT=5432
-POSTGRES_DB=nextgenagentpostgres
+POSTGRES_DB=<your-postgres>
 POSTGRES_USER=sleepy
 POSTGRES_PASSWORD=your_local_password_here
 
@@ -251,7 +251,7 @@ if not password:
      --resource-group nextgen-agents-rg \
      --name nextgen-agents-api \
      --settings \
-       POSTGRES_HOST="nextgenagentpostgres.postgres.database.azure.com" \
+       POSTGRES_HOST="<your-postgres>.postgres.database.azure.com" \
        POSTGRES_USER="sleepy" \
        POSTGRES_PASSWORD="actual_secure_password"
    ```

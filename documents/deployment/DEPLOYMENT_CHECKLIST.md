@@ -122,27 +122,27 @@ zip -r /tmp/nextgen-deploy.zip . \
   "node_modules/*"
 
 # Unlock SCM for deployment
-az webapp config access-restriction set -g NextGen_Agents \
-  -n nextgen-agents-web --use-same-restrictions-for-scm-site false
+az webapp config access-restriction set -g <your-resource-group> \
+  -n <your-webapp> --use-same-restrictions-for-scm-site false
 
 # Deploy
-az webapp deploy -g NextGen_Agents -n nextgen-agents-web \
+az webapp deploy -g <your-resource-group> -n <your-webapp> \
   --src-path /tmp/nextgen-deploy.zip --type zip
 
 # Re-lock SCM
-az webapp config access-restriction set -g NextGen_Agents \
-  -n nextgen-agents-web --use-same-restrictions-for-scm-site true
+az webapp config access-restriction set -g <your-resource-group> \
+  -n <your-webapp> --use-same-restrictions-for-scm-site true
 ```
 
 ### Deploy to Staging
 
 ```bash
-az webapp config access-restriction set -g NextGen_Agents \
-  -n nextgen-agents-web --slot staging --use-same-restrictions-for-scm-site false
-az webapp deploy -g NextGen_Agents -n nextgen-agents-web --slot staging \
+az webapp config access-restriction set -g <your-resource-group> \
+  -n <your-webapp> --slot staging --use-same-restrictions-for-scm-site false
+az webapp deploy -g <your-resource-group> -n <your-webapp> --slot staging \
   --src-path /tmp/nextgen-deploy.zip --type zip
-az webapp config access-restriction set -g NextGen_Agents \
-  -n nextgen-agents-web --slot staging --use-same-restrictions-for-scm-site true
+az webapp config access-restriction set -g <your-resource-group> \
+  -n <your-webapp> --slot staging --use-same-restrictions-for-scm-site true
 ```
 
 - [ ] Create service principal for GitHub

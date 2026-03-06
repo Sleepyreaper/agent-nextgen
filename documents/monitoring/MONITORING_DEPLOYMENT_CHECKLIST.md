@@ -80,7 +80,7 @@ python app.py 2>&1 | grep -i "observability\|telemetry"
 
 Expected output:
 ```
-✓ Azure Monitor observability configured for 'nextgen-agents-web'
+✓ Azure Monitor observability configured for '<your-webapp>'
 ```
 
 **Option B: Check in Application Insights Portal**

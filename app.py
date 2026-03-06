@@ -308,17 +308,18 @@ def add_security_headers(response):
     response.headers['Strict-Transport-Security'] = (
         'max-age=31536000; includeSubDomains'
     )
-    # CSP — Use CSP Level 3 split directives for granular control:
+    # CSP — nonce-based policy (CSP Level 3).
+    #   script-src:      nonce-based for all browsers; 'strict-dynamic' lets
+    #                    nonce-approved scripts load additional scripts.
     #   script-src-elem: nonce-based — only <script> tags with the per-request
     #                    nonce (or same-origin src) are allowed.
-    #   script-src-attr: unsafe-inline — allows onclick/onsubmit/onchange event
-    #                    handlers (98+ across templates; will be refactored later).
-    #   script-src:      fallback for CSP L1/L2 browsers that don't understand
-    #                    the split directives.
+    #   script-src-attr: 'unsafe-inline' still required — 40+ templates use
+    #                    inline event handlers (onclick/onsubmit/onchange).
+    #                    TODO: refactor templates to addEventListener, then remove.
     nonce = getattr(g, 'csp_nonce', '')
     response.headers['Content-Security-Policy'] = (
         "default-src 'self'; "
-        "script-src 'self' 'unsafe-inline'; "
+        f"script-src 'self' 'nonce-{nonce}' 'strict-dynamic'; "
         f"script-src-elem 'self' 'nonce-{nonce}'; "
         "script-src-attr 'unsafe-inline'; "
         "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
@@ -2327,6 +2328,8 @@ def students():
 @app.route('/debug/dataset')
 def debug_dataset():
     """Debug view: show raw `student_summary` and `agent_results` for recent applications."""
+    if os.getenv('WEBSITE_SITE_NAME'):
+        return '<h1>404 — Page Not Found</h1>', 404
     try:
         applications_table = db.get_table_name("applications")
         if not applications_table:
@@ -2902,6 +2905,8 @@ def api_debug_model_test():
     configured `get_ai_client()` so the call will exercise the same client
     wiring as the running application (Foundry or Azure OpenAI).
     """
+    if os.getenv('WEBSITE_SITE_NAME'):
+        return jsonify({'error': 'Not found'}), 404
     try:
         # Prepare introspection defaults so error responses can include them
         client_type = None
@@ -8692,12 +8697,16 @@ def telemetry_token_usage_reset():
 @app.route('/debug/agents')
 def debug_agents():
     """Real-time agent monitoring dashboard."""
+    if os.getenv('WEBSITE_SITE_NAME'):
+        return '<h1>404 — Page Not Found</h1>', 404
     return render_template('agent_monitor.html')
 
 
 @app.route('/api/debug/agent-status')
 def get_agent_status():
     """Get current agent execution status."""
+    if os.getenv('WEBSITE_SITE_NAME'):
+        return jsonify({'error': 'Not found'}), 404
     monitor = get_agent_monitor()
     return jsonify(monitor.get_status())
 
@@ -8705,6 +8714,8 @@ def get_agent_status():
 @app.route('/api/debug/agent-status/clear', methods=['POST'])
 def clear_agent_history():
     """Clear agent execution history."""
+    if os.getenv('WEBSITE_SITE_NAME'):
+        return jsonify({'error': 'Not found'}), 404
     monitor = get_agent_monitor()
     monitor.clear_history()
     return jsonify({'status': 'success', 'message': 'History cleared'})
@@ -8713,6 +8724,8 @@ def clear_agent_history():
 @app.route('/api/debug/agent/<agent_name>/history')
 def get_agent_history(agent_name):
     """Get execution history for a specific agent."""
+    if os.getenv('WEBSITE_SITE_NAME'):
+        return jsonify({'error': 'Not found'}), 404
     monitor = get_agent_monitor()
     limit = request.args.get('limit', 20, type=int)
     history = monitor.get_agent_history(agent_name, limit=limit)
@@ -8725,6 +8738,8 @@ def get_agent_history(agent_name):
 @app.route('/api/debug/telemetry-status')
 def get_telemetry_status():
     """Report whether observability is configured and where it would export."""
+    if os.getenv('WEBSITE_SITE_NAME'):
+        return jsonify({'error': 'Not found'}), 404
     try:
         otlp_endpoint = os.getenv("OTEL_EXPORTER_OTLP_ENDPOINT")
         telemetry_enabled = is_observability_enabled()

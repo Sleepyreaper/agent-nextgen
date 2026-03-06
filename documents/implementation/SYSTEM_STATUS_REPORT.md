@@ -6,8 +6,8 @@ The Agent NextGen system has been successfully deployed to Azure. Below is a com
 ## ✅ COMPLETED & WORKING
 
 ### Infrastructure
-- [x] PostgreSQL Server (nextgenagentpostgres) - **Running** and accessible
-- [x] Web App (nextgen-agents-web) - **Deployed** and configured
+- [x] PostgreSQL Server (<your-postgres>) - **Running** and accessible
+- [x] Web App (<your-webapp>) - **Deployed** and configured
 - [x] Database Credentials - **Configured** in environment variables
 - [x] Syntax Error Fixed - rapunzel_grade_reader.py **UTF-8 characters replaced**
 - [x] Git Commit & Push - **Deployed to GitHub**
@@ -81,7 +81,7 @@ python test_complete_workflow.py
 
 ### For Production
 1. Verify Web App logs show successful database connections
-2. Test the web interface at https://nextgen-agents-web.azurewebsites.net
+2. Test the web interface at https://<your-webapp>.azurewebsites.net
 3. Upload sample files to verify processing pipeline
 4. Check ARIEL Q&A with test questions
 
@@ -141,7 +141,7 @@ with open('database/schema_postgresql.sql', 'r') as f:
 | Component | Status | Details |
 |-----------|--------|---------|
 | PostgreSQL | ✅ Ready | 17.7 on Azure, responsive |
-| Web App | ✅ Ready | nextgen-agents-web online |
+| Web App | ✅ Ready | <your-webapp> online |
 | Database Credentials | ✅ Ready | Stored in Azure Key Vault |
 | App Code | ✅ Ready | Deployed, no syntax errors |
 | Agents | ✅ Ready | All 9 agents present |

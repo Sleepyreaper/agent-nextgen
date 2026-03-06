@@ -7,7 +7,7 @@ Production Flask application (~8100 lines in `app.py`) that evaluates high-schoo
 ### Architecture
 
 - **Entry point**: `app.py` (Flask, served by gunicorn via `startup.sh`)
-- **Config**: `src/config.py` — loads secrets from Azure Key Vault (`nextgen-agents-kv`), falls back to env vars
+- **Config**: `src/config.py` — loads secrets from Azure Key Vault, falls back to env vars
 - **Database**: Azure PostgreSQL (schema in `database/schema_postgresql.sql`)
 - **Storage**: Azure Blob Storage for student documents (PDFs, DOCX, videos)
 - **Frontend**: Jinja2 templates in `web/templates/`, static assets in `web/static/`
@@ -71,8 +71,8 @@ School data is built entirely from **publicly available U.S. government datasets
 
 ### Deployment
 
-- **Production**: `nextgen-agents-web` (West US 2), Front Door origin timeout 240s
-- **Staging**: `nextgen-agents-web` slot `staging`
+- **Production**: App Service (West US 2), Front Door origin timeout 240s
+- **Staging**: App Service staging slot
 - **SCM**: Locked by default; unlock with `az webapp config access-restriction set ... --use-same-restrictions-for-scm-site false`, deploy via `az webapp deploy --type zip`, then re-lock
 - **Git**: Branch `main`, pushed to GitHub
 

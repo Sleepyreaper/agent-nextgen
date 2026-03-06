@@ -149,10 +149,10 @@ The application provides a full-featured web UI built with Flask and Jinja2 temp
 
 | Component | Resource | Details |
 |-----------|----------|---------|
-| **Azure Front Door** | `nextgen-frontdoor` (Premium) | DDoS protection, SSL termination, global load balancing |
-| **WAF Policy** | `nextgenWAFPolicy` | Prevention mode, DRS 2.1, BotManager 1.1, 128KB body inspection |
-| **Web App** | `nextgen-agents-web` | Python 3.12 on Linux App Service (gunicorn 4 workers, 600s timeout) |
-| **AI Foundry** | `nextgenagentfoundry` (West US 3) | 7 model deployments across 4 tiers |
+| **Azure Front Door** | `<your-frontdoor>` (Premium) | DDoS protection, SSL termination, global load balancing |
+| **WAF Policy** | `<your-waf-policy>` | Prevention mode, DRS 2.1, BotManager 1.1, 128KB body inspection |
+| **Web App** | `<your-webapp>` | Python 3.12 on Linux App Service (gunicorn 4 workers, 600s timeout) |
+| **AI Foundry** | `<your-foundry>` (West US 3) | 7 model deployments across 4 tiers |
 | **PostgreSQL** | Flexible Server | Application data, audit trails, training records |
 | **Key Vault** | Secure credential store | All secrets managed via Azure AD / Managed Identity |
 | **Blob Storage** | Document storage | Student uploads with managed identity access |
@@ -162,8 +162,8 @@ The application provides a full-featured web UI built with Flask and Jinja2 temp
 
 | Environment | URL |
 |-------------|-----|
-| **Production** | `https://nextgen-app-h7hvaybqd4grd0b2.b02.azurefd.net` |
-| **Staging** | `https://nextgen-staging-acfvbrd4g2cud9cs.b02.azurefd.net` |
+| **Production** | `https://<your-production-frontdoor>.azurefd.net` |
+| **Staging** | `https://<your-staging-frontdoor>.azurefd.net` |
 
 ### Security Architecture (7 Phases — All Complete)
 
@@ -259,7 +259,7 @@ nano .env.local  # Add your credentials (never commit this file)
 |----------|-------------|
 | `POSTGRES_HOST` | Database server hostname |
 | `POSTGRES_PORT` | Port (default: 5432) |
-| `POSTGRES_DATABASE` | Database name (`ApplicationsDB`) |
+| `POSTGRES_DATABASE` | Database name |
 | `POSTGRES_USERNAME` | Connection username |
 | `POSTGRES_PASSWORD` | Connection password |
 
@@ -498,24 +498,24 @@ zip -r /tmp/nextgen-deploy.zip . \
 
 # 2. Deploy to Production
 # Unlock SCM
-az webapp config access-restriction set -g NextGen_Agents \
-  -n nextgen-agents-web --use-same-restrictions-for-scm-site false
+az webapp config access-restriction set -g $RESOURCE_GROUP \
+  -n $WEBAPP_NAME --use-same-restrictions-for-scm-site false
 
 # Deploy
-az webapp deploy -g NextGen_Agents -n nextgen-agents-web \
+az webapp deploy -g $RESOURCE_GROUP -n $WEBAPP_NAME \
   --src-path /tmp/nextgen-deploy.zip --type zip
 
 # Re-lock SCM
-az webapp config access-restriction set -g NextGen_Agents \
-  -n nextgen-agents-web --use-same-restrictions-for-scm-site true
+az webapp config access-restriction set -g $RESOURCE_GROUP \
+  -n $WEBAPP_NAME --use-same-restrictions-for-scm-site true
 
 # 3. Deploy to Staging (same pattern with --slot staging)
-az webapp config access-restriction set -g NextGen_Agents \
-  -n nextgen-agents-web --slot staging --use-same-restrictions-for-scm-site false
-az webapp deploy -g NextGen_Agents -n nextgen-agents-web --slot staging \
+az webapp config access-restriction set -g $RESOURCE_GROUP \
+  -n $WEBAPP_NAME --slot staging --use-same-restrictions-for-scm-site false
+az webapp deploy -g $RESOURCE_GROUP -n $WEBAPP_NAME --slot staging \
   --src-path /tmp/nextgen-deploy.zip --type zip
-az webapp config access-restriction set -g NextGen_Agents \
-  -n nextgen-agents-web --slot staging --use-same-restrictions-for-scm-site true
+az webapp config access-restriction set -g $RESOURCE_GROUP \
+  -n $WEBAPP_NAME --slot staging --use-same-restrictions-for-scm-site true
 ```
 
 ### CI/CD

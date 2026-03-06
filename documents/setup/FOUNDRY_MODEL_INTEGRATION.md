@@ -15,8 +15,8 @@ Required configuration (provide these from Foundry)
     You may also supply the plain Cognitive Services/OpenAI endpoint directly.
     Example values (project root or plain host only):
 
-      * `https://nextgenagentfoundry.services.ai.azure.com/api/projects/nextgenagents`
-      * `https://nextgenagentfoundry.cognitiveservices.azure.com`
+      * `https://<your-foundry>.services.ai.azure.com/api/projects/<your-project>`
+      * `https://<your-foundry>.cognitiveservices.azure.com`
       * `https://foundry.example.net/api/v1`
 
     Do **not** include application-specific or protocol paths (e.g.

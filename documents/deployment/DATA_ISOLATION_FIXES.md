@@ -73,7 +73,7 @@ Layer 3: Field Validation
 ## Deployment Details
 
 - ✓ Committed to GitHub: `9be69e2` "CRITICAL FIX: Implement triple-layer data isolation..."
-- ✓ Deployed to Azure: `nextgen-agents-web` in resource group `NextGen_Agents`
+- ✓ Deployed to Azure: `<your-webapp>` in resource group `<your-resource-group>`
 - Build Status: Accepted and building (status: BuildInProgress)
 
 ## Security Logging

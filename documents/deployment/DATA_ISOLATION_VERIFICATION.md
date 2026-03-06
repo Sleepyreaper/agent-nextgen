@@ -2,7 +2,7 @@
 
 ## ✓ Deployment Status
 - [x] Code changes committed to GitHub (commit: 9be69e2)
-- [x] Deployed to Azure (nextgen-agents-web)
+- [x] Deployed to Azure (<your-webapp>)
 - [x] Deployment package accepted (status: BuildInProgress)
 - [ ] Verify build completed successfully on Azure
 
@@ -40,7 +40,7 @@ After deployment completes, perform these checks:
 
 ### Test 1: View 2026 Production Dashboard
 ```
-URL: https://nextgen-agents-web.azurewebsites.net/students
+URL: https://<your-webapp>.azurewebsites.net/students
 Expected: Only 2026 applications (no test data, no training data)
 ```
 - [ ] Page loads without errors
@@ -51,7 +51,7 @@ Expected: Only 2026 applications (no test data, no training data)
 
 ### Test 2: View Training Data Dashboard
 ```
-URL: https://nextgen-agents-web.azurewebsites.net/training
+URL: https://<your-webapp>.azurewebsites.net/training
 Expected: Only training applications (no test data)
 ```
 - [ ] Page loads without errors
@@ -61,7 +61,7 @@ Expected: Only training applications (no test data)
 
 ### Test 3: View Test Data Dashboard
 ```
-URL: https://nextgen-agents-web.azurewebsites.net/test-data
+URL: https://<your-webapp>.azurewebsites.net/test-data
 Expected: Only test applications (no training, no 2026 data)
 ```
 - [ ] Page loads without errors
@@ -70,7 +70,7 @@ Expected: Only test applications (no training, no 2026 data)
 
 ### Test 4: Create New Test Application
 ```
-URL: https://nextgen-agents-web.azurewebsites.net/test
+URL: https://<your-webapp>.azurewebsites.net/test
 Action: Create a test application
 ```
 - [ ] Test application created successfully

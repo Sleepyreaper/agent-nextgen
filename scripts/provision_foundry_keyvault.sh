@@ -5,8 +5,8 @@ set -euo pipefail
 # Usage:
 #   VAULT_NAME="my-vault" \
 #   RG="MyResourceGroup" \
-#   WEBAPP_NAME="nextgen-agents-web" \
-#   FOUNDARY_ENDPOINT="https://nextgenagentfoundry.cognitiveservices.azure.com" \
+#   WEBAPP_NAME="your-webapp-name" \
+#   FOUNDARY_ENDPOINT="https://your-foundry.cognitiveservices.azure.com" \
 #   MODEL_NAME="gpt-4.1" \
 #   API_VERSION="2024-05-01-preview" \
 #   ./scripts/provision_foundry_keyvault.sh

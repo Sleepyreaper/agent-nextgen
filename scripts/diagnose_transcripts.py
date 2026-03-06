@@ -71,7 +71,9 @@ def get_ai_client():
     # Try configured endpoint first, then fall back to Foundry endpoint
     endpoint = getattr(config, 'azure_openai_endpoint', None)
     if not endpoint:
-        endpoint = os.environ.get('AZURE_OPENAI_ENDPOINT', 'https://nextgenagentfoundry.cognitiveservices.azure.com/')
+        endpoint = os.environ.get('AZURE_OPENAI_ENDPOINT', '')
+        if not endpoint:
+            raise ValueError('AZURE_OPENAI_ENDPOINT environment variable must be set')
 
     print(f"  Using DefaultAzureCredential with endpoint: {endpoint}")
     token_provider = get_bearer_token_provider(

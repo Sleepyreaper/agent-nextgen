@@ -200,7 +200,7 @@ fi
 ```env
 POSTGRES_HOST=localhost
 POSTGRES_PORT=5432
-POSTGRES_DB=nextgenagentpostgres
+POSTGRES_DB=<your-postgres>
 POSTGRES_USER=sleepy
 POSTGRES_PASSWORD=your_local_password
 ```

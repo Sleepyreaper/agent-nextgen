@@ -70,7 +70,7 @@ meter = get_meter()
 from src.telemetry import telemetry, init_telemetry
 
 # Initialize at startup
-init_telemetry(service_name="nextgen-agents-web")
+init_telemetry(service_name="<your-webapp>")
 
 # Throughout app:
 telemetry.log_agent_execution(
@@ -180,7 +180,7 @@ Plus 100+ lines of documentation explaining each setting.
 
 ```
 1. App Startup (app.py)
-   └─ init_telemetry("nextgen-agents-web")
+   └─ init_telemetry("<your-webapp>")
       └─ configure_observability(enable_azure_monitor=True)
          ├─ Read APPLICATIONINSIGHTS_CONNECTION_STRING
          ├─ Call azure-monitor-opentelemetry.configure_azure_monitor()

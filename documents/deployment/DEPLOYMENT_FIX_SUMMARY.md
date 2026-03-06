@@ -52,7 +52,7 @@
 ## Deployment Status:
 
 ### Next Step:
-Run: `az webapp deployment source config-zip --resource-group NextGen_Agents --name nextgen-agents-web --src /tmp/nextgen-deploy.zip`
+Run: `az webapp deployment source config-zip --resource-group <your-resource-group> --name <your-webapp> --src /tmp/nextgen-deploy.zip`
 
 This deployment will:
 1. Upload the corrected `.deployment` file
@@ -75,7 +75,7 @@ This deployment will:
 ## Verification:
 Once app is online, test with:
 ```bash
-curl -I https://nextgen-agents-web.azurewebsites.net/
+curl -I https://<your-webapp>.azurewebsites.net/
 # Should see HTTP 200 or 302, not 500 or timeout
 ```
 
