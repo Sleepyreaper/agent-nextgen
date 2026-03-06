@@ -181,7 +181,7 @@
 
 {% block content %}
 <div style="margin-bottom: 1rem;">
-    <p style="color: #6b7280; font-size: 0.95rem;">Complete evaluation results from all agents, including executive summary, detailed assessments, audit trail, and interactive Q&A powered by ARIEL.</p>
+    <p style="color: #6b7280; font-size: 0.95rem;">Complete evaluation results from all agents, including executive summary, detailed assessments, audit trail, and interactive Q&A.</p>
 </div>
 <div class="card executive-summary">
     <h2>Executive Summary</h2>
@@ -197,7 +197,7 @@
                 {% if ms %}
                     <div class="summary-grid">
                         <div class="summary-tile">
-                            <div class="summary-label">Merlin Score</div>
+                            <div class="summary-label">Evaluation Score</div>
                             <div class="summary-value">{{ ms.score|default(ms.get('score')|default('N/A')) }}/100</div>
                         </div>
                         <div class="summary-tile">
@@ -218,7 +218,7 @@
         {% set parsed = (src.get('parsed_data') if src.get('parsed_data') is not none else (src.get('parsed_json') if src.get('parsed_json') is mapping else None)) %}
         <div class="summary-grid">
             <div class="summary-tile">
-                <div class="summary-label">Merlin Score</div>
+                <div class="summary-label">Evaluation Score</div>
                 <div class="summary-value">{{ src.overall_score|default(src.get('overall_score')|default(src.get('overallscore')|default(parsed.get('overall_score') if parsed else 'N/A'))) }}/100</div>
             </div>
             <div class="summary-tile">
@@ -376,7 +376,7 @@
     
     <div style="font-size: 0.85rem; color: #0c4a6e; border-top: 1px solid #cffafe; padding-top: 1rem;">
         <strong>📌 Training Data Note:</strong> This student's evaluation was contextualized using school enrichment data from 
-        {% if school_context.analysis_date %}{{ school_context.analysis_date }}{% else %}Naveen's analysis{% endif %}. 
+        {% if school_context.analysis_date %}{{ school_context.analysis_date }}{% else %}school analysis{% endif %}. 
         Similar applicants from this school should show similar patterns in scoring.
     </div>
 </div>
@@ -386,7 +386,7 @@
 <div class="card" style="margin-top: 1.5rem;">
     <h2>Agent Summaries</h2>
     <div class="agent-summary">
-        <strong>👸 Tiana:</strong>
+        <strong>👸 Application Reader:</strong>
         {% if aurora.agents.tiana %}
             {{ aurora.agents.tiana.analysis|default('Summary pending.') }}
         {% else %}
@@ -394,7 +394,7 @@
         {% endif %}
     </div>
     <div class="agent-summary">
-        <strong>💇 Rapunzel:</strong>
+        <strong>💇 Grade Analyzer:</strong>
         {% if aurora.agents.rapunzel %}
             {{ aurora.agents.rapunzel.grade_trends|default(aurora.agents.rapunzel.key_findings|default('Summary pending.')) }}
         {% else %}
@@ -402,7 +402,7 @@
         {% endif %}
     </div>
     <div class="agent-summary">
-        <strong>🌊 Moana:</strong>
+        <strong>🌊 School Context:</strong>
         {% if aurora.agents.moana %}
             {{ aurora.agents.moana.context|default(aurora.agents.moana.school_info|default(aurora.agents.moana.key_context|default('Summary pending.'))) }}
         {% else %}
@@ -410,7 +410,7 @@
         {% endif %}
     </div>
     <div class="agent-summary">
-        <strong>🗡️ Mulan:</strong>
+        <strong>🗡️ Recommendation Reader:</strong>
         {% if aurora.agents.mulan %}
             {{ aurora.agents.mulan.rec_text|default('Summary pending.') }}
         {% else %}
@@ -429,13 +429,13 @@
     <h2>Agent Summaries</h2>
     {% if agent_results.tiana %}
     <div class="agent-summary">
-        <strong>👸 Tiana:</strong>
+        <strong>👸 Application Reader:</strong>
         {{ agent_results.tiana.essay_summary or agent_results.tiana.essaysummary or 'Summary pending.' }}
     </div>
     {% endif %}
     {% if agent_results.rapunzel %}
     <div class="agent-summary">
-        <strong>💇 Rapunzel:</strong>
+        <strong>💇 Grade Analyzer:</strong>
         {% if agent_results.rapunzel.grade_trends %}
         <div style="margin-top: 0.75rem; padding: 1rem; background: #f0f9ff; border-radius: 6px; border-left: 4px solid #0ea5e9;">
             <div style="font-weight: 600; color: #0369a1; margin-bottom: 0.5rem;">Grade Trends</div>
@@ -456,7 +456,7 @@
     {% endif %}
     {% if agent_results.moana %}
     <div class="agent-summary">
-        <strong>🌊 Moana:</strong>
+        <strong>🌊 School Context:</strong>
         {% if agent_results.moana.comparison_notes or agent_results.moana.comparisonnotes %}
         <div style="margin-top: 0.75rem; padding: 1rem; background: #f0f7ff; border-radius: 6px; border-left: 4px solid #0284c7;">
             <div style="font-weight: 600; color: #0c4a6e; margin-bottom: 0.5rem;">School Context Comparison</div>
@@ -473,7 +473,7 @@
     {% endif %}
     {% if agent_results.mulan %}
     <div class="agent-summary">
-        <strong>🗡️ Mulan:</strong>
+        <strong>🗡️ Recommendation Reader:</strong>
         {{ agent_results.mulan.summary or 'Summary pending.' }}
     </div>
     {% endif %}
@@ -515,7 +515,7 @@
             <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 1.5rem; border-radius: 12px; margin-bottom: 1rem;">
                 <div style="text-align: center; font-size: 2.5rem; margin-bottom: 0.5rem;">🪄</div>
                 <h3 style="color: white; text-align: center; margin: 0.5rem 0;">Evaluation Complete!</h3>
-                <p style="text-align: center; margin: 0.5rem 0; opacity: 0.9;">Fairy Godmother has prepared your document</p>
+                <p style="text-align: center; margin: 0.5rem 0; opacity: 0.9;">Document Generator has prepared your document</p>
                 <a href="{{ url_for('download_evaluation', application_id=application.application_id or application.ApplicationID) }}" 
                    class="btn" 
                    style="display: block; background: white; color: #667eea; margin-top: 1rem; text-align: center; font-weight: bold;">
@@ -528,10 +528,10 @@
             <div style="background: #f8fafc; padding: 1rem; border-radius: 8px; border-left: 4px solid #3b82f6;">
                 <h4 style="margin: 0 0 0.5rem 0; color: #1e40af;">✨ Agents Completed</h4>
                 <ul style="margin: 0; padding-left: 1.5rem;">
-                    {% if agent_results.tiana %}<li>📋 Tiana - Application Analysis</li>{% endif %}
-                   {% if agent_results.mulan %}<li>✉️ Mulan - Recommendations</li>{% endif %}
-                    {% if agent_results.merlin %}<li>🔮 Merlin - Final Evaluation</li>{% endif %}
-                    {% if agent_results.aurora %}<li>👑 Aurora - Summary</li>{% endif %}
+                    {% if agent_results.tiana %}<li>📋 Application Reader - Application Analysis</li>{% endif %}
+                   {% if agent_results.mulan %}<li>✉️ Recommendation Reader - Recommendations</li>{% endif %}
+                    {% if agent_results.merlin %}<li>🔮 Student Evaluator - Final Evaluation</li>{% endif %}
+                    {% if agent_results.aurora %}<li>👑 Results Formatter - Summary</li>{% endif %}
                 </ul>
             </div>
             {% endif %}
@@ -545,11 +545,11 @@
         </div>
     </div>
 
-    <!-- Top: Merlin / Aurora summary and agent quick responses -->
+    <!-- Top: Executive summary and agent quick responses -->
     {% if aurora_evaluation %}
     <div class="card" style="margin-top: 1.5rem; padding: 1rem; border-left: 4px solid #6b46c1; background: #f8f7ff;">
         {% set aurora = aurora_evaluation.formatted_evaluation if aurora_evaluation.formatted_evaluation is not none else aurora_evaluation.formattedevaluation %}
-        <h2 style="margin-top: 0;">🔮 Merlin / Aurora Summary</h2>
+        <h2 style="margin-top: 0;">🔮 Executive Summary</h2>
         {% if aurora.merlin_summary %}
         <div style="display:flex; align-items:center; gap:1rem; margin-top:0.5rem;">
             <div style="font-size:2.2rem; font-weight:700; color:#4c51bf;">{{ aurora.merlin_summary.score|default('N/A') }}/100</div>
@@ -606,7 +606,7 @@
     </div>
     {% elif merlin_evaluation %}
     <div class="card" style="margin-top: 1.5rem; padding: 1rem; border-left: 4px solid #6b46c1; background: #f8f7ff;">
-        <h2>🔮 Merlin Summary</h2>
+        <h2>🔮 Evaluation Summary</h2>
         <div style="display:flex; align-items:center; gap:1rem; margin-top:0.5rem;">
             {% if merlin_evaluation.OverallScore %}
             <div style="font-size:2.2rem; font-weight:700; color:#4c51bf;">{{ "%.1f"|format(merlin_evaluation.OverallScore) }}</div>
@@ -631,7 +631,7 @@
         
         {% if agent_results.tiana %}
         <div class="agent-result">
-            <h3>📋 Tiana - Application Reader</h3>
+            <h3>📋 Application Reader</h3>
             <table>
                 {% if agent_results.tiana.essay_summary %}
                 <tr>
@@ -657,7 +657,7 @@
         
         {% if agent_results.mulan %}
         <div class="agent-result">
-            <h3>✉️ Mulan - Recommendation Reader</h3>
+            <h3>✉️ Recommendation Reader</h3>
             <table>
                 {% if agent_results.mulan.recommender_name %}
                 <tr>
@@ -690,7 +690,7 @@
         
         {% if agent_results.merlin %}
         <div class="agent-result" style="background: linear-gradient(135deg, #eef2ff 0%, #e0e7ff 100%); border-left: 4px solid #6366f1;">
-            <h3>🔮 Merlin - Final Evaluation</h3>
+            <h3>🔮 Student Evaluator - Final Evaluation</h3>
             <table>
                 {% if agent_results.merlin.overall_score %}
                 <tr>
@@ -723,10 +723,10 @@
     {% endif %}
 
     {% if aurora_evaluation %}
-        <!-- Aurora Formatted Evaluation Display -->
+        <!-- Formatted Evaluation Display -->
         <div class="aurora-evaluation">
             <div style="text-align: center; font-size: 3rem;">👑</div>
-            <h3 style="text-align: center; margin: 1rem 0;">Aurora's Evaluation</h3>
+            <h3 style="text-align: center; margin: 1rem 0;">Evaluation Summary</h3>
             {% set aurora = aurora_evaluation.formatted_evaluation if aurora_evaluation.formatted_evaluation is not none else aurora_evaluation.formattedevaluation %}
             {% if aurora and aurora.merlin_summary %}
                 <div class="merlin-score">{{ aurora.merlin_summary.score|default('N/A') }}/100</div>
@@ -737,7 +737,7 @@
         </div>
         {% elif merlin_evaluation %}
         <div style="background: #f0f9ff; padding: 1.5rem; border-radius: 8px; border-left: 4px solid #3b82f6;">
-            <h3>🤖 Merlin's Evaluation</h3>
+            <h3>🤖 Overall Evaluation</h3>
             <div style="margin-top: 1rem; text-align: center;">
                 {% if merlin_evaluation.OverallScore %}
                 <div style="font-size: 3rem; font-weight: bold; color: #667eea;">
@@ -759,7 +759,7 @@
         {% endif %}
     </div>
 
-    <!-- Aurora-Formatted Summary Sections -->
+    <!-- Formatted Summary Sections -->
     {% if aurora_evaluation %}
     {% set aurora = aurora_evaluation.formatted_evaluation if aurora_evaluation.formatted_evaluation is not none else aurora_evaluation.formattedevaluation %}
     
@@ -794,7 +794,7 @@
         
         {% if aurora.agents.tiana %}
         <div class="agent-summary">
-            <strong>👸 Tiana - Application Reader</strong>
+            <strong>👸 Application Reader</strong>
             <div style="margin-top: 0.5rem; font-size: 0.95rem;">
                 {{ aurora.agents.tiana.analysis or aurora.agents.tiana.strengths_found or 'Analysis not available' }}
             </div>
@@ -806,7 +806,7 @@
         
         {% if aurora.agents.rapunzel %}
         <div class="agent-summary">
-            <strong>💇 Rapunzel - Grade Reader</strong>
+            <strong>💇 Grade Analyzer</strong>
             <div style="margin-top: 0.5rem; font-size: 0.95rem;">
                 GPA: {% if aurora.agents.rapunzel.gpa %}<strong>{{ aurora.agents.rapunzel.gpa }}</strong>{% else %}Not extracted{% endif %}
             </div>
@@ -894,7 +894,7 @@
         
         {% if aurora.agents.mulan %}
         <div class="agent-summary">
-            <strong>🗣️ Mulan - Recommendation Reader</strong>
+            <strong>🗣️ Recommendation Reader</strong>
             <div style="margin-top: 0.5rem; font-size: 0.95rem;">
                 {{ aurora.agents.mulan.summary or 'Recommendation analysis not available' }}
             </div>
@@ -909,7 +909,7 @@
         
         {% if aurora.agents.moana %}
         <div class="agent-summary">
-            <strong>🌊 Moana - School Context</strong>
+            <strong>🌊 School Context</strong>
             <div style="margin-top: 0.5rem; font-size: 0.95rem;">
                 {{ aurora.agents.moana.context or 'School context analysis not available' }}
             </div>
@@ -930,7 +930,7 @@
     
     {% endif %}
 
-    <!-- Fallback Merlin Evaluation Display (if no Aurora) -->
+    <!-- Fallback Evaluation Display (if no formatted evaluation) -->
     {% if merlin_evaluation and not aurora_evaluation %}
     {% if merlin_evaluation.Strengths or merlin_evaluation.key_strengths %}
     <div style="margin-bottom: 2rem;">
@@ -1217,7 +1217,7 @@ async function evaluateApplication() {
     {% if agent_results %}
         {% if agent_results.tiana %}
         <details style="margin-bottom: 1.5rem; padding: 1rem; background: white; border-radius: 6px; border-left: 4px solid #f59e0b;">
-            <summary style="cursor: pointer; font-weight: 600; color: #b45309;">👸 Tiana - Application Reader: {{ agent_results.tiana.readiness_score|default('N/A') }}</summary>
+            <summary style="cursor: pointer; font-weight: 600; color: #b45309;">👸 Application Reader: {{ agent_results.tiana.readiness_score|default('N/A') }}</summary>
             <div style="margin-top: 1rem; padding-top: 1rem; border-top: 1px solid #e5e7eb;">
                 <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-bottom: 1rem;">
                     {% for key, value in agent_results.tiana.items() %}
@@ -1235,7 +1235,7 @@ async function evaluateApplication() {
 
         {% if agent_results.rapunzel %}
         <details style="margin-bottom: 1.5rem; padding: 1rem; background: white; border-radius: 6px; border-left: 4px solid #0ea5e9;">
-            <summary style="cursor: pointer; font-weight: 600; color: #0c4a6e;">💇 Rapunzel - Grade Reader</summary>
+            <summary style="cursor: pointer; font-weight: 600; color: #0c4a6e;">💇 Grade Analyzer</summary>
             <div style="margin-top: 1rem; padding-top: 1rem; border-top: 1px solid #e5e7eb;">
                 {% if agent_results.rapunzel.gpa %}
                 <div style="background: #ecfdf5; padding: 0.75rem; border-radius: 4px; margin-bottom: 1rem; border-left: 3px solid #10b981;">
@@ -1258,7 +1258,7 @@ async function evaluateApplication() {
 
         {% if agent_results.moana %}
         <details style="margin-bottom: 1.5rem; padding: 1rem; background: white; border-radius: 6px; border-left: 4px solid #0284c7;">
-            <summary style="cursor: pointer; font-weight: 600; color: #0c4a6e;">🌊 Moana - School Context</summary>
+            <summary style="cursor: pointer; font-weight: 600; color: #0c4a6e;">🌊 School Context</summary>
             <div style="margin-top: 1rem; padding-top: 1rem; border-top: 1px solid #e5e7eb;">
                 <div style="display: grid; grid-template-columns: 1fr; gap: 1rem;">
                     {% for key, value in agent_results.moana.items() %}
@@ -1276,7 +1276,7 @@ async function evaluateApplication() {
 
         {% if agent_results.mulan %}
         <details style="margin-bottom: 1.5rem; padding: 1rem; background: white; border-radius: 6px; border-left: 4px solid #7c3aed;">
-            <summary style="cursor: pointer; font-weight: 600; color: #5b21b6;">🗡️ Mulan - Recommendation Reader</summary>
+            <summary style="cursor: pointer; font-weight: 600; color: #5b21b6;">🗡️ Recommendation Reader</summary>
             <div style="margin-top: 1rem; padding-top: 1rem; border-top: 1px solid #e5e7eb;">
                 <div style="display: grid; grid-template-columns: 1fr; gap: 1rem;">
                     {% if agent_results.mulan is mapping %}
@@ -1313,7 +1313,7 @@ async function evaluateApplication() {
 
         {% if agent_results.merlin %}
         <details style="margin-bottom: 1.5rem; padding: 1rem; background: white; border-radius: 6px; border-left: 4px solid #8b5cf6;">
-            <summary style="cursor: pointer; font-weight: 600; color: #5b21b6;">🧙 Merlin - Final Evaluator</summary>
+            <summary style="cursor: pointer; font-weight: 600; color: #5b21b6;">🧙 Student Evaluator - Final Evaluation</summary>
             <div style="margin-top: 1rem; padding-top: 1rem; border-top: 1px solid #e5e7eb;">
                 {% if agent_results.merlin.overall_score or agent_results.merlin.OverallScore %}
                 <div style="background: linear-gradient(135deg, #a78bfa 0%, #c084fc 100%); color: white; padding: 1rem; border-radius: 6px; margin-bottom: 1rem; text-align: center;">
@@ -1337,7 +1337,7 @@ async function evaluateApplication() {
 
         {% if agent_results.aurora %}
         <details style="margin-bottom: 1.5rem; padding: 1rem; background: white; border-radius: 6px; border-left: 4px solid #06b6d4;">
-            <summary style="cursor: pointer; font-weight: 600; color: #164e63;">✨ Aurora - Summary Formatter</summary>
+            <summary style="cursor: pointer; font-weight: 600; color: #164e63;">✨ Results Formatter - Summary</summary>
             <div style="margin-top: 1rem; padding-top: 1rem; border-top: 1px solid #e5e7eb;">
                 <div style="display: grid; grid-template-columns: 1fr; gap: 1rem;">
                     {% for key, value in agent_results.aurora.items() %}
@@ -1359,9 +1359,9 @@ async function evaluateApplication() {
     {% endif %}
 </div>
 
-<!-- ARIEL Q&A Chat Widget -->
+<!-- Q&A Chat Widget -->
 <div class="card" style="margin-top: 2rem;">
-    <h2 style="margin-bottom: 1.5rem;">🧜‍♀️ ARIEL Q&A - Ask Questions About This Student</h2>
+    <h2 style="margin-bottom: 1.5rem;">🧜‍♀️ Q&A - Ask Questions About This Student</h2>
     {% include 'components/ariel-qa-chat.html' %}
 </div>
 
@@ -1396,17 +1396,17 @@ async function evaluateApplication() {
 <script nonce="{{ csp_nonce }}">
 const APPLICATION_STATUS_ID = '{{ application.application_id or application.ApplicationID }}';
 const AGENT_PROGRESS_LABELS = {
-    belle: '📖 Belle - Document Extraction',
-    mirabel: '🔮 Mirabel - Video Analysis',
-    smee: '🎩 Smee - Orchestrator',
-    naveen: '🧑‍🔬 Naveen - School Evaluation',
-    application_reader: '👸 Tiana - Application Reader',
-    grade_reader: '💇 Rapunzel - Grade Reader',
-    recommendation_reader: '🗡️ Mulan - Recommendation Reader',
-    school_context: '🌊 Moana - School Context',
-    data_scientist: '📊 Milo - Next Gen Match',
-    student_evaluator: '🧙 Merlin - Final Evaluator',
-    aurora: '✨ Aurora - Summary'
+    belle: '📖 Document Analyzer - Document Extraction',
+    mirabel: '🔮 Video Analyzer - Video Analysis',
+    smee: '🎩 Orchestrator - Pipeline Coordinator',
+    naveen: '🧑‍🔬 School Evaluator - School Evaluation',
+    application_reader: '👸 Application Reader',
+    grade_reader: '👑 Grade Analyzer - Transcript Analysis',
+    recommendation_reader: '🗡️ Recommendation Reader',
+    school_context: '🌊 School Context',
+    data_scientist: '📊 Data Scientist - Next Gen Match',
+    student_evaluator: '🧙 Student Evaluator - Final Evaluation',
+    aurora: '✨ Results Formatter - Summary'
 };
 
 async function refreshAgentProgress() {

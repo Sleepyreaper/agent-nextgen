@@ -10,7 +10,7 @@
 </div>
 
 <div class="card" style="margin-top:1rem;">
-    <h3>Executive Summary (Merlin / Aurora)</h3>
+    <h3>Executive Summary</h3>
     {% if human_summary %}
     <div style="background:#f3f4f6;padding:1rem;border-radius:6px;margin-bottom:0.75rem;">
         <strong>Quick Summary:</strong>
@@ -33,7 +33,7 @@
                 <p style="white-space:pre-wrap;">{{ merlin.rationale or merlin.get('rationale') or (merlin.parsed_data and merlin.parsed_data.rationale) }}</p>
         </div>
     {% else %}
-        <p>No merlin/aurora summary available.</p>
+        <p>No executive summary available.</p>
     {% endif %}
 </div>
 

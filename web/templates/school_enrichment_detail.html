@@ -333,7 +333,7 @@
         </div>
         <div style="display: flex; gap: 0.75rem; flex-wrap: wrap;">
             <button class="edit-button" onclick="triggerAnalysis()" id="analyzeBtn">
-                🔬 Analyze with Naveen
+                🔬 Analyze School
             </button>
             <button class="edit-button" onclick="showEditModal()">✎ Edit Data</button>
             <button class="edit-button" onclick="deleteSchool()" style="background: #ef4444; color: white;">🗑 Delete School</button>
@@ -353,7 +353,7 @@
         <span style="font-size: 1.5rem;">⚠️</span>
         <div>
             <strong>Low Data Coverage</strong> &mdash; Only {{ filled_count }} of 6 key fields have data.
-            This school record may need Naveen re-analysis or manual data entry.
+            This school record may need re-analysis or manual data entry.
             Fields missing: 
             {% if not school.total_students %}Total Students, {% endif %}
             {% if not school.graduation_rate or school.graduation_rate|float == 0 %}Graduation Rate, {% endif %}
@@ -392,11 +392,11 @@
             </div>
         </div>
 
-        <!-- NAVEEN: Fields Used for School Analysis -->
+        <!-- School Analysis: Fields Used for School Evaluation -->
         <div class="detail-section" style="border-left: 4px solid #667eea;">
-            <div class="section-title">🔬 Naveen's School Profile <small style="font-weight: normal; color: #6b7280; font-size: 0.75rem;">(School Data Scientist)</small></div>
+            <div class="section-title">🔬 School Profile <small style="font-weight: normal; color: #6b7280; font-size: 0.75rem;">(School Data Scientist)</small></div>
             <p style="color: #6b7280; font-size: 0.9rem; margin-bottom: 1.5rem;">
-                These are the fields Naveen evaluates from NCES database records. Data is imported via CSV upload on the Training page.
+                These are the fields evaluated from NCES database records. Data is imported via CSV upload on the Training page.
             </p>
             
             <h4 style="color: #374151; margin: 1.5rem 0 0.75rem; font-size: 0.95rem;">Basic Information</h4>
@@ -499,22 +499,22 @@
             </div>
         </div>
 
-        <!-- MOANA: Validation Status -->
+        <!-- School Context: Validation Status -->
         <div class="detail-section" style="border-left: 4px solid #06b6d4;">
             <div class="section-title" style="display: flex; justify-content: space-between; align-items: center;">
-                <span>🌊 Moana School Context <small style="font-weight: normal; color: #6b7280; font-size: 0.75rem;">(School Context Analyzer)</small></span>
+                <span>🌊 School Context <small style="font-weight: normal; color: #6b7280; font-size: 0.75rem;">(School Context Analyzer)</small></span>
                 <button class="edit-button" onclick="triggerMoanaValidation()" id="moanaBtn" style="font-size: 0.85rem; padding: 0.5rem 1rem;">
-                    🌊 Validate with Moana
+                    🌊 Validate School Context
                 </button>
             </div>
             <p style="color: #6b7280; font-size: 0.9rem; margin-bottom: 1rem;">
-                Moana uses Naveen's evaluation and NCES data to produce an AI-powered contextual narrative about the student's school environment.
+                Uses the school evaluation and NCES data to produce an AI-powered contextual narrative about the student's school environment.
             </p>
 
             <!-- Validation Status Row -->
             <div class="field-grid">
                 <div class="field-item">
-                    <div class="field-label">Moana Requirements Met</div>
+                    <div class="field-label">Context Requirements Met</div>
                     <div class="field-value" id="moanaReqStatus">
                         {% if school.moana_requirements_met %}
                         <span style="color: #10b981; font-weight: 600;">✓ Yes — All Required Fields Present</span>
@@ -524,7 +524,7 @@
                     </div>
                 </div>
                 <div class="field-item">
-                    <div class="field-label">Last Moana Validation</div>
+                    <div class="field-label">Last Context Validation</div>
                     <div class="field-value {% if not school.last_moana_validation %}empty{% endif %}" id="moanaLastVal">
                         {% if school.last_moana_validation %}
                         <span class="timestamp">{{ school.last_moana_validation }}</span>
@@ -533,9 +533,9 @@
                 </div>
             </div>
             
-            <!-- Moana Field Check Badges -->
+            <!-- Context Field Check Badges -->
             <div style="margin-top: 1rem; padding: 1rem; background: #f0fdfa; border-radius: 6px;">
-                <strong style="font-size: 0.85rem; color: #134e4a;">Moana Field Check:</strong>
+                <strong style="font-size: 0.85rem; color: #134e4a;">Field Check:</strong>
                 <div style="display: flex; flex-wrap: wrap; gap: 0.5rem; margin-top: 0.5rem;">
                     <span style="padding: 0.25rem 0.5rem; border-radius: 4px; font-size: 0.8rem; background: {% if school.school_name %}#d1fae5; color: #065f46{% else %}#fee2e2; color: #991b1b{% endif %};">
                         School Name: {{ '✓' if school.school_name else '✗ missing' }}
@@ -561,12 +561,12 @@
                 </div>
             </div>
 
-            <!-- Moana Context Summary -->
+            <!-- School Context Summary -->
             <div id="moanaContextSection" style="margin-top: 1.5rem;">
                 {% if school.data_source_notes and '🌊 Moana Context Summary' in school.data_source_notes %}
                 <div style="padding: 1.25rem; background: linear-gradient(135deg, #e0f2fe 0%, #f0fdfa 100%); border-radius: 8px; border: 1px solid #67e8f9;">
                     <div style="font-weight: 600; color: #0e7490; margin-bottom: 0.75rem; font-size: 0.95rem;">
-                        🌊 Moana's School Context Summary
+                        🌊 School Context Summary
                     </div>
                     <div id="moanaContextText" style="color: #374151; line-height: 1.7; font-size: 0.95rem;">
                         {% set moana_parts = school.data_source_notes.split('🌊 Moana Context Summary') %}
@@ -584,7 +584,7 @@
                 {% else %}
                 <div id="moanaContextPlaceholder" style="padding: 1.25rem; background: #f9fafb; border-radius: 8px; border: 1px dashed #d1d5db; text-align: center;">
                     <span style="color: #9ca3af; font-size: 0.95rem;">
-                        No school context summary yet. Click <strong>"Validate with Moana"</strong> to generate one.
+                        No school context summary yet. Click <strong>"Validate School Context"</strong> to generate one.
                     </span>
                 </div>
                 {% endif %}
@@ -890,7 +890,7 @@ async function triggerAnalysis() {
     const btn = document.getElementById('analyzeBtn');
     const originalText = btn.innerHTML;
     
-    if (!confirm('Run Naveen school evaluation? This will analyze the NCES database records and produce component scores.')) return;
+    if (!confirm('Run school evaluation? This will analyze the NCES database records and produce component scores.')) return;
     
     btn.disabled = true;
     btn.innerHTML = '⏳ Analyzing...';
@@ -951,11 +951,11 @@ async function triggerMoanaValidation() {
             
             if (v.is_valid) {
                 html += 'background: #d1fae5; border: 1px solid #6ee7b7;">';
-                html += '<strong style="color: #065f46;">✓ Moana Validation Passed</strong>';
+                html += '<strong style="color: #065f46;">✓ School Context Validation Passed</strong>';
                 html += '<p style="color: #047857; margin: 0.5rem 0 0;">All ' + v.total_required + ' required fields are present.</p>';
             } else {
                 html += 'background: #fef3c7; border: 1px solid #fcd34d;">';
-                html += '<strong style="color: #92400e;">⚠ Moana Validation: ' + v.missing_count + ' field(s) missing</strong>';
+                html += '<strong style="color: #92400e;">⚠ School Context Validation: ' + v.missing_count + ' field(s) missing</strong>';
                 html += '<p style="color: #b45309; margin: 0.5rem 0 0;">Missing: ' + v.missing_fields.join(', ') + '</p>';
             }
             html += '</div>';
@@ -963,7 +963,7 @@ async function triggerMoanaValidation() {
             // Show context summary if generated
             if (result.context_summary) {
                 html += '<div style="margin-top: 1rem; padding: 1.25rem; background: linear-gradient(135deg, #e0f2fe 0%, #f0fdfa 100%); border-radius: 8px; border: 1px solid #67e8f9;">';
-                html += '<div style="font-weight: 600; color: #0e7490; margin-bottom: 0.75rem; font-size: 0.95rem;">🌊 Moana\'s School Context Summary</div>';
+                html += '<div style="font-weight: 600; color: #0e7490; margin-bottom: 0.75rem; font-size: 0.95rem;">🌊 School Context Summary</div>';
                 html += '<div style="color: #374151; line-height: 1.7; font-size: 0.95rem;">' + result.context_summary + '</div>';
                 html += '</div>';
                 
@@ -975,7 +975,7 @@ async function triggerMoanaValidation() {
             resultDiv.innerHTML = html;
             resultDiv.style.display = 'block';
             
-            // Update the Moana status badges inline without reloading
+            // Update the context status badges inline without reloading
             const reqMetEl = document.querySelector('#moanaReqStatus');
             if (reqMetEl) {
                 reqMetEl.innerHTML = v.is_valid
@@ -987,13 +987,13 @@ async function triggerMoanaValidation() {
                 lastValEl.innerHTML = '<span class="timestamp">Just now</span>';                
             }
         } else {
-            alert('Moana validation error: ' + (result.error || 'Unknown error'));
+            alert('School context validation error: ' + (result.error || 'Unknown error'));
             btn.innerHTML = originalText;
             btn.disabled = false;
             btn.style.opacity = '1';
         }
     } catch (error) {
-        alert('Failed to run Moana validation: ' + error.message);
+        alert('Failed to run school context validation: ' + error.message);
         btn.innerHTML = originalText;
         btn.disabled = false;
         btn.style.opacity = '1';

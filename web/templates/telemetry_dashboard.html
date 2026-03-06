@@ -676,7 +676,7 @@ function renderSchoolPipeline(enrichment) {
     const moana = enrichment.moana_validation || {};
     const total = enrichment.total || 1;
 
-    let html = '<div style="margin-bottom: 1.5rem;"><strong style="color: #374151;">Naveen Analysis Status</strong></div>';
+    let html = '<div style="margin-bottom: 1.5rem;"><strong style="color: #374151;">School Analysis Status</strong></div>';
 
     const statuses = [
         { key: 'complete', label: 'Complete', cls: 'complete' },
@@ -698,7 +698,7 @@ function renderSchoolPipeline(enrichment) {
         </div>`;
     }
 
-    html += '<div style="margin: 1.5rem 0 1rem; border-top: 1px solid #f3f4f6; padding-top: 1rem;"><strong style="color: #374151;">Moana Validation Status</strong></div>';
+    html += '<div style="margin: 1.5rem 0 1rem; border-top: 1px solid #f3f4f6; padding-top: 1rem;"><strong style="color: #374151;">School Context Validation Status</strong></div>';
 
     const moanaStatuses = [
         { key: 'validated', label: 'Validated', cls: 'complete' },
@@ -1071,11 +1071,11 @@ function renderConsistencyMetrics(data) {
 
     let html = '';
 
-    // Merlin vs Gaston agreement
+    // Evaluator vs Validator agreement
     const agreement = data.merlin_gaston_agreement;
     const correlation = data.merlin_gaston_score_correlation;
 
-    html += '<div style="margin-bottom: 1rem;"><strong style="color: #374151;">Merlin vs Gaston</strong></div>';
+    html += '<div style="margin-bottom: 1rem;"><strong style="color: #374151;">Evaluator vs Validator</strong></div>';
     if (agreement !== null && agreement !== undefined) {
         const cls = agreement >= 80 ? 'good' : agreement >= 60 ? 'warn' : 'bad';
         html += `<div class="config-row">
@@ -1083,7 +1083,7 @@ function renderConsistencyMetrics(data) {
             <span class="success-rate ${cls}">${agreement}%</span>
         </div>`;
     } else {
-        html += '<div style="color: #9ca3af; font-size: 0.85rem;">No Merlin/Gaston comparison data available.</div>';
+        html += '<div style="color: #9ca3af; font-size: 0.85rem;">No evaluator/validator comparison data available.</div>';
     }
 
     if (correlation !== null && correlation !== undefined) {

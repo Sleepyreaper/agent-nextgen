@@ -110,7 +110,7 @@
                 🔗 Resolve XLSX Matches
             </button>
             <button type="button" class="btn btn-info" onclick="fetchMiloInsights()">
-                📊 Milo Insights
+                📊 Training Insights
             </button>
             <button type="button" class="btn" style="background:#8b5cf6; color:white;" onclick="openValidationModal()">
                 🧪 Validate Model
@@ -280,9 +280,9 @@
     <div id="tabAccuracy" style="display: none; margin-top: 1.5rem;">
         <div style="display:flex; justify-content:space-between; align-items:start; margin-bottom:1.5rem;">
             <div>
-                <h3 style="margin:0; color:#5b21b6;">🎯 System Accuracy — Milo Model Validation</h3>
+                <h3 style="margin:0; color:#5b21b6;">🎯 System Accuracy — Model Validation</h3>
                 <p style="color:#6b7280; margin-top:0.5rem; font-size:0.9rem;">
-                    Scores every training student through Milo's current model and compares AI predictions against known outcomes.
+                    Scores every training student through the current model and compares AI predictions against known outcomes.
                 </p>
             </div>
             <div style="display:flex; align-items:center; gap:0.75rem;">
@@ -343,15 +343,15 @@
 <!-- Info Card -->
 <div class="card" style="background: #f0f9ff; border-left: 4px solid #3b82f6; margin-top: 2rem;">
 
-<!-- Milo Validation Modal -->
+<!-- Model Validation Modal -->
 <div id="validationModal" style="display:none; position:fixed; top:0; left:0; right:0; bottom:0; background:rgba(0,0,0,0.6); z-index:9999; justify-content:center; align-items:center;">
     <div style="background:white; border-radius:12px; padding:2rem; max-width:960px; width:95%; max-height:90vh; overflow-y:auto; box-shadow:0 20px 60px rgba(0,0,0,0.3);">
         <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1rem;">
-            <h3 style="margin:0; color:#5b21b6;">🧪 Milo Model Validation</h3>
+            <h3 style="margin:0; color:#5b21b6;">🧪 Model Validation</h3>
             <button onclick="closeValidationModal()" style="background:none; border:none; font-size:1.5rem; cursor:pointer;">✕</button>
         </div>
         <div id="validationExplainer" style="background:#f5f3ff; border-radius:8px; padding:1rem; margin-bottom:1.25rem; color:#4c1d95; font-size:0.9rem; line-height:1.6;">
-            <strong>What does this do?</strong> Validation scores every training student through Milo's current model and compares the AI's prediction against the known outcome (Selected vs Not Selected). This reveals:
+            <strong>What does this do?</strong> Validation scores every training student through the current model and compares the AI's prediction against the known outcome (Selected vs Not Selected). This reveals:
             <ul style="margin:0.5rem 0 0 1.25rem;">
                 <li><strong>Accuracy</strong> — how often the model's prediction matches reality</li>
                 <li><strong>Precision / Recall / F1</strong> — how well it identifies truly selected students</li>
@@ -432,7 +432,7 @@
         <div style="background:#ecfdf5; border:1px solid #a7f3d0; border-radius:8px; padding:1rem; margin-bottom:1rem;">
             <p style="margin:0; font-size:0.9rem; color:#065f46;">
                 <strong>What this does:</strong> Re-downloads every PDF/document from storage for each training student,
-                re-runs the text extraction and Belle section detection pipeline, and updates the
+                re-runs the text extraction and section detection pipeline, and updates the
                 <code>application_text</code>, <code>transcript_text</code>, and <code>recommendation_text</code>
                 fields in the database. Use this after fixing the document processor to re-extract data
                 from existing training records.
@@ -802,16 +802,16 @@ async function fetchMiloInsights() {
         const r = await fetch('/api/milo/insights');
         const data = await r.json();
         if (r.ok && data.status === 'success') {
-            alert('Milo insights:\n' + JSON.stringify(data, null, 2));
+            alert('Training insights:\n' + JSON.stringify(data, null, 2));
         } else {
-            alert('Milo error: ' + (data.error || JSON.stringify(data)));
+            alert('Training insights error: ' + (data.error || JSON.stringify(data)));
         }
     } catch (err) {
         alert('Fetch error: ' + err.message);
     }
 }
 
-// ---- Milo Model Validation ----
+// ---- Model Validation ----
 let _validationPollTimer = null;
 
 function openValidationModal() {

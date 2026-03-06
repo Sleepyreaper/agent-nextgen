@@ -8,7 +8,7 @@
         <div>
             <h2>📊 Import Historical Scores</h2>
             <p style="color: #6b7280; margin-top: 0.5rem;">
-                Upload a NextGen scoring spreadsheet (.xlsx) to give Milo access to real human rubric scores for calibration.
+                Upload a NextGen scoring spreadsheet (.xlsx) to give the Data Scientist access to real human rubric scores for calibration.
             </p>
         </div>
         <a href="{{ url_for('training') }}" class="btn" style="background: #6b7280; color: white; padding: 0.5rem 1rem; border-radius: 6px; text-decoration: none;">
@@ -65,7 +65,7 @@
             <p style="margin: 0; color: #92400e; font-size: 0.85rem;">
                 <strong>⚠️ No selection data yet.</strong> The "Eligible" count only shows students who had the right files, correct age, and submitted on time — 
                 NOT who was actually chosen. Upload 2024 applications on the <a href="{{ url_for('training') }}">Training page</a> and mark who was selected 
-                to let Milo build a model student profile.
+                to let the system build a model student profile.
             </p>
         </div>
         {% endif %}
@@ -202,7 +202,7 @@ document.getElementById('importForm').addEventListener('submit', async function(
                     </div>
                     ` : ''}
                     <p style="margin-top: 0.5rem; color: #6b7280; font-size: 0.85rem;">
-                        Milo will now use these scores for calibration when processing training applications.
+                        The Data Scientist will now use these scores for calibration when processing training applications.
                     </p>
                 </div>
             `;

@@ -123,7 +123,7 @@
     <!-- School Management -->
     <div class="dm-card">
         <h3>🏫 School Management</h3>
-        <p>View, search, and enrich the school database. Run Naveen + Moana analysis on pending schools or seed new school records from training data.</p>
+        <p>View, search, and enrich the school database. Run school evaluation and context analysis on pending schools or seed new school records from training data.</p>
         <div class="dm-actions">
             <a href="{{ url_for('schools_dashboard') }}" class="btn btn-secondary">🏫 Manage Schools</a>
             <button class="btn" onclick="seedSchools()" id="btnSeed">🌱 Seed Schools</button>
@@ -140,12 +140,12 @@
         </div>
     </div>
 
-    <!-- Milo Insights -->
+    <!-- Training Insights -->
     <div class="dm-card">
-        <h3>📊 Milo Insights</h3>
-        <p>Ask Milo to analyze current training examples and surface patterns about what makes strong applicants.</p>
+        <h3>📊 Training Insights</h3>
+        <p>Analyze current training examples and surface patterns about what makes strong applicants.</p>
         <div class="dm-actions">
-            <button class="btn btn-secondary" onclick="fetchMiloInsights()" id="btnMilo">📊 Run Milo Analysis</button>
+            <button class="btn btn-secondary" onclick="fetchMiloInsights()" id="btnMilo">📊 Run Training Analysis</button>
         </div>
     </div>
 
@@ -314,7 +314,7 @@ async function seedSchools() {
     }
 }
 
-// ── Milo Insights ──
+// ── Training Insights ──
 async function fetchMiloInsights() {
     const btn = document.getElementById('btnMilo');
     btn.disabled = true;
@@ -323,7 +323,7 @@ async function fetchMiloInsights() {
         const resp = await fetch('/api/milo/insights');
         const data = await resp.json();
         if (resp.ok && data.status === 'success') {
-            alert('Milo insights:\n' + JSON.stringify(data, null, 2));
+            alert('Training insights:\n' + JSON.stringify(data, null, 2));
         } else {
             alert('Error: ' + (data.error || JSON.stringify(data)));
         }
@@ -331,7 +331,7 @@ async function fetchMiloInsights() {
         alert('Error: ' + err.message);
     } finally {
         btn.disabled = false;
-        btn.textContent = '📊 Run Milo Analysis';
+        btn.textContent = '📊 Run Training Analysis';
     }
 }
 </script>

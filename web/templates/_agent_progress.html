@@ -269,17 +269,17 @@
 const AgentProgress = (function() {
     // Agent registry — order matters for display
     const AGENTS = [
-        { id: 'belle',                 emoji: '📖', name: 'Belle',            role: 'Document Extraction' },
-        { id: 'mirabel',               emoji: '🔮', name: 'Mirabel',          role: 'Video Analysis' },
-        { id: 'smee',                  emoji: '🎩', name: 'Smee',             role: 'Orchestrator' },
-        { id: 'naveen',                emoji: '🧑‍🔬', name: 'Naveen',           role: 'School Evaluation' },
-        { id: 'application_reader',    emoji: '👸', name: 'Tiana',            role: 'Application Review' },
-        { id: 'grade_reader',          emoji: '👑', name: 'Rapunzel',         role: 'Transcript Analysis' },
-        { id: 'school_context',        emoji: '🌊', name: 'Moana',            role: 'School Context Narrative' },
-        { id: 'recommendation_reader', emoji: '🥋', name: 'Mulan',            role: 'Recommendation Analysis' },
-        { id: 'data_scientist',        emoji: '📊', name: 'Milo',             role: 'Next Gen Match' },
-        { id: 'student_evaluator',     emoji: '🧙', name: 'Merlin',           role: 'Final Evaluation' },
-        { id: 'aurora',                emoji: '✨', name: 'Aurora',            role: 'Executive Summary' },
+        { id: 'belle',                 emoji: '📖', name: 'Document Analyzer',  role: 'Document Extraction' },
+        { id: 'mirabel',               emoji: '🔮', name: 'Video Analyzer',    role: 'Video Analysis' },
+        { id: 'smee',                  emoji: '🎩', name: 'Orchestrator',      role: 'Pipeline Coordinator' },
+        { id: 'naveen',                emoji: '🧑‍🔬', name: 'School Evaluator',  role: 'School Evaluation' },
+        { id: 'application_reader',    emoji: '👸', name: 'Application Reader', role: 'Application Review' },
+        { id: 'grade_reader',          emoji: '👑', name: 'Grade Analyzer',    role: 'Transcript Analysis' },
+        { id: 'school_context',        emoji: '🌊', name: 'School Context',    role: 'School Context Narrative' },
+        { id: 'recommendation_reader', emoji: '🥋', name: 'Rec. Reader',       role: 'Recommendation Analysis' },
+        { id: 'data_scientist',        emoji: '📊', name: 'Data Scientist',    role: 'Next Gen Match' },
+        { id: 'student_evaluator',     emoji: '🧙', name: 'Student Evaluator', role: 'Final Evaluation' },
+        { id: 'aurora',                emoji: '✨', name: 'Results Formatter',  role: 'Executive Summary' },
     ];
 
     // Alias map: SSE may send different names

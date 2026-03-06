@@ -27,7 +27,7 @@
     .agent-summary { color: #334155; font-size: 1.05rem; margin-bottom: 0.7rem; }
     .agent-details { color: #64748b; font-size: 0.98rem; }
     .score-badge { display: inline-block; background: #38bdf8; color: #fff; border-radius: 4px; padding: 0.2rem 0.7rem; font-size: 1.1rem; font-weight: 600; margin-left: 0.5rem; }
-    /* Grade table styling for Rapunzel */
+    /* Grade table styling */
     .grade-table-wrapper { max-height: 420px; overflow-y: auto; margin-top: 0.8rem; border: 1px solid #e2e8f0; border-radius: 6px; }
     .grade-table { width: 100%; border-collapse: collapse; font-size: 0.92rem; }
     .grade-table th { background: #f1f5f9; color: #334155; padding: 0.5rem 0.7rem; text-align: left; font-weight: 600; position: sticky; top: 0; border-bottom: 2px solid #cbd5e1; }
@@ -90,9 +90,9 @@
         </div>
     </div>
 
-    {# ════════════════════  MERLIN EXECUTIVE SUMMARY  ════════════════════ #}
+    {# ════════════════════  EXECUTIVE SUMMARY  ════════════════════ #}
     <div class="section">
-        <div class="section-title">🧙 Merlin Executive Summary</div>
+        <div class="section-title">🧙 Executive Summary</div>
         {% set merlin_text = None %}
         {% if merlin %}
             {% if merlin.human_summary %}
@@ -117,7 +117,7 @@
             </div>
             {% endif %}
         {% else %}
-            <div class="agent-summary" style="color:#94a3b8;">Merlin has not evaluated this student yet.</div>
+            <div class="agent-summary" style="color:#94a3b8;">Student has not been evaluated yet.</div>
         {% endif %}
     </div>
 
@@ -126,18 +126,18 @@
         <div class="section-title">Agent Summaries</div>
         <div class="agent-cards">
 
-            {# ── Tiana (Application/Essay Reader) ── #}
+            {# ── Application Reader ── #}
             {% if tiana and (tiana.human_summary or tiana.essay_summary or tiana.essaysummary) %}
             <div class="agent-card">
-                <h3>👸 Tiana {% if tiana.readiness_score or tiana.readinessscore %}<span class="score-badge">{{ tiana.readiness_score or tiana.readinessscore }}</span>{% endif %}</h3>
+                <h3>👸 Application Reader {% if tiana.readiness_score or tiana.readinessscore %}<span class="score-badge">{{ tiana.readiness_score or tiana.readinessscore }}</span>{% endif %}</h3>
                 <div class="agent-summary">{{ tiana.human_summary or tiana.essay_summary or tiana.essaysummary }}</div>
             </div>
             {% endif %}
 
-            {# ── Rapunzel (Grade Reader) ── #}
+            {# ── Grade Analyzer ── #}
             {% if rapunzel and (rapunzel.human_summary or rapunzel.summary or rapunzel.full_analysis) %}
             <div class="agent-card agent-card-wide">
-                <h3>💇 Rapunzel {% if rapunzel.gpa %}<span class="score-badge">GPA: {{ rapunzel.gpa }}</span>{% endif %}{% if rapunzel.course_rigor_index %}<span class="score-badge" style="background:#8b5cf6;">Rigor: {{ rapunzel.course_rigor_index }}</span>{% endif %}</h3>
+                <h3>💇 Grade Analyzer {% if rapunzel.gpa %}<span class="score-badge">GPA: {{ rapunzel.gpa }}</span>{% endif %}{% if rapunzel.course_rigor_index %}<span class="score-badge" style="background:#8b5cf6;">Rigor: {{ rapunzel.course_rigor_index }}</span>{% endif %}</h3>
 
                 {# Stats row #}
                 <div class="rapunzel-stats">
@@ -147,7 +147,7 @@
                     {% if rapunzel.detected_format %}<div class="rapunzel-stat"><strong>Format:</strong> {{ rapunzel.detected_format }}</div>{% endif %}
                 </div>
 
-                {# Rapunzel's perspective narrative #}
+                {# Grade perspective narrative #}
                 {% if rapunzel.rapunzel_perspective %}
                 <div class="rapunzel-perspective">{{ rapunzel.rapunzel_perspective | nl2br }}</div>
                 {% elif rapunzel.human_summary or rapunzel.summary %}
@@ -199,16 +199,16 @@
             </div>
             {% endif %}
 
-            {# ── Mulan (Recommendation Reader) ── #}
+            {# ── Recommendation Reader ── #}
             {% if mulan %}
                 {% if mulan is mapping and (mulan.human_summary or mulan.summary) %}
                 <div class="agent-card">
-                    <h3>🗡️ Mulan {% if mulan.endorsement_strength or mulan.endorsementstrength %}<span class="score-badge">{{ mulan.endorsement_strength or mulan.endorsementstrength }}/100</span>{% endif %}</h3>
+                    <h3>🗡️ Recommendation Reader {% if mulan.endorsement_strength or mulan.endorsementstrength %}<span class="score-badge">{{ mulan.endorsement_strength or mulan.endorsementstrength }}/100</span>{% endif %}</h3>
                     <div class="agent-summary">{{ mulan.human_summary or mulan.summary }}</div>
                 </div>
                 {% elif mulan is sequence and mulan | length > 0 %}
                 <div class="agent-card">
-                    <h3>🗡️ Mulan <span class="score-badge">{{ mulan | length }} rec{{ 's' if mulan | length > 1 }}</span></h3>
+                    <h3>🗡️ Recommendation Reader <span class="score-badge">{{ mulan | length }} rec{{ 's' if mulan | length > 1 }}</span></h3>
                     {% for rec in mulan %}
                     <div class="agent-summary" style="{% if not loop.last %}border-bottom:1px solid #e2e8f0; padding-bottom:0.5rem; margin-bottom:0.5rem;{% endif %}">
                         <strong>{{ rec.recommender_name or rec.recommendername or 'Recommender' }}</strong>
@@ -221,18 +221,18 @@
                 {% endif %}
             {% endif %}
 
-            {# ── Moana (School Context) ── #}
+            {# ── School Context ── #}
             {% if moana and (moana.human_summary or moana.comparison_notes or moana.comparisonnotes or moana.context) %}
             <div class="agent-card agent-card-wide">
-                <h3>🌊 Moana</h3>
+                <h3>🌊 School Context</h3>
                 <div class="agent-summary">{{ moana.human_summary or moana.comparison_notes or moana.comparisonnotes or moana.context }}</div>
             </div>
             {% endif %}
 
-            {# ── Aurora (Report Formatter) ── #}
+            {# ── Results Formatter ── #}
             {% if aurora and aurora.human_summary %}
             <div class="agent-card">
-                <h3>🌅 Aurora</h3>
+                <h3>🌅 Results Formatter</h3>
                 <div class="agent-summary">{{ aurora.human_summary }}</div>
             </div>
             {% endif %}
@@ -240,9 +240,9 @@
         </div>
     </div>
 
-    {# ════════════════════  MILO TRAINING INSIGHTS  ════════════════════ #}
+    {# ════════════════════  TRAINING INSIGHTS  ════════════════════ #}
     <div class="section">
-        <div class="section-title">📊 Milo Training Insights</div>
+        <div class="section-title">📊 Training Insights</div>
         {% if milo_insights and milo_insights.status == 'success' %}
             {% if milo_insights.summary %}
                 <p><strong>Summary:</strong> {{ milo_insights.summary }}</p>
@@ -256,7 +256,7 @@
                 </ul>
             {% endif %}
             {% if milo_insights.average_merlin_score is defined %}
-                <p><em>Average Merlin score for training set: {{ milo_insights.average_merlin_score }}</em></p>
+                <p><em>Average evaluation score for training set: {{ milo_insights.average_merlin_score }}</em></p>
             {% endif %}
         {% else %}
             <p>Insights unavailable.</p>
