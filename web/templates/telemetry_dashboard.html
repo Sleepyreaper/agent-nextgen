@@ -557,7 +557,7 @@ async function loadTelemetry() {
     try {
         const [overviewRes, telStatusRes, tokenRes] = await Promise.all([
             fetch('/api/telemetry/overview'),
-            fetch('/api/debug/telemetry-status'),
+            fetch('/api/telemetry/status'),
             fetch('/api/telemetry/token-usage')
         ]);
 

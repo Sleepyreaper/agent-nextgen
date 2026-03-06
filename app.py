@@ -8735,9 +8735,31 @@ def get_agent_history(agent_name):
     })
 
 
-@app.route('/api/debug/telemetry-status')
+@app.route('/api/telemetry/status')
 def get_telemetry_status():
-    """Report whether observability is configured and where it would export."""
+    """Report whether observability is configured."""
+    try:
+        telemetry_enabled = is_observability_enabled()
+        observability_status = get_observability_status()
+
+        return jsonify({
+            'telemetry_enabled': telemetry_enabled,
+            'app_insights_configured': observability_status.get('connection_string_set'),
+            'observability': {
+                'configured': observability_status.get('configured'),
+                'azure_monitor_available': observability_status.get('azure_monitor_available'),
+                'azure_monitor_version': observability_status.get('azure_monitor_version'),
+                'last_error': observability_status.get('last_error'),
+            }
+        })
+    except Exception as e:
+        logger.error('Request failed: %s', e, exc_info=True)
+        return jsonify({'status': 'error', 'error': 'An internal error occurred'}), 500
+
+
+@app.route('/api/debug/telemetry-status')
+def get_telemetry_status_debug():
+    """Report detailed observability config — debug only."""
     if os.getenv('WEBSITE_SITE_NAME'):
         return jsonify({'error': 'Not found'}), 404
     try:
