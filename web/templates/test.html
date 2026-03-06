@@ -1115,7 +1115,7 @@ function updateFileCount() {
 }
 
 /* ── Chunked upload helper (same 100 KB chunks as video-upload.js) ── */
-const TEST_CHUNK_SIZE = 100 * 1024; // 100 KB – stays under Front Door WAF 128 KB body limit
+const TEST_CHUNK_SIZE = 4 * 1024 * 1024; // 4 MB – optimized for Front Door Premium
 
 function _testUuid() {
     return 'xxxxxxxxxxxx4xxxyxxxxxxxxxxxxxxx'.replace(/[xy]/g, c => {

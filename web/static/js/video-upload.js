@@ -27,8 +27,12 @@
  *   </script>
  */
 const VideoUpload = (() => {
-  const CHUNK_SIZE = 100 * 1024; // 100 KB per chunk – stays under Front Door WAF 128 KB body inspection limit
-  const PARALLEL_UPLOADS = 3; // Upload up to 3 chunks concurrently
+  // Front Door Premium supports configurable WAF body inspection limits.
+  // Configure the WAF policy to exclude /api/file/upload-chunk from body
+  // inspection OR set the request body size limit to ≥8 MB for this route.
+  // See: docs/azure-front-door-upload-optimization.md
+  const CHUNK_SIZE = 4 * 1024 * 1024; // 4 MB per chunk – optimized for Front Door Premium
+  const PARALLEL_UPLOADS = 6; // Upload up to 6 chunks concurrently for high throughput
 
   let _cfg = {};
   let _pendingFiles = []; // [{file, uploadId, blobPath, container, status}]
