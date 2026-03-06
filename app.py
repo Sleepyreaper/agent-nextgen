@@ -8960,3 +8960,48 @@ if __name__ == '__main__':
     print(f" * Starting Flask on port {port}")
     app.run(debug=debug_mode, host='0.0.0.0', port=port)
 
+
+# ---------------------------------------------------------------------------
+# Daily retention cleanup — runs once per day in a background thread.
+# A lock file prevents multiple gunicorn workers from running simultaneously.
+# ---------------------------------------------------------------------------
+def _daily_retention_cleanup():
+    """Run retention cleanup if it hasn't been run today."""
+    lock_path = os.path.join(os.path.dirname(__file__), 'logs', '.retention_last_run')
+    today = time.strftime('%Y-%m-%d')
+
+    try:
+        if os.path.exists(lock_path):
+            with open(lock_path) as f:
+                if f.read().strip() == today:
+                    return  # Already ran today
+    except OSError:
+        pass
+
+    try:
+        retention_days = int(os.getenv('RETENTION_DAYS', '730'))
+        retention_days = max(90, min(retention_days, 3650))
+        result = db.cleanup_old_records(retention_days=retention_days)
+        logger.info(f"Daily retention cleanup completed: {result}")
+        os.makedirs(os.path.dirname(lock_path), exist_ok=True)
+        with open(lock_path, 'w') as f:
+            f.write(today)
+    except Exception as e:
+        logger.debug(f"Daily retention cleanup skipped: {e}")
+
+
+def _schedule_retention():
+    """Schedule retention cleanup to run once per day."""
+    _daily_retention_cleanup()
+    # Re-schedule for 24 hours later
+    t = threading.Timer(86400, _schedule_retention)
+    t.daemon = True
+    t.start()
+
+
+# Start the daily scheduler after a 60-second delay to let the app fully boot
+if os.getenv('WEBSITE_SITE_NAME'):
+    _retention_timer = threading.Timer(60, _schedule_retention)
+    _retention_timer.daemon = True
+    _retention_timer.start()
+

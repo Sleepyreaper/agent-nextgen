@@ -7,6 +7,14 @@ on:
       - 'feature/**'
       - 'fix/**'
       - 'dev/**'
+      - '!willie/**'
+      - '!bob/**'
+      - '!smithers/**'
+    paths-ignore:
+      - 'documents/**'
+      - '*.md'
+      - 'scripts/**'
+      - '.github/workflows/cleanup-sweep-branches.yml'
   pull_request:
     branches:
       - main

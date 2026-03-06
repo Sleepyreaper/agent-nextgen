@@ -318,6 +318,7 @@ CREATE TABLE IF NOT EXISTS agent_audit_logs (
 
 CREATE INDEX IF NOT EXISTS idx_agent_audit_logs_app_id ON agent_audit_logs(application_id);
 CREATE INDEX IF NOT EXISTS idx_agent_audit_logs_agent_name ON agent_audit_logs(agent_name);
+CREATE INDEX IF NOT EXISTS idx_agent_audit_logs_created_at ON agent_audit_logs(created_at);
 
 -- =====================================================================
 -- Test and Training Data

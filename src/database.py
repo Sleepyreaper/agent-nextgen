@@ -2014,8 +2014,11 @@ class Database:
         targets = [
             ("telemetry_events", "created_at"),
             ("agent_audit_logs", "created_at"),
-            ("test_submissions", "created_at"),
+            ("agent_interactions", "timestamp"),
+            ("file_upload_audit", "upload_date"),
             ("training_feedback", "created_at"),
+            ("user_feedback", "created_at"),
+            ("test_submissions", "created_at"),
         ]
 
         deleted: Dict[str, int] = {}
