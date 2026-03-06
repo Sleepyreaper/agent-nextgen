@@ -1,17 +1,18 @@
 {% extends "base.html" %}
 
-{% block title %}Test Data - NextGen Dashboard{% endblock %}
+{% block title %}Test Data — NextGen{% endblock %}
+{% block page_title %}Test Data{% endblock %}
 
 {% block content %}
 <div class="card">
-    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 2rem;">
+    <div class="flex items-center justify-between px-5 py-4 border-b border-emory-gray-200">
         <div>
-            <h1>🧪 Test Data Students</h1>
-            <p style="color: #64748b; margin-top: 0.5rem;">Students created via Quick Test for development and testing</p>
+            <h2 class="font-heading text-xl font-semibold text-emory-dark">🧪 Test Data Students</h2>
+            <p class="text-sm text-emory-gray-500 mt-1">Students created via Quick Test</p>
         </div>
-        <div style="display: flex; gap: 1rem;">
-            <a href="{{ url_for('testing.test') }}" class="btn btn-primary">+ Create Quick Test</a>
-            <a href="{{ url_for('index') }}" class="btn btn-secondary">← Back to Dashboard</a>
+        <div class="flex gap-2">
+            <a href="{{ url_for('testing.test') }}" class="btn-emory btn-emory-primary">+ Quick Test</a>
+            <a href="{{ url_for('index') }}" class="btn-emory btn-emory-secondary">← Dashboard</a>
         </div>
     </div>
 
