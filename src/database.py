@@ -3554,6 +3554,59 @@ class Database:
             logger.error(f"Error fetching school names for state {state_code}: {e}")
             return []
 
+    def get_schools_needing_enrichment(self, state_code: Optional[str] = None,
+                                       limit: int = 50) -> List[Dict[str, Any]]:
+        """Return schools that need enrichment (csv_imported or pending status).
+
+        These are schools with minimal data that haven't been evaluated by
+        Naveen yet.  Optionally filter by state.
+        """
+        try:
+            if not self.has_table("school_enriched_data"):
+                return []
+            query = (
+                "SELECT school_enrichment_id, school_name, state_code, school_district, "
+                "school_url, analysis_status, opportunity_score, data_confidence_score "
+                "FROM school_enriched_data "
+                "WHERE is_active = TRUE AND analysis_status IN ('csv_imported', 'pending', 'error') "
+            )
+            params: list = []
+            if state_code:
+                query += "AND state_code = %s "
+                params.append(state_code.upper())
+            query += "ORDER BY school_name LIMIT %s"
+            params.append(limit)
+            rows = self.execute_query(query, tuple(params))
+            return [dict(r) for r in rows] if rows else []
+        except Exception as e:
+            logger.error(f"Error fetching schools needing enrichment: {e}")
+            return []
+
+    def update_school_url(self, school_enrichment_id: int, school_url: str,
+                          verified: bool = False) -> None:
+        """Set or update the website URL for a school."""
+        try:
+            self.execute_non_query(
+                "UPDATE school_enriched_data SET school_url = %s, "
+                "school_url_verified = %s, school_url_verified_date = CURRENT_TIMESTAMP "
+                "WHERE school_enrichment_id = %s",
+                (school_url, verified, school_enrichment_id),
+            )
+        except Exception as e:
+            logger.error(f"Error updating school URL: {e}")
+
+    def mark_school_enriched(self, school_enrichment_id: int,
+                             analysis_status: str = 'complete') -> None:
+        """Mark a school record as enriched/complete."""
+        try:
+            self.execute_non_query(
+                "UPDATE school_enriched_data SET analysis_status = %s, "
+                "updated_at = CURRENT_TIMESTAMP WHERE school_enrichment_id = %s",
+                (analysis_status, school_enrichment_id),
+            )
+        except Exception as e:
+            logger.error(f"Error marking school enriched: {e}")
+
     def delete_all_school_enriched_data(self) -> int:
         """Delete ALL school enriched data records and cascade to child tables.
         

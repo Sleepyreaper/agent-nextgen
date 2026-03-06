@@ -7794,6 +7794,35 @@ def _compute_enrichment_completeness(school: dict) -> dict:
     }
 
 
+@app.route('/api/schools/needing-enrichment', methods=['GET'])
+def schools_needing_enrichment():
+    """Return schools that need enrichment (csv_imported/pending/error status)."""
+    try:
+        state = request.args.get('state')
+        limit = min(int(request.args.get('limit', 50)), 500)
+        schools = db.get_schools_needing_enrichment(state_code=state, limit=limit)
+        return jsonify({'status': 'success', 'schools': schools, 'count': len(schools)})
+    except Exception as e:
+        logger.error(f"Error fetching schools needing enrichment: {e}", exc_info=True)
+        return jsonify({'status': 'error', 'error': 'An internal error occurred'}), 500
+
+
+@app.route('/api/school/<int:school_id>/url', methods=['POST'])
+def update_school_url(school_id):
+    """Update or set the website URL for a school."""
+    try:
+        data = request.get_json(silent=True) or {}
+        url = (data.get('url') or data.get('school_url') or '').strip()
+        if not url:
+            return jsonify({'status': 'error', 'error': 'URL is required'}), 400
+        verified = bool(data.get('verified', False))
+        db.update_school_url(school_id, url, verified=verified)
+        return jsonify({'status': 'success', 'message': f'URL updated for school {school_id}'})
+    except Exception as e:
+        logger.error(f"Error updating school URL: {e}", exc_info=True)
+        return jsonify({'status': 'error', 'error': 'An internal error occurred'}), 500
+
+
 @app.route('/api/school/<int:school_id>/enrichment-score', methods=['GET'])
 def school_enrichment_score(school_id):
     """Return the enrichment completeness score for a school."""
