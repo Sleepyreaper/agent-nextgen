@@ -1,28 +1,27 @@
 {% extends "base.html" %}
 
-{% block title %}Feedback Admin - NextGen{% endblock %}
+{% block title %}Feedback Admin — NextGen{% endblock %}
+{% block page_title %}Feedback Admin{% endblock %}
+
+{% block extra_css %}
+<style>
+    .fb-badge { display:inline-flex; padding:0.15rem 0.5rem; border-radius:9999px; font-size:0.75rem; font-weight:600; }
+    .fb-received { background:#dbeafe; color:#1e40af; }
+    .fb-triaged  { background:#fef3c7; color:#92400e; }
+    .fb-submitted { background:#d1fae5; color:#065f46; }
+    .fb-error    { background:#fee2e2; color:#991b1b; }
+    .fb-awaiting_github { background:#e0e7ff; color:#3730a3; }
+    .fb-issue    { background:#fef3c7; color:#92400e; }
+    .fb-feature  { background:#ede9fe; color:#5b21b6; }
+</style>
+{% endblock %}
 
 {% block content %}
-<style>
-    .feedback-badge {
-        display: inline-block;
-        padding: 0.15rem 0.5rem;
-        border-radius: 9999px;
-        font-size: 0.75rem;
-        font-weight: 600;
-        text-transform: capitalize;
-    }
-    .badge-received   { background: #dbeafe; color: #1e40af; }
-    .badge-triaged    { background: #fef3c7; color: #92400e; }
-    .badge-submitted  { background: #d1fae5; color: #065f46; }
-    .badge-error      { background: #fee2e2; color: #991b1b; }
-    .badge-awaiting_github { background: #e0e7ff; color: #3730a3; }
-    .badge-issue      { background: #fef3c7; color: #92400e; }
-    .badge-feature    { background: #ede9fe; color: #5b21b6; }
-</style>
-<div class="card">
-    <h2 style="color: var(--emory-blue); margin-bottom: 0.5rem;">📝 Feedback Admin</h2>
-    <p style="color: #6b7280;">Recent user feedback and GitHub issue status.</p>
+<div class="card-nextgen">
+    <div class="px-5 py-4 border-b border-emory-gray-200">
+        <h2 class="font-heading text-xl font-semibold text-emory-dark">📝 Feedback Admin</h2>
+        <p class="text-sm text-emory-gray-500 mt-1">Recent user feedback and GitHub issue status</p>
+    </div>
 
     {% if feedback_items and feedback_items|length > 0 %}
     <div style="margin-top: 1.5rem; overflow-x: auto;">

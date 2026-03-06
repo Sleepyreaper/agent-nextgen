@@ -1,39 +1,31 @@
 {% extends "base.html" %}
 
-{% block title %}Processing {{ application.applicantname }} - Student Evaluation{% endblock %}
-
-{% block extra_css %}
-<style>
-    .processing-container {
-        max-width: 800px;
-        margin: 0 auto;
-    }
-</style>
-{% endblock %}
+{% block title %}Processing {{ application.applicantname }} — NextGen{% endblock %}
+{% block page_title %}Processing Application{% endblock %}
 
 {% block content %}
-<div class="processing-container">
-    <div class="card" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white;">
-        <h1>🤖 Processing Student Application</h1>
-        <p style="font-size: 1.2rem; margin-top: 0.5rem;">{{ application.applicantname }}</p>
-        <p style="font-size: 0.95rem; margin-top: 0.25rem; opacity: 0.85;">Running the full 9-step agent evaluation pipeline. Watch each agent complete in real time below.</p>
+<div class="max-w-3xl mx-auto space-y-5">
+    <!-- Header card -->
+    <div class="rounded-xl p-6 text-white" style="background: linear-gradient(135deg, var(--emory-dark-blue) 0%, var(--emory-medium-blue) 100%);">
+        <h1 class="font-heading text-2xl font-bold">🤖 Processing Student Application</h1>
+        <p class="text-lg mt-1 text-white/90">{{ application.applicantname }}</p>
+        <p class="text-sm mt-1 text-white/60">Running the full agent evaluation pipeline</p>
     </div>
 
-    <div class="card">
-        <!-- Agent Progress Panel -->
+    <div class="card-nextgen p-5">
         <div id="process-progress-panel"></div>
         {% include '_agent_progress.html' %}
 
-        <div id="error-container" style="display: none; margin-top: 2rem; padding: 1rem; background: #fef2f2; border-left: 4px solid #ef4444; border-radius: 5px;">
-            <strong style="color: #991b1b;">Error:</strong>
-            <p id="error-message" style="color: #991b1b; margin-top: 0.5rem;"></p>
+        <div id="error-container" class="hidden mt-5 flash-error px-4 py-3 rounded-lg">
+            <strong>Error:</strong>
+            <p id="error-message" class="mt-1"></p>
         </div>
 
-        <div id="complete-container" style="display: none; margin-top: 2rem; text-align: center;">
-            <div style="font-size: 4rem; margin-bottom: 1rem;">✅</div>
-            <h2 style="color: #10b981;">Processing Complete!</h2>
-            <p style="color: #6b7280; margin: 1rem 0;">All agents have finished analyzing {{ application.applicantname }}'s application.</p>
-            <a href="{{ url_for('applications.student_detail', application_id=application_id) }}" class="btn btn-success">View Student Summary →</a>
+        <div id="complete-container" class="hidden mt-5 text-center py-8">
+            <div class="text-5xl mb-3">✅</div>
+            <h2 class="font-heading text-xl font-semibold text-emory-green">Processing Complete!</h2>
+            <p class="text-sm text-emory-gray-500 mt-2 mb-4">All agents have finished analyzing {{ application.applicantname }}'s application.</p>
+            <a href="{{ url_for('applications.student_detail', application_id=application_id) }}" class="btn-emory btn-emory-primary">View Student Summary →</a>
         </div>
     </div>
 </div>

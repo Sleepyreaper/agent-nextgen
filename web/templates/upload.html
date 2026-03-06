@@ -1,149 +1,102 @@
 {% extends "base.html" %}
 
-{% block title %}Upload Application{% endblock %}
+{% block title %}Upload Application — NextGen{% endblock %}
+{% block page_title %}Upload Application{% endblock %}
 
 {% block content %}
-<div class="card">
-    <h2>📤 Upload Application</h2>
-    <p style="color: #6b7280; margin: 1rem 0;">
-        Upload a student application file. The Document Analyzer will extract the student info, then the full agent pipeline evaluates the application.
-    </p>
-</div>
+<div class="card-nextgen mb-5">
+    <div class="px-5 py-4 border-b border-emory-gray-200">
+        <h2 class="font-heading text-xl font-semibold text-emory-dark">📤 Upload Application</h2>
+        <p class="text-sm text-emory-gray-500 mt-1">Upload student documents. The agent pipeline will extract info and evaluate the application.</p>
+    </div>
 
-<div class="card">
-    <form method="POST" enctype="multipart/form-data" style="margin-top: 1.5rem;" id="uploadForm">
-        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-        <!-- File Upload -->
-        <div id="applicationTypeSection" style="margin-bottom: 2rem;">
-            <label style="display: block; font-weight: 600; margin-bottom: 0.75rem; color: #1f2937;">
-                📄 Application Files *
-            </label>
-            <div style="border: 2px dashed #667eea; border-radius: 8px; padding: 2rem; text-align: center; cursor: pointer; transition: all 0.2s;" 
-                 onmouseover="this.style.background='#f0f9ff'; this.style.borderColor='#3b82f6'"
-                 onmouseout="this.style.background=''; this.style.borderColor='#667eea'"
-                 onclick="document.getElementById('fileInput').click()">
-                  <input type="file" id="fileInput" name="file" required multiple accept=".pdf,.docx,.doc,.txt,.text,.mp4"
-                       style="display: none;" onchange="updateFileName(this)">
-                <svg style="width: 48px; height: 48px; margin-bottom: 1rem;" viewBox="0 0 24 24" fill="none" stroke="#667eea" stroke-width="2">
-                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
-                    <polyline points="17 8 12 3 7 8"></polyline>
-                    <line x1="12" y1="3" x2="12" y2="15"></line>
-                </svg>
-                <p style="font-weight: 600; color: #667eea; margin-bottom: 0.5rem;">
-                    Drag & drop or click to select files
-                </p>
-                <p style="color: #6b7280; font-size: 0.9rem;">
-                    Supported: PDF, DOCX, DOC, TXT, MP4
-                </p>
-                <p id="fileName" style="color: #10b981; font-weight: 600; margin-top: 1rem; display: none;"></p>
-                <p id="videoSizeHint" style="color: #667eea; font-size: 0.85rem; margin-top: 0.5rem; display: none;"></p>
+    <div class="p-5">
+        <form method="POST" enctype="multipart/form-data" id="uploadForm">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+            <!-- File Upload -->
+            <div id="applicationTypeSection" class="mb-6">
+                <label class="block text-sm font-semibold text-emory-dark mb-2">📄 Application Files *</label>
+                <div class="border-2 border-dashed border-emory-medium-blue/40 rounded-xl p-8 text-center cursor-pointer transition hover:bg-emory-light-blue/5 hover:border-emory-medium-blue"
+                     onclick="document.getElementById('fileInput').click()" id="dropZone">
+                    <input type="file" id="fileInput" name="file" required multiple accept=".pdf,.docx,.doc,.txt,.text,.mp4" class="hidden" onchange="updateFileName(this)">
+                    <svg class="w-10 h-10 mx-auto mb-3 text-emory-medium-blue/60" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/>
+                    </svg>
+                    <p class="font-semibold text-emory-medium-blue text-sm">Drag & drop or click to select files</p>
+                    <p class="text-xs text-emory-gray-500 mt-1">PDF, DOCX, DOC, TXT, MP4</p>
+                    <p id="fileName" class="text-sm font-semibold text-emory-green mt-3 hidden"></p>
+                    <p id="videoSizeHint" class="text-xs text-emory-medium-blue mt-1 hidden"></p>
+                </div>
+
+                <!-- Video upload progress -->
+                <div id="videoProgress" class="hidden mt-3">
+                    <p id="videoProgressText" class="text-sm font-semibold text-emory-dark-blue mb-1">Uploading…</p>
+                    <div class="bg-emory-gray-200 rounded-full h-5 overflow-hidden">
+                        <div id="videoProgressBar" class="h-full rounded-full text-xs text-white text-center leading-5 transition-all" style="width:0%; background:linear-gradient(90deg, var(--emory-medium-blue), var(--emory-dark-blue));">0%</div>
+                    </div>
+                </div>
+                <input type="hidden" id="videoBlobInfo" name="chunked_blob_info" value="">
             </div>
 
-            <!-- Video upload progress bar (shown during chunked upload) -->
-            <div id="videoProgress" style="display: none; margin-top: 1rem;">
-                <p id="videoProgressText" style="color: #1e40af; font-weight: 600; margin-bottom: 0.5rem;">Uploading video…</p>
-                <div style="background: #e5e7eb; border-radius: 8px; overflow: hidden; height: 24px;">
-                    <div id="videoProgressBar" style="background: linear-gradient(90deg, #667eea, #764ba2); height: 100%; width: 0%; transition: width 0.3s; color: #fff; font-size: 0.8rem; line-height: 24px; text-align: center; border-radius: 8px;">0%</div>
+            <!-- Application Type -->
+            <div class="mb-6">
+                <label class="block text-sm font-semibold text-emory-dark mb-3">📋 Application Type</label>
+                <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    <label class="flex flex-col p-4 bg-emerald-50 border-2 border-emerald-400 rounded-xl cursor-pointer transition hover:shadow-md">
+                        <input type="radio" name="app_type" value="2026" id="type2026" checked onchange="updateApplicationType()" class="mb-2">
+                        <span class="font-semibold text-emerald-800 text-sm">🆕 2026 Applicant</span>
+                        <span class="text-emerald-700 text-xs mt-1">Real application for current cycle</span>
+                    </label>
+                    <label class="flex flex-col p-4 bg-blue-50 border-2 border-blue-300 rounded-xl cursor-pointer transition hover:shadow-md">
+                        <input type="radio" name="app_type" value="test" id="typeTest" onchange="updateApplicationType()" class="mb-2">
+                        <span class="font-semibold text-blue-800 text-sm">🧪 Test Upload</span>
+                        <span class="text-blue-700 text-xs mt-1">Test agents with sample files</span>
+                    </label>
+                    <label class="flex flex-col p-4 bg-amber-50 border-2 border-amber-300 rounded-xl cursor-pointer transition hover:shadow-md">
+                        <input type="radio" name="app_type" value="training" id="typeTraining" onchange="updateApplicationType()" class="mb-2">
+                        <span class="font-semibold text-amber-800 text-sm">📚 Training Data</span>
+                        <span class="text-amber-700 text-xs mt-1">Historical data from previous years</span>
+                    </label>
                 </div>
             </div>
 
-            <input type="hidden" id="videoBlobInfo" name="chunked_blob_info" value="">
-        </div>
-
-        <!-- Application Type Selection -->
-        <div style="margin-bottom: 2rem;">
-            <label style="display: block; font-weight: 600; margin-bottom: 1rem; color: #1f2937;">
-                📋 Application Type
-            </label>
-            <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 1rem;">
-                <!-- 2026 Applicant (Default) -->
-                <label style="display: flex; flex-direction: column; padding: 1.5rem; background: #f0fdf4; border: 2px solid #10b981; border-radius: 8px; cursor: pointer; transition: all 0.2s;">
-                    <input type="radio" name="app_type" value="2026" id="type2026" checked onchange="updateApplicationType()"
-                           style="margin-bottom: 0.5rem;">
-                    <span style="font-weight: 600; color: #065f46; margin-bottom: 0.5rem;">🆕 2026 Applicant</span>
-                    <span style="color: #047857; font-size: 0.85rem;">Real application for current admission cycle</span>
-                </label>
-                
-                <!-- Test Upload -->
-                <label style="display: flex; flex-direction: column; padding: 1.5rem; background: #f0f9ff; border: 2px solid #3b82f6; border-radius: 8px; cursor: pointer; transition: all 0.2s;">
-                    <input type="radio" name="app_type" value="test" id="typeTest" onchange="updateApplicationType()"
-                           style="margin-bottom: 0.5rem;">
-                    <span style="font-weight: 600; color: #1e40af; margin-bottom: 0.5rem;">🧪 Test Upload</span>
-                    <span style="color: #1e40af; font-size: 0.85rem;">Test the agents with sample files</span>
-                </label>
-                
-                <!-- Training Data -->
-                <label style="display: flex; flex-direction: column; padding: 1.5rem; background: #fef3c7; border: 2px solid #f59e0b; border-radius: 8px; cursor: pointer; transition: all 0.2s;">
-                    <input type="radio" name="app_type" value="training" id="typeTraining" onchange="updateApplicationType()"
-                           style="margin-bottom: 0.5rem;">
-                    <span style="font-weight: 600; color: #92400e; margin-bottom: 0.5rem;">📚 Training Data</span>
-                    <span style="color: #92400e; font-size: 0.85rem;">Historical data from previous years</span>
-                </label>
+            <!-- Selection Status (training only) -->
+            <div id="selectionStatus" class="hidden mb-6 p-4 bg-amber-50 border-2 border-amber-200 rounded-xl">
+                <p class="text-sm font-semibold text-amber-800 mb-2">✅ Was this student accepted?</p>
+                <div class="flex gap-4">
+                    <label class="flex items-center gap-1.5 cursor-pointer text-sm font-semibold text-amber-800">
+                        <input type="radio" name="was_selected" value="yes"> Yes
+                    </label>
+                    <label class="flex items-center gap-1.5 cursor-pointer text-sm font-semibold text-amber-800">
+                        <input type="radio" name="was_selected" value="no"> No
+                    </label>
+                </div>
+                <p class="text-xs text-amber-600 mt-2">Helps the system learn what strong applicants look like.</p>
             </div>
-        </div>
 
-        <!-- Selection Status (shown only for training data) -->
-        <div id="selectionStatus" style="display: none; margin-bottom: 2rem; padding: 1.5rem; background: #fef3c7; border-radius: 8px; border: 2px solid #fcd34d;">
-            <p style="margin: 0 0 0.75rem 0; color: #78350f; font-weight: 600;">
-                ✅ Was this student accepted?
-            </p>
-            <div style="display: flex; gap: 1.5rem; align-items: center;">
-                <label style="display: flex; align-items: center; cursor: pointer; font-weight: 600;">
-                    <input type="radio" name="was_selected" value="yes" style="margin-right: 0.5rem;">
-                    <span style="color: #78350f;">Yes</span>
-                </label>
-                <label style="display: flex; align-items: center; cursor: pointer; font-weight: 600;">
-                    <input type="radio" name="was_selected" value="no" style="margin-right: 0.5rem;">
-                    <span style="color: #78350f;">No</span>
-                </label>
+            <!-- Type Info Display -->
+            <div id="typeInfoDisplay" class="p-4 bg-emerald-50 border-l-4 border-emerald-400 rounded-lg mb-6">
+                <h3 class="text-sm font-semibold text-emerald-800">🆕 2026 Applicant</h3>
+                <p class="text-xs text-emerald-700 mt-1">Will be processed through the full agent pipeline for evaluation.</p>
             </div>
-            <p style="color: #92400e; margin-top: 0.5rem; font-size: 0.9rem;">
-                This helps the system learn what strong applicants look like.
-            </p>
-        </div>
 
-        <!-- Type Information Display -->
-        <div id="typeInfoDisplay" style="padding: 1.5rem; background: #f0fdf4; border-left: 4px solid #10b981; border-radius: 8px; margin-bottom: 2rem;">
-            <h3 style="color: #065f46; margin-bottom: 0.5rem;">🆕 2026 Applicant</h3>
-            <p style="color: #047857; margin: 0;">This will be processed immediately through the full 9-step agent pipeline for evaluation.</p>
-        </div>
-
-        <!-- Submit Button -->
-        <button type="submit" class="btn btn-success" style="padding: 0.75rem 2rem; font-size: 1rem;">
-            📥 Upload File
-        </button>
-    </form>
+            <button type="submit" class="btn-emory btn-emory-primary">📥 Upload File</button>
+        </form>
+    </div>
 </div>
 
 <!-- Info Card -->
-<div class="card" style="background: #f0f9ff; border-left: 4px solid #3b82f6;">
-    <h3 style="color: #1e40af; margin-bottom: 1rem;">ℹ️ What Happens Next</h3>
-    <div style="color: #1e40af; line-height: 1.8;">
-        <ol style="margin-left: 1.5rem;">
-            <li style="margin-bottom: 0.75rem;">
-                <strong>File Upload:</strong> Your documents are uploaded to Azure Storage
-            </li>
-            <li style="margin-bottom: 0.75rem;">
-                <strong>Student ID Created:</strong> A unique ID is generated and the student is matched or created
-            </li>
-            <li style="margin-bottom: 0.75rem;">
-                <strong>Student Info Extracted:</strong> Name, email, and application text are automatically extracted
-            </li>
-            <li style="margin-bottom: 0.75rem;">
-                <strong>Organized in Storage:</strong> Files organized by type (2026/training/test) and student ID
-            </li>
-            <li>
-                <strong>Processing Behavior:</strong> 2026 and test uploads trigger agent processing; training uploads refresh the training dataset only
-            </li>
-        </ol>
-        <p style="margin-top: 1rem;">
-            <strong>Evaluation Standard:</strong> Training applicants are often top performers (though not always), and every file
-            runs through the same rigorous, multi-step evaluation so the final recommendation reflects a full perspective.
-        </p>
-        <p style="margin-top: 1rem;">
-            <strong>Status Tip:</strong> Track progress on the Applicants or Training pages. "Needs Docs" means transcripts or recommendations are still missing.
-        </p>
-    </div>
+<div class="card-nextgen p-5" style="border-left: 4px solid var(--emory-medium-blue);">
+    <h3 class="font-heading text-lg font-semibold text-emory-dark-blue mb-3">ℹ️ What Happens Next</h3>
+    <ol class="list-decimal ml-5 space-y-2 text-sm text-emory-dark-blue/80">
+        <li><strong>File Upload:</strong> Documents uploaded to Azure Storage</li>
+        <li><strong>Student ID:</strong> Unique ID generated, student matched or created</li>
+        <li><strong>Info Extracted:</strong> Name, email, text automatically extracted</li>
+        <li><strong>Organized:</strong> Files sorted by type and student ID</li>
+        <li><strong>Processing:</strong> 2026/test uploads trigger agent evaluation; training refreshes the dataset</li>
+    </ol>
+    <p class="text-xs text-emory-gray-500 mt-4">Track progress on Applicants or Training pages. "Needs Docs" = transcripts or recommendations still missing.</p>
 </div>
 
 <script nonce="{{ csp_nonce }}">
@@ -157,7 +110,7 @@ function updateFileName(input) {
             const moreCount = input.files.length > 3 ? ` (+${input.files.length - 3} more)` : '';
             fileName.textContent = `✓ ${input.files.length} files: ${names}${moreCount}`;
         }
-        fileName.style.display = 'block';
+        fileName.classList.remove('hidden');
     }
 }
 
@@ -169,29 +122,17 @@ function updateApplicationType() {
     const selectionStatus = document.getElementById('selectionStatus');
     
     if (type2026) {
-        typeInfoDisplay.innerHTML = `
-            <h3 style="color: #065f46; margin-bottom: 0.5rem;">🆕 2026 Applicant</h3>
-            <p style="color: #047857; margin: 0;">This will be processed immediately through the full 9-step agent pipeline for evaluation.</p>
-        `;
-        typeInfoDisplay.style.background = '#f0fdf4';
-        typeInfoDisplay.style.borderLeft = '4px solid #10b981';
-        selectionStatus.style.display = 'none';
+        typeInfoDisplay.className = 'p-4 bg-emerald-50 border-l-4 border-emerald-400 rounded-lg mb-6';
+        typeInfoDisplay.innerHTML = '<h3 class="text-sm font-semibold text-emerald-800">🆕 2026 Applicant</h3><p class="text-xs text-emerald-700 mt-1">Will be processed through the full agent pipeline for evaluation.</p>';
+        selectionStatus.classList.add('hidden');
     } else if (typeTest) {
-        typeInfoDisplay.innerHTML = `
-            <h3 style="color: #1e40af; margin-bottom: 0.5rem;">🧪 Test Upload</h3>
-            <p style="color: #1e40af; margin: 0;">This will be processed as test data to evaluate agent performance. You can navigate away and return to see results.</p>
-        `;
-        typeInfoDisplay.style.background = '#f0f9ff';
-        typeInfoDisplay.style.borderLeft = '4px solid #3b82f6';
-        selectionStatus.style.display = 'none';
+        typeInfoDisplay.className = 'p-4 bg-blue-50 border-l-4 border-blue-400 rounded-lg mb-6';
+        typeInfoDisplay.innerHTML = '<h3 class="text-sm font-semibold text-blue-800">🧪 Test Upload</h3><p class="text-xs text-blue-700 mt-1">Will be processed as test data to evaluate agent performance.</p>';
+        selectionStatus.classList.add('hidden');
     } else if (typeTraining) {
-        typeInfoDisplay.innerHTML = `
-            <h3 style="color: #b45309; margin-bottom: 0.5rem;">📚 Training Data</h3>
-            <p style="color: #92400e; margin: 0;">This will be saved as historical training data to learn from.</p>
-        `;
-        typeInfoDisplay.style.background = '#fef3c7';
-        typeInfoDisplay.style.borderLeft = '4px solid #f59e0b';
-        selectionStatus.style.display = 'block';
+        typeInfoDisplay.className = 'p-4 bg-amber-50 border-l-4 border-amber-400 rounded-lg mb-6';
+        typeInfoDisplay.innerHTML = '<h3 class="text-sm font-semibold text-amber-800">📚 Training Data</h3><p class="text-xs text-amber-700 mt-1">Will be saved as historical training data to learn from.</p>';
+        selectionStatus.classList.remove('hidden');
     }
 }
 
@@ -214,14 +155,14 @@ function applyTrainingPreset() {
     }
 
     if (typeSection) {
-        typeSection.style.display = 'none';
+        typeSection.classList.add('hidden');
     }
 
     updateApplicationType();
 }
 
 // Drag and drop
-const dropZone = document.querySelector('[style*="border: 2px dashed"]');
+const dropZone = document.getElementById('dropZone');
 ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
     dropZone.addEventListener(eventName, preventDefaults, false);
 });
@@ -232,22 +173,11 @@ function preventDefaults(e) {
 }
 
 ['dragenter', 'dragover'].forEach(eventName => {
-    dropZone.addEventListener(eventName, highlight, false);
+    dropZone.addEventListener(eventName, () => { dropZone.classList.add('bg-emory-light-blue/10', 'border-emory-medium-blue'); }, false);
 });
-
 ['dragleave', 'drop'].forEach(eventName => {
-    dropZone.addEventListener(eventName, unhighlight, false);
+    dropZone.addEventListener(eventName, () => { dropZone.classList.remove('bg-emory-light-blue/10', 'border-emory-medium-blue'); }, false);
 });
-
-function highlight(e) {
-    dropZone.style.background = '#f0f9ff';
-    dropZone.style.borderColor = '#3b82f6';
-}
-
-function unhighlight(e) {
-    dropZone.style.background = '';
-    dropZone.style.borderColor = '#667eea';
-}
 
 dropZone.addEventListener('drop', handleDrop, false);
 
