@@ -693,9 +693,10 @@ function startTest(type = 'dynamic') {
                    : type === 'single' ? '/api/test/submit-single'
                    : '/api/test/submit';
     
+    const csrfToken = document.querySelector('meta[name="csrf-token"]')?.content || '';
     fetch(endpoint, {
         method: 'POST',
-        headers: {'Content-Type': 'application/json'}
+        headers: {'Content-Type': 'application/json', 'X-CSRFToken': csrfToken}
     })
     .then(r => r.json())
     .then(data => {
@@ -1082,7 +1083,7 @@ function clearTestData() {
     
     fetch('/api/test/cleanup', {
         method: 'POST',
-        headers: {'Content-Type': 'application/json'}
+        headers: {'Content-Type': 'application/json', 'X-CSRFToken': document.querySelector('meta[name="csrf-token"]')?.content || ''}
     })
     .then(r => r.json())
     .then(data => {
