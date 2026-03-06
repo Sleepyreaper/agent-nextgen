@@ -187,6 +187,20 @@ def require_login():
     # Generate a CSP nonce for this request
     g.csp_nonce = secrets.token_urlsafe(16)
 
+    # ---------------------------------------------------------------
+    # Front Door validation — reject requests that bypass the WAF.
+    # The X-Azure-FDID header is set by Azure Front Door and cannot
+    # be spoofed when App Service IP restrictions limit traffic to
+    # the AzureFrontDoor.Backend service tag.
+    # ---------------------------------------------------------------
+    if config.azure_front_door_id:
+        request_fdid = request.headers.get('X-Azure-FDID', '')
+        if request_fdid != config.azure_front_door_id:
+            # Allow Azure health probes (they use the same header but
+            # we also accept requests to the healthz endpoint)
+            if request.endpoint not in ('health_check', 'healthz'):
+                return '<h1>403 — Forbidden</h1>', 403
+
     # Skip auth check if credentials are not configured
     if not config.auth_username or not config.auth_password_hash:
         if os.getenv('FLASK_ENV') == 'production':
