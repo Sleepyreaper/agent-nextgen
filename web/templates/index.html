@@ -1,105 +1,99 @@
 {% extends "base.html" %}
 
-{% block title %}NextGen Dashboard - Application Evaluation{% endblock %}
+{% block title %}Dashboard — NextGen Evaluation{% endblock %}
+{% block page_title %}Dashboard{% endblock %}
 
 {% block content %}
-<div style="background: linear-gradient(135deg, rgba(0,51,102,0.05) 0%, rgba(0,153,169,0.05) 100%); padding: 2rem; border-radius: 8px; margin-bottom: 2rem; border-left: 4px solid var(--accent-teal);">
-    <div style="display: flex; align-items: center; justify-content: space-between; gap: 1rem; flex-wrap: wrap;">
-        <h2 style="color: var(--emory-blue); margin-bottom: 0.5rem;">NextGen High School Internship Program</h2>
-    </div>
-    <p style="color: #555;">Our mission: Recognizing that our differences make us stronger, we actively recruit and support learners from all backgrounds in STEM to improve outcomes for our entire community.</p>
-</div>
-
-<div class="stats">
-    <div class="stat-card">
-        <div class="stat-value" style="color: var(--emory-blue);">{{ pending_count }}</div>
-        <div class="stat-label">Pending Review</div>
-    </div>
-    <div class="stat-card">
-        <div class="stat-value" style="color: var(--accent-teal);">{{ evaluated_count }}</div>
-        <div class="stat-label">Evaluated</div>
-    </div>
-    <div class="stat-card">
-        <div class="stat-value" style="color: var(--emory-gold);">{{ total_count }}</div>
-        <div class="stat-label">Total Students</div>
+<!-- Mission Banner -->
+<div class="bg-white border border-emory-gray-200 rounded-xl p-5 mb-6">
+    <div class="flex items-start gap-4">
+        <div class="flex-shrink-0 w-10 h-10 rounded-lg bg-emory-dark-blue/10 flex items-center justify-center">
+            <span class="text-emory-dark-blue text-lg">🧬</span>
+        </div>
+        <div>
+            <h2 class="font-heading text-lg font-semibold text-emory-dark">NextGen High School Internship Program</h2>
+            <p class="text-sm text-emory-gray-500 mt-1">Recognizing that our differences make us stronger, we actively recruit and support learners from all backgrounds in STEM to improve outcomes for our entire community.</p>
+        </div>
     </div>
 </div>
 
-<div class="card">
-    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem; border-bottom: 1px solid #eee; padding-bottom: 1rem;">
-        <h2 style="color: var(--emory-blue);">📋 Recent Applications</h2>
-        <div style="display: flex; gap: 1rem; flex-wrap: wrap;">
-            <a href="{{ url_for('applications.students') }}" class="btn btn-secondary">👥 View All Students</a>
-            <a href="{{ url_for('upload.upload') }}" class="btn btn-success">+ Add New Student</a>
+<!-- Stats Grid -->
+<div class="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
+    <div class="stat-card-nextgen">
+        <div class="stat-value-nextgen text-emory-dark-blue">{{ pending_count }}</div>
+        <div class="stat-label-nextgen">Pending Review</div>
+    </div>
+    <div class="stat-card-nextgen">
+        <div class="stat-value-nextgen text-emory-green">{{ evaluated_count }}</div>
+        <div class="stat-label-nextgen">Evaluated</div>
+    </div>
+    <div class="stat-card-nextgen">
+        <div class="stat-value-nextgen text-emory-gold">{{ total_count }}</div>
+        <div class="stat-label-nextgen">Total Students</div>
+    </div>
+</div>
+
+<!-- Recent Applications -->
+<div class="card-nextgen">
+    <div class="flex items-center justify-between px-5 py-4 border-b border-emory-gray-200">
+        <h2 class="font-heading text-lg font-semibold text-emory-dark">Recent Applications</h2>
+        <div class="flex gap-2">
+            <a href="{{ url_for('applications.students') }}" class="btn-emory btn-emory-sm btn-emory-secondary">View All</a>
+            <a href="{{ url_for('upload.upload') }}" class="btn-emory btn-emory-sm btn-emory-primary">+ New Student</a>
         </div>
     </div>
 
-    <!-- Recent Student List Component -->
-    {% set students = students %}
-    {% include '_student_list.html' %}
-    
-    <div style="margin-top: 2rem; text-align: center;">
-        <a href="{{ url_for('applications.students') }}" class="btn" style="display: inline-block;">
-            View All {{ total_count }} Students →
+    {% if students %}
+    <div class="overflow-x-auto">
+        <table class="table-nextgen">
+            <thead>
+                <tr>
+                    <th>Name</th>
+                    <th>Email</th>
+                    <th>Status</th>
+                    <th>Uploaded</th>
+                    <th></th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for student in students %}
+                <tr>
+                    <td class="font-medium">{{ student.full_name or 'Unknown' }}</td>
+                    <td class="text-emory-gray-500">{{ student.email or '—' }}</td>
+                    <td>
+                        {% set status = (student.status or 'Uploaded')|lower %}
+                        {% if status == 'completed' %}
+                        <span class="badge-nextgen bg-emerald-100 text-emerald-700">Completed</span>
+                        {% elif status == 'processing' %}
+                        <span class="badge-nextgen bg-blue-100 text-blue-700">Processing</span>
+                        {% elif status == 'needs docs' %}
+                        <span class="badge-nextgen bg-amber-100 text-amber-700">Needs Docs</span>
+                        {% else %}
+                        <span class="badge-nextgen bg-gray-100 text-emory-gray-500">Uploaded</span>
+                        {% endif %}
+                    </td>
+                    <td class="text-emory-gray-500 text-sm">{{ student.uploaded_date.strftime('%b %d, %Y') if student.uploaded_date else '—' }}</td>
+                    <td class="text-right">
+                        <a href="{{ url_for('applications.student_detail', application_id=student.application_id) }}" class="btn-emory btn-emory-sm btn-emory-secondary">View →</a>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <div class="px-5 py-12 text-center">
+        <p class="text-emory-gray-500 text-sm">No applications yet.</p>
+        <a href="{{ url_for('upload.upload') }}" class="btn-emory btn-emory-primary mt-4">Upload First Application</a>
+    </div>
+    {% endif %}
+
+    {% if total_count > 10 %}
+    <div class="px-5 py-3 border-t border-emory-gray-200 text-center">
+        <a href="{{ url_for('applications.students') }}" class="text-sm text-emory-medium-blue hover:text-emory-dark-blue font-medium">
+            View all {{ total_count }} students →
         </a>
     </div>
+    {% endif %}
 </div>
-
-
-{% endblock %}
-
-{% block extra_js %}
-<script nonce="{{ csp_nonce }}">
-async function evaluateOne(button) {
-    if (!confirm('Evaluate this application with AI?')) return;
-    
-    const applicationId = button.dataset.appId;
-    button.disabled = true;
-    button.textContent = 'Evaluating...';
-    
-    try {
-        const response = await fetch(`/evaluate/${applicationId}`, { method: 'POST' });
-        const data = await response.json();
-        
-        if (response.ok) {
-            alert(`Evaluation complete!\nScore: ${data.overall_score}/100\nRecommendation: ${data.recommendation}`);
-            location.reload();
-        } else {
-            alert(`Error: ${data.error}`);
-            btn.disabled = false;
-            btn.textContent = 'Evaluate';
-        }
-    } catch (error) {
-        alert(`Error: ${error.message}`);
-        btn.disabled = false;
-        btn.textContent = 'Evaluate';
-    }
-}
-
-async function evaluateAll() {
-    if (!confirm('Evaluate all pending applications? This may take a few minutes.')) return;
-    
-    const btn = event.target;
-    btn.disabled = true;
-    btn.textContent = 'Evaluating...';
-    
-    try {
-        const response = await fetch('/evaluate_all', { method: 'POST' });
-        const data = await response.json();
-        
-        if (response.ok) {
-            alert(`Evaluated ${data.evaluations.length} applications!`);
-            location.reload();
-        } else {
-            alert(`Error: ${data.error}`);
-            btn.disabled = false;
-            btn.textContent = '🤖 Evaluate All Pending';
-        }
-    } catch (error) {
-        alert(`Error: ${error.message}`);
-        btn.disabled = false;
-        btn.textContent = '🤖 Evaluate All Pending';
-    }
-}
-</script>
 {% endblock %}

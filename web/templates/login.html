@@ -1,170 +1,88 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" class="h-full">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Sign In - NextGen Application Evaluation</title>
+    <meta name="csrf-token" content="{{ csrf_token() }}">
+    <title>Sign In — NextGen Evaluation System</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600;9..144,700&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <style>
-        * { margin: 0; padding: 0; box-sizing: border-box; }
-        :root {
-            --ink-navy: #0b1f36;
-            --ink-slate: #49576a;
-            --champagne: #c8a15a;
-            --accent-teal: #0b7f8f;
-            --pearl: #f4f6f8;
-            --card-shadow: 0 18px 40px rgba(15, 23, 42, 0.08);
-            --soft-shadow: 0 6px 16px rgba(15, 23, 42, 0.08);
-            --error-red: #c0392b;
+    <link href="https://fonts.googleapis.com/css2?family=Crimson+Pro:wght@400;600;700&family=Open+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script nonce="{{ csp_nonce }}">
+    tailwind.config = {
+        theme: {
+            extend: {
+                colors: { emory: { 'dark-blue': '#012169', 'medium-blue': '#007DBA', 'gold': '#F2A900', 'dark': '#101820', 'gray': { 100: '#F2F2F0', 200: '#D0D0CE', 500: '#63666A' }, 'red': '#DA291C' }},
+                fontFamily: { heading: ['"Crimson Pro"', 'serif'], body: ['"Open Sans"', 'sans-serif'] },
+            }
         }
-        body {
-            font-family: 'IBM Plex Sans', 'Segoe UI', Arial, sans-serif;
-            background-color: var(--pearl);
-            color: var(--ink-navy);
-            line-height: 1.6;
-            min-height: 100vh;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            background-image:
-                radial-gradient(circle at 10% 10%, rgba(11, 127, 143, 0.08), transparent 45%),
-                radial-gradient(circle at 90% 0%, rgba(200, 161, 90, 0.08), transparent 40%),
-                linear-gradient(180deg, rgba(255, 255, 255, 0.9) 0%, rgba(244, 246, 248, 0.95) 45%, rgba(244, 246, 248, 1) 100%);
-        }
-        h1, h2, h3 {
-            font-family: 'Fraunces', 'Georgia', serif;
-            letter-spacing: -0.02em;
-        }
-        .login-wrapper {
-            width: 100%;
-            max-width: 440px;
-            padding: 1.5rem;
-        }
-        .login-header {
-            background: linear-gradient(120deg, #0b1f36 0%, #153a5c 60%, #0b7f8f 100%);
-            color: white;
-            padding: 2.25rem 2.5rem 1.75rem;
-            border-radius: 18px 18px 0 0;
-            border-bottom: 4px solid var(--champagne);
-            text-align: center;
-        }
-        .login-header h1 {
-            font-size: 1.65rem;
-            line-height: 1.2;
-            margin-bottom: 0.35rem;
-        }
-        .login-header p {
-            font-size: 0.9rem;
-            opacity: 0.8;
-            font-weight: 400;
-        }
-        .login-card {
-            background: white;
-            padding: 2.5rem 2.5rem 2rem;
-            border-radius: 0 0 18px 18px;
-            box-shadow: var(--card-shadow);
-        }
-        .form-group {
-            margin-bottom: 1.5rem;
-        }
-        .form-group label {
-            display: block;
-            font-weight: 600;
-            font-size: 0.9rem;
-            color: var(--ink-navy);
-            margin-bottom: 0.45rem;
-        }
-        .form-group input {
-            width: 100%;
-            padding: 0.75rem 1rem;
-            border: 2px solid #dde1e7;
-            border-radius: 10px;
-            font-size: 1rem;
-            font-family: 'IBM Plex Sans', 'Segoe UI', Arial, sans-serif;
-            color: var(--ink-navy);
-            background: var(--pearl);
-            transition: border-color 0.2s, box-shadow 0.2s;
-        }
-        .form-group input:focus {
-            outline: none;
-            border-color: var(--accent-teal);
-            box-shadow: 0 0 0 3px rgba(11, 127, 143, 0.12);
-            background: white;
-        }
-        .btn-login {
-            width: 100%;
-            padding: 0.85rem 1.5rem;
-            background: linear-gradient(135deg, var(--accent-teal) 0%, #096d7a 100%);
-            color: white;
-            border: none;
-            border-radius: 10px;
-            font-size: 1rem;
-            font-weight: 600;
-            font-family: 'IBM Plex Sans', 'Segoe UI', Arial, sans-serif;
-            cursor: pointer;
-            transition: transform 0.15s, box-shadow 0.15s;
-            box-shadow: 0 4px 12px rgba(11, 127, 143, 0.25);
-        }
-        .btn-login:hover {
-            transform: translateY(-1px);
-            box-shadow: 0 6px 18px rgba(11, 127, 143, 0.35);
-        }
-        .btn-login:active {
-            transform: translateY(0);
-        }
-        .error-message {
-            background: rgba(192, 57, 43, 0.08);
-            border: 1px solid rgba(192, 57, 43, 0.2);
-            border-left: 4px solid var(--error-red);
-            color: var(--error-red);
-            padding: 0.75rem 1rem;
-            border-radius: 8px;
-            font-size: 0.9rem;
-            font-weight: 500;
-            margin-bottom: 1.5rem;
-        }
-        .login-footer {
-            text-align: center;
-            margin-top: 1.5rem;
-            font-size: 0.8rem;
-            color: var(--ink-slate);
-            opacity: 0.7;
-        }
-    </style>
+    }
+    </script>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/nextgen.css') }}">
 </head>
-<body>
-    <div class="login-wrapper">
-        <div class="login-header">
-            <h1>NextGen Agents</h1>
-            <p>Application Evaluation System</p>
-        </div>
-        <div class="login-card">
-            {% if error %}
-            <div class="error-message">{{ error }}</div>
-            {% endif %}
 
-            <form method="POST" action="/login" autocomplete="on">
-                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                <div class="form-group">
-                    <label for="username">Username</label>
-                    <input type="text" id="username" name="username" required
-                           autocomplete="username" autofocus
-                           placeholder="Enter your username">
+<body class="h-full bg-emory-gray-100 font-body flex items-center justify-center">
+    <!-- Subtle background decoration -->
+    <div class="fixed inset-0 overflow-hidden pointer-events-none" aria-hidden="true">
+        <div class="absolute -top-40 -right-40 w-[600px] h-[600px] rounded-full bg-emory-dark-blue/[0.03]"></div>
+        <div class="absolute -bottom-40 -left-40 w-[500px] h-[500px] rounded-full bg-emory-gold/[0.05]"></div>
+    </div>
+
+    <div class="relative w-full max-w-md px-4">
+        <!-- Card -->
+        <div class="bg-white rounded-2xl shadow-xl overflow-hidden">
+            <!-- Header -->
+            <div class="bg-emory-dark-blue px-8 pt-8 pb-6 text-center">
+                <div class="inline-flex items-center justify-center w-14 h-14 rounded-xl bg-emory-gold mb-4">
+                    <span class="text-emory-dark font-bold text-xl font-heading">NG</span>
                 </div>
-                <div class="form-group">
-                    <label for="password">Password</label>
-                    <input type="password" id="password" name="password" required
-                           autocomplete="current-password"
-                           placeholder="Enter your password">
+                <h1 class="text-white font-heading text-2xl font-bold">NextGen Evaluation</h1>
+                <p class="text-white/60 text-sm mt-1">Emory Department of Human Genetics</p>
+            </div>
+
+            <!-- Form -->
+            <div class="px-8 py-8">
+                {% if error %}
+                <div class="mb-5 px-4 py-3 rounded-lg bg-red-50 border border-red-200 text-red-700 text-sm font-medium">
+                    {{ error }}
                 </div>
-                <button type="submit" class="btn-login">Sign In</button>
-            </form>
-            <div class="login-footer">
-                Secured with Azure Key Vault &middot; v{{ app_version | default('0.0.0') }}
+                {% endif %}
+
+                <form method="POST" class="space-y-5">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+                    <div>
+                        <label for="username" class="block text-sm font-semibold text-emory-dark mb-1.5">Username</label>
+                        <input type="text" id="username" name="username" required autocomplete="username"
+                               class="w-full px-4 py-2.5 rounded-lg border border-emory-gray-200 bg-emory-gray-100/50 text-emory-dark placeholder-emory-gray-500 text-sm
+                                      focus:outline-none focus:ring-2 focus:ring-emory-medium-blue/40 focus:border-emory-medium-blue transition"
+                               placeholder="Enter your username">
+                    </div>
+
+                    <div>
+                        <label for="password" class="block text-sm font-semibold text-emory-dark mb-1.5">Password</label>
+                        <input type="password" id="password" name="password" required autocomplete="current-password"
+                               class="w-full px-4 py-2.5 rounded-lg border border-emory-gray-200 bg-emory-gray-100/50 text-emory-dark placeholder-emory-gray-500 text-sm
+                                      focus:outline-none focus:ring-2 focus:ring-emory-medium-blue/40 focus:border-emory-medium-blue transition"
+                               placeholder="Enter your password">
+                    </div>
+
+                    <button type="submit"
+                            class="w-full py-2.5 rounded-lg bg-emory-dark-blue text-white font-semibold text-sm
+                                   hover:bg-[#001a54] focus:outline-none focus:ring-2 focus:ring-emory-medium-blue/50 focus:ring-offset-2
+                                   transition duration-150">
+                        Sign In
+                    </button>
+                </form>
             </div>
         </div>
+
+        <!-- Footer -->
+        <p class="text-center text-emory-gray-500 text-xs mt-6">
+            © 2026 Emory University · Department of Human Genetics<br>
+            <span class="text-emory-gray-300">v{{ app_version }}</span>
+        </p>
     </div>
 </body>
 </html>

@@ -203,10 +203,10 @@ def add_security_headers(response):
     nonce = getattr(g, 'csp_nonce', '')
     response.headers['Content-Security-Policy'] = (
         "default-src 'self'; "
-        f"script-src 'self' 'nonce-{nonce}' 'strict-dynamic'; "
-        f"script-src-elem 'self' 'nonce-{nonce}'; "
+        f"script-src 'self' 'nonce-{nonce}' 'strict-dynamic' https://cdn.tailwindcss.com; "
+        f"script-src-elem 'self' 'nonce-{nonce}' https://cdn.tailwindcss.com; "
         "script-src-attr 'unsafe-inline'; "
-        "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
+        "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdn.tailwindcss.com; "
         "font-src 'self' https://fonts.gstatic.com; "
         "img-src 'self' data: blob:; "
         "connect-src 'self'; "
