@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 
-{% block title %}{{ summary.name }} — NextGen Evaluation{% endblock %}
+{% block title %}{{ summary.applicant_name or summary.name or "Unknown" }} — NextGen Evaluation{% endblock %}
 {% block page_title %}Student Review{% endblock %}
 
 {% block extra_css %}
@@ -75,14 +75,14 @@
             <div class="relative z-10 px-8 py-5 flex items-center justify-between">
                 <div>
                     <div class="text-white/40 text-xs font-semibold uppercase tracking-widest mb-1">NextGen Scholarship Candidate</div>
-                    <h1 class="font-heading text-3xl font-bold text-white tracking-tight">{{ summary.name }}</h1>
+                    <h1 class="font-heading text-3xl font-bold text-white tracking-tight">{{ summary.applicant_name or summary.name or "Unknown" }}</h1>
                     <div class="flex items-center gap-4 mt-1.5 text-white/50 text-sm">
                         <span>{{ summary.email }}</span>
                         <span>{{ summary.uploaded_date.strftime('%B %d, %Y') if summary.uploaded_date else '' }}</span>
                     </div>
                 </div>
                 <div class="flex flex-col items-end gap-1.5">
-                    {% if summary.is_training %}<span class="text-xs px-3 py-1 rounded-full bg-white/10 text-white/70 border border-white/20">Training Data</span>{% endif %}
+                    {% if summary.is_training_example or summary.is_training %}<span class="text-xs px-3 py-1 rounded-full bg-white/10 text-white/70 border border-white/20">Training Data</span>{% endif %}
                     {% if summary.was_selected %}<span class="text-xs px-3 py-1 rounded-full bg-emerald-500/20 text-emerald-200 border border-emerald-400/30">✓ Was Selected</span>{% endif %}
                 </div>
             </div>
@@ -319,7 +319,7 @@
     </div>
 
     {# ══════════════  APPLICATION ESSAY  ══════════════ #}
-    {% if summary.text_preview %}
+    {% if summary.application_text or summary.text_preview or "" %}
     <div class="bg-white rounded-xl border border-emory-gray-200 overflow-hidden shadow-sm mb-8">
         <div class="accordion-trigger flex items-center gap-3 px-5 py-4" onclick="this.classList.toggle('active'); this.nextElementSibling.classList.toggle('open')">
             <div class="agent-stripe h-10" style="background: #5b21b6;"></div>
@@ -328,7 +328,7 @@
             <svg class="accordion-chevron w-5 h-5 text-emory-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
         </div>
         <div class="accordion-body border-t border-emory-gray-100">
-            <p class="text-sm text-emory-dark whitespace-pre-wrap leading-relaxed">{{ summary.text_preview }}</p>
+            <p class="text-sm text-emory-dark whitespace-pre-wrap leading-relaxed">{{ summary.application_text or summary.text_preview or "" }}</p>
         </div>
     </div>
     {% endif %}
@@ -344,7 +344,7 @@
         <div class="bg-white rounded-2xl shadow-2xl max-w-sm w-[90%] p-8 text-center">
             <div class="w-14 h-14 rounded-full bg-red-100 flex items-center justify-center mx-auto mb-4"><span class="text-2xl">⚠️</span></div>
             <h3 class="font-heading text-xl font-bold text-emory-dark mb-2">Delete Student</h3>
-            <p class="text-sm text-emory-gray-500 mb-6">This will permanently delete <strong>{{ summary.name }}</strong> and all agent evaluations. This cannot be undone.</p>
+            <p class="text-sm text-emory-gray-500 mb-6">This will permanently delete <strong>{{ summary.applicant_name or summary.name or "Unknown" }}</strong> and all agent evaluations. This cannot be undone.</p>
             <div class="flex gap-3 justify-center">
                 <button onclick="document.getElementById('detailDeleteModal').classList.add('hidden');document.getElementById('detailDeleteModal').classList.remove('flex')" class="btn-emory btn-emory-secondary px-6">Cancel</button>
                 <button onclick="deleteThisStudent()" id="detailDeleteBtn" class="btn-emory px-6" style="background:#ef4444; color:#fff;">Delete</button>
