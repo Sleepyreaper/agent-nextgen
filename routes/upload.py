@@ -638,6 +638,7 @@ def upload():
 # ── Chunked Video Upload API ─────────────────────────────────────────
 @upload_bp.route('/api/file/upload-chunk', methods=['POST'])
 @upload_bp.route('/api/video/upload-chunk', methods=['POST'])  # backward compat
+@csrf.exempt
 @limiter.limit("300 per minute")
 def file_upload_chunk():
     """Accept a chunk of file data and stage it in Azure Blob Storage.

@@ -29,6 +29,10 @@ logger = logging.getLogger(__name__)
 
 testing_bp = Blueprint('testing', __name__)
 
+# Exempt all JSON/FormData API endpoints from CSRF — they're behind session auth
+# and CSRF on fetch() with FormData causes Content-Type/boundary issues
+csrf.exempt(testing_bp)
+
 
 @testing_bp.route('/test')
 def test():
