@@ -1037,7 +1037,7 @@ async function searchXlsxFor(appId) {
             html += '<td style="padding:0.4rem; text-align:center;">' + (score.stem_interest != null ? score.stem_interest : '—') + '</td>';
             html += '<td style="padding:0.4rem; text-align:center;">' + (score.essay_video != null ? score.essay_video : '—') + '</td>';
             html += '<td style="padding:0.4rem; text-align:center;">' + (score.recommendation != null ? score.recommendation : '—') + '</td>';
-            html += '<td style="padding:0.4rem; text-align:center;"><button onclick="linkScore(' + appId + ', ' + score.score_id + ', this)" class="btn btn-success" style="padding:0.3rem 0.6rem; font-size:0.8rem;">🔗 Link</button></td>';
+            html += '<td style="padding:0.4rem; text-align:center;"><button data-action="linkScore" data-app-id="' + appId + '" data-score-id="' + score.score_id + '" class="btn btn-success" style="padding:0.3rem 0.6rem; font-size:0.8rem;">🔗 Link</button></td>';
             html += '</tr>';
         });
         html += '</table>';
@@ -1047,9 +1047,11 @@ async function searchXlsxFor(appId) {
     }
 }
 
-async function linkScore(appId, scoreId, btn) {
-    btn.textContent = 'Linking...';
-    btn.disabled = true;
+async function linkScore(el) {
+    const appId = el.dataset.appId;
+    const scoreId = el.dataset.scoreId;
+    el.textContent = 'Linking...';
+    el.disabled = true;
 
     try {
         const r = await fetch('/api/training/link-score', {
@@ -1453,9 +1455,9 @@ function renderAccuracyDashboard(data) {
     html += '<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.5rem;">';
     html += '<h4 style="margin:0; color:#374151;">Per-Student Results</h4>';
     html += '<div style="display:flex; gap:0.5rem;">';
-    html += '<button onclick="filterAccuracyTable(\'all\')" class="btn btn-secondary" style="font-size:0.8rem; padding:0.3rem 0.7rem;">All</button>';
-    html += '<button onclick="filterAccuracyTable(\'wrong\')" class="btn" style="font-size:0.8rem; padding:0.3rem 0.7rem; background:#fef2f2; color:#991b1b; border:1px solid #fecaca;">❌ Wrong Only</button>';
-    html += '<button onclick="filterAccuracyTable(\'accepted\')" class="btn" style="font-size:0.8rem; padding:0.3rem 0.7rem; background:#f0fdf4; color:#166534; border:1px solid #bbf7d0;">✓ Accepted Only</button>';
+    html += '<button data-action="filterAccuracyTable" data-arg="all" class="btn btn-secondary" style="font-size:0.8rem; padding:0.3rem 0.7rem;">All</button>';
+    html += '<button data-action="filterAccuracyTable" data-arg="wrong" class="btn" style="font-size:0.8rem; padding:0.3rem 0.7rem; background:#fef2f2; color:#991b1b; border:1px solid #fecaca;">❌ Wrong Only</button>';
+    html += '<button data-action="filterAccuracyTable" data-arg="accepted" class="btn" style="font-size:0.8rem; padding:0.3rem 0.7rem; background:#f0fdf4; color:#166534; border:1px solid #bbf7d0;">✓ Accepted Only</button>';
     html += '</div></div>';
 
     html += '<div style="max-height:500px; overflow-y:auto; border:1px solid #e5e7eb; border-radius:8px;">';

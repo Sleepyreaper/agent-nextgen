@@ -338,7 +338,7 @@
     {# ══════════════  FOOTER ACTIONS  ══════════════ #}
     <div class="flex items-center justify-between pb-8">
         <a href="{{ url_for('applications.students') }}" class="btn-emory btn-emory-secondary">← All Students</a>
-        <button onclick="document.getElementById('detailDeleteModal').classList.remove('hidden');document.getElementById('detailDeleteModal').classList.add('flex')" class="text-sm text-red-400 hover:text-red-600 transition">Delete this student...</button>
+        <button data-action="openModal" data-modal="detailDeleteModal" class="text-sm text-red-400 hover:text-red-600 transition">Delete this student...</button>
     </div>
 
     {# Delete Modal #}
@@ -348,7 +348,7 @@
             <h3 class="font-heading text-xl font-bold text-emory-dark mb-2">Delete Student</h3>
             <p class="text-sm text-emory-gray-500 mb-6">This will permanently delete <strong>{{ summary.applicant_name or summary.name or "Unknown" }}</strong> and all agent evaluations. This cannot be undone.</p>
             <div class="flex gap-3 justify-center">
-                <button onclick="document.getElementById('detailDeleteModal').classList.add('hidden');document.getElementById('detailDeleteModal').classList.remove('flex')" class="btn-emory btn-emory-secondary px-6">Cancel</button>
+                <button data-action="closeModal" data-modal="detailDeleteModal" class="btn-emory btn-emory-secondary px-6">Cancel</button>
                 <button data-action="deleteThisStudent" id="detailDeleteBtn" class="btn-emory px-6" style="background:#ef4444; color:#fff;">Delete</button>
             </div>
         </div>

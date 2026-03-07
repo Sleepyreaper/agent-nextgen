@@ -294,13 +294,13 @@ Requires context:
             <h4>Ask about this student</h4>
             <p>Questions about grades, school capabilities, qualifications, and more</p>
             <div style="margin-top: 12px; display: flex; flex-wrap: wrap; gap: 6px; justify-content: center;">
-                <div class="suggestion" onclick="suggestQuestion('What is this student\'s GPA and how does it compare to their school\'s average?')">
+                <div class="suggestion" data-action="suggestQuestion" data-arg="What is this student's GPA and how does it compare to their school's average?">
                     GPA Context
                 </div>
-                <div class="suggestion" onclick="suggestQuestion('What AP/Honors courses are available at this student\'s school?')">
+                <div class="suggestion" data-action="suggestQuestion" data-arg="What AP/Honors courses are available at this student's school?">
                     School Capabilities
                 </div>
-                <div class="suggestion" onclick="suggestQuestion('What factors affect this student\'s contextual rigor score?')">
+                <div class="suggestion" data-action="suggestQuestion" data-arg="What factors affect this student's contextual rigor score?">
                     Rigor Analysis
                 </div>
             </div>

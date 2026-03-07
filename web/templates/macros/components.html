@@ -45,7 +45,7 @@
    Usage:
      {{ stat_card(42, 'Pending Review', color='blue') }}
 #}
-{% macro stat_card(value, label, color='blue', onclick='') %}
+{% macro stat_card(value, label, color='blue', action='') %}
 {% set colors = {
     'blue': 'text-emory-dark-blue',
     'green': 'text-emory-green',
@@ -54,8 +54,8 @@
     'teal': 'text-emory-medium-blue',
     'purple': 'text-purple-600',
 } %}
-<div class="stat-card-nextgen hover-lift text-center {% if onclick %}cursor-pointer{% endif %}"
-     {% if onclick %}onclick="{{ onclick }}"{% endif %}>
+<div class="stat-card-nextgen hover-lift text-center {% if action %}cursor-pointer{% endif %}"
+     {% if action %}data-action="{{ action }}"{% endif %}>
     <div class="stat-value-nextgen {{ colors.get(color, colors.blue) }}">{{ value }}</div>
     <div class="stat-label-nextgen">{{ label }}</div>
 </div>
@@ -228,10 +228,10 @@
         <h3 class="font-heading text-xl font-bold text-emory-dark mb-2">{{ title }}</h3>
         <p class="text-sm text-emory-gray-500 mb-6">This will permanently delete <strong>{{ item_name }}</strong>. This cannot be undone.</p>
         <div class="flex gap-3 justify-center">
-            <button onclick="document.getElementById('{{ modal_id }}').classList.add('hidden');document.getElementById('{{ modal_id }}').classList.remove('flex')"
+            <button data-action=\"closeModal\" data-modal=\"{{ modal_id }}\"
                     class="btn-emory btn-emory-secondary px-6">Cancel</button>
             {% if delete_fn %}
-            <button onclick="{{ delete_fn }}()" id="{{ modal_id }}Btn" class="btn-emory px-6" style="background:#ef4444; color:#fff;">Delete</button>
+            <button data-action="{{ delete_fn }}" id="{{ modal_id }}Btn" class="btn-emory px-6" style="background:#ef4444; color:#fff;">Delete</button>
             {% endif %}
         </div>
     </div>

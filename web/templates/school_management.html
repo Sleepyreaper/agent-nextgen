@@ -172,7 +172,7 @@
         <button class="close-modal" data-action="closeAddSchoolModal">&times;</button>
         <h2 style="margin-bottom: 1rem; color: #1f2937;">➕ Add New School</h2>
         <p style="color: #6b7280; font-size: 0.85rem; margin-bottom: 1.5rem;">Add a school to the database. Duplicates are automatically prevented — if this school already exists (matched by name + state), you'll be notified.</p>
-        <form onsubmit="submitAddSchool(event)">
+        <form data-onsubmit="submitAddSchool">
             <div style="margin-bottom: 1rem;">
                 <label style="display: block; font-weight: 600; margin-bottom: 0.3rem; color: #374151;">School Name *</label>
                 <input type="text" id="addSchoolName" required placeholder="e.g. Northview High School" style="width: 100%; padding: 0.5rem; border: 1px solid #d1d5db; border-radius: 6px; font-size: 0.9rem;">
@@ -517,7 +517,7 @@ function openSchoolDetail(schoolId) {
                 </div>
             </div>
             
-            <form onsubmit="submitReview(event, ${schoolId})">
+            <form data-onsubmit="submitReview" data-school-id="${schoolId}">
                 <div class="form-group">
                     <label>School Website (for verification)</label>
                     <input type="url" name="schoolUrl" placeholder="https://example.edu" value="${school.school_url || ''}">
@@ -545,8 +545,8 @@ function openSchoolDetail(schoolId) {
                 
                 <div class="button-group">
                     <button type="submit" class="btn btn-approve">✓ Save & Submit</button>
-                    <button type="button" class="btn btn-analyze" onclick="reanalyzeSchool(${schoolId})">🔄 Reanalyze School</button>
-                    <button type="button" class="btn btn-delete" onclick="deleteSchool(${schoolId}, '${(school.school_name || '').replace(/'/g, "\\'")}')" style="margin-left: auto;">🗑 Delete School</button>
+                    <button type="button" class="btn btn-analyze" data-action="reanalyzeSchool" data-arg="${schoolId}">🔄 Reanalyze School</button>
+                    <button type="button" class="btn btn-delete" data-action="deleteSchool" data-arg="${schoolId}" data-name="${(school.school_name || '').replace(/'/g, "\\'")}" style="margin-left: auto;">🗑 Delete School</button>
                 </div>
             </form>
         </div>

@@ -237,6 +237,25 @@
             if (modal) { modal.classList.add('hidden'); modal.classList.remove('flex'); }
             return;
         }
+        // Modal open
+        if (action === 'openModal') {
+            const modal = document.getElementById(el.dataset.modal);
+            if (modal) { modal.classList.remove('hidden'); modal.classList.add('flex'); }
+            return;
+        }
+        // Click a file input target
+        if (action === 'clickTarget') {
+            var target = document.getElementById(el.dataset.target);
+            if (target) target.click();
+            return;
+        }
+        // Clear a file input
+        if (action === 'clearFileInput') {
+            var input = document.getElementById(el.dataset.target);
+            if (input) { input.value = ''; }
+            if (typeof updateFileCount === 'function') updateFileCount();
+            return;
+        }
         // Generic function call with optional data-arg
         if (typeof window[action] === 'function') {
             e.preventDefault();
@@ -250,6 +269,14 @@
         if (!el) return;
         const fn = el.dataset.onchange;
         if (typeof window[fn] === 'function') window[fn](el);
+    });
+    // Delegated submit handler
+    document.addEventListener('submit', function(e) {
+        const form = e.target.closest('[data-onsubmit]');
+        if (!form) return;
+        e.preventDefault();
+        const fn = form.dataset.onsubmit;
+        if (typeof window[fn] === 'function') window[fn](e, form);
     });
 
     /* ── CSRF auto-include on fetch — MUST load before child template JS ── */

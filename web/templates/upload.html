@@ -18,7 +18,7 @@
             <div id="applicationTypeSection" class="mb-6">
                 <label class="block text-sm font-semibold text-emory-dark mb-2">📄 Application Files *</label>
                 <div class="border-2 border-dashed border-emory-medium-blue/40 rounded-xl p-8 text-center cursor-pointer transition hover:bg-emory-light-blue/5 hover:border-emory-medium-blue"
-                     onclick="document.getElementById('fileInput').click()" id="dropZone">
+                     data-action="clickTarget" data-target="fileInput" id="dropZone">
                     <input type="file" id="fileInput" name="file" required multiple accept=".pdf,.docx,.doc,.txt,.text,.mp4" class="hidden" data-onchange="updateFileName">
                     <svg class="w-10 h-10 mx-auto mb-3 text-emory-medium-blue/60" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                         <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/>

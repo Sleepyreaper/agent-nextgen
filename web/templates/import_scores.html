@@ -86,7 +86,7 @@
         
         <form id="importForm" enctype="multipart/form-data">
             <div style="border: 2px dashed #f59e0b; border-radius: 8px; padding: 2rem; text-align: center; cursor: pointer; margin-bottom: 1rem;"
-                 onclick="document.getElementById('scoreFile').click()" id="dropZone">
+                 data-action="clickTarget" data-target="scoreFile" id="dropZone">
                 <input type="file" id="scoreFile" name="file" accept=".xlsx,.xls" style="display: none;" data-onchange="updateFileName">
                 <p style="color: #92400e; font-weight: 600; font-size: 1.1rem;" id="fileLabel">
                     📁 Click to select .xlsx file or drag & drop
