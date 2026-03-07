@@ -91,7 +91,7 @@ def upload():
                 valid_files += 1
                 filename = secure_filename(file.filename)
                 temp_id = uuid.uuid4().hex
-                temp_path = os.path.join(app.config['UPLOAD_FOLDER'], f"temp_{temp_id}_{filename}")
+                temp_path = os.path.join(current_app.config['UPLOAD_FOLDER'], f"temp_{temp_id}_{filename}")
                 file.save(temp_path)
 
                 # ── Route: Video files → Mirabel, Documents → Belle ──
@@ -228,7 +228,7 @@ def upload():
 
                     temp_id = uuid.uuid4().hex
                     temp_path = os.path.join(
-                        app.config['UPLOAD_FOLDER'],
+                        current_app.config['UPLOAD_FOLDER'],
                         f"temp_{temp_id}_{cfilename}"
                     )
 
@@ -638,6 +638,7 @@ def upload():
 # ── Chunked Video Upload API ─────────────────────────────────────────
 @upload_bp.route('/api/file/upload-chunk', methods=['POST'])
 @upload_bp.route('/api/video/upload-chunk', methods=['POST'])  # backward compat
+@csrf.exempt
 @limiter.limit("300 per minute")
 def file_upload_chunk():
     """Accept a chunk of file data and stage it in Azure Blob Storage.

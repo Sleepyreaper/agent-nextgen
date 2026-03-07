@@ -8,7 +8,7 @@ import tempfile
 import threading
 import time
 
-from flask import Blueprint, flash, jsonify, redirect, render_template, request, url_for
+from flask import Blueprint, current_app, flash, jsonify, redirect, render_template, request, url_for
 
 from extensions import (
     csrf, limiter, run_async,
@@ -352,7 +352,7 @@ def api_import_scores():
         clear_first = request.form.get('clear_first', '').lower() in ('true', '1', 'on', 'yes')
 
         # Save temp file
-        temp_path = os.path.join(app.config.get('UPLOAD_FOLDER', '/tmp'), f"import_{uuid.uuid4().hex}.xlsx")
+        temp_path = os.path.join(current_app.config.get('UPLOAD_FOLDER', '/tmp'), f"import_{uuid.uuid4().hex}.xlsx")
         file.save(temp_path)
 
         try:
@@ -461,7 +461,7 @@ def api_reprocess_training():
             return jsonify({'status': 'success', 'message': 'No training records found', 'count': 0})
 
         # Return immediately, run in background
-        results_file = os.path.join(app.config.get('UPLOAD_FOLDER', '/tmp'), 'reprocess_state.json')
+        results_file = os.path.join(current_app.config.get('UPLOAD_FOLDER', '/tmp'), 'reprocess_state.json')
         state = {
             'status': 'running',
             'total': len(rows),
@@ -563,7 +563,7 @@ def api_reprocess_training():
 @training_bp.route('/api/training/reprocess', methods=['GET'])
 def api_reprocess_training_status():
     """Check progress of a running reprocess job."""
-    results_file = os.path.join(app.config.get('UPLOAD_FOLDER', '/tmp'), 'reprocess_state.json')
+    results_file = os.path.join(current_app.config.get('UPLOAD_FOLDER', '/tmp'), 'reprocess_state.json')
     if not os.path.exists(results_file):
         return jsonify({'status': 'idle', 'message': 'No reprocess job has been started.'})
     try:

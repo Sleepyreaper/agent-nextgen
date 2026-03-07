@@ -8,7 +8,7 @@ import threading
 import time
 import uuid
 
-from flask import Blueprint, Response, flash, jsonify, redirect, render_template, request, stream_with_context, url_for
+from flask import Blueprint, Response, current_app, flash, jsonify, redirect, render_template, request, stream_with_context, url_for
 from werkzeug.utils import secure_filename
 
 from extensions import (
@@ -28,6 +28,8 @@ from src.agents.agent_requirements import AgentRequirements
 logger = logging.getLogger(__name__)
 
 testing_bp = Blueprint('testing', __name__)
+
+csrf.exempt(testing_bp)
 
 
 @testing_bp.route('/test')
@@ -291,7 +293,7 @@ def upload_test_files():
 
                 student_id = storage.generate_student_id()
                 temp_id = uuid.uuid4().hex
-                temp_path = os.path.join(app.config['UPLOAD_FOLDER'], f"temp_{temp_id}_{cfilename}")
+                temp_path = os.path.join(current_app.config['UPLOAD_FOLDER'], f"temp_{temp_id}_{cfilename}")
 
                 try:
                     ok = storage.download_blob_to_file(
@@ -401,7 +403,7 @@ def upload_test_files():
 
                 student_id = storage.generate_student_id()
                 filename = secure_filename(file.filename)
-                temp_path = os.path.join(app.config['UPLOAD_FOLDER'], f"temp_{student_id}_{filename}")
+                temp_path = os.path.join(current_app.config['UPLOAD_FOLDER'], f"temp_{student_id}_{filename}")
                 file.save(temp_path)
 
                 ocr_callback = _make_ocr_callback()

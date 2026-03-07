@@ -298,9 +298,8 @@
         {% block content %}{% endblock %}
     </div>
 
-    {% block extra_js %}{% endblock %}
     <script nonce="{{ csp_nonce }}">
-    // Auto-include CSRF token on all mutating fetch() requests
+    // Auto-include CSRF token on all mutating fetch() requests — MUST load before child template JS
     (function() {
         const _origFetch = window.fetch;
         window.fetch = function(url, opts) {
@@ -310,7 +309,6 @@
                 const token = document.querySelector('meta[name="csrf-token"]');
                 if (token) {
                     opts.headers = opts.headers || {};
-                    // Support both Headers object and plain object
                     if (opts.headers instanceof Headers) {
                         if (!opts.headers.has('X-CSRFToken')) {
                             opts.headers.set('X-CSRFToken', token.content);
@@ -326,5 +324,6 @@
         };
     })();
     </script>
+    {% block extra_js %}{% endblock %}
 </body>
 </html>
