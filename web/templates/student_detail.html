@@ -162,6 +162,7 @@
        ══════════════════════════════════════════════════════════════ #}
     <div class="space-y-3 mb-8">
         <h2 class="font-heading text-lg font-semibold text-emory-dark mb-1">Agent Analysis</h2>
+        <div class="stagger-in space-y-3">
 
         {# ── Tiana: Application Reader ── #}
         {% if tiana and (tiana.human_summary or tiana.essay_summary or tiana.essaysummary) %}
@@ -316,7 +317,8 @@
             </div>
         </div>
         {% endif %}
-    </div>
+    </div>{# close stagger-in #}
+    </div>{# close agent analysis section #}
 
     {# ══════════════  APPLICATION ESSAY  ══════════════ #}
     {% if summary.application_text or summary.text_preview or "" %}

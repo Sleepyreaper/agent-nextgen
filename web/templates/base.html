@@ -6,6 +6,9 @@
     <meta name="csrf-token" content="{{ csrf_token() }}">
     <title>{% block title %}NextGen — Application Evaluation System{% endblock %}</title>
 
+    <!-- Favicon -->
+    <link rel="icon" type="image/svg+xml" href="{{ url_for('static', filename='img/favicon.svg') }}">
+
     <!-- Fonts: Crimson Pro (headings) + Open Sans (body) — Emory brand -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -52,14 +55,15 @@
     <aside id="sidebar" class="sidebar fixed inset-y-0 left-0 z-30 flex flex-col bg-emory-dark-blue overflow-y-auto">
         <!-- Logo / Header -->
         <div class="sidebar-logo flex items-center gap-3 px-5 py-4 border-b border-white/10">
-            <div class="flex-shrink-0 w-8 h-8 rounded-lg bg-emory-gold flex items-center justify-center">
-                <span class="text-emory-dark font-bold text-sm">NG</span>
+            <div class="flex-shrink-0 w-9 h-9 rounded-lg bg-emory-gold flex items-center justify-center shadow-lg">
+                <span class="text-emory-dark font-bold text-sm font-heading">NG</span>
             </div>
             <div class="sidebar-header-text">
                 <div class="text-white font-semibold text-sm leading-tight">NextGen</div>
                 <div class="text-white/50 text-xs">Evaluation System</div>
             </div>
         </div>
+        <div class="gradient-line mx-3 mt-0.5"></div>
 
         <!-- Navigation -->
         <nav class="flex-1 px-3 py-4 space-y-1">
@@ -163,7 +167,7 @@
         {% endwith %}
 
         <!-- Page Content -->
-        <main class="flex-1 px-6 py-6">
+        <main class="flex-1 px-6 py-6 fade-in">
             {% block content %}{% endblock %}
         </main>
 
