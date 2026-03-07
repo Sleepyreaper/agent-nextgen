@@ -470,19 +470,12 @@
 {% endblock %}
 
 {% block content %}
+{% from 'macros/components.html' import hero_banner %}
 <div class="test-container">
     <!-- Hero Banner -->
-    <div class="relative rounded-xl overflow-hidden mb-6 h-32" style="background: linear-gradient(135deg, var(--emory-dark-blue) 0%, var(--emory-medium-blue) 80%, var(--emory-green) 100%);">
-        <img src="{{ url_for('static', filename='img/test-lab.jpg') }}" class="absolute inset-0 w-full h-full object-cover opacity-12" alt="">
-        <div class="absolute inset-0 bg-genome-dots opacity-20"></div>
-        <div class="relative z-10 p-6 flex items-center gap-4">
-            <span class="text-3xl">🧪</span>
-            <div>
-                <h1 class="font-heading text-xl font-bold text-white m-0">Real-Time Test System</h1>
-                <p class="text-white/60 text-sm mt-1">Full 9-step evaluation pipeline: Extract → Match → Enrich → Validate → Evaluate → Synthesize → Report</p>
-            </div>
-        </div>
-    </div>
+    {{ hero_banner('🧪', 'Real-Time Test System', 
+                   'Full 9-step evaluation pipeline: Extract → Match → Enrich → Validate → Evaluate → Synthesize → Report',
+                   image='test-lab.jpg', gradient='blue-green') }}
 
     <!-- Info Box -->
     <div class="info-box">

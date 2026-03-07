@@ -411,6 +411,52 @@ main {
     opacity: 1;
 }
 
+/* ── Dark Mode Support ──────────────────────────────────────── */
+@media (prefers-color-scheme: dark) {
+    html.dark-auto,
+    html:not(.light-force) {
+        /* Only apply if user hasn't forced light mode */
+    }
+}
+html.dark {
+    --emory-dark: #e8e8e6;
+    --emory-gray-700: #d0d0ce;
+    --emory-gray-500: #b1b3b3;
+    --emory-gray-300: #63666a;
+    --emory-gray-200: #2a2d30;
+    --emory-gray-100: #1a1d20;
+    --emory-white: #101316;
+}
+html.dark body {
+    background-color: #0f1114;
+    color: #e8e8e6;
+}
+html.dark .card-nextgen,
+html.dark .stat-card-nextgen,
+html.dark .agent-card-nextgen {
+    background: #1a1d20;
+    border-color: #2a2d30;
+}
+html.dark .table-nextgen thead th {
+    background: #1a1d20;
+    color: #b1b3b3;
+    border-color: #2a2d30;
+}
+html.dark .table-nextgen tbody td {
+    border-color: #1a1d20;
+    color: #d0d0ce;
+}
+html.dark .table-nextgen tbody tr:hover {
+    background: #22252a;
+}
+html.dark .topbar {
+    background: rgba(15, 17, 20, 0.85);
+    border-color: #2a2d30;
+}
+html.dark .flash-success { background: #052e16; border-color: #166534; color: #86efac; }
+html.dark .flash-error { background: #450a0a; border-color: #991b1b; color: #fca5a5; }
+html.dark .flash-warning { background: #451a03; border-color: #92400e; color: #fde68a; }
+
 /* ── Progress bar animated ─────────────────────────────────── */
 .progress-bar-animated {
     background: linear-gradient(90deg, var(--emory-dark-blue), var(--emory-medium-blue), var(--emory-gold));
