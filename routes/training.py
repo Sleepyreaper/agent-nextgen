@@ -463,8 +463,9 @@ def api_reprocess_training():
         if not rows:
             return jsonify({'status': 'success', 'message': 'No training records found', 'count': 0})
 
-        # Return immediately, run in background
-        results_file = os.path.join(current_app.config.get('UPLOAD_FOLDER', '/tmp'), 'reprocess_state.json')
+        # Capture Flask config before spawning background thread
+        upload_folder = current_app.config.get('UPLOAD_FOLDER', '/tmp')
+        results_file = os.path.join(upload_folder, 'reprocess_state.json')
         state = {
             'status': 'running',
             'total': len(rows),
@@ -476,7 +477,7 @@ def api_reprocess_training():
         with open(results_file, 'w') as f:
             json.dump(state, f)
 
-        def _background_reprocess(records, state_path):
+        def _background_reprocess(records, state_path, upload_folder):
             try:
                 belle = BelleDocumentAnalyzer(
                     client=get_ai_client(),
@@ -495,9 +496,9 @@ def api_reprocess_training():
                             continue
 
                         # Re-download and re-analyze files from blob storage
-                        documents = _collect_documents_from_storage(student_id, 'training', belle)
+                        documents = _collect_documents_from_storage(student_id, 'training', belle, upload_folder=upload_folder)
                         if not documents:
-                            documents = _collect_documents_from_storage(student_id, 'application', belle)
+                            documents = _collect_documents_from_storage(student_id, 'application', belle, upload_folder=upload_folder)
                         if not documents:
                             logger.warning(f"Reprocess: no files in storage for {name}")
                             state['errors'].append({'application_id': app_id, 'error': 'no files in storage'})
@@ -546,7 +547,7 @@ def api_reprocess_training():
                 with open(state_path, 'w') as f:
                     json.dump(state, f)
 
-        thread = threading.Thread(target=_background_reprocess, args=(rows, results_file), daemon=True)
+        thread = threading.Thread(target=_background_reprocess, args=(rows, results_file, upload_folder), daemon=True)
         thread.start()
 
         return jsonify({

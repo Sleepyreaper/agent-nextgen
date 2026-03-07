@@ -659,7 +659,7 @@ def _aggregate_documents(documents: list) -> Dict[str, Optional[str]]:
     return fields
 
 
-def _collect_documents_from_storage(student_id: str, application_type: str, belle) -> list:
+def _collect_documents_from_storage(student_id: str, application_type: str, belle, upload_folder: str = None) -> list:
     """Re-download and re-analyze all documents for a student from blob storage."""
     if not storage.client:
         return []
@@ -671,7 +671,8 @@ def _collect_documents_from_storage(student_id: str, application_type: str, bell
         file_content = storage.download_file(student_id, filename, application_type)
         if not file_content:
             continue
-        upload_folder = current_app.config.get('UPLOAD_FOLDER', 'uploads')
+        if upload_folder is None:
+            upload_folder = current_app.config.get('UPLOAD_FOLDER', 'uploads')
         temp_path = os.path.join(upload_folder, f"reprocess_{student_id}_{uuid.uuid4().hex}_{filename}")
         try:
             with open(temp_path, 'wb') as handle:
