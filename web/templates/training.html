@@ -28,169 +28,71 @@
 </div>
 
 <div class="card-nextgen">
-    <div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 2rem; gap: 1rem;">
-        <div>
-            <div style="margin-top: 0.75rem;">
-                <a href="{{ url_for('training.import_scores_page') }}" style="display: inline-flex; align-items: center; gap: 0.4rem; background: #f59e0b; color: #78350f; padding: 0.4rem 1rem; border-radius: 6px; text-decoration: none; font-weight: 600; font-size: 0.85rem;">
-                    📊 Import Historical Scores
-                </a>
-            </div>
-        </div>
-        <div style="width:100%; margin-top:1rem;">
-            <!-- inline upload form for training files -->
-            <div class="card" style="padding:1rem; background:#f9fafb;">
-                <h3 style="margin-top:0;">➕ Upload Training Files</h3>
-                <form method="POST" action="{{ url_for('upload.upload') }}" enctype="multipart/form-data" id="trainingUploadForm">
-                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                    <input type="hidden" name="app_type" value="training" />
-                    <div style="border:2px dashed #f59e0b; border-radius:8px; padding:1.5rem; text-align:center; cursor:pointer;" 
-                         onclick="document.getElementById('trainingFileInput').click()">
-                        <input type="file" id="trainingFileInput" name="file" required accept=".pdf,.docx,.doc,.txt,.text,.mp4" multiple style="display:none;" onchange="updateTrainingFileName(this)">
-                        <p style="color:#92400e; font-weight:600;">Drag & drop or click to select training files</p>
-                        <p style="color:#b45309; font-size:0.8rem; margin-top:0.25rem;">You can select multiple files at once</p>
-                        <p id="trainingFileName" style="color:#92400e; font-weight:600; display:none;"></p>
-                        <p id="trainingVideoSizeHint" style="color:#667eea; font-size:0.85rem; margin-top:0.5rem; display:none;"></p>
-                    </div>
-                    <!-- Video upload progress bar -->
-                    <div id="trainingVideoProgress" style="display:none; margin-top:1rem;">
-                        <p id="trainingVideoProgressText" style="color:#1e40af; font-weight:600; margin-bottom:0.5rem;">Uploading video…</p>
-                        <div style="background:#e5e7eb; border-radius:8px; overflow:hidden; height:24px;">
-                            <div id="trainingVideoProgressBar" style="background:linear-gradient(90deg,#667eea,#764ba2); height:100%; width:0%; transition:width 0.3s; color:#fff; font-size:0.8rem; line-height:24px; text-align:center; border-radius:8px;">0%</div>
-                        </div>
-                    </div>
-                    <input type="hidden" id="trainingVideoBlobInfo" name="chunked_blob_info" value="">
-                    </div>
-                    <div id="trainingSelectionStatus" style="margin-top:1rem; display:flex; gap:1.5rem; align-items:center;">
-                        <label style="display:flex; align-items:center; cursor:pointer; font-weight:600;">
-                            <input type="radio" name="was_selected" value="yes" style="margin-right:0.5rem;">
-                            <span style="color:#78350f;">Yes</span>
-                        </label>
-                        <label style="display:flex; align-items:center; cursor:pointer; font-weight:600;">
-                            <input type="radio" name="was_selected" value="no" style="margin-right:0.5rem;">
-                            <span style="color:#78350f;">No</span>
-                        </label>
-                    </div>
-                    <button type="submit" class="btn btn-primary" style="margin-top:1rem;">Upload</button>
-                </form>
-            </div>
-        </div>
-        <!-- School CSV Upload Card -->
-        <div style="width:100%; margin-top:1rem;">
-            <div class="card" style="padding:1rem; background:#f0fdf4;">
-                <h3 style="margin-top:0;">🏫 Upload School Data (CSV)</h3>
-                <p style="color:#166534; font-size:0.85rem; margin-bottom:0.75rem;">
-                    Upload an NCES CCD CSV file to populate school enrichment data. This replaces all existing school records.
-                </p>
-                <form id="schoolCsvUploadForm" enctype="multipart/form-data" onsubmit="return uploadSchoolCsv(event)">
-                    <div style="border:2px dashed #22c55e; border-radius:8px; padding:1.5rem; text-align:center; cursor:pointer;"
-                         onclick="document.getElementById('schoolCsvFileInput').click()">
-                        <input type="file" id="schoolCsvFileInput" name="file" required accept=".csv" style="display:none;" onchange="updateSchoolCsvFileName(this)">
-                        <p style="color:#166534; font-weight:600;">Click to select a school CSV file</p>
-                        <p style="color:#15803d; font-size:0.8rem; margin-top:0.25rem;">Accepts .csv files (NCES CCD format)</p>
-                        <p id="schoolCsvFileName" style="color:#166534; font-weight:600; display:none;"></p>
-                    </div>
-                    <div style="display:flex; gap:1rem; align-items:center; margin-top:0.75rem;">
-                        <label style="display:flex; align-items:center; gap:0.4rem; font-size:0.85rem; color:#166534;">
-                            <input type="checkbox" id="schoolCsvPurge" checked>
-                            Purge existing school data first
-                        </label>
-                    </div>
-                    <button type="submit" class="btn" style="margin-top:0.75rem; background:#16a34a; color:white;" id="schoolCsvUploadBtn">
-                        🏫 Upload &amp; Import Schools
-                    </button>
-                </form>
-                <!-- Import progress -->
-                <div id="schoolCsvProgress" style="display:none; margin-top:1rem;">
-                    <p id="schoolCsvProgressText" style="color:#166534; font-weight:600; margin-bottom:0.5rem;">Importing schools…</p>
-                    <div style="background:#e5e7eb; border-radius:8px; overflow:hidden; height:24px;">
-                        <div id="schoolCsvProgressBar" style="background:linear-gradient(90deg,#22c55e,#16a34a); height:100%; width:0%; transition:width 0.3s; color:#fff; font-size:0.8rem; line-height:24px; text-align:center; border-radius:8px;">0%</div>
-                    </div>
-                    <p id="schoolCsvProgressDetail" style="color:#6b7280; font-size:0.8rem; margin-top:0.3rem;"></p>
-                </div>
-                <div id="schoolCsvResult" style="display:none; margin-top:1rem;"></div>
-            </div>
-        </div>
-        <div style="display: flex; gap: 0.75rem; align-items:center;">
-            <button type="button" class="btn btn-secondary" onclick="clearTrainingData()">
-                🧹 Clear Training Data
-            </button>
-            <button type="button" class="btn" style="background:#ef4444; color:white;" onclick="findDuplicates()">
-                🔍 Find Duplicates
-            </button>
-            <button type="button" class="btn" style="background:#f59e0b; color:#78350f;" onclick="openXlsxResolver()">
-                🔗 Resolve XLSX Matches
-            </button>
-            <button type="button" class="btn btn-info" onclick="fetchMiloInsights()">
-                📊 Training Insights
-            </button>
-            <button type="button" class="btn" style="background:#8b5cf6; color:white;" onclick="openValidationModal()">
-                🧪 Validate Model
-            </button>
-            <button type="button" class="btn" style="background:#059669; color:white;" onclick="openReprocessModal()">
-                🔄 Reprocess Documents
-            </button>
-            <a id="trainingUploadLink" href="{{ url_for('upload.upload', app_type='training') }}" class="btn btn-primary">
-                ➕ Add Training Example
-            </a>
+    <!-- Upload + Actions toolbar -->
+    <div class="px-5 py-4 border-b border-emory-gray-200">
+        <div class="flex flex-wrap gap-2 items-center">
+            <a id="trainingUploadLink" href="{{ url_for('upload.upload', app_type='training') }}" class="btn-emory btn-emory-primary btn-emory-sm">➕ Add Training</a>
+            <button type="button" class="btn-emory btn-emory-sm btn-emory-secondary" onclick="openReprocessModal()">🔄 Reprocess</button>
+            <button type="button" class="btn-emory btn-emory-sm btn-emory-secondary" onclick="fetchMiloInsights()">📊 Insights</button>
+            <button type="button" class="btn-emory btn-emory-sm btn-emory-secondary" onclick="openValidationModal()">🧪 Validate</button>
+            <button type="button" class="btn-emory btn-emory-sm btn-emory-secondary" onclick="openXlsxResolver()">🔗 XLSX Match</button>
+            <button type="button" class="btn-emory btn-emory-sm btn-emory-secondary" onclick="findDuplicates()">🔍 Duplicates</button>
+            <button type="button" class="btn-emory btn-emory-sm" style="background:#ef4444; color:#fff;" onclick="clearTrainingData()">🧹 Clear</button>
         </div>
     </div>
 
-    <!-- Statistics -->
-    <div style="display: grid; grid-template-columns: repeat(5, 1fr); gap: 1rem; margin-bottom: 2rem;">
-        <div style="background: linear-gradient(135deg, var(--emory-dark-blue) 0%, var(--emory-medium-blue) 100%); color: white; padding: 1.5rem; border-radius: 8px; text-align: center;">
-            <div style="font-size: 2rem; font-weight: bold;">{{ total_count }}</div>
-            <div style="opacity: 0.9; margin-top: 0.5rem;">Total Students</div>
+    <!-- Stats Row -->
+    <div class="grid grid-cols-2 sm:grid-cols-5 gap-3 px-5 py-4 border-b border-emory-gray-200 bg-emory-gray-100/50">
+        <div class="stat-card-nextgen text-center">
+            <div class="stat-value-nextgen text-emory-dark-blue">{{ total_count }}</div>
+            <div class="stat-label-nextgen">Total</div>
         </div>
-        <div style="background: linear-gradient(135deg, #10b981 0%, #059669 100%); color: white; padding: 1.5rem; border-radius: 8px; text-align: center;">
-            <div style="font-size: 2rem; font-weight: bold;">{{ selected_count }}</div>
-            <div style="opacity: 0.9; margin-top: 0.5rem;">✓ Selected</div>
+        <div class="stat-card-nextgen text-center">
+            <div class="stat-value-nextgen text-emory-green">{{ selected_count }}</div>
+            <div class="stat-label-nextgen">✓ Selected</div>
         </div>
-        <div style="background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%); color: white; padding: 1.5rem; border-radius: 8px; text-align: center;">
-            <div style="font-size: 2rem; font-weight: bold;">{{ not_selected_count }}</div>
-            <div style="opacity: 0.9; margin-top: 0.5rem;">✗ Not Selected</div>
+        <div class="stat-card-nextgen text-center">
+            <div class="stat-value-nextgen text-emory-gold">{{ not_selected_count }}</div>
+            <div class="stat-label-nextgen">✗ Not Selected</div>
         </div>
-        <div style="background: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%); color: white; padding: 1.5rem; border-radius: 8px; text-align: center;">
-            <div style="font-size: 2rem; font-weight: bold;">{{ matched_count }}</div>
-            <div style="opacity: 0.9; margin-top: 0.5rem;">📊 XLSX Matched</div>
+        <div class="stat-card-nextgen text-center">
+            <div class="stat-value-nextgen text-emory-medium-blue">{{ matched_count }}</div>
+            <div class="stat-label-nextgen">📊 XLSX</div>
         </div>
-        <div style="background: linear-gradient(135deg, #22c55e 0%, #16a34a 100%); color: white; padding: 1.5rem; border-radius: 8px; text-align: center; cursor: pointer;" onclick="switchTab('schools')">
-            <div style="font-size: 2rem; font-weight: bold;">{{ school_count }}</div>
-            <div style="opacity: 0.9; margin-top: 0.5rem;">🏫 Schools</div>
+        <div class="stat-card-nextgen text-center cursor-pointer hover:border-emory-green transition" onclick="switchTab('schools')">
+            <div class="stat-value-nextgen text-emory-green">{{ school_count }}</div>
+            <div class="stat-label-nextgen">🏫 Schools</div>
         </div>
     </div>
 
     <!-- Tab Navigation -->
-    <div style="display: flex; gap: 0; margin-bottom: 0; border-bottom: 2px solid #e5e7eb;">
-        <button id="tabBtnStudents" class="training-tab active" onclick="switchTab('students')"
-                style="padding: 0.75rem 1.5rem; font-weight: 600; font-size: 1rem; border: none; background: none; cursor: pointer; border-bottom: 3px solid #667eea; color: var(--emory-medium-blue); margin-bottom: -2px;">
+    <div class="flex border-b border-emory-gray-200">
+        <button id="tabBtnStudents" class="training-tab px-5 py-3 text-sm font-semibold border-b-2 border-emory-dark-blue text-emory-dark-blue" onclick="switchTab('students')">
             👥 Students ({{ total_count }})
         </button>
-        <button id="tabBtnSchools" class="training-tab" onclick="switchTab('schools')"
-                style="padding: 0.75rem 1.5rem; font-weight: 600; font-size: 1rem; border: none; background: none; cursor: pointer; border-bottom: 3px solid transparent; color: #6b7280; margin-bottom: -2px;">
+        <button id="tabBtnSchools" class="training-tab px-5 py-3 text-sm font-semibold border-b-2 border-transparent text-emory-gray-500 hover:text-emory-dark transition" onclick="switchTab('schools')">
             🏫 Schools ({{ school_count }})
         </button>
-        <button id="tabBtnAccuracy" class="training-tab" onclick="switchTab('accuracy')"
-                style="padding: 0.75rem 1.5rem; font-weight: 600; font-size: 1rem; border: none; background: none; cursor: pointer; border-bottom: 3px solid transparent; color: #6b7280; margin-bottom: -2px;">
-            🎯 System Accuracy
+        <button id="tabBtnAccuracy" class="training-tab px-5 py-3 text-sm font-semibold border-b-2 border-transparent text-emory-gray-500 hover:text-emory-dark transition" onclick="switchTab('accuracy')">
+            🎯 Accuracy
         </button>
     </div>
+    <!-- Tab content areas -->
 
     <!-- ═══ STUDENTS TAB ═══ -->
-    <div id="tabStudents" style="margin-top: 1.5rem;">
+    <div id="tabStudents" class="p-5">
     <!-- Search and Filter -->
-    <form method="GET" style="margin-bottom: 2rem;">
-        <div style="display: grid; grid-template-columns: 1fr auto auto; gap: 1rem;">
+    <form method="GET" class="mb-5">
+        <div class="flex gap-3">
             <input type="text" name="search" placeholder="🔍 Search by name or email..." 
                    value="{{ search_query or '' }}"
-                   style="padding: 0.75rem; border: 1px solid #d1d5db; border-radius: 5px; font-size: 1rem;">
-            
-            <select name="filter" style="padding: 0.75rem; border: 1px solid #d1d5db; border-radius: 5px; font-size: 1rem;">
-                <option value="">All Examples</option>
-                <option value="selected" {% if filter_selected == 'selected' %}selected{% endif %}>✓ Selected Only</option>
+                   class="flex-1 px-4 py-2 border border-emory-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-emory-medium-blue/30">
+            <select name="filter" class="px-3 py-2 border border-emory-gray-200 rounded-lg text-sm">
+                <option value="">All</option>
+                <option value="selected" {% if filter_selected == 'selected' %}selected{% endif %}>✓ Selected</option>
                 <option value="not_selected" {% if filter_selected == 'not_selected' %}selected{% endif %}>✗ Not Selected</option>
             </select>
-            
-            <button type="submit" class="btn btn-primary">Search</button>
+            <button type="submit" class="btn-emory btn-emory-primary btn-emory-sm">Search</button>
         </div>
     </form>
 
