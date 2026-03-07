@@ -335,11 +335,11 @@
             </div>
         </div>
         <div style="display: flex; gap: 0.75rem; flex-wrap: wrap;">
-            <button class="edit-button" onclick="triggerAnalysis()" id="analyzeBtn">
+            <button class="edit-button" data-action="triggerAnalysis" id="analyzeBtn">
                 🔬 Analyze School
             </button>
-            <button class="edit-button" onclick="showEditModal()">✎ Edit Data</button>
-            <button class="edit-button" onclick="deleteSchool()" style="background: #ef4444; color: white;">🗑 Delete School</button>
+            <button class="edit-button" data-action="showEditModal">✎ Edit Data</button>
+            <button class="edit-button" data-action="deleteSchool" style="background: #ef4444; color: white;">🗑 Delete School</button>
         </div>
     </div>
 
@@ -506,7 +506,7 @@
         <div class="detail-section" style="border-left: 4px solid #06b6d4;">
             <div class="section-title" style="display: flex; justify-content: space-between; align-items: center;">
                 <span>🌊 School Context <small style="font-weight: normal; color: #6b7280; font-size: 0.75rem;">(School Context Analyzer)</small></span>
-                <button class="edit-button" onclick="triggerMoanaValidation()" id="moanaBtn" style="font-size: 0.85rem; padding: 0.5rem 1rem;">
+                <button class="edit-button" data-action="triggerMoanaValidation" id="moanaBtn" style="font-size: 0.85rem; padding: 0.5rem 1rem;">
                     🌊 Validate School Context
                 </button>
             </div>
@@ -681,7 +681,7 @@
     <div class="modal-content">
         <div class="modal-header">
             <span>Edit School Enrichment Data</span>
-            <button class="close-button" onclick="closeEditModal()">✕</button>
+            <button class="close-button" data-action="closeEditModal">✕</button>
         </div>
         <form id="editForm">
             <div class="form-group">
@@ -802,7 +802,7 @@
             </div>
 
             <div class="form-actions">
-                <button type="button" class="btn-secondary" onclick="closeEditModal()">Cancel</button>
+                <button type="button" class="btn-secondary" data-action="closeEditModal">Cancel</button>
                 <button type="submit" class="btn-primary">Save Changes</button>
             </div>
         </form>

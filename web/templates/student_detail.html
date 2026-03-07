@@ -167,7 +167,7 @@
         {# ── Tiana: Application Reader ── #}
         {% if tiana and (tiana.human_summary or tiana.essay_summary or tiana.essaysummary) %}
         <div class="bg-white rounded-xl border border-emory-gray-200 overflow-hidden shadow-sm">
-            <div class="accordion-trigger flex items-center gap-3 px-5 py-4" onclick="this.classList.toggle('active'); this.nextElementSibling.classList.toggle('open')">
+            <div class="accordion-trigger flex items-center gap-3 px-5 py-4" data-action="toggleAccordion">
                 <div class="agent-stripe h-10" style="background: #F2A900;"></div>
                 <span class="agent-avatar agent-avatar-tiana">📝</span>
                 <div class="flex-1 min-w-0">
@@ -186,7 +186,7 @@
         {# ── Rapunzel: Grade Analyzer ── #}
         {% if rapunzel and (rapunzel.human_summary or rapunzel.summary or rapunzel.full_analysis or rapunzel.rapunzel_perspective) %}
         <div class="bg-white rounded-xl border border-emory-gray-200 overflow-hidden shadow-sm">
-            <div class="accordion-trigger active flex items-center gap-3 px-5 py-4" onclick="this.classList.toggle('active'); this.nextElementSibling.classList.toggle('open')">
+            <div class="accordion-trigger active flex items-center gap-3 px-5 py-4" data-action="toggleAccordion">
                 <div class="agent-stripe h-10" style="background: #9d174d;"></div>
                 <span class="agent-avatar agent-avatar-rapunzel">🎓</span>
                 <div class="flex-1 min-w-0">
@@ -250,7 +250,7 @@
         {# ── Mulan: Recommendation Reader ── #}
         {% if mulan %}
         <div class="bg-white rounded-xl border border-emory-gray-200 overflow-hidden shadow-sm">
-            <div class="accordion-trigger flex items-center gap-3 px-5 py-4" onclick="this.classList.toggle('active'); this.nextElementSibling.classList.toggle('open')">
+            <div class="accordion-trigger flex items-center gap-3 px-5 py-4" data-action="toggleAccordion">
                 <div class="agent-stripe h-10" style="background: #991b1b;"></div>
                 <span class="agent-avatar agent-avatar-mulan">💌</span>
                 <div class="flex-1 min-w-0">
@@ -281,7 +281,7 @@
         {# ── Moana: School Context ── #}
         {% if moana and (moana.human_summary or moana.comparison_notes or moana.comparisonnotes or moana.context) %}
         <div class="bg-white rounded-xl border border-emory-gray-200 overflow-hidden shadow-sm">
-            <div class="accordion-trigger flex items-center gap-3 px-5 py-4" onclick="this.classList.toggle('active'); this.nextElementSibling.classList.toggle('open')">
+            <div class="accordion-trigger flex items-center gap-3 px-5 py-4" data-action="toggleAccordion">
                 <div class="agent-stripe h-10" style="background: #115e59;"></div>
                 <span class="agent-avatar agent-avatar-moana">🌊</span>
                 <div class="flex-1 min-w-0">
@@ -299,7 +299,7 @@
         {# ── Milo: Training Insights ── #}
         {% if milo_insights and milo_insights.status == 'success' %}
         <div class="bg-white rounded-xl border border-emory-gray-200 overflow-hidden shadow-sm">
-            <div class="accordion-trigger flex items-center gap-3 px-5 py-4" onclick="this.classList.toggle('active'); this.nextElementSibling.classList.toggle('open')">
+            <div class="accordion-trigger flex items-center gap-3 px-5 py-4" data-action="toggleAccordion">
                 <div class="agent-stripe h-10" style="background: #065f46;"></div>
                 <span class="agent-avatar agent-avatar-milo">📊</span>
                 <div class="flex-1 min-w-0">
@@ -323,7 +323,7 @@
     {# ══════════════  APPLICATION ESSAY  ══════════════ #}
     {% if summary.application_text or summary.text_preview or "" %}
     <div class="bg-white rounded-xl border border-emory-gray-200 overflow-hidden shadow-sm mb-8">
-        <div class="accordion-trigger flex items-center gap-3 px-5 py-4" onclick="this.classList.toggle('active'); this.nextElementSibling.classList.toggle('open')">
+        <div class="accordion-trigger flex items-center gap-3 px-5 py-4" data-action="toggleAccordion">
             <div class="agent-stripe h-10" style="background: #5b21b6;"></div>
             <span class="agent-avatar agent-avatar-belle">📖</span>
             <div class="flex-1"><div class="font-semibold text-sm text-emory-dark">Application Essay</div></div>
@@ -342,14 +342,14 @@
     </div>
 
     {# Delete Modal #}
-    <div id="detailDeleteModal" class="fixed inset-0 z-50 hidden items-center justify-center bg-black/50 backdrop-blur-sm" onclick="if(event.target===this){this.classList.add('hidden');this.classList.remove('flex')}">
+    <div id="detailDeleteModal" class="fixed inset-0 z-50 hidden items-center justify-center bg-black/50 backdrop-blur-sm" data-action="closeModal" >
         <div class="bg-white rounded-2xl shadow-2xl max-w-sm w-[90%] p-8 text-center">
             <div class="w-14 h-14 rounded-full bg-red-100 flex items-center justify-center mx-auto mb-4"><span class="text-2xl">⚠️</span></div>
             <h3 class="font-heading text-xl font-bold text-emory-dark mb-2">Delete Student</h3>
             <p class="text-sm text-emory-gray-500 mb-6">This will permanently delete <strong>{{ summary.applicant_name or summary.name or "Unknown" }}</strong> and all agent evaluations. This cannot be undone.</p>
             <div class="flex gap-3 justify-center">
                 <button onclick="document.getElementById('detailDeleteModal').classList.add('hidden');document.getElementById('detailDeleteModal').classList.remove('flex')" class="btn-emory btn-emory-secondary px-6">Cancel</button>
-                <button onclick="deleteThisStudent()" id="detailDeleteBtn" class="btn-emory px-6" style="background:#ef4444; color:#fff;">Delete</button>
+                <button data-action="deleteThisStudent" id="detailDeleteBtn" class="btn-emory px-6" style="background:#ef4444; color:#fff;">Delete</button>
             </div>
         </div>
     </div>

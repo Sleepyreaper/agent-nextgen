@@ -87,7 +87,7 @@
         <form id="importForm" enctype="multipart/form-data">
             <div style="border: 2px dashed #f59e0b; border-radius: 8px; padding: 2rem; text-align: center; cursor: pointer; margin-bottom: 1rem;"
                  onclick="document.getElementById('scoreFile').click()" id="dropZone">
-                <input type="file" id="scoreFile" name="file" accept=".xlsx,.xls" style="display: none;" onchange="updateFileName(this)">
+                <input type="file" id="scoreFile" name="file" accept=".xlsx,.xls" style="display: none;" data-onchange="updateFileName">
                 <p style="color: #92400e; font-weight: 600; font-size: 1.1rem;" id="fileLabel">
                     📁 Click to select .xlsx file or drag & drop
                 </p>
@@ -131,7 +131,7 @@
     <div class="card" style="padding: 1rem; background: #fef2f2; border: 1px solid #fecaca; margin-top: 1.5rem;">
         <h3 style="margin-top: 0; color: #991b1b;">⚠️ Danger Zone</h3>
         <p style="color: #991b1b; font-size: 0.85rem;">This will permanently delete all historical scores for the selected year.</p>
-        <button onclick="clearScores()" class="btn" 
+        <button data-action="clearScores" class="btn" 
                 style="background: #dc2626; color: white; padding: 0.5rem 1.5rem; border: none; border-radius: 6px; cursor: pointer;">
             🗑️ Clear All Historical Scores
         </button>

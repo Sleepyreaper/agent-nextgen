@@ -127,7 +127,7 @@
     </aside>
 
     <!-- ═══ MOBILE OVERLAY ═══ -->
-    <div class="mobile-overlay" onclick="toggleSidebar()"></div>
+    <div class="mobile-overlay" data-action="toggleSidebar"></div>
 
     <!-- ═══ MAIN CONTENT ═══ -->
     <div id="main-content" class="main-content flex flex-col min-h-screen">
@@ -135,10 +135,10 @@
         <header class="topbar sticky top-0 z-20 flex items-center justify-between px-6">
             <!-- Left: hamburger + breadcrumb -->
             <div class="flex items-center gap-3">
-                <button onclick="toggleSidebar()" class="text-emory-gray-500 hover:text-emory-dark p-1 rounded-lg hover:bg-emory-gray-100 transition md:hidden" aria-label="Toggle menu">
+                <button data-action="toggleSidebar" class="text-emory-gray-500 hover:text-emory-dark p-1 rounded-lg hover:bg-emory-gray-100 transition md:hidden" aria-label="Toggle menu">
                     <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"/></svg>
                 </button>
-                <button onclick="toggleSidebarDesktop()" class="hidden md:block text-emory-gray-500 hover:text-emory-dark p-1 rounded-lg hover:bg-emory-gray-100 transition" aria-label="Collapse sidebar">
+                <button data-action="toggleSidebarDesktop" class="hidden md:block text-emory-gray-500 hover:text-emory-dark p-1 rounded-lg hover:bg-emory-gray-100 transition" aria-label="Collapse sidebar">
                     <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"/></svg>
                 </button>
                 <h1 class="font-heading text-lg font-semibold text-emory-dark truncate">{% block page_title %}NextGen{% endblock %}</h1>
@@ -192,6 +192,40 @@
         sidebar.classList.toggle('collapsed');
         main.classList.toggle('sidebar-collapsed');
     }
+
+    /* ── Delegated event handler for data-action attributes ── */
+    /* Replaces inline onclick= handlers for CSP compliance (#77, #91) */
+    document.addEventListener('click', function(e) {
+        const el = e.target.closest('[data-action]');
+        if (!el) return;
+        const action = el.dataset.action;
+        // Accordion toggle
+        if (action === 'toggleAccordion') {
+            el.classList.toggle('active');
+            const body = el.nextElementSibling;
+            if (body) body.classList.toggle('open');
+            return;
+        }
+        // Modal close
+        if (action === 'closeModal') {
+            const modal = el.dataset.modal ? document.getElementById(el.dataset.modal) : el.closest('.fixed');
+            if (modal) { modal.classList.add('hidden'); modal.classList.remove('flex'); }
+            return;
+        }
+        // Generic function call with optional data-arg
+        if (typeof window[action] === 'function') {
+            e.preventDefault();
+            const arg = el.dataset.arg;
+            arg !== undefined ? window[action](arg) : window[action](el);
+        }
+    });
+    // Delegated change handler
+    document.addEventListener('change', function(e) {
+        const el = e.target.closest('[data-onchange]');
+        if (!el) return;
+        const fn = el.dataset.onchange;
+        if (typeof window[fn] === 'function') window[fn](el);
+    });
 
     /* ── CSRF auto-include on fetch — MUST load before child template JS ── */
     (function() {

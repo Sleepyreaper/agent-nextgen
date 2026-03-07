@@ -81,7 +81,7 @@
                     <p class="text-white/60 text-sm mt-1">School profiles, opportunity scores, and human review</p>
                 </div>
             </div>
-            <button onclick="openAddSchoolModal()" class="btn-emory btn-emory-sm btn-emory-gold">+ Add School</button>
+            <button data-action="openAddSchoolModal" class="btn-emory btn-emory-sm btn-emory-gold">+ Add School</button>
         </div>
     </div>
 
@@ -118,7 +118,7 @@
                 <option value="15">15 Schools</option>
                 <option value="20">20 Schools</option>
             </select>
-            <button class="batch-btn" id="batchBtn" onclick="triggerBatchAnalysis()">
+            <button class="batch-btn" id="batchBtn" data-action="triggerBatchAnalysis">
                 🚀 Start Batch Analysis
             </button>
         </div>
@@ -169,7 +169,7 @@
 <!-- Add School Modal -->
 <div id="addSchoolModal" class="school-detail-modal">
     <div class="school-detail-content" style="max-width: 500px;">
-        <button class="close-modal" onclick="closeAddSchoolModal()">&times;</button>
+        <button class="close-modal" data-action="closeAddSchoolModal">&times;</button>
         <h2 style="margin-bottom: 1rem; color: #1f2937;">➕ Add New School</h2>
         <p style="color: #6b7280; font-size: 0.85rem; margin-bottom: 1.5rem;">Add a school to the database. Duplicates are automatically prevented — if this school already exists (matched by name + state), you'll be notified.</p>
         <form onsubmit="submitAddSchool(event)">
@@ -198,7 +198,7 @@
             <div id="addSchoolResult" style="display: none; margin-bottom: 1rem; padding: 0.75rem; border-radius: 6px; font-size: 0.85rem;"></div>
             <div style="display: flex; gap: 1rem;">
                 <button type="submit" id="addSchoolBtn" style="flex: 1; padding: 0.6rem; background: #10b981; color: white; border: none; border-radius: 6px; font-weight: 600; cursor: pointer;">Add School</button>
-                <button type="button" onclick="closeAddSchoolModal()" style="padding: 0.6rem 1.2rem; background: #e5e7eb; color: #374151; border: none; border-radius: 6px; font-weight: 600; cursor: pointer;">Cancel</button>
+                <button type="button" data-action="closeAddSchoolModal" style="padding: 0.6rem 1.2rem; background: #e5e7eb; color: #374151; border: none; border-radius: 6px; font-weight: 600; cursor: pointer;">Cancel</button>
             </div>
         </form>
     </div>
@@ -207,7 +207,7 @@
 <!-- School Detail Modal -->
 <div id="schoolDetailModal" class="school-detail-modal">
     <div class="school-detail-content">
-        <button class="close-modal" onclick="closeSchoolDetail()">&times;</button>
+        <button class="close-modal" data-action="closeSchoolDetail">&times;</button>
         
         <div id="schoolDetailContent"></div>
     </div>
@@ -372,10 +372,10 @@ function openSchoolDetail(schoolId) {
         <h2 style="margin-bottom: 1rem;">${school.school_name}</h2>
         
         <div class="tabs">
-            <div class="tab active" onclick="showTab('overview')">Overview</div>
-            <div class="tab" onclick="showTab('academics')">Academics</div>
-            <div class="tab" onclick="showTab('outcomes')">Outcomes</div>
-            <div class="tab" onclick="showTab('review')">Review</div>
+            <div class="tab active" data-action="showTab" data-arg="overview" >Overview</div>
+            <div class="tab" data-action="showTab" data-arg="academics" >Academics</div>
+            <div class="tab" data-action="showTab" data-arg="outcomes" >Outcomes</div>
+            <div class="tab" data-action="showTab" data-arg="review" >Review</div>
         </div>
         
         <div id="overview" class="tab-content active">

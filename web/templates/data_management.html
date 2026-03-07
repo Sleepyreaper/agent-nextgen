@@ -61,7 +61,7 @@
         <p>View, search, and enrich the school database. Run school evaluation and context analysis on pending schools or seed new school records from training data.</p>
         <div class="flex gap-2 flex-wrap mt-auto pt-2">
             <a href="{{ url_for('schools.schools_dashboard') }}" class="btn-emory btn-emory-secondary">🏫 Manage Schools</a>
-            <button class="btn-emory btn-emory-primary" onclick="seedSchools()" id="btnSeed">🌱 Seed Schools</button>
+            <button class="btn-emory btn-emory-primary" data-action="seedSchools" id="btnSeed">🌱 Seed Schools</button>
         </div>
     </div>
 
@@ -71,7 +71,7 @@
         <p>View historical applications used for agent calibration. Upload new examples or clear existing training records.</p>
         <div class="flex gap-2 flex-wrap mt-auto pt-2">
             <a href="{{ url_for('training.training') }}" class="btn-emory btn-emory-secondary">📚 View Training</a>
-            <button class="btn-emory btn-emory-primary" style="background: var(--champagne); color: var(--emory-dark);" onclick="clearTrainingData()" id="btnClearTraining">🧹 Clear Training Data</button>
+            <button class="btn-emory btn-emory-primary" style="background: var(--champagne); color: var(--emory-dark);" data-action="clearTrainingData" id="btnClearTraining">🧹 Clear Training Data</button>
         </div>
     </div>
 
@@ -80,7 +80,7 @@
         <h3>📊 Training Insights</h3>
         <p>Analyze current training examples and surface patterns about what makes strong applicants.</p>
         <div class="flex gap-2 flex-wrap mt-auto pt-2">
-            <button class="btn-emory btn-emory-secondary" onclick="fetchMiloInsights()" id="btnMilo">📊 Run Training Analysis</button>
+            <button class="btn-emory btn-emory-secondary" data-action="fetchMiloInsights" id="btnMilo">📊 Run Training Analysis</button>
         </div>
     </div>
 
@@ -89,7 +89,7 @@
         <h3>🧹 Clear School Data</h3>
         <p>Remove all school enrichment records. This does not affect student or training data.</p>
         <div class="flex gap-2 flex-wrap mt-auto pt-2">
-            <button class="btn-emory btn-emory-primary" style="background: #f59e0b; color: #78350f;" onclick="clearSchools()" id="btnClearSchools">🧹 Clear Schools</button>
+            <button class="btn-emory btn-emory-primary" style="background: #f59e0b; color: #78350f;" data-action="clearSchools" id="btnClearSchools">🧹 Clear Schools</button>
         </div>
     </div>
 
@@ -102,7 +102,7 @@
             Keep production applicants (only clear test + training)
         </label>
         <div class="flex gap-2 flex-wrap mt-auto pt-2">
-            <button class="btn-emory" style="background:#ef4444; color:#fff;" onclick="resetDatabase()" id="btnReset">⚠️ Reset Database</button>
+            <button class="btn-emory" style="background:#ef4444; color:#fff;" data-action="resetDatabase" id="btnReset">⚠️ Reset Database</button>
         </div>
         <div id="resetLog"></div>
     </div>

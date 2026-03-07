@@ -32,12 +32,12 @@
     <div class="px-5 py-4 border-b border-emory-gray-200">
         <div class="flex flex-wrap gap-2 items-center">
             <a id="trainingUploadLink" href="{{ url_for('upload.upload', app_type='training') }}" class="btn-emory btn-emory-primary btn-emory-sm">➕ Add Training</a>
-            <button type="button" class="btn-emory btn-emory-sm btn-emory-secondary" onclick="openReprocessModal()">🔄 Reprocess</button>
-            <button type="button" class="btn-emory btn-emory-sm btn-emory-secondary" onclick="fetchMiloInsights()">📊 Insights</button>
-            <button type="button" class="btn-emory btn-emory-sm btn-emory-secondary" onclick="openValidationModal()">🧪 Validate</button>
-            <button type="button" class="btn-emory btn-emory-sm btn-emory-secondary" onclick="openXlsxResolver()">🔗 XLSX Match</button>
-            <button type="button" class="btn-emory btn-emory-sm btn-emory-secondary" onclick="findDuplicates()">🔍 Duplicates</button>
-            <button type="button" class="btn-emory btn-emory-sm" style="background:#ef4444; color:#fff;" onclick="clearTrainingData()">🧹 Clear</button>
+            <button type="button" class="btn-emory btn-emory-sm btn-emory-secondary" data-action="openReprocessModal">🔄 Reprocess</button>
+            <button type="button" class="btn-emory btn-emory-sm btn-emory-secondary" data-action="fetchMiloInsights">📊 Insights</button>
+            <button type="button" class="btn-emory btn-emory-sm btn-emory-secondary" data-action="openValidationModal">🧪 Validate</button>
+            <button type="button" class="btn-emory btn-emory-sm btn-emory-secondary" data-action="openXlsxResolver">🔗 XLSX Match</button>
+            <button type="button" class="btn-emory btn-emory-sm btn-emory-secondary" data-action="findDuplicates">🔍 Duplicates</button>
+            <button type="button" class="btn-emory btn-emory-sm" style="background:#ef4444; color:#fff;" data-action="clearTrainingData">🧹 Clear</button>
         </div>
     </div>
 
@@ -59,7 +59,7 @@
             <div class="stat-value-nextgen text-emory-medium-blue">{{ matched_count }}</div>
             <div class="stat-label-nextgen">📊 XLSX</div>
         </div>
-        <div class="stat-card-nextgen text-center cursor-pointer hover:border-emory-green transition" onclick="switchTab('schools')">
+        <div class="stat-card-nextgen text-center cursor-pointer hover:border-emory-green transition" data-action="switchTab" data-arg="schools" >
             <div class="stat-value-nextgen text-emory-green">{{ school_count }}</div>
             <div class="stat-label-nextgen">🏫 Schools</div>
         </div>
@@ -67,13 +67,13 @@
 
     <!-- Tab Navigation -->
     <div class="flex border-b border-emory-gray-200">
-        <button id="tabBtnStudents" class="training-tab px-5 py-3 text-sm font-semibold border-b-2 border-emory-dark-blue text-emory-dark-blue" onclick="switchTab('students')">
+        <button id="tabBtnStudents" class="training-tab px-5 py-3 text-sm font-semibold border-b-2 border-emory-dark-blue text-emory-dark-blue" data-action="switchTab" data-arg="students" >
             👥 Students ({{ total_count }})
         </button>
-        <button id="tabBtnSchools" class="training-tab px-5 py-3 text-sm font-semibold border-b-2 border-transparent text-emory-gray-500 hover:text-emory-dark transition" onclick="switchTab('schools')">
+        <button id="tabBtnSchools" class="training-tab px-5 py-3 text-sm font-semibold border-b-2 border-transparent text-emory-gray-500 hover:text-emory-dark transition" data-action="switchTab" data-arg="schools" >
             🏫 Schools ({{ school_count }})
         </button>
-        <button id="tabBtnAccuracy" class="training-tab px-5 py-3 text-sm font-semibold border-b-2 border-transparent text-emory-gray-500 hover:text-emory-dark transition" onclick="switchTab('accuracy')">
+        <button id="tabBtnAccuracy" class="training-tab px-5 py-3 text-sm font-semibold border-b-2 border-transparent text-emory-gray-500 hover:text-emory-dark transition" data-action="switchTab" data-arg="accuracy" >
             🎯 Accuracy
         </button>
     </div>
@@ -124,11 +124,11 @@
             <table class="student-list-table" id="schoolDataTable">
                 <thead>
                     <tr>
-                        <th style="width: 25%; cursor:pointer;" onclick="sortSchoolTable(0)">School Name ⇅</th>
-                        <th style="width: 15%; cursor:pointer;" onclick="sortSchoolTable(1)">District ⇅</th>
-                        <th style="width: 8%; cursor:pointer;" onclick="sortSchoolTable(2)">State ⇅</th>
-                        <th style="width: 10%; cursor:pointer;" onclick="sortSchoolTable(3)">Enrollment ⇅</th>
-                        <th style="width: 10%; cursor:pointer;" onclick="sortSchoolTable(4)">FRPL % ⇅</th>
+                        <th style="width: 25%; cursor:pointer;" data-action="sortSchoolTable" data-arg="0">School Name ⇅</th>
+                        <th style="width: 15%; cursor:pointer;" data-action="sortSchoolTable" data-arg="1">District ⇅</th>
+                        <th style="width: 8%; cursor:pointer;" data-action="sortSchoolTable" data-arg="2">State ⇅</th>
+                        <th style="width: 10%; cursor:pointer;" data-action="sortSchoolTable" data-arg="3">Enrollment ⇅</th>
+                        <th style="width: 10%; cursor:pointer;" data-action="sortSchoolTable" data-arg="4">FRPL % ⇅</th>
                         <th style="width: 10%;">Status</th>
                         <th style="width: 10%;">Actions</th>
                     </tr>
@@ -202,7 +202,7 @@
                 <label style="font-weight:600; color:#374151; white-space:nowrap;">Threshold:</label>
                 <input type="number" id="accuracyThreshold" value="65" min="0" max="100"
                        style="width:70px; padding:0.4rem; border:1px solid #d1d5db; border-radius:6px; font-size:1rem; text-align:center;">
-                <button id="accuracyRunBtn" onclick="runAccuracyValidation()" class="btn"
+                <button id="accuracyRunBtn" data-action="runAccuracyValidation" class="btn"
                         style="background:#8b5cf6; color:white; padding:0.5rem 1.5rem; font-weight:600; white-space:nowrap;">
                     ▶ Run Validation
                 </button>
@@ -238,15 +238,15 @@
     <div style="background:white; border-radius:12px; padding:2rem; max-width:720px; width:95%; max-height:80vh; overflow-y:auto; box-shadow:0 20px 60px rgba(0,0,0,0.3);">
         <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1.5rem;">
             <h3 style="margin:0; color:#991b1b;">🔍 Duplicate Training Records</h3>
-            <button onclick="closeDupModal()" style="background:none; border:none; font-size:1.5rem; cursor:pointer;">✕</button>
+            <button data-action="closeDupModal" style="background:none; border:none; font-size:1.5rem; cursor:pointer;">✕</button>
         </div>
         <div id="dupContent">
             <p style="text-align:center; color:#6b7280;">Loading...</p>
         </div>
         <div id="dupActions" style="display:none; margin-top:1.5rem; padding-top:1rem; border-top:1px solid #e5e7eb; text-align:right;">
             <span id="dupSelectedCount" style="color:#6b7280; margin-right:1rem;">0 selected</span>
-            <button onclick="closeDupModal()" class="btn btn-secondary" style="margin-right:0.5rem;">Cancel</button>
-            <button onclick="bulkDeleteSelected()" id="dupDeleteBtn" class="btn" style="background:#ef4444; color:white;" disabled>
+            <button data-action="closeDupModal" class="btn btn-secondary" style="margin-right:0.5rem;">Cancel</button>
+            <button data-action="bulkDeleteSelected" id="dupDeleteBtn" class="btn" style="background:#ef4444; color:white;" disabled>
                 🗑️ Delete Selected
             </button>
         </div>
@@ -261,7 +261,7 @@
     <div style="background:white; border-radius:12px; padding:2rem; max-width:960px; width:95%; max-height:90vh; overflow-y:auto; box-shadow:0 20px 60px rgba(0,0,0,0.3);">
         <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1rem;">
             <h3 style="margin:0; color:#5b21b6;">🧪 Model Validation</h3>
-            <button onclick="closeValidationModal()" style="background:none; border:none; font-size:1.5rem; cursor:pointer;">✕</button>
+            <button data-action="closeValidationModal" style="background:none; border:none; font-size:1.5rem; cursor:pointer;">✕</button>
         </div>
         <div id="validationExplainer" style="background:#f5f3ff; border-radius:8px; padding:1rem; margin-bottom:1.25rem; color:#4c1d95; font-size:0.9rem; line-height:1.6;">
             <strong>What does this do?</strong> Validation scores every training student through the current model and compares the AI's prediction against the known outcome (Selected vs Not Selected). This reveals:
@@ -278,7 +278,7 @@
         <div id="validationStart" style="display:flex; align-items:center; gap:1rem; margin-bottom:1.25rem;">
             <label style="font-weight:600; color:#374151;">Threshold:</label>
             <input type="number" id="validationThreshold" value="65" min="0" max="100" style="width:80px; padding:0.4rem; border:1px solid #d1d5db; border-radius:6px; font-size:1rem; text-align:center;">
-            <button id="validationRunBtn" onclick="startValidation()" class="btn" style="background:#8b5cf6; color:white; padding:0.5rem 1.5rem; font-weight:600;">
+            <button id="validationRunBtn" data-action="startValidation" class="btn" style="background:#8b5cf6; color:white; padding:0.5rem 1.5rem; font-weight:600;">
                 ▶ Run Validation
             </button>
         </div>
@@ -305,7 +305,7 @@
     <div style="background:white; border-radius:12px; padding:2rem; max-width:900px; width:95%; max-height:85vh; overflow-y:auto; box-shadow:0 20px 60px rgba(0,0,0,0.3);">
         <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1.5rem;">
             <h3 style="margin:0; color:#78350f;">🔗 Resolve XLSX Matches</h3>
-            <button onclick="closeXlsxModal()" style="background:none; border:none; font-size:1.5rem; cursor:pointer;">✕</button>
+            <button data-action="closeXlsxModal" style="background:none; border:none; font-size:1.5rem; cursor:pointer;">✕</button>
         </div>
         <p style="color:#6b7280; margin-bottom:1rem;">
             These training students have no linked historical XLSX score. Search and link them manually.
@@ -340,7 +340,7 @@
     <div style="background:white; border-radius:12px; padding:2rem; max-width:700px; width:90%; max-height:85vh; overflow-y:auto;">
         <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1rem;">
             <h3 style="margin:0;">🔄 Reprocess Training Documents</h3>
-            <button onclick="closeReprocessModal()" style="background:none; border:none; font-size:1.5rem; cursor:pointer;">✕</button>
+            <button data-action="closeReprocessModal" style="background:none; border:none; font-size:1.5rem; cursor:pointer;">✕</button>
         </div>
         <div style="background:#ecfdf5; border:1px solid #a7f3d0; border-radius:8px; padding:1rem; margin-bottom:1rem;">
             <p style="margin:0; font-size:0.9rem; color:#065f46;">
@@ -363,10 +363,10 @@
         </div>
         <div id="reprocessDiagnostic" style="display:none; margin-bottom:1rem;"></div>
         <div style="display:flex; gap:0.5rem; flex-wrap:wrap;">
-            <button onclick="startReprocess()" id="reprocessStartBtn" class="btn" style="background:#059669; color:white;">
+            <button data-action="startReprocess" id="reprocessStartBtn" class="btn" style="background:#059669; color:white;">
                 🔄 Start Reprocessing
             </button>
-            <button onclick="loadDiagnostic()" class="btn" style="background:#3b82f6; color:white;">
+            <button data-action="loadDiagnostic" class="btn" style="background:#3b82f6; color:white;">
                 📊 Show Diagnostic
             </button>
         </div>
@@ -621,7 +621,7 @@ async function findDuplicates() {
                 const uploaded = rec.uploaded_date ? new Date(rec.uploaded_date).toLocaleDateString() : 'N/A';
                 const rowBg = isOldest ? '#f0fdf4' : '#fff';
                 html += '<tr style="background:' + rowBg + '; border-top:1px solid #f3f4f6;">';
-                html += '<td style="padding:0.5rem; text-align:center;"><input type="checkbox" class="dup-check" value="' + rec.application_id + '" ' + (isOldest ? '' : 'checked') + ' onchange="updateDupCount()"></td>';
+                html += '<td style="padding:0.5rem; text-align:center;"><input type="checkbox" class="dup-check" value="' + rec.application_id + '" ' + (isOldest ? '' : 'checked') + ' data-onchange="updateDupCount"></td>';
                 html += '<td style="padding:0.5rem;">' + rec.application_id + '</td>';
                 html += '<td style="padding:0.5rem;">' + (rec.first_name || '') + ' ' + (rec.last_name || '') + (isOldest ? ' <span style="background:#dcfce7;color:#166534;padding:0.1rem 0.4rem;border-radius:4px;font-size:0.75rem;">keep</span>' : '') + '</td>';
                 html += '<td style="padding:0.5rem;">' + (rec.high_school || 'N/A') + '</td>';
@@ -993,7 +993,7 @@ async function openXlsxResolver() {
             html += '</div>';
             html += '<div style="display:flex; gap:0.5rem; align-items:center;">';
             html += '<input type="text" id="search-' + student.application_id + '" placeholder="Search XLSX by name..." value="' + displayName + '" style="padding:0.4rem 0.6rem; border:1px solid #d1d5db; border-radius:4px; font-size:0.85rem; width:200px;">';
-            html += '<button onclick="searchXlsxFor(' + student.application_id + ')" class="btn btn-primary" style="padding:0.4rem 0.8rem; font-size:0.85rem;">🔍 Search</button>';
+            html += '<button data-action="searchXlsxFor" data-arg=" + student.application_id + " class="btn btn-primary" style="padding:0.4rem 0.8rem; font-size:0.85rem;">🔍 Search</button>';
             html += '</div></div>';
             html += '<div id="results-' + student.application_id + '" style="padding:0.5rem 1rem; color:#6b7280; font-size:0.9rem;">Click Search to find matching XLSX records.</div>';
             html += '</div>';

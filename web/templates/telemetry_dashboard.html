@@ -364,7 +364,7 @@
     <label class="text-white/60 text-xs flex items-center gap-1.5">
         <input type="checkbox" id="autoRefresh" checked> Auto-refresh
     </label>
-    <button class="btn-emory btn-emory-sm" style="background:rgba(255,255,255,0.15); color:#fff; border:1px solid rgba(255,255,255,0.2);" onclick="loadTelemetry()">🔄 Refresh</button>
+    <button class="btn-emory btn-emory-sm" style="background:rgba(255,255,255,0.15); color:#fff; border:1px solid rgba(255,255,255,0.2);" data-action="loadTelemetry">🔄 Refresh</button>
     {% endset %}
     {{ hero_banner('📡', 'Telemetry & Observability', 
                    'Agent performance, Application Insights, and school pipeline status',
@@ -478,7 +478,7 @@
         <div class="telem-section full-width">
             <div class="section-header">
                 🎯 Agent Quality &amp; Accuracy
-                <button class="refresh-btn" style="margin-left:auto;font-size:0.75rem;padding:0.25rem 0.5rem;" onclick="runEvaluation()">▶ Run Evaluation</button>
+                <button class="refresh-btn" style="margin-left:auto;font-size:0.75rem;padding:0.25rem 0.5rem;" data-action="runEvaluation">▶ Run Evaluation</button>
             </div>
             <div class="section-body" id="agentAccuracy">
                 <div class="loading-spinner">Loading evaluation data...</div>
@@ -511,7 +511,7 @@
 
         <!-- Recent Model Calls -->
         <div class="telem-section full-width">
-            <div class="section-header">⚡ Recent Model Calls <button class="refresh-btn" style="margin-left:auto;font-size:0.75rem;padding:0.25rem 0.5rem;" onclick="resetTokenUsage()">🗑️ Reset Counters</button></div>
+            <div class="section-header">⚡ Recent Model Calls <button class="refresh-btn" style="margin-left:auto;font-size:0.75rem;padding:0.25rem 0.5rem;" data-action="resetTokenUsage">🗑️ Reset Counters</button></div>
             <div class="section-body" style="padding: 0; max-height: 350px; overflow-y: auto;" id="recentModelCalls">
                 <div class="loading-spinner">Loading...</div>
             </div>
@@ -987,7 +987,7 @@ function renderAgentAccuracy(results) {
         container.innerHTML = `
             <div style="text-align: center; padding: 2rem;">
                 <div style="color: #6b7280; margin-bottom: 1rem;">No evaluation runs yet.</div>
-                <button onclick="runEvaluation()" style="background: #2563eb; color: white; border: none; padding: 0.5rem 1rem; border-radius: 6px; cursor: pointer; font-size: 0.9rem;">
+                <button data-action="runEvaluation" style="background: #2563eb; color: white; border: none; padding: 0.5rem 1rem; border-radius: 6px; cursor: pointer; font-size: 0.9rem;">
                     ▶ Run First Evaluation
                 </button>
                 <div style="color: #9ca3af; font-size: 0.8rem; margin-top: 0.5rem;">

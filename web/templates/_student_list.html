@@ -85,9 +85,9 @@
                            class="btn-emory btn-emory-sm btn-emory-primary">▶️</a>
                         {% endif %}
                         {% set del_name = (student.first_name ~ ' ' ~ student.last_name) if (student.first_name or student.last_name) else (student.applicant_name or 'Unknown') %}
-                        <button onclick="openEditModal({{ student.application_id }}, '{{ student.first_name or '' }}', '{{ student.last_name or '' }}', '{{ student.high_school or '' }}', '{{ student.email or '' }}', {{ 'true' if student.was_selected else 'false' }})"
+                        <button data-action="openEditModal" data-id="{{ student.application_id }}" data-first="{{ student.first_name or '' }}" data-last="{{ student.last_name or '' }}" data-school="{{ student.high_school or '' }}" data-email="{{ student.email or '' }}" data-selected="{{ 'true' if student.was_selected else 'false' }}"
                                 class="btn-emory btn-emory-sm" style="background:#fef3c7; color:#92400e; border:1px solid #fde68a;" title="Edit">✏️</button>
-                        <button onclick="confirmDeleteStudent({{ student.application_id }}, '{{ del_name }}')"
+                        <button data-action="confirmDeleteStudent" data-id="{{ student.application_id }}" data-name="{{ del_name }}"
                                 class="btn-emory btn-emory-sm" style="background:#fef2f2; color:#991b1b; border:1px solid #fecaca;" title="Delete">🗑️</button>
                     </div>
                 </td>
@@ -104,19 +104,19 @@
 </div>
 
 <!-- Delete Modal -->
-<div id="deleteModal" class="fixed inset-0 z-50 hidden items-center justify-center bg-black/40" onclick="if(event.target===this)closeDeleteModal()">
+<div id="deleteModal" class="fixed inset-0 z-50 hidden items-center justify-center bg-black/40" data-action="closeDeleteModal">
     <div class="bg-white rounded-xl shadow-xl max-w-md w-[90%] p-6 text-center">
         <h3 class="font-heading text-lg font-semibold text-red-700 mb-3">⚠️ Delete Student Record</h3>
         <p class="text-sm text-emory-gray-500 mb-5">Permanently delete <strong id="deleteStudentName" class="text-emory-dark"></strong> and all evaluations?</p>
         <div class="flex gap-3 justify-center">
-            <button onclick="closeDeleteModal()" class="btn-emory btn-emory-secondary">Cancel</button>
-            <button onclick="executeDelete()" class="btn-emory" style="background:#ef4444; color:#fff;" id="deleteConfirmBtn">🗑️ Delete</button>
+            <button data-action="closeDeleteModal" class="btn-emory btn-emory-secondary">Cancel</button>
+            <button data-action="executeDelete" class="btn-emory" style="background:#ef4444; color:#fff;" id="deleteConfirmBtn">🗑️ Delete</button>
         </div>
     </div>
 </div>
 
 <!-- Edit Modal -->
-<div id="editModal" class="fixed inset-0 z-50 hidden items-center justify-center bg-black/40" onclick="if(event.target===this)closeEditModal()">
+<div id="editModal" class="fixed inset-0 z-50 hidden items-center justify-center bg-black/40" data-action="closeEditModal">
     <div class="bg-white rounded-xl shadow-xl max-w-lg w-[90%] p-6 text-left">
         <h3 class="font-heading text-lg font-semibold text-emory-dark-blue mb-4">✏️ Edit Student Record</h3>
         <input type="hidden" id="editAppId" value="">
@@ -146,17 +146,17 @@
             </select>
         </div>
         <div class="flex gap-3 justify-end mt-5">
-            <button onclick="closeEditModal()" class="btn-emory btn-emory-secondary">Cancel</button>
-            <button onclick="saveStudentEdit()" class="btn-emory btn-emory-primary" id="editSaveBtn">💾 Save</button>
+            <button data-action="closeEditModal" class="btn-emory btn-emory-secondary">Cancel</button>
+            <button data-action="saveStudentEdit" class="btn-emory btn-emory-primary" id="editSaveBtn">💾 Save</button>
         </div>
     </div>
 </div>
 
 <script nonce="{{ csp_nonce }}">
 let pendingDeleteId = null;
-function confirmDeleteStudent(id, name) {
-    pendingDeleteId = id;
-    document.getElementById('deleteStudentName').textContent = name;
+function confirmDeleteStudent(el) {
+    pendingDeleteId = el.dataset.id;
+    document.getElementById('deleteStudentName').textContent = el.dataset.name;
     document.getElementById('deleteModal').classList.remove('hidden');
     document.getElementById('deleteModal').classList.add('flex');
 }
@@ -174,13 +174,13 @@ function executeDelete() {
         .then(d => { if (d.status==='success') window.location.reload(); else { alert(d.error||'Error'); btn.textContent='🗑️ Delete'; btn.disabled=false; } })
         .catch(e => { alert('Network error'); btn.textContent='🗑️ Delete'; btn.disabled=false; });
 }
-function openEditModal(id, fn, ln, hs, em, ws) {
-    document.getElementById('editAppId').value = id;
-    document.getElementById('editFirstName').value = fn;
-    document.getElementById('editLastName').value = ln;
-    document.getElementById('editHighSchool').value = hs;
-    document.getElementById('editEmail').value = em;
-    document.getElementById('editWasSelected').value = ws ? 'true' : 'false';
+function openEditModal(el) {
+    document.getElementById('editAppId').value = el.dataset.id;
+    document.getElementById('editFirstName').value = el.dataset.first;
+    document.getElementById('editLastName').value = el.dataset.last;
+    document.getElementById('editHighSchool').value = el.dataset.school;
+    document.getElementById('editEmail').value = el.dataset.email;
+    document.getElementById('editWasSelected').value = el.dataset.selected;
     document.getElementById('editModal').classList.remove('hidden');
     document.getElementById('editModal').classList.add('flex');
 }

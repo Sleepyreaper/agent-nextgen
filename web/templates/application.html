@@ -986,7 +986,7 @@
     {% if not aurora_evaluation and not merlin_evaluation %}
     <div style="text-align: center; padding: 3rem; background: #f9fafb; border-radius: 5px;">
         <p style="color: #6b7280; margin-bottom: 1rem;">This application has not been evaluated yet.</p>
-        <button class="btn btn-success" onclick="evaluateApplication()">🤖 Evaluate Now</button>
+        <button class="btn btn-success" data-action="evaluateApplication">🤖 Evaluate Now</button>
     </div>
     {% endif %}
 
@@ -1201,7 +1201,7 @@ async function evaluateApplication() {
     {% else %}
     <div style="text-align: center; padding: 3rem; background: #f9fafb; border-radius: 5px;">
         <p style="color: #6b7280; margin-bottom: 1rem;">This application has not been evaluated yet.</p>
-        <button class="btn btn-success" onclick="evaluateApplication()">🤖 Evaluate Now</button>
+        <button class="btn btn-success" data-action="evaluateApplication">🤖 Evaluate Now</button>
     </div>
     {% endif %}
 

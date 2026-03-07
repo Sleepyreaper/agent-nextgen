@@ -64,8 +64,8 @@
     <div class="section" style="margin-top:2rem;">
         <h3 style="color: var(--emory-dark-blue); margin: 0 0 0.75rem 0;">📋 Roadmap & Fixes</h3>
         <div class="issue-tabs">
-            <div class="issue-tab active" data-tab="open" onclick="switchIssueTab('open')">Planned</div>
-            <div class="issue-tab" data-tab="closed" onclick="switchIssueTab('closed')">Completed</div>
+            <div class="issue-tab active" data-tab="open" data-action="switchIssueTab" data-arg="open" >Planned</div>
+            <div class="issue-tab" data-tab="closed" data-action="switchIssueTab" data-arg="closed" >Completed</div>
         </div>
         <div id="issuesOpen"><p style="color: #9ca3af;">Loading...</p></div>
         <div id="issuesClosed" style="display:none;"><p style="color: #9ca3af;">Loading...</p></div>

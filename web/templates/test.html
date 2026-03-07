@@ -88,28 +88,28 @@
         <div style="display: flex; gap: 1rem; flex-wrap: wrap;">
             <div>
                 <h4 style="margin: 0 0 0.5rem 0; font-size: 0.9rem; color: #6b7280;">🎲 Random Fake Applications</h4>
-                <button class="btn-start-test" id="btnStartTest" onclick="startTest('dynamic')" style="background: var(--emory-medium-blue);">
+                <button class="btn-start-test" id="btnStartTest" data-action="startTest" data-arg="dynamic" style="background: var(--emory-medium-blue);">
                     🚀 Random Students
                 </button>
                 <p style="font-size: 0.8rem; color: #9ca3af; margin: 0.5rem 0 0 0;">Generate new synthetic data each run</p>
             </div>
             <div>
                 <h4 style="margin: 0 0 0.5rem 0; font-size: 0.9rem; color: #6b7280;">📋 Fixed Fake Applications</h4>
-                <button class="btn-start-test" id="btnPreset" onclick="startTest('preset')" style="background: #10b981;">
+                <button class="btn-start-test" id="btnPreset" data-action="startTest" data-arg="preset" style="background: #10b981;">
                     ⚡ Preset Students
                 </button>
                 <p style="font-size: 0.8rem; color: #9ca3af; margin: 0.5rem 0 0 0;">Same 3 students (Alice, Brian, Carol)</p>
             </div>
             <div>
                 <h4 style="margin: 0 0 0.5rem 0; font-size: 0.9rem; color: #6b7280;">⚡ Quick Test</h4>
-                <button class="btn-start-test" id="btnSingle" onclick="startTest('single')" style="background: #f59e0b;">
+                <button class="btn-start-test" id="btnSingle" data-action="startTest" data-arg="single" style="background: #f59e0b;">
                     ⚡ Single Student
                 </button>
                 <p style="font-size: 0.8rem; color: #9ca3af; margin: 0.5rem 0 0 0;">Just Alice – fastest testing</p>
             </div>
             <div>
                 <h4 style="margin: 0 0 0.5rem 0; font-size: 0.9rem; color: #6b7280;">🗑️ Manage Test Data</h4>
-                <button class="btn-start-test" id="btnClearData" onclick="clearTestData()" style="background: #ef4444;">
+                <button class="btn-start-test" id="btnClearData" data-action="clearTestData" style="background: #ef4444;">
                     🗑️ Clear Test Data
                 </button>
                 <p style="font-size: 0.8rem; color: #9ca3af; margin: 0.5rem 0 0 0;">Delete all test students to start fresh</p>
@@ -144,7 +144,7 @@
                 <button type="button" 
                         class="btn-start-test" 
                         id="btnUploadTest" 
-                        onclick="uploadTestFiles()"
+                        data-action="uploadTestFiles"
                         style="background: #3b82f6;">
                     📤 Upload & Test
                 </button>

@@ -93,7 +93,7 @@
 } %}
 <div class="bg-white rounded-xl border border-emory-gray-200 overflow-hidden shadow-sm hover-lift">
     <div class="accordion-trigger {% if open %}active{% endif %} flex items-center gap-3 px-5 py-4"
-         onclick="this.classList.toggle('active'); this.nextElementSibling.classList.toggle('open')">
+         data-action="toggleAccordion">
         <div class="agent-stripe h-10" style="background: {{ stripe_color or stripe_colors.get(agent_id, '#63666A') }};"></div>
         <span class="agent-avatar agent-avatar-{{ agent_id }}">{{ icon }}</span>
         <div class="flex-1 min-w-0">
@@ -220,7 +220,7 @@
 #}
 {% macro delete_modal(modal_id, title, item_name, delete_fn='') %}
 <div id="{{ modal_id }}" class="fixed inset-0 z-50 hidden items-center justify-center bg-black/50 backdrop-blur-sm"
-     onclick="if(event.target===this){this.classList.add('hidden');this.classList.remove('flex')}">
+     data-action="closeModal" >
     <div class="bg-white rounded-2xl shadow-2xl max-w-sm w-[90%] p-8 text-center fade-in">
         <div class="w-14 h-14 rounded-full bg-red-100 flex items-center justify-center mx-auto mb-4">
             <span class="text-2xl">⚠️</span>
