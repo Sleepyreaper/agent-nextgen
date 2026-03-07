@@ -12,7 +12,10 @@ scale via replicas).
 import os
 
 # ── Worker / thread configuration ──────────────────────────────────
-workers = int(os.environ.get("GUNICORN_WORKERS", "2"))
+# App Service: 4 workers × 4 threads = 16 concurrent requests.
+# Agent processing blocks a thread for 2-5 minutes, so we need enough
+# headroom that the site stays responsive during evaluation runs.
+workers = int(os.environ.get("GUNICORN_WORKERS", "4"))
 threads = int(os.environ.get("GUNICORN_THREADS", "4"))
 worker_class = "gthread"
 
