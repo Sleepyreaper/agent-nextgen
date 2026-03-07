@@ -29,8 +29,6 @@ logger = logging.getLogger(__name__)
 
 testing_bp = Blueprint('testing', __name__)
 
-# Exempt all JSON/FormData API endpoints from CSRF — they're behind session auth
-# and CSRF on fetch() with FormData causes Content-Type/boundary issues
 csrf.exempt(testing_bp)
 
 
@@ -541,7 +539,8 @@ def upload_test_files():
         
     except Exception as e:
         logger.error(f"Error uploading test files: {str(e)}", exc_info=True)
-        return jsonify({'status': 'error', 'error': f'Upload failed: {str(e)}'}), 500
+        logger.error('Request failed: %s', e, exc_info=True)
+        return jsonify({'status': 'error', 'error': 'An internal error occurred'}), 500
 
 
 
