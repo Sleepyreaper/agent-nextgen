@@ -541,8 +541,7 @@ def upload_test_files():
         
     except Exception as e:
         logger.error(f"Error uploading test files: {str(e)}", exc_info=True)
-        logger.error('Request failed: %s', e, exc_info=True)
-        return jsonify({'status': 'error', 'error': 'An internal error occurred'}), 500
+        return jsonify({'status': 'error', 'error': f'Upload failed: {str(e)}'}), 500
 
 
 
