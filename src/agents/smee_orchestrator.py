@@ -637,9 +637,8 @@ class SmeeOrchestrator(BaseAgent):
                 result = await agent.parse_application(application)
             elif agent_id == 'grade_reader':
                 transcript = application.get('transcript_text', '')
-                # Fallback: if Belle's section detection didn't isolate transcript
-                # pages (or isolated too little), use the full document text so
-                # Rapunzel can still attempt extraction from the complete PDF.
+                # Fallback chain: transcript_text → _original_document_text → application_text
+                # Rapunzel is trained to find transcript data even in mixed documents
                 if not transcript or len(transcript.strip()) < 50:
                     fallback = application.get('_original_document_text', '')
                     if fallback and len(fallback.strip()) > len(transcript.strip()):
@@ -648,6 +647,15 @@ class SmeeOrchestrator(BaseAgent):
                             f"falling back to _original_document_text ({len(fallback)} chars)"
                         )
                         transcript = fallback
+                if not transcript or len(transcript.strip()) < 50:
+                    app_text = application.get('application_text', '')
+                    if app_text and len(app_text.strip()) > 100:
+                        logger.warning(
+                            f"Rapunzel: no transcript data found, falling back to "
+                            f"application_text ({len(app_text)} chars) — will attempt "
+                            f"grade extraction from mixed content"
+                        )
+                        transcript = app_text
                 result = await agent.parse_grades(
                     transcript,
                     application.get('applicant_name', ''),

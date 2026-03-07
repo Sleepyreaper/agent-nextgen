@@ -962,12 +962,31 @@ OUTPUT STRUCTURE:
             parsed['grade_table_headers'] = std_table['headers']
             parsed['grade_table_rows'] = std_table['rows']
         else:
-            # Fallback: use the first markdown table found
+            # Fallback: use the first markdown table found with course-like data
             table_data = self._extract_markdown_table(response_text)
             if table_data:
                 parsed['grade_table_markdown'] = table_data['markdown']
                 parsed['grade_table_headers'] = table_data['headers']
                 parsed['grade_table_rows'] = table_data['rows']
+                # If this table has Year/Course/Grade columns, use it as standardized
+                headers_lower = [h.lower() for h in table_data['headers']]
+                if any('course' in h for h in headers_lower) and any('grade' in h for h in headers_lower):
+                    parsed['standardized_transcript'] = table_data['markdown']
+                    parsed['standardized_transcript_rows'] = table_data['rows']
+        
+        # FALLBACK: If no standardized table was found, try to build one from
+        # any markdown table in the response that has rows with course-like data
+        if not parsed.get('standardized_transcript_rows'):
+            all_tables = self._extract_all_markdown_tables(response_text)
+            for tbl in all_tables:
+                if len(tbl['rows']) >= 3:  # Need at least a few courses
+                    parsed['standardized_transcript'] = tbl['markdown']
+                    parsed['standardized_transcript_rows'] = tbl['rows']
+                    parsed['grade_table_markdown'] = tbl['markdown']
+                    parsed['grade_table_headers'] = tbl['headers']
+                    parsed['grade_table_rows'] = tbl['rows']
+                    logger.info("Rapunzel: used fallback table with %d rows", len(tbl['rows']))
+                    break
 
         # Extract Rapunzel's Perspective section
         perspective_match = re.search(
@@ -1033,7 +1052,11 @@ OUTPUT STRUCTURE:
         return tables[0] if tables else None
 
     def _extract_all_markdown_tables(self, response_text: str) -> List[Dict[str, Any]]:
-        """Extract ALL Markdown tables from the response."""
+        """Extract ALL Markdown tables from the response.
+        
+        Returns tables with rows as List[Dict] (keyed by header names) for
+        easy template rendering (e.g. row.year, row.course, row.grade).
+        """
         tables = []
         lines = [line.rstrip() for line in response_text.splitlines()]
         idx = 0
@@ -1057,11 +1080,48 @@ OUTPUT STRUCTURE:
                 row_idx += 1
 
             headers = self._parse_markdown_row(table_lines[0])
-            rows = [self._normalize_row(self._parse_markdown_row(line), len(headers)) for line in table_lines[2:]]
+            raw_rows = [self._normalize_row(self._parse_markdown_row(line), len(headers)) for line in table_lines[2:]]
+            
+            # Convert positional rows to dicts keyed by header name
+            # Normalize header keys to lowercase for template access
+            header_keys = [h.strip().lower().replace(' ', '_').replace('%', 'pct') for h in headers]
+            dict_rows = []
+            for raw in raw_rows:
+                row_dict = {}
+                for i, val in enumerate(raw):
+                    if i < len(header_keys):
+                        key = header_keys[i]
+                        row_dict[key] = val
+                        # Also set capitalized versions for backward compat
+                        row_dict[headers[i].strip()] = val
+                
+                # Ensure canonical column names exist for template rendering
+                # Template uses: row.year, row.Year, row.course, row.Course, etc.
+                canonical_map = {
+                    'year': ['year', 'yr', 'grade_level', 'grade'],
+                    'course': ['course', 'class', 'subject', 'course_name'],
+                    'level': ['level', 'type', 'course_level', 'course_type'],
+                    'grade': ['grade', 'letter_grade', 'final_grade', 'mark'],
+                    'numeric': ['numeric', 'pct', 'percentage', 'score', 'numeric_grade'],
+                    'credits': ['credits', 'credit', 'cr', 'units', 'credit_hours'],
+                }
+                for canonical, aliases in canonical_map.items():
+                    if canonical not in row_dict:
+                        for alias in aliases:
+                            if alias in row_dict and row_dict[alias]:
+                                row_dict[canonical] = row_dict[alias]
+                                row_dict[canonical.capitalize()] = row_dict[alias]
+                                break
+                    # Ensure capitalized version exists
+                    if canonical in row_dict and canonical.capitalize() not in row_dict:
+                        row_dict[canonical.capitalize()] = row_dict[canonical]
+                
+                dict_rows.append(row_dict)
+            
             tables.append({
                 'markdown': "\n".join(table_lines),
                 'headers': headers,
-                'rows': rows
+                'rows': dict_rows
             })
             idx = row_idx  # skip past this table
         return tables
