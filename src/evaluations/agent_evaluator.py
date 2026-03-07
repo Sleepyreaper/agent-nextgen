@@ -1,8 +1,8 @@
 """Agent Evaluator — quality metrics for all agents using Azure AI Evaluation SDK.
 
 Runs groundedness, coherence, relevance, and fluency evaluators against stored
-agent outputs.  Also computes custom metrics: inter-agent agreement (Merlin vs
-Gaston) and outcome accuracy against the ``was_selected`` ground truth.
+agent outputs.  Also computes outcome accuracy against the ``was_selected``
+ground truth.
 
 Usage:
     evaluator = AgentEvaluator(db)
@@ -262,8 +262,6 @@ class AgentEvaluator:
         from stored agent outputs and the ``was_selected`` ground truth.
         """
         metrics: Dict[str, Any] = {
-            "merlin_gaston_agreement": None,
-            "merlin_gaston_score_correlation": None,
             "outcome_accuracy": None,
             "per_agent_outcome_correlation": {},
             "score_distributions": {},
@@ -273,13 +271,9 @@ class AgentEvaluator:
         if not applications:
             return metrics
 
-        # ── Merlin vs Gaston agreement ──
+        # ── Outcome accuracy (Merlin score vs was_selected) ──
         merlin_scores: List[float] = []
-        gaston_scores: List[float] = []
         merlin_recs: List[str] = []
-        gaston_recs: List[str] = []
-        agreements = 0
-        comparisons = 0
 
         # ── Outcome accuracy ──
         true_positives = 0
@@ -303,25 +297,6 @@ class AgentEvaluator:
                     merlin_scores.append(float(merlin_score))
                     merlin_recs.append(merlin_rec)
 
-            # Gaston (stored in ai_evaluations with agent_name='Gaston')
-            gaston_row = self._get_agent_output("ai_evaluations", app_id)
-            gaston_score = None
-            gaston_rec = None
-            if gaston_row and (gaston_row.get("agent_name") or "").lower() == "gaston":
-                gaston_score = gaston_row.get("overall_score")
-                gaston_rec = (gaston_row.get("recommendation") or "").strip().lower()
-                if gaston_score is not None:
-                    gaston_scores.append(float(gaston_score))
-                    gaston_recs.append(gaston_rec)
-
-            # Agreement check (both must have recommendations)
-            if merlin_rec and gaston_rec:
-                comparisons += 1
-                m_pos = merlin_rec in _REC_POSITIVE
-                g_pos = gaston_rec in _REC_POSITIVE
-                if m_pos == g_pos:
-                    agreements += 1
-
             # Outcome accuracy (Merlin score vs was_selected)
             if merlin_score is not None and was_selected is not None:
                 outcome_pairs.append((float(merlin_score), bool(was_selected)))
@@ -335,22 +310,6 @@ class AgentEvaluator:
                     false_negatives += 1
                 else:
                     true_negatives += 1
-
-        # Compute agreement rate
-        if comparisons > 0:
-            metrics["merlin_gaston_agreement"] = round(agreements / comparisons * 100, 1)
-
-        # Compute Pearson correlation between Merlin and Gaston scores
-        if len(merlin_scores) >= 3 and len(gaston_scores) >= 3:
-            n = min(len(merlin_scores), len(gaston_scores))
-            ms = merlin_scores[:n]
-            gs = gaston_scores[:n]
-            try:
-                metrics["merlin_gaston_score_correlation"] = round(
-                    self._pearson(ms, gs), 4
-                )
-            except Exception:
-                pass
 
         # Outcome accuracy metrics
         total_predictions = true_positives + false_positives + true_negatives + false_negatives
