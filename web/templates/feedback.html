@@ -74,7 +74,7 @@
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
             <h3 style="color: var(--emory-blue); margin: 0;">Recent Feedback</h3>
             <label class="auto-refresh-toggle">
-                <input type="checkbox" id="autoRefreshToggle"> Auto-refresh (30s)
+                <input type="checkbox" id="autoRefreshToggle" checked> Auto-refresh (30s)
                 <span id="refreshIndicator" style="display:none;">🔄</span>
             </label>
         </div>
@@ -119,7 +119,12 @@ function renderFeedbackTable(items) {
     html += '<th style="text-align:left; padding:0.5rem;">Issue</th>';
     html += '</tr></thead><tbody>';
     for (const item of items) {
-        const triage = item.triage_json || {};
+        // triage_json may arrive as a JSON string or an object depending on
+        // whether it was parsed server-side. Handle both gracefully.
+        let triage = item.triage_json || {};
+        if (typeof triage === 'string') {
+            try { triage = JSON.parse(triage); } catch (_) { triage = {}; }
+        }
         const feedbackType = item.feedback_type || item.FeedbackType || 'issue';
         const status = item.status || item.Status || 'received';
         const message = item.message || '';
@@ -158,6 +163,10 @@ autoRefreshToggle.addEventListener('change', () => {
         if (refreshTimer) { clearInterval(refreshTimer); refreshTimer = null; }
     }
 });
+
+// Auto-start refresh on page load
+refreshFeedbackList();
+refreshTimer = setInterval(refreshFeedbackList, 30000);
 
 if (feedbackForm) {
     feedbackForm.addEventListener('submit', async (event) => {
