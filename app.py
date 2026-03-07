@@ -14,6 +14,7 @@ import logging
 
 from datetime import datetime, timedelta, timezone
 from flask import Flask, flash, g, jsonify, render_template, redirect, url_for, request, session
+from flask_wtf.csrf import CSRFError
 from src.config import config
 from src.telemetry import init_telemetry
 from src.database import db
@@ -228,8 +229,16 @@ def page_not_found(e):
 def internal_server_error(e):
     logger.error("Unhandled 500 error: %s", e, exc_info=True)
     if request.path.startswith('/api/'):
-        return jsonify({'error': 'An internal error occurred'}), 500
+        return jsonify({'error': f'Internal server error: {e}'}), 500
     return '<h1>500 — Internal Server Error</h1>', 500
+
+
+@app.errorhandler(CSRFError)
+def csrf_error(e):
+    logger.warning("CSRF error on %s: %s", request.path, e.description)
+    if request.path.startswith('/api/'):
+        return jsonify({'error': f'CSRF validation failed: {e.description}'}), 400
+    return '<h1>400 — CSRF Error</h1><p>Session expired. Please refresh the page.</p>', 400
 
 
 @app.errorhandler(429)

@@ -1738,7 +1738,7 @@ def reprocess_2026_applications():
         })
     except Exception as e:
         logger.error(f"Reprocess 2026 error: {e}", exc_info=True)
-        return jsonify({'status': 'error', 'error': 'An internal error occurred'}), 500
+        return jsonify({'status': 'error', 'error': f'Reprocess failed: {str(e)}'}), 500
 
 
 
