@@ -904,3 +904,80 @@ def ensure_school_context_in_pipeline(
         state_code=state_code,
         aurora_agent=aurora_agent
     )
+
+
+    def discover_school_website(self, school_id: int, school_name: str,
+                                 state_code: str = '', school_district: str = '',
+                                 ai_client=None, model: str = None) -> dict:
+        """Auto-discover a school's official website URL using AI.
+
+        Uses an AI agent to search for and verify the school's website.
+        Updates the school_url and school_url_verified fields in the database.
+
+        Returns:
+            dict with keys: url, verified, source, error (if any)
+        """
+        if not ai_client or not model:
+            return {'url': None, 'verified': False, 'error': 'AI client required for website discovery'}
+
+        try:
+            from src.agents.base_agent import BaseAgent
+
+            class _WebDiscoverer(BaseAgent):
+                async def process(self, message): return message
+
+            discoverer = _WebDiscoverer(name='School Web Discoverer', client=ai_client)
+            discoverer.model = model
+
+            prompt = (
+                f"Find the official website URL for this school:\n\n"
+                f"School Name: {school_name}\n"
+                f"State: {state_code or 'Unknown'}\n"
+                f"District: {school_district or 'Unknown'}\n\n"
+                f"Return ONLY the URL (e.g., https://www.schoolname.org). "
+                f"If you cannot determine the official website with confidence, respond with 'UNKNOWN'.\n"
+                f"Do not guess. Only return a URL you are confident is the school's official website."
+            )
+
+            response = discoverer._create_chat_completion(
+                operation='school_website_discovery',
+                model=model,
+                messages=[
+                    {'role': 'system', 'content': 'You are a research assistant. Find official school website URLs. Be precise and confident.'},
+                    {'role': 'user', 'content': prompt}
+                ],
+                temperature=0.1,
+                max_completion_tokens=100
+            )
+
+            url = None
+            if response and hasattr(response, 'choices') and response.choices:
+                content = getattr(response.choices[0].message, 'content', '') or ''
+                content = content.strip()
+                if content and content.upper() != 'UNKNOWN' and content.startswith('http'):
+                    # Clean up - take just the URL
+                    url = content.split()[0].rstrip('.,;')
+
+            if url:
+                # Save to database
+                try:
+                    from datetime import datetime as _dt
+                    self.db.execute_non_query(
+                        """UPDATE school_enriched_data
+                        SET school_url = %s, school_url_verified = FALSE,
+                            school_url_verified_date = CURRENT_TIMESTAMP,
+                            updated_at = CURRENT_TIMESTAMP
+                        WHERE school_enrichment_id = %s""",
+                        (url, school_id)
+                    )
+                    logger.info(f"Discovered website for {school_name}: {url}")
+                except Exception as e:
+                    logger.error(f"Failed to save discovered URL for {school_name}: {e}")
+
+                return {'url': url, 'verified': False, 'source': 'ai_discovery'}
+            else:
+                return {'url': None, 'verified': False, 'source': 'ai_discovery', 'error': 'Could not determine website'}
+
+        except Exception as e:
+            logger.error(f"Website discovery failed for {school_name}: {e}")
+            return {'url': None, 'verified': False, 'error': str(e)}
