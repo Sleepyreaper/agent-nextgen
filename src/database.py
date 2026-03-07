@@ -3419,6 +3419,32 @@ class Database:
                     return 0.0
                 return len(ta & tb) / len(ta | tb)
 
+            def _fuzzy_token_ratio(a: str, b: str) -> float:
+                """Like token_set_ratio but uses SequenceMatcher for each token
+                pair so that 'gwineet' matches 'gwinnett' (ratio ~0.87)."""
+                ta = [t for t in a.split() if len(t) > 1]
+                tb = [t for t in b.split() if len(t) > 1]
+                if not ta or not tb:
+                    return 0.0
+                # For each token in ta, find best match in tb
+                matched_score = 0.0
+                used = set()
+                for wa in ta:
+                    best = 0.0
+                    best_idx = -1
+                    for j, wb in enumerate(tb):
+                        if j in used:
+                            continue
+                        r = difflib.SequenceMatcher(None, wa, wb).ratio()
+                        if r > best:
+                            best = r
+                            best_idx = j
+                    if best >= 0.75 and best_idx >= 0:
+                        matched_score += best
+                        used.add(best_idx)
+                total_tokens = max(len(ta), len(tb))
+                return matched_score / total_tokens if total_tokens > 0 else 0.0
+
             cand_norm = _normalize(school_name)
             if not cand_norm:
                 return None
@@ -3436,7 +3462,7 @@ class Database:
                 if n == cand_norm:
                     return self.get_school_enriched_data(school_name=raw, state_code=state_code)
 
-            # 2) Token-set ratio
+            # 2) Token-set ratio (exact token overlap)
             best_score = 0.0
             best_raw = None
             for raw, n in name_map.items():
@@ -3447,10 +3473,21 @@ class Database:
             if best_score >= threshold and best_raw:
                 return self.get_school_enriched_data(school_name=best_raw, state_code=state_code)
 
-            # 3) difflib close match
+            # 2.5) Fuzzy token ratio (handles misspellings like Gwineet→Gwinnett)
+            best_score = 0.0
+            best_raw = None
+            for raw, n in name_map.items():
+                score = _fuzzy_token_ratio(cand_norm, n)
+                if score > best_score:
+                    best_score = score
+                    best_raw = raw
+            if best_score >= 0.70 and best_raw:
+                return self.get_school_enriched_data(school_name=best_raw, state_code=state_code)
+
+            # 3) difflib close match (catches remaining typos)
             norm_list = list(name_map.values())
             raw_list = list(name_map.keys())
-            matches = difflib.get_close_matches(cand_norm, norm_list, n=1, cutoff=0.72)
+            matches = difflib.get_close_matches(cand_norm, norm_list, n=1, cutoff=0.65)
             if matches:
                 idx = norm_list.index(matches[0])
                 return self.get_school_enriched_data(school_name=raw_list[idx], state_code=state_code)

@@ -669,6 +669,36 @@ def school_enrichment_score(school_id):
 
 
 
+@schools_bp.route('/api/school/<int:school_id>/discover-website', methods=['POST'])
+def discover_school_website(school_id):
+    """Auto-discover a school's official website using AI."""
+    try:
+        school = db.get_school_enriched_data(school_id)
+        if not school:
+            return jsonify({'status': 'error', 'error': 'School not found'}), 404
+
+        from src.school_workflow import SchoolDataWorkflow
+        workflow = SchoolDataWorkflow(db)
+
+        client = get_ai_client_mini()
+        model = config.model_tier_workhorse
+
+        result = workflow.discover_school_website(
+            school_id=school_id,
+            school_name=school['school_name'],
+            state_code=school.get('state_code', ''),
+            school_district=school.get('school_district', ''),
+            ai_client=client,
+            model=model
+        )
+
+        return jsonify({'status': 'success', **result})
+    except Exception as e:
+        logger.error(f"Website discovery error for school {school_id}: {e}", exc_info=True)
+        return jsonify({'status': 'error', 'error': 'An internal error occurred'}), 500
+
+
+
 @schools_bp.route('/api/school/lookup', methods=['POST'])
 def lookup_or_create_school():
     """Auto-lookup: if a school exists, return it. If not, create a skeleton record.

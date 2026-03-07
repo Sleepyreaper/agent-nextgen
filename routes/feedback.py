@@ -219,10 +219,16 @@ def feedback_recent_api():
             for k, v in item.items():
                 if hasattr(v, 'isoformat'):
                     row[k] = v.isoformat()
-                elif k.lower() == 'triage_json' and isinstance(v, str):
-                    try:
-                        row[k] = json.loads(v)
-                    except (json.JSONDecodeError, TypeError):
+                elif k.lower() == 'triage_json':
+                    # May arrive as str (TEXT column) or dict (JSONB column)
+                    if isinstance(v, str):
+                        try:
+                            row[k] = json.loads(v)
+                        except (json.JSONDecodeError, TypeError):
+                            row[k] = {}
+                    elif isinstance(v, dict):
+                        row[k] = v
+                    else:
                         row[k] = {}
                     continue
                 else:

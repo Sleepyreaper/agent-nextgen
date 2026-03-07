@@ -827,16 +827,20 @@ function renderTokenByModel(byModel) {
     entries.sort((a, b) => b[1].total_tokens - a[1].total_tokens);
 
     let html = '<table class="agent-table"><thead><tr>';
-    html += '<th>Model</th><th>Calls</th><th>Input</th><th>Output</th><th>Total</th>';
+    html += '<th>Model</th><th>Calls</th><th>Input</th><th>Output</th><th>Total</th><th>In/Out</th>';
     html += '</tr></thead><tbody>';
 
     for (const [model, data] of entries) {
+        const ratio = data.output_tokens > 0
+            ? (data.input_tokens / data.output_tokens).toFixed(1) + ':1'
+            : '—';
         html += `<tr>
             <td class="agent-name">${model}</td>
             <td>${data.call_count.toLocaleString()}</td>
             <td>${fmtTokens(data.input_tokens)}</td>
             <td>${fmtTokens(data.output_tokens)}</td>
             <td style="font-weight: 700;">${fmtTokens(data.total_tokens)}</td>
+            <td style="font-size: 0.85rem; color: #6b7280;">${ratio}</td>
         </tr>`;
     }
 
