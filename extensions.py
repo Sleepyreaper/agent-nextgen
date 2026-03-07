@@ -434,18 +434,25 @@ def start_application_processing(application_id: int) -> None:
         try:
             application = db.get_application(application_id)
             if not application:
+                logger.error(f"Processing: application {application_id} not found in DB")
                 return
             orchestrator = get_orchestrator()
+            logger.info(f"Processing: starting orchestrator for application {application_id}")
             result = run_async(orchestrator.coordinate_evaluation(
                 application=application,
                 evaluation_steps=['application_reader', 'grade_reader', 'recommendation_reader', 'school_context', 'data_scientist', 'student_evaluator', 'aurora']
             ))
-            if result.get('status') == 'paused':
+            result_status = result.get('status') if isinstance(result, dict) else 'unknown'
+            result_keys = list(result.keys()) if isinstance(result, dict) else []
+            logger.info(f"Processing: orchestrator returned for {application_id}, status={result_status}, keys={result_keys}")
+            if result_status == 'paused':
                 db.update_application_status(application_id, 'Needs Docs')
+                logger.info(f"Processing: {application_id} paused — needs docs")
                 return
             db.update_application_status(application_id, 'Completed')
+            logger.info(f"Processing: {application_id} marked Completed")
         except Exception as e:
-            logger.error(f"Application processing failed for {application_id}: {str(e)}", exc_info=True)
+            logger.error(f"Processing FAILED for {application_id}: {str(e)}", exc_info=True)
             db.update_application_status(application_id, 'Uploaded')
     db.update_application_status(application_id, 'Processing')
     threading.Thread(target=run, daemon=True).start()
