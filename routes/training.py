@@ -7,13 +7,16 @@ import statistics
 import tempfile
 import threading
 import time
+from datetime import datetime, timezone
 
 from flask import Blueprint, current_app, flash, jsonify, redirect, render_template, request, url_for
 
 from extensions import (
     csrf, limiter, run_async,
-    get_orchestrator, refresh_foundry_dataset_async,
+    get_ai_client, get_orchestrator, refresh_foundry_dataset_async,
+    _collect_documents_from_storage, _aggregate_documents,
 )
+from src.agents.belle_document_analyzer import BelleDocumentAnalyzer
 from src.config import config
 from src.database import db
 from src.storage import storage
@@ -555,8 +558,7 @@ def api_reprocess_training():
 
     except Exception as e:
         logger.error(f"Error starting reprocess: {e}", exc_info=True)
-        logger.error('Request failed: %s', e, exc_info=True)
-        return jsonify({'status': 'error', 'error': 'An internal error occurred'}), 500
+        return jsonify({'status': 'error', 'error': f'Reprocess failed: {str(e)}'}), 500
 
 
 
