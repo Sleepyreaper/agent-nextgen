@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 
-{% block title %}Training Data{% endblock %}
+{% block title %}Training Data — NextGen{% endblock %}
+{% block page_title %}Training Data{% endblock %}
 
 {% block content %}
 <style>
@@ -9,177 +10,89 @@
     50% { opacity: 0.5; }
 }
 </style>
-<div class="card">
-    <div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 2rem; gap: 1rem;">
+
+<!-- Hero Banner -->
+<div class="relative rounded-xl overflow-hidden mb-6 h-32" style="background: linear-gradient(135deg, var(--emory-dark-blue) 0%, var(--emory-gold) 100%);">
+    <img src="{{ url_for('static', filename='img/training-data.jpg') }}" class="absolute inset-0 w-full h-full object-cover opacity-15" alt="">
+    <div class="absolute inset-0 bg-genome-dots opacity-20"></div>
+    <div class="relative z-10 p-6 flex items-center gap-4">
+        <span class="text-3xl">📚</span>
         <div>
-            <h2>📚 Training Data</h2>
-            <p style="color: #6b7280; margin-top: 0.5rem;">
-                Historical applications sorted by last name. Students marked "Selected" became our successful interns.
-            </p>
-            <p style="color: #6b7280; margin-top: 0.5rem;">
-                Status badges show selection outcomes and whether training data is fully captured.
-            </p>
-            <div style="margin-top: 0.75rem;">
-                <a href="{{ url_for('training.import_scores_page') }}" style="display: inline-flex; align-items: center; gap: 0.4rem; background: #f59e0b; color: #78350f; padding: 0.4rem 1rem; border-radius: 6px; text-decoration: none; font-weight: 600; font-size: 0.85rem;">
-                    📊 Import Historical Scores
-                </a>
-            </div>
+            <h2 class="font-heading text-xl font-bold text-white">Training Data</h2>
+            <p class="text-white/60 text-sm">Historical applications for agent calibration · {{ total_count }} students · {{ selected_count }} selected · {{ matched_count }} with XLSX</p>
         </div>
-        <div style="width:100%; margin-top:1rem;">
-            <!-- inline upload form for training files -->
-            <div class="card" style="padding:1rem; background:#f9fafb;">
-                <h3 style="margin-top:0;">➕ Upload Training Files</h3>
-                <form method="POST" action="{{ url_for('upload.upload') }}" enctype="multipart/form-data" id="trainingUploadForm">
-                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                    <input type="hidden" name="app_type" value="training" />
-                    <div style="border:2px dashed #f59e0b; border-radius:8px; padding:1.5rem; text-align:center; cursor:pointer;" 
-                         onclick="document.getElementById('trainingFileInput').click()">
-                        <input type="file" id="trainingFileInput" name="file" required accept=".pdf,.docx,.doc,.txt,.text,.mp4" multiple style="display:none;" onchange="updateTrainingFileName(this)">
-                        <p style="color:#92400e; font-weight:600;">Drag & drop or click to select training files</p>
-                        <p style="color:#b45309; font-size:0.8rem; margin-top:0.25rem;">You can select multiple files at once</p>
-                        <p id="trainingFileName" style="color:#92400e; font-weight:600; display:none;"></p>
-                        <p id="trainingVideoSizeHint" style="color:#667eea; font-size:0.85rem; margin-top:0.5rem; display:none;"></p>
-                    </div>
-                    <!-- Video upload progress bar -->
-                    <div id="trainingVideoProgress" style="display:none; margin-top:1rem;">
-                        <p id="trainingVideoProgressText" style="color:#1e40af; font-weight:600; margin-bottom:0.5rem;">Uploading video…</p>
-                        <div style="background:#e5e7eb; border-radius:8px; overflow:hidden; height:24px;">
-                            <div id="trainingVideoProgressBar" style="background:linear-gradient(90deg,#667eea,#764ba2); height:100%; width:0%; transition:width 0.3s; color:#fff; font-size:0.8rem; line-height:24px; text-align:center; border-radius:8px;">0%</div>
-                        </div>
-                    </div>
-                    <input type="hidden" id="trainingVideoBlobInfo" name="chunked_blob_info" value="">
-                    </div>
-                    <div id="trainingSelectionStatus" style="margin-top:1rem; display:flex; gap:1.5rem; align-items:center;">
-                        <label style="display:flex; align-items:center; cursor:pointer; font-weight:600;">
-                            <input type="radio" name="was_selected" value="yes" style="margin-right:0.5rem;">
-                            <span style="color:#78350f;">Yes</span>
-                        </label>
-                        <label style="display:flex; align-items:center; cursor:pointer; font-weight:600;">
-                            <input type="radio" name="was_selected" value="no" style="margin-right:0.5rem;">
-                            <span style="color:#78350f;">No</span>
-                        </label>
-                    </div>
-                    <button type="submit" class="btn btn-primary" style="margin-top:1rem;">Upload</button>
-                </form>
-            </div>
+        <div class="ml-auto flex gap-2">
+            <a href="{{ url_for('training.import_scores_page') }}" class="btn-emory btn-emory-sm btn-emory-gold">📊 Import Scores</a>
         </div>
-        <!-- School CSV Upload Card -->
-        <div style="width:100%; margin-top:1rem;">
-            <div class="card" style="padding:1rem; background:#f0fdf4;">
-                <h3 style="margin-top:0;">🏫 Upload School Data (CSV)</h3>
-                <p style="color:#166534; font-size:0.85rem; margin-bottom:0.75rem;">
-                    Upload an NCES CCD CSV file to populate school enrichment data. This replaces all existing school records.
-                </p>
-                <form id="schoolCsvUploadForm" enctype="multipart/form-data" onsubmit="return uploadSchoolCsv(event)">
-                    <div style="border:2px dashed #22c55e; border-radius:8px; padding:1.5rem; text-align:center; cursor:pointer;"
-                         onclick="document.getElementById('schoolCsvFileInput').click()">
-                        <input type="file" id="schoolCsvFileInput" name="file" required accept=".csv" style="display:none;" onchange="updateSchoolCsvFileName(this)">
-                        <p style="color:#166534; font-weight:600;">Click to select a school CSV file</p>
-                        <p style="color:#15803d; font-size:0.8rem; margin-top:0.25rem;">Accepts .csv files (NCES CCD format)</p>
-                        <p id="schoolCsvFileName" style="color:#166534; font-weight:600; display:none;"></p>
-                    </div>
-                    <div style="display:flex; gap:1rem; align-items:center; margin-top:0.75rem;">
-                        <label style="display:flex; align-items:center; gap:0.4rem; font-size:0.85rem; color:#166534;">
-                            <input type="checkbox" id="schoolCsvPurge" checked>
-                            Purge existing school data first
-                        </label>
-                    </div>
-                    <button type="submit" class="btn" style="margin-top:0.75rem; background:#16a34a; color:white;" id="schoolCsvUploadBtn">
-                        🏫 Upload &amp; Import Schools
-                    </button>
-                </form>
-                <!-- Import progress -->
-                <div id="schoolCsvProgress" style="display:none; margin-top:1rem;">
-                    <p id="schoolCsvProgressText" style="color:#166534; font-weight:600; margin-bottom:0.5rem;">Importing schools…</p>
-                    <div style="background:#e5e7eb; border-radius:8px; overflow:hidden; height:24px;">
-                        <div id="schoolCsvProgressBar" style="background:linear-gradient(90deg,#22c55e,#16a34a); height:100%; width:0%; transition:width 0.3s; color:#fff; font-size:0.8rem; line-height:24px; text-align:center; border-radius:8px;">0%</div>
-                    </div>
-                    <p id="schoolCsvProgressDetail" style="color:#6b7280; font-size:0.8rem; margin-top:0.3rem;"></p>
-                </div>
-                <div id="schoolCsvResult" style="display:none; margin-top:1rem;"></div>
-            </div>
-        </div>
-        <div style="display: flex; gap: 0.75rem; align-items:center;">
-            <button type="button" class="btn btn-secondary" onclick="clearTrainingData()">
-                🧹 Clear Training Data
-            </button>
-            <button type="button" class="btn" style="background:#ef4444; color:white;" onclick="findDuplicates()">
-                🔍 Find Duplicates
-            </button>
-            <button type="button" class="btn" style="background:#f59e0b; color:#78350f;" onclick="openXlsxResolver()">
-                🔗 Resolve XLSX Matches
-            </button>
-            <button type="button" class="btn btn-info" onclick="fetchMiloInsights()">
-                📊 Training Insights
-            </button>
-            <button type="button" class="btn" style="background:#8b5cf6; color:white;" onclick="openValidationModal()">
-                🧪 Validate Model
-            </button>
-            <button type="button" class="btn" style="background:#059669; color:white;" onclick="openReprocessModal()">
-                🔄 Reprocess Documents
-            </button>
-            <a id="trainingUploadLink" href="{{ url_for('upload.upload', app_type='training') }}" class="btn btn-primary">
-                ➕ Add Training Example
-            </a>
+    </div>
+</div>
+
+<div class="card-nextgen">
+    <!-- Upload + Actions toolbar -->
+    <div class="px-5 py-4 border-b border-emory-gray-200">
+        <div class="flex flex-wrap gap-2 items-center">
+            <a id="trainingUploadLink" href="{{ url_for('upload.upload', app_type='training') }}" class="btn-emory btn-emory-primary btn-emory-sm">➕ Add Training</a>
+            <button type="button" class="btn-emory btn-emory-sm btn-emory-secondary" data-action="openReprocessModal">🔄 Reprocess</button>
+            <button type="button" class="btn-emory btn-emory-sm btn-emory-secondary" data-action="fetchMiloInsights">📊 Insights</button>
+            <button type="button" class="btn-emory btn-emory-sm btn-emory-secondary" data-action="openValidationModal">🧪 Validate</button>
+            <button type="button" class="btn-emory btn-emory-sm btn-emory-secondary" data-action="openXlsxResolver">🔗 XLSX Match</button>
+            <button type="button" class="btn-emory btn-emory-sm btn-emory-secondary" data-action="findDuplicates">🔍 Duplicates</button>
+            <button type="button" class="btn-emory btn-emory-sm" style="background:#ef4444; color:#fff;" data-action="clearTrainingData">🧹 Clear</button>
         </div>
     </div>
 
-    <!-- Statistics -->
-    <div style="display: grid; grid-template-columns: repeat(5, 1fr); gap: 1rem; margin-bottom: 2rem;">
-        <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 1.5rem; border-radius: 8px; text-align: center;">
-            <div style="font-size: 2rem; font-weight: bold;">{{ total_count }}</div>
-            <div style="opacity: 0.9; margin-top: 0.5rem;">Total Students</div>
+    <!-- Stats Row -->
+    <div class="grid grid-cols-2 sm:grid-cols-5 gap-3 px-5 py-4 border-b border-emory-gray-200 bg-emory-gray-100/30 stagger-in">
+        <div class="stat-card-nextgen text-center hover-lift">
+            <div class="stat-value-nextgen text-emory-dark-blue">{{ total_count }}</div>
+            <div class="stat-label-nextgen">📋 Total</div>
         </div>
-        <div style="background: linear-gradient(135deg, #10b981 0%, #059669 100%); color: white; padding: 1.5rem; border-radius: 8px; text-align: center;">
-            <div style="font-size: 2rem; font-weight: bold;">{{ selected_count }}</div>
-            <div style="opacity: 0.9; margin-top: 0.5rem;">✓ Selected</div>
+        <div class="stat-card-nextgen text-center hover-lift">
+            <div class="stat-value-nextgen text-emory-green">{{ selected_count }}</div>
+            <div class="stat-label-nextgen">✓ Selected</div>
         </div>
-        <div style="background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%); color: white; padding: 1.5rem; border-radius: 8px; text-align: center;">
-            <div style="font-size: 2rem; font-weight: bold;">{{ not_selected_count }}</div>
-            <div style="opacity: 0.9; margin-top: 0.5rem;">✗ Not Selected</div>
+        <div class="stat-card-nextgen text-center hover-lift">
+            <div class="stat-value-nextgen text-emory-gold">{{ not_selected_count }}</div>
+            <div class="stat-label-nextgen">✗ Not Selected</div>
         </div>
-        <div style="background: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%); color: white; padding: 1.5rem; border-radius: 8px; text-align: center;">
-            <div style="font-size: 2rem; font-weight: bold;">{{ matched_count }}</div>
-            <div style="opacity: 0.9; margin-top: 0.5rem;">📊 XLSX Matched</div>
+        <div class="stat-card-nextgen text-center hover-lift">
+            <div class="stat-value-nextgen text-emory-medium-blue">{{ matched_count }}</div>
+            <div class="stat-label-nextgen">📊 XLSX</div>
         </div>
-        <div style="background: linear-gradient(135deg, #22c55e 0%, #16a34a 100%); color: white; padding: 1.5rem; border-radius: 8px; text-align: center; cursor: pointer;" onclick="switchTab('schools')">
-            <div style="font-size: 2rem; font-weight: bold;">{{ school_count }}</div>
-            <div style="opacity: 0.9; margin-top: 0.5rem;">🏫 Schools</div>
+        <div class="stat-card-nextgen text-center hover-lift cursor-pointer" data-action="switchTab" data-arg="schools">
+            <div class="stat-value-nextgen text-emory-green">{{ school_count }}</div>
+            <div class="stat-label-nextgen">🏫 Schools</div>
         </div>
     </div>
 
     <!-- Tab Navigation -->
-    <div style="display: flex; gap: 0; margin-bottom: 0; border-bottom: 2px solid #e5e7eb;">
-        <button id="tabBtnStudents" class="training-tab active" onclick="switchTab('students')"
-                style="padding: 0.75rem 1.5rem; font-weight: 600; font-size: 1rem; border: none; background: none; cursor: pointer; border-bottom: 3px solid #667eea; color: #667eea; margin-bottom: -2px;">
+    <div class="flex border-b border-emory-gray-200">
+        <button id="tabBtnStudents" class="training-tab px-5 py-3 text-sm font-semibold border-b-2 border-emory-dark-blue text-emory-dark-blue" data-action="switchTab" data-arg="students" >
             👥 Students ({{ total_count }})
         </button>
-        <button id="tabBtnSchools" class="training-tab" onclick="switchTab('schools')"
-                style="padding: 0.75rem 1.5rem; font-weight: 600; font-size: 1rem; border: none; background: none; cursor: pointer; border-bottom: 3px solid transparent; color: #6b7280; margin-bottom: -2px;">
+        <button id="tabBtnSchools" class="training-tab px-5 py-3 text-sm font-semibold border-b-2 border-transparent text-emory-gray-500 hover:text-emory-dark transition" data-action="switchTab" data-arg="schools" >
             🏫 Schools ({{ school_count }})
         </button>
-        <button id="tabBtnAccuracy" class="training-tab" onclick="switchTab('accuracy')"
-                style="padding: 0.75rem 1.5rem; font-weight: 600; font-size: 1rem; border: none; background: none; cursor: pointer; border-bottom: 3px solid transparent; color: #6b7280; margin-bottom: -2px;">
-            🎯 System Accuracy
+        <button id="tabBtnAccuracy" class="training-tab px-5 py-3 text-sm font-semibold border-b-2 border-transparent text-emory-gray-500 hover:text-emory-dark transition" data-action="switchTab" data-arg="accuracy" >
+            🎯 Accuracy
         </button>
     </div>
+    <!-- Tab content areas -->
 
     <!-- ═══ STUDENTS TAB ═══ -->
-    <div id="tabStudents" style="margin-top: 1.5rem;">
+    <div id="tabStudents" class="p-5">
     <!-- Search and Filter -->
-    <form method="GET" style="margin-bottom: 2rem;">
-        <div style="display: grid; grid-template-columns: 1fr auto auto; gap: 1rem;">
+    <form method="GET" class="mb-5">
+        <div class="flex gap-3">
             <input type="text" name="search" placeholder="🔍 Search by name or email..." 
                    value="{{ search_query or '' }}"
-                   style="padding: 0.75rem; border: 1px solid #d1d5db; border-radius: 5px; font-size: 1rem;">
-            
-            <select name="filter" style="padding: 0.75rem; border: 1px solid #d1d5db; border-radius: 5px; font-size: 1rem;">
-                <option value="">All Examples</option>
-                <option value="selected" {% if filter_selected == 'selected' %}selected{% endif %}>✓ Selected Only</option>
+                   class="flex-1 px-4 py-2 border border-emory-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-emory-medium-blue/30">
+            <select name="filter" class="px-3 py-2 border border-emory-gray-200 rounded-lg text-sm">
+                <option value="">All</option>
+                <option value="selected" {% if filter_selected == 'selected' %}selected{% endif %}>✓ Selected</option>
                 <option value="not_selected" {% if filter_selected == 'not_selected' %}selected{% endif %}>✗ Not Selected</option>
             </select>
-            
-            <button type="submit" class="btn btn-primary">Search</button>
+            <button type="submit" class="btn-emory btn-emory-primary btn-emory-sm">Search</button>
         </div>
     </form>
 
@@ -211,11 +124,11 @@
             <table class="student-list-table" id="schoolDataTable">
                 <thead>
                     <tr>
-                        <th style="width: 25%; cursor:pointer;" onclick="sortSchoolTable(0)">School Name ⇅</th>
-                        <th style="width: 15%; cursor:pointer;" onclick="sortSchoolTable(1)">District ⇅</th>
-                        <th style="width: 8%; cursor:pointer;" onclick="sortSchoolTable(2)">State ⇅</th>
-                        <th style="width: 10%; cursor:pointer;" onclick="sortSchoolTable(3)">Enrollment ⇅</th>
-                        <th style="width: 10%; cursor:pointer;" onclick="sortSchoolTable(4)">FRPL % ⇅</th>
+                        <th style="width: 25%; cursor:pointer;" data-action="sortSchoolTable" data-arg="0">School Name ⇅</th>
+                        <th style="width: 15%; cursor:pointer;" data-action="sortSchoolTable" data-arg="1">District ⇅</th>
+                        <th style="width: 8%; cursor:pointer;" data-action="sortSchoolTable" data-arg="2">State ⇅</th>
+                        <th style="width: 10%; cursor:pointer;" data-action="sortSchoolTable" data-arg="3">Enrollment ⇅</th>
+                        <th style="width: 10%; cursor:pointer;" data-action="sortSchoolTable" data-arg="4">FRPL % ⇅</th>
                         <th style="width: 10%;">Status</th>
                         <th style="width: 10%;">Actions</th>
                     </tr>
@@ -289,7 +202,7 @@
                 <label style="font-weight:600; color:#374151; white-space:nowrap;">Threshold:</label>
                 <input type="number" id="accuracyThreshold" value="65" min="0" max="100"
                        style="width:70px; padding:0.4rem; border:1px solid #d1d5db; border-radius:6px; font-size:1rem; text-align:center;">
-                <button id="accuracyRunBtn" onclick="runAccuracyValidation()" class="btn"
+                <button id="accuracyRunBtn" data-action="runAccuracyValidation" class="btn"
                         style="background:#8b5cf6; color:white; padding:0.5rem 1.5rem; font-weight:600; white-space:nowrap;">
                     ▶ Run Validation
                 </button>
@@ -325,15 +238,15 @@
     <div style="background:white; border-radius:12px; padding:2rem; max-width:720px; width:95%; max-height:80vh; overflow-y:auto; box-shadow:0 20px 60px rgba(0,0,0,0.3);">
         <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1.5rem;">
             <h3 style="margin:0; color:#991b1b;">🔍 Duplicate Training Records</h3>
-            <button onclick="closeDupModal()" style="background:none; border:none; font-size:1.5rem; cursor:pointer;">✕</button>
+            <button data-action="closeDupModal" style="background:none; border:none; font-size:1.5rem; cursor:pointer;">✕</button>
         </div>
         <div id="dupContent">
             <p style="text-align:center; color:#6b7280;">Loading...</p>
         </div>
         <div id="dupActions" style="display:none; margin-top:1.5rem; padding-top:1rem; border-top:1px solid #e5e7eb; text-align:right;">
             <span id="dupSelectedCount" style="color:#6b7280; margin-right:1rem;">0 selected</span>
-            <button onclick="closeDupModal()" class="btn btn-secondary" style="margin-right:0.5rem;">Cancel</button>
-            <button onclick="bulkDeleteSelected()" id="dupDeleteBtn" class="btn" style="background:#ef4444; color:white;" disabled>
+            <button data-action="closeDupModal" class="btn btn-secondary" style="margin-right:0.5rem;">Cancel</button>
+            <button data-action="bulkDeleteSelected" id="dupDeleteBtn" class="btn" style="background:#ef4444; color:white;" disabled>
                 🗑️ Delete Selected
             </button>
         </div>
@@ -348,7 +261,7 @@
     <div style="background:white; border-radius:12px; padding:2rem; max-width:960px; width:95%; max-height:90vh; overflow-y:auto; box-shadow:0 20px 60px rgba(0,0,0,0.3);">
         <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1rem;">
             <h3 style="margin:0; color:#5b21b6;">🧪 Model Validation</h3>
-            <button onclick="closeValidationModal()" style="background:none; border:none; font-size:1.5rem; cursor:pointer;">✕</button>
+            <button data-action="closeValidationModal" style="background:none; border:none; font-size:1.5rem; cursor:pointer;">✕</button>
         </div>
         <div id="validationExplainer" style="background:#f5f3ff; border-radius:8px; padding:1rem; margin-bottom:1.25rem; color:#4c1d95; font-size:0.9rem; line-height:1.6;">
             <strong>What does this do?</strong> Validation scores every training student through the current model and compares the AI's prediction against the known outcome (Selected vs Not Selected). This reveals:
@@ -365,7 +278,7 @@
         <div id="validationStart" style="display:flex; align-items:center; gap:1rem; margin-bottom:1.25rem;">
             <label style="font-weight:600; color:#374151;">Threshold:</label>
             <input type="number" id="validationThreshold" value="65" min="0" max="100" style="width:80px; padding:0.4rem; border:1px solid #d1d5db; border-radius:6px; font-size:1rem; text-align:center;">
-            <button id="validationRunBtn" onclick="startValidation()" class="btn" style="background:#8b5cf6; color:white; padding:0.5rem 1.5rem; font-weight:600;">
+            <button id="validationRunBtn" data-action="startValidation" class="btn" style="background:#8b5cf6; color:white; padding:0.5rem 1.5rem; font-weight:600;">
                 ▶ Run Validation
             </button>
         </div>
@@ -392,7 +305,7 @@
     <div style="background:white; border-radius:12px; padding:2rem; max-width:900px; width:95%; max-height:85vh; overflow-y:auto; box-shadow:0 20px 60px rgba(0,0,0,0.3);">
         <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1.5rem;">
             <h3 style="margin:0; color:#78350f;">🔗 Resolve XLSX Matches</h3>
-            <button onclick="closeXlsxModal()" style="background:none; border:none; font-size:1.5rem; cursor:pointer;">✕</button>
+            <button data-action="closeXlsxModal" style="background:none; border:none; font-size:1.5rem; cursor:pointer;">✕</button>
         </div>
         <p style="color:#6b7280; margin-bottom:1rem;">
             These training students have no linked historical XLSX score. Search and link them manually.
@@ -427,7 +340,7 @@
     <div style="background:white; border-radius:12px; padding:2rem; max-width:700px; width:90%; max-height:85vh; overflow-y:auto;">
         <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1rem;">
             <h3 style="margin:0;">🔄 Reprocess Training Documents</h3>
-            <button onclick="closeReprocessModal()" style="background:none; border:none; font-size:1.5rem; cursor:pointer;">✕</button>
+            <button data-action="closeReprocessModal" style="background:none; border:none; font-size:1.5rem; cursor:pointer;">✕</button>
         </div>
         <div style="background:#ecfdf5; border:1px solid #a7f3d0; border-radius:8px; padding:1rem; margin-bottom:1rem;">
             <p style="margin:0; font-size:0.9rem; color:#065f46;">
@@ -450,10 +363,10 @@
         </div>
         <div id="reprocessDiagnostic" style="display:none; margin-bottom:1rem;"></div>
         <div style="display:flex; gap:0.5rem; flex-wrap:wrap;">
-            <button onclick="startReprocess()" id="reprocessStartBtn" class="btn" style="background:#059669; color:white;">
+            <button data-action="startReprocess" id="reprocessStartBtn" class="btn" style="background:#059669; color:white;">
                 🔄 Start Reprocessing
             </button>
-            <button onclick="loadDiagnostic()" class="btn" style="background:#3b82f6; color:white;">
+            <button data-action="loadDiagnostic" class="btn" style="background:#3b82f6; color:white;">
                 📊 Show Diagnostic
             </button>
         </div>
@@ -708,7 +621,7 @@ async function findDuplicates() {
                 const uploaded = rec.uploaded_date ? new Date(rec.uploaded_date).toLocaleDateString() : 'N/A';
                 const rowBg = isOldest ? '#f0fdf4' : '#fff';
                 html += '<tr style="background:' + rowBg + '; border-top:1px solid #f3f4f6;">';
-                html += '<td style="padding:0.5rem; text-align:center;"><input type="checkbox" class="dup-check" value="' + rec.application_id + '" ' + (isOldest ? '' : 'checked') + ' onchange="updateDupCount()"></td>';
+                html += '<td style="padding:0.5rem; text-align:center;"><input type="checkbox" class="dup-check" value="' + rec.application_id + '" ' + (isOldest ? '' : 'checked') + ' data-onchange="updateDupCount"></td>';
                 html += '<td style="padding:0.5rem;">' + rec.application_id + '</td>';
                 html += '<td style="padding:0.5rem;">' + (rec.first_name || '') + ' ' + (rec.last_name || '') + (isOldest ? ' <span style="background:#dcfce7;color:#166534;padding:0.1rem 0.4rem;border-radius:4px;font-size:0.75rem;">keep</span>' : '') + '</td>';
                 html += '<td style="padding:0.5rem;">' + (rec.high_school || 'N/A') + '</td>';
@@ -1080,7 +993,7 @@ async function openXlsxResolver() {
             html += '</div>';
             html += '<div style="display:flex; gap:0.5rem; align-items:center;">';
             html += '<input type="text" id="search-' + student.application_id + '" placeholder="Search XLSX by name..." value="' + displayName + '" style="padding:0.4rem 0.6rem; border:1px solid #d1d5db; border-radius:4px; font-size:0.85rem; width:200px;">';
-            html += '<button onclick="searchXlsxFor(' + student.application_id + ')" class="btn btn-primary" style="padding:0.4rem 0.8rem; font-size:0.85rem;">🔍 Search</button>';
+            html += '<button data-action="searchXlsxFor" data-arg=" + student.application_id + " class="btn btn-primary" style="padding:0.4rem 0.8rem; font-size:0.85rem;">🔍 Search</button>';
             html += '</div></div>';
             html += '<div id="results-' + student.application_id + '" style="padding:0.5rem 1rem; color:#6b7280; font-size:0.9rem;">Click Search to find matching XLSX records.</div>';
             html += '</div>';
@@ -1124,7 +1037,7 @@ async function searchXlsxFor(appId) {
             html += '<td style="padding:0.4rem; text-align:center;">' + (score.stem_interest != null ? score.stem_interest : '—') + '</td>';
             html += '<td style="padding:0.4rem; text-align:center;">' + (score.essay_video != null ? score.essay_video : '—') + '</td>';
             html += '<td style="padding:0.4rem; text-align:center;">' + (score.recommendation != null ? score.recommendation : '—') + '</td>';
-            html += '<td style="padding:0.4rem; text-align:center;"><button onclick="linkScore(' + appId + ', ' + score.score_id + ', this)" class="btn btn-success" style="padding:0.3rem 0.6rem; font-size:0.8rem;">🔗 Link</button></td>';
+            html += '<td style="padding:0.4rem; text-align:center;"><button data-action="linkScore" data-app-id="' + appId + '" data-score-id="' + score.score_id + '" class="btn btn-success" style="padding:0.3rem 0.6rem; font-size:0.8rem;">🔗 Link</button></td>';
             html += '</tr>';
         });
         html += '</table>';
@@ -1134,9 +1047,11 @@ async function searchXlsxFor(appId) {
     }
 }
 
-async function linkScore(appId, scoreId, btn) {
-    btn.textContent = 'Linking...';
-    btn.disabled = true;
+async function linkScore(el) {
+    const appId = el.dataset.appId;
+    const scoreId = el.dataset.scoreId;
+    el.textContent = 'Linking...';
+    el.disabled = true;
 
     try {
         const r = await fetch('/api/training/link-score', {
@@ -1540,9 +1455,9 @@ function renderAccuracyDashboard(data) {
     html += '<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.5rem;">';
     html += '<h4 style="margin:0; color:#374151;">Per-Student Results</h4>';
     html += '<div style="display:flex; gap:0.5rem;">';
-    html += '<button onclick="filterAccuracyTable(\'all\')" class="btn btn-secondary" style="font-size:0.8rem; padding:0.3rem 0.7rem;">All</button>';
-    html += '<button onclick="filterAccuracyTable(\'wrong\')" class="btn" style="font-size:0.8rem; padding:0.3rem 0.7rem; background:#fef2f2; color:#991b1b; border:1px solid #fecaca;">❌ Wrong Only</button>';
-    html += '<button onclick="filterAccuracyTable(\'accepted\')" class="btn" style="font-size:0.8rem; padding:0.3rem 0.7rem; background:#f0fdf4; color:#166534; border:1px solid #bbf7d0;">✓ Accepted Only</button>';
+    html += '<button data-action="filterAccuracyTable" data-arg="all" class="btn btn-secondary" style="font-size:0.8rem; padding:0.3rem 0.7rem;">All</button>';
+    html += '<button data-action="filterAccuracyTable" data-arg="wrong" class="btn" style="font-size:0.8rem; padding:0.3rem 0.7rem; background:#fef2f2; color:#991b1b; border:1px solid #fecaca;">❌ Wrong Only</button>';
+    html += '<button data-action="filterAccuracyTable" data-arg="accepted" class="btn" style="font-size:0.8rem; padding:0.3rem 0.7rem; background:#f0fdf4; color:#166534; border:1px solid #bbf7d0;">✓ Accepted Only</button>';
     html += '</div></div>';
 
     html += '<div style="max-height:500px; overflow-y:auto; border:1px solid #e5e7eb; border-radius:8px;">';

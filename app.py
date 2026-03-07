@@ -197,16 +197,15 @@ def add_security_headers(response):
     #                    nonce-approved scripts load additional scripts.
     #   script-src-elem: nonce-based — only <script> tags with the per-request
     #                    nonce (or same-origin src) are allowed.
-    #   script-src-attr: 'unsafe-inline' still required — 40+ templates use
-    #                    inline event handlers (onclick/onsubmit/onchange).
-    #                    TODO: refactor templates to addEventListener, then remove.
+    #   script-src-attr: 'none' — all inline handlers converted to data-action
+    #                    delegated listeners (Issue #77, #91).
     nonce = getattr(g, 'csp_nonce', '')
     response.headers['Content-Security-Policy'] = (
         "default-src 'self'; "
-        f"script-src 'self' 'nonce-{nonce}' 'strict-dynamic'; "
-        f"script-src-elem 'self' 'nonce-{nonce}'; "
-        "script-src-attr 'unsafe-inline'; "
-        "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
+        f"script-src 'self' 'nonce-{nonce}' 'strict-dynamic' https://cdn.tailwindcss.com; "
+        f"script-src-elem 'self' 'nonce-{nonce}' https://cdn.tailwindcss.com; "
+        "script-src-attr 'none'; "
+        "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdn.tailwindcss.com; "
         "font-src 'self' https://fonts.gstatic.com; "
         "img-src 'self' data: blob:; "
         "connect-src 'self'; "

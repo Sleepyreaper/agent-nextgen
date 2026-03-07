@@ -1,36 +1,36 @@
 {% extends "base.html" %}
 
-{% block title %}2026 Applicants - Application Evaluation{% endblock %}
+{% block title %}2026 Applicants — NextGen Evaluation{% endblock %}
+{% block page_title %}2026 Applicants{% endblock %}
 
 {% block content %}
-<div class="card">
-    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem;">
+<div class="card-nextgen">
+    <div class="flex items-center justify-between px-5 py-4 border-b border-emory-gray-200">
         <div>
-            <h2>👥 2026 Applicants</h2>
-            <p style="color: #6b7280; margin-top: 0.5rem;">
-                All applications sorted by last name. Status badges show upload, missing docs, processing, and completion.
-            </p>
+            <h2 class="font-heading text-xl font-semibold text-emory-dark">👥 2026 Applicants</h2>
+            <p class="text-sm text-emory-gray-500 mt-1">All applications sorted by last name</p>
         </div>
-        <a href="{{ url_for('upload.upload') }}" class="btn btn-primary">+ Add New Application</a>
+        <a href="{{ url_for('upload.upload') }}" class="btn-emory btn-emory-primary">+ New Application</a>
     </div>
 
     <!-- Search Bar -->
-    <form method="get" action="{{ url_for('applications.students') }}" style="margin-bottom: 2rem;">
-        <div style="display: flex; gap: 1rem;">
-            <input type="text" 
-                   name="search" 
-                   placeholder="Search by name or email..." 
+    <div class="px-5 py-4 border-b border-emory-gray-100">
+        <form method="get" action="{{ url_for('applications.students') }}" class="flex gap-3">
+            <input type="text" name="search" placeholder="Search by name or email..."
                    value="{{ search_query }}"
-                   style="flex: 1; padding: 0.75rem; border: 1px solid #d1d5db; border-radius: 5px; font-size: 1rem;">
-            <button type="submit" class="btn">🔍 Search</button>
+                   class="flex-1 px-4 py-2 rounded-lg border border-emory-gray-200 bg-white text-sm text-emory-dark
+                          placeholder-emory-gray-500 focus:outline-none focus:ring-2 focus:ring-emory-medium-blue/30 focus:border-emory-medium-blue">
+            <button type="submit" class="btn-emory btn-emory-secondary">🔍 Search</button>
             {% if search_query %}
-            <a href="{{ url_for('applications.students') }}" class="btn btn-secondary">Clear</a>
+            <a href="{{ url_for('applications.students') }}" class="btn-emory btn-emory-secondary">Clear</a>
             {% endif %}
-        </div>
-    </form>
+        </form>
+    </div>
 
     <!-- Student List Component -->
-    {% set students = students %}
-    {% include '_student_list.html' %}
+    <div class="px-0">
+        {% set students = students %}
+        {% include '_student_list.html' %}
+    </div>
 </div>
 {% endblock %}

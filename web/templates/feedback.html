@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 
-{% block title %}Feedback - NextGen{% endblock %}
+{% block title %}Feedback — NextGen{% endblock %}
+{% block page_title %}Feedback{% endblock %}
 
 {% block content %}
 <style>
@@ -19,28 +20,28 @@
     .badge-awaiting_github { background: #e0e7ff; color: #3730a3; }
     .badge-issue      { background: #fef3c7; color: #92400e; }
     .badge-feature    { background: #ede9fe; color: #5b21b6; }
-    .auto-refresh-toggle { display: flex; align-items: center; gap: 0.5rem; font-size: 0.85rem; color: #6b7280; }
+    .auto-refresh-toggle { display: flex; align-items: center; gap: 0.5rem; font-size: 0.8rem; color: var(--emory-gray-500); }
     .auto-refresh-toggle input { cursor: pointer; }
     .issue-list { list-style: none; padding: 0; margin: 0; }
-    .issue-list li { padding: 0.5rem 0; border-bottom: 1px solid #f3f4f6; display: flex; align-items: baseline; gap: 0.5rem; }
+    .issue-list li { padding: 0.5rem 0; border-bottom: 1px solid var(--emory-gray-100); display: flex; align-items: baseline; gap: 0.5rem; }
     .issue-list li:last-child { border-bottom: none; }
-    .issue-number { color: #6b7280; font-size: 0.85rem; min-width: 2.5rem; }
+    .issue-number { color: var(--emory-gray-500); font-size: 0.8rem; min-width: 2.5rem; }
     .issue-label { display: inline-block; padding: 0.1rem 0.4rem; border-radius: 9999px; font-size: 0.7rem; font-weight: 600; background: #e0e7ff; color: #3730a3; margin-left: 0.25rem; }
     .issue-tabs { display: flex; gap: 0; margin-bottom: 1rem; }
-    .issue-tab { padding: 0.5rem 1.25rem; cursor: pointer; border: 1px solid #e5e7eb; background: #f9fafb; font-weight: 600; font-size: 0.9rem; color: #6b7280; }
-    .issue-tab:first-child { border-radius: 6px 0 0 6px; }
-    .issue-tab:last-child { border-radius: 0 6px 6px 0; }
+    .issue-tab { padding: 0.5rem 1.25rem; cursor: pointer; border: 1px solid var(--emory-gray-200); background: var(--emory-gray-100); font-weight: 600; font-size: 0.85rem; color: var(--emory-gray-500); }
+    .issue-tab:first-child { border-radius: 0.5rem 0 0 0.5rem; }
+    .issue-tab:last-child { border-radius: 0 0.5rem 0.5rem 0; }
     .issue-tab.active { background: var(--emory-blue, #012169); color: white; border-color: var(--emory-blue, #012169); }
 </style>
 <div class="dashboard-container">
     <div class="section">
-        <h2 style="color: var(--emory-blue); margin-bottom: 0.5rem;">💬 Feedback</h2>
+        <h2 style="color: var(--emory-dark-blue); margin-bottom: 0.5rem;">💬 Feedback</h2>
         <p style="margin:0 0 0.5rem 0; font-size:0.9rem;"><a href="{{ url_for('feedback.feedback_admin') }}">View admin list</a></p>
         <p style="color: #6b7280; margin-bottom: 1rem;">Report an issue or request a feature; we'll open a GitHub issue automatically.</p>
         <form id="feedbackForm" style="display: grid; gap: 1rem; max-width: 600px;">
             <div>
                 <label for="feedbackType" style="font-weight: 600;">Type</label>
-                <select id="feedbackType" name="feedbackType" class="btn" style="background: white; color: var(--ink-navy); border: 1px solid #e5e7eb; width: 100%;">
+                <select id="feedbackType" name="feedbackType" class="btn" style="background: white; color: var(--emory-dark); border: 1px solid #e5e7eb; width: 100%;">
                     <option value="issue">Issue</option>
                     <option value="feature">Feature Request</option>
                 </select>
@@ -61,10 +62,10 @@
     </div>
 
     <div class="section" style="margin-top:2rem;">
-        <h3 style="color: var(--emory-blue); margin: 0 0 0.75rem 0;">📋 Roadmap & Fixes</h3>
+        <h3 style="color: var(--emory-dark-blue); margin: 0 0 0.75rem 0;">📋 Roadmap & Fixes</h3>
         <div class="issue-tabs">
-            <div class="issue-tab active" data-tab="open" onclick="switchIssueTab('open')">Planned</div>
-            <div class="issue-tab" data-tab="closed" onclick="switchIssueTab('closed')">Completed</div>
+            <div class="issue-tab active" data-tab="open" data-action="switchIssueTab" data-arg="open" >Planned</div>
+            <div class="issue-tab" data-tab="closed" data-action="switchIssueTab" data-arg="closed" >Completed</div>
         </div>
         <div id="issuesOpen"><p style="color: #9ca3af;">Loading...</p></div>
         <div id="issuesClosed" style="display:none;"><p style="color: #9ca3af;">Loading...</p></div>
@@ -72,7 +73,7 @@
 
     <div class="section" style="margin-top:2rem;">
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
-            <h3 style="color: var(--emory-blue); margin: 0;">Recent Feedback</h3>
+            <h3 style="color: var(--emory-dark-blue); margin: 0;">Recent Feedback</h3>
             <label class="auto-refresh-toggle">
                 <input type="checkbox" id="autoRefreshToggle"> Auto-refresh (30s)
                 <span id="refreshIndicator" style="display:none;">🔄</span>

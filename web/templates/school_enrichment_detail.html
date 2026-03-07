@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 
-{% block title %}School Enrichment Details - {{ school.school_name }}{% endblock %}
+{% block title %}{{ school.school_name }} — NextGen{% endblock %}
+{% block page_title %}School Details{% endblock %}
 
 {% block extra_css %}
 <style>
@@ -11,10 +12,10 @@
     }
 
     .school-header {
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        background: linear-gradient(135deg, var(--emory-dark-blue) 0%, var(--emory-medium-blue) 100%);
         color: white;
         padding: 2rem;
-        border-radius: 8px;
+        border-radius: 0.75rem;
         margin-bottom: 2rem;
         display: flex;
         justify-content: space-between;
@@ -24,19 +25,20 @@
     .school-header h1 {
         margin: 0;
         font-size: 2rem;
+        font-family: 'Crimson Pro', serif;
     }
 
     .school-header .info {
-        font-size: 0.95rem;
+        font-size: 0.875rem;
         opacity: 0.9;
     }
 
     .edit-button {
         background: white;
-        color: #667eea;
+        color: var(--emory-medium-blue);
         padding: 0.75rem 1.5rem;
         border: none;
-        border-radius: 6px;
+        border-radius: 0.5rem;
         cursor: pointer;
         font-weight: 600;
         transition: all 0.3s ease;
@@ -55,10 +57,10 @@
 
     .detail-section {
         background: white;
-        border: 1px solid #e5e7eb;
-        border-radius: 8px;
+        border: 1px solid var(--emory-gray-200);
+        border-radius: 0.75rem;
         padding: 1.5rem;
-        box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        box-shadow: 0 1px 3px rgba(0,0,0,0.06);
     }
 
     .section-title {
@@ -67,7 +69,7 @@
         margin-bottom: 1rem;
         color: #111827;
         padding-bottom: 0.75rem;
-        border-bottom: 2px solid #667eea;
+        border-bottom: 2px solid var(--emory-medium-blue);
     }
 
     .field-grid {
@@ -83,8 +85,8 @@
 
     .field-label {
         font-weight: 600;
-        color: #6b7280;
-        font-size: 0.85rem;
+        color: var(--emory-gray-500);
+        font-size: 0.8rem;
         text-transform: uppercase;
         margin-bottom: 0.5rem;
     }
@@ -93,12 +95,12 @@
         color: #111827;
         font-size: 1rem;
         padding: 0.75rem;
-        background: #f9fafb;
-        border-radius: 6px;
+        background: var(--emory-gray-100);
+        border-radius: 0.5rem;
     }
 
     .field-value.empty {
-        color: #9ca3af;
+        color: var(--emory-gray-300);
         font-style: italic;
     }
 
@@ -110,13 +112,13 @@
 
     .sources-list li {
         padding: 0.5rem;
-        background: #f9fafb;
-        border-radius: 4px;
+        background: var(--emory-gray-100);
+        border-radius: 0.375rem;
         margin-bottom: 0.5rem;
     }
 
     .sources-list a {
-        color: #667eea;
+        color: var(--emory-medium-blue);
         text-decoration: none;
         word-break: break-word;
     }
@@ -128,7 +130,7 @@
     .opportunity-score {
         font-size: 2rem;
         font-weight: bold;
-        color: #667eea;
+        color: var(--emory-medium-blue);
     }
 
     .modal {
@@ -151,7 +153,7 @@
     .modal-content {
         background: white;
         padding: 2rem;
-        border-radius: 8px;
+        border-radius: 0.75rem;
         width: 90%;
         max-width: 800px;
         max-height: 90vh;
@@ -173,7 +175,7 @@
         border: none;
         font-size: 1.5rem;
         cursor: pointer;
-        color: #6b7280;
+        color: var(--emory-gray-500);
     }
 
     .form-group {
@@ -192,9 +194,9 @@
     .form-group textarea,
     .form-group select {
         padding: 0.75rem;
-        border: 1px solid #e5e7eb;
-        border-radius: 6px;
-        font-size: 0.95rem;
+        border: 1px solid var(--emory-gray-200);
+        border-radius: 0.5rem;
+        font-size: 0.875rem;
         font-family: inherit;
     }
 
@@ -209,15 +211,15 @@
         justify-content: flex-end;
         margin-top: 2rem;
         padding-top: 1.5rem;
-        border-top: 1px solid #e5e7eb;
+        border-top: 1px solid var(--emory-gray-200);
     }
 
     .btn-primary {
-        background: #667eea;
+        background: var(--emory-medium-blue);
         color: white;
         padding: 0.75rem 1.5rem;
         border: none;
-        border-radius: 6px;
+        border-radius: 0.5rem;
         cursor: pointer;
         font-weight: 600;
         transition: all 0.3s ease;
@@ -228,11 +230,11 @@
     }
 
     .btn-secondary {
-        background: #e5e7eb;
+        background: var(--emory-gray-200);
         color: #111827;
         padding: 0.75rem 1.5rem;
         border: none;
-        border-radius: 6px;
+        border-radius: 0.5rem;
         cursor: pointer;
         font-weight: 600;
     }
@@ -245,7 +247,7 @@
         display: inline-block;
         padding: 0.5rem 1rem;
         border-radius: 12px;
-        font-size: 0.85rem;
+        font-size: 0.8rem;
         font-weight: 600;
     }
 
@@ -267,7 +269,7 @@
     .back-link {
         display: inline-block;
         margin-bottom: 1.5rem;
-        color: #667eea;
+        color: var(--emory-medium-blue);
         text-decoration: none;
         font-weight: 500;
     }
@@ -277,13 +279,13 @@
     }
 
     .timestamp {
-        color: #9ca3af;
-        font-size: 0.85rem;
+        color: var(--emory-gray-300);
+        font-size: 0.8rem;
     }
 
     .alert {
         padding: 1rem;
-        border-radius: 6px;
+        border-radius: 0.5rem;
         margin-bottom: 1.5rem;
     }
 
@@ -309,10 +311,11 @@
 
 {% block content %}
 <div class="school-detail-container">
-    <a href="{{ url_for('schools.schools_dashboard') }}" class="back-link">← Back to Schools</a>
+    <a href="{{ url_for('schools.schools_dashboard') }}" class="text-sm text-emory-medium-blue hover:text-emory-dark-blue mb-4 inline-block">← Back to Schools</a>
 
-    <div class="school-header">
-        <div>
+    <div class="school-header" style="background: linear-gradient(135deg, var(--emory-dark-blue) 0%, var(--emory-medium-blue) 100%);">
+        <img src="{{ url_for('static', filename='img/school-campus.jpg') }}" style="position:absolute; inset:0; width:100%; height:100%; object-fit:cover; opacity:0.1;">
+        <div style="position:relative; z-index:2;">
             <h1>{{ school.school_name }}</h1>
             <div class="info">
                 {{ school.school_district or 'Unknown District' }} &bull; {{ school.state_code or 'Unknown State' }}
@@ -332,11 +335,11 @@
             </div>
         </div>
         <div style="display: flex; gap: 0.75rem; flex-wrap: wrap;">
-            <button class="edit-button" onclick="triggerAnalysis()" id="analyzeBtn">
+            <button class="edit-button" data-action="triggerAnalysis" id="analyzeBtn">
                 🔬 Analyze School
             </button>
-            <button class="edit-button" onclick="showEditModal()">✎ Edit Data</button>
-            <button class="edit-button" onclick="deleteSchool()" style="background: #ef4444; color: white;">🗑 Delete School</button>
+            <button class="edit-button" data-action="showEditModal">✎ Edit Data</button>
+            <button class="edit-button" data-action="deleteSchool" style="background: #ef4444; color: white;">🗑 Delete School</button>
         </div>
     </div>
 
@@ -393,7 +396,7 @@
         </div>
 
         <!-- School Analysis: Fields Used for School Evaluation -->
-        <div class="detail-section" style="border-left: 4px solid #667eea;">
+        <div class="detail-section" style="border-left: 4px solid var(--emory-medium-blue);">
             <div class="section-title">🔬 School Profile <small style="font-weight: normal; color: #6b7280; font-size: 0.75rem;">(School Data Scientist)</small></div>
             <p style="color: #6b7280; font-size: 0.9rem; margin-bottom: 1.5rem;">
                 These are the fields evaluated from NCES database records. Data is imported via CSV upload on the Training page.
@@ -421,7 +424,7 @@
                     <div class="field-label">School URL</div>
                     <div class="field-value {% if not school.school_url %}empty{% endif %}">
                         {% if school.school_url %}
-                        <a href="{{ school.school_url }}" target="_blank" style="color: #667eea;">{{ school.school_url }}</a>
+                        <a href="{{ school.school_url }}" target="_blank" style="color: var(--emory-medium-blue);">{{ school.school_url }}</a>
                         {% if school.school_url_verified %}<span style="color: #10b981; margin-left: 0.5rem;">✓ Verified</span>{% endif %}
                         {% else %}—{% endif %}
                     </div>
@@ -503,7 +506,7 @@
         <div class="detail-section" style="border-left: 4px solid #06b6d4;">
             <div class="section-title" style="display: flex; justify-content: space-between; align-items: center;">
                 <span>🌊 School Context <small style="font-weight: normal; color: #6b7280; font-size: 0.75rem;">(School Context Analyzer)</small></span>
-                <button class="edit-button" onclick="triggerMoanaValidation()" id="moanaBtn" style="font-size: 0.85rem; padding: 0.5rem 1rem;">
+                <button class="edit-button" data-action="triggerMoanaValidation" id="moanaBtn" style="font-size: 0.85rem; padding: 0.5rem 1rem;">
                     🌊 Validate School Context
                 </button>
             </div>
@@ -678,7 +681,7 @@
     <div class="modal-content">
         <div class="modal-header">
             <span>Edit School Enrichment Data</span>
-            <button class="close-button" onclick="closeEditModal()">✕</button>
+            <button class="close-button" data-action="closeEditModal">✕</button>
         </div>
         <form id="editForm">
             <div class="form-group">
@@ -799,7 +802,7 @@
             </div>
 
             <div class="form-actions">
-                <button type="button" class="btn-secondary" onclick="closeEditModal()">Cancel</button>
+                <button type="button" class="btn-secondary" data-action="closeEditModal">Cancel</button>
                 <button type="submit" class="btn-primary">Save Changes</button>
             </div>
         </form>

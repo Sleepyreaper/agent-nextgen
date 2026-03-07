@@ -1,305 +1,285 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" class="h-full">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="csrf-token" content="{{ csrf_token() }}">
-    <title>{% block title %}NextGen - Application Evaluation System{% endblock %}</title>
+    <title>{% block title %}NextGen — Application Evaluation System{% endblock %}</title>
+
+    <!-- Favicon -->
+    <link rel="icon" type="image/svg+xml" href="{{ url_for('static', filename='img/favicon.svg') }}">
+
+    <!-- Fonts: Crimson Pro (headings) + Open Sans (body) — Emory brand -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600;9..144,700&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <style>
-        * { margin: 0; padding: 0; box-sizing: border-box; }
-        :root {
-            --ink-navy: #0b1f36;
-            --ink-slate: #49576a;
-            --champagne: #c8a15a;
-            --accent-teal: #0b7f8f;
-            --pearl: #f4f6f8;
-            --card-shadow: 0 18px 40px rgba(15, 23, 42, 0.08);
-            --soft-shadow: 0 6px 16px rgba(15, 23, 42, 0.08);
+    <link href="https://fonts.googleapis.com/css2?family=Crimson+Pro:wght@400;600;700&family=Open+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+
+    <!-- Tailwind CSS CDN (no build step needed) -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script nonce="{{ csp_nonce }}">
+    tailwind.config = {
+        theme: {
+            extend: {
+                colors: {
+                    emory: {
+                        'dark-blue': '#012169',
+                        'medium-blue': '#007DBA',
+                        'light-blue': '#41B6E6',
+                        'gold': '#F2A900',
+                        'gold-light': '#FFCD59',
+                        'green': '#348338',
+                        'dark': '#101820',
+                        'gray': { 100: '#F2F2F0', 200: '#D0D0CE', 300: '#B1B3B3', 500: '#63666A', 700: '#424447' },
+                        'red': '#DA291C',
+                    }
+                },
+                fontFamily: {
+                    'heading': ['"Crimson Pro"', 'ui-serif', 'Georgia', 'serif'],
+                    'body': ['"Open Sans"', 'ui-sans-serif', 'system-ui', 'sans-serif'],
+                },
+            }
         }
-        body {
-            font-family: 'IBM Plex Sans', 'Segoe UI', Arial, sans-serif;
-            background-color: var(--pearl);
-            color: var(--ink-navy);
-            line-height: 1.6;
-            background-image:
-                radial-gradient(circle at 10% 10%, rgba(11, 127, 143, 0.08), transparent 45%),
-                radial-gradient(circle at 90% 0%, rgba(200, 161, 90, 0.08), transparent 40%),
-                linear-gradient(180deg, rgba(255, 255, 255, 0.9) 0%, rgba(244, 246, 248, 0.95) 45%, rgba(244, 246, 248, 1) 100%);
-        }
-        h1, h2, h3 {
-            font-family: 'Fraunces', 'Georgia', serif;
-            letter-spacing: -0.02em;
-        }
-        .container {
-            max-width: 1240px;
-            margin: 0 auto;
-            padding: 20px;
-        }
-        header {
-            background: linear-gradient(120deg, #0b1f36 0%, #153a5c 60%, #0b7f8f 100%);
-            color: white;
-            padding: 2.75rem 2.5rem;
-            margin-bottom: 2rem;
-            border-bottom: 4px solid var(--champagne);
-            border-radius: 18px;
-            box-shadow: var(--card-shadow);
-        }
-        header h1 {
-            font-size: 2.35rem;
-            margin-bottom: 0.35rem;
-            font-weight: 700;
-        }
-        header p {
-            font-size: 1rem;
-            opacity: 0.92;
-            margin-bottom: 1.75rem;
-        }
-        nav {
-            display: flex;
-            gap: 1rem;
-            flex-wrap: wrap;
-        }
-        nav a {
-            color: white;
-            text-decoration: none;
-            padding: 0.6rem 1.2rem;
-            border-radius: 4px;
-            font-size: 0.95rem;
-            background: rgba(255,255,255,0.12);
-            transition: all 0.3s ease;
-            border: 1px solid rgba(255,255,255,0.22);
-        }
-        nav a:hover {
-            background: var(--champagne);
-            color: var(--ink-navy);
-            border-color: var(--champagne);
-        }
-        .card {
-            background: white;
-            padding: 2rem;
-            border-radius: 14px;
-            box-shadow: var(--soft-shadow);
-            border-left: 4px solid var(--accent-teal);
-            margin-bottom: 1.5rem;
-            animation: fadeUp 0.6s ease;
-        }
-        .btn {
-            display: inline-block;
-            padding: 0.75rem 1.5rem;
-            background: var(--ink-navy);
-            color: white;
-            text-decoration: none;
-            border-radius: 4px;
-            border: none;
-            cursor: pointer;
-            font-size: 1rem;
-            transition: all 0.3s ease;
-            font-weight: 500;
-        }
-        .btn:hover {
-            background: #153a5c;
-            box-shadow: 0 8px 18px rgba(11, 31, 54, 0.2);
-        }
-        .btn-success { background: #10b981; }
-        .btn-success:hover { background: #059669; }
-        .btn-danger { background: #ef4444; }
-        .btn-danger:hover { background: #dc2626; }
-        .btn-secondary { background: var(--accent-teal); }
-        .btn-secondary:hover { background: #0b6b79; }
-        .btn-primary { background: var(--champagne); color: var(--ink-navy); }
-        .btn-primary:hover { background: #d8b36f; }
-        .alert {
-            padding: 1rem;
-            border-radius: 4px;
-            margin-bottom: 1rem;
-        }
-        .alert-success {
-            background: #d1fae5;
-            color: #065f46;
-            border-left: 4px solid #10b981;
-        }
-        .alert-error {
-            background: #fee2e2;
-            color: #991b1b;
-            border-left: 4px solid #ef4444;
-        }
-        table {
-            width: 100%;
-            border-collapse: collapse;
-            margin-top: 1rem;
-        }
-        th, td {
-            padding: 1rem;
-            text-align: left;
-            border-bottom: 1px solid #e5e7eb;
-        }
-        th {
-            background: #f9fafb;
-            font-weight: 600;
-        }
-        tr:hover {
-            background: #f9fafb;
-        }
-        .badge {
-            display: inline-block;
-            padding: 0.25rem 0.75rem;
-            border-radius: 12px;
-            font-size: 0.875rem;
-            font-weight: 600;
-        }
-        .version-badge {
-            display: inline-flex;
-            align-items: center;
-            gap: 0.35rem;
-            padding: 0.35rem 0.75rem;
-            border-radius: 999px;
-            font-size: 0.85rem;
-            font-weight: 600;
-            background: rgba(11, 127, 143, 0.12);
-            color: var(--accent-teal);
-            border: 1px solid rgba(11, 127, 143, 0.25);
-        }
-        .badge-pending { background: #fef3c7; color: #92400e; }
-        .badge-evaluated { background: #dbeafe; color: #1e40af; }
-        .badge-completed { background: #d1fae5; color: #065f46; }
-        .badge-approved { background: #d1fae5; color: #065f46; }
-        .badge-rejected { background: #fee2e2; color: #991b1b; }
-        .grade-table {
-            font-size: 0.9rem;
-            border-radius: 10px;
-            overflow: hidden;
-            min-width: 640px;
-        }
-        .grade-table-wrap {
-            overflow-x: auto;
-            border-radius: 12px;
-            border: 1px solid #e5e7eb;
-            background: #ffffff;
-        }
-        .grade-table th,
-        .grade-table td {
-            padding: 0.65rem 0.8rem;
-            vertical-align: top;
-        }
-        .grade-table tbody tr:nth-child(even) {
-            background: #f8fafc;
-        }
-        .grade-table th {
-            position: sticky;
-            top: 0;
-            z-index: 1;
-        }
-        .grade-cell {
-            text-align: center;
-            font-weight: 700;
-            color: #0f172a;
-        }
-        .grade-badge {
-            display: inline-flex;
-            align-items: center;
-            justify-content: center;
-            min-width: 2.2rem;
-            padding: 0.2rem 0.5rem;
-            border-radius: 999px;
-            background: #e2e8f0;
-            color: #0f172a;
-            font-weight: 700;
-        }
-        .level-badge {
-            display: inline-flex;
-            align-items: center;
-            padding: 0.2rem 0.5rem;
-            border-radius: 999px;
-            background: rgba(11, 127, 143, 0.12);
-            color: #0b7f8f;
-            font-weight: 600;
-        }
-        .context-table th,
-        .context-table td {
-            padding: 0.5rem 0.7rem;
-        }
-        .spinner {
-            width: 40px;
-            height: 40px;
-            border: 4px solid #e5e7eb;
-            border-top-color: #667eea;
-            border-radius: 50%;
-            animation: spin 1s linear infinite;
-        }
-        @keyframes spin {
-            to { transform: rotate(360deg); }
-        }
-        .stats {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-            gap: 1rem;
-            margin-bottom: 2rem;
-        }
-        .stat-card {
-            background: white;
-            padding: 1.5rem;
-            border-radius: 12px;
-            box-shadow: var(--soft-shadow);
-        }
-        .stat-value {
-            font-size: 2.5rem;
-            font-weight: bold;
-            color: var(--accent-teal);
-        }
-        .stat-label {
-            color: #6b7280;
-            margin-top: 0.5rem;
-        }
-        @keyframes fadeUp {
-            from { opacity: 0; transform: translateY(12px); }
-            to { opacity: 1; transform: translateY(0); }
-        }
-        @media (prefers-reduced-motion: reduce) {
-            .card { animation: none; }
-        }
-    </style>
+    }
+    </script>
+
+    <!-- NextGen custom styles -->
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/nextgen.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/agents.css') }}">
+
     {% block extra_css %}{% endblock %}
 </head>
-<body>
-    <div class="container">
-        <header>
-            <div style="display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap;">
-                <h1 style="margin-bottom: 0;">NextGen Application Evaluation</h1>
-                <span class="version-badge">Version {{ app_version }}</span>
+
+<body class="h-full bg-emory-gray-100 font-body text-emory-dark">
+
+    <!-- ═══ SIDEBAR ═══ -->
+    <aside id="sidebar" class="sidebar fixed inset-y-0 left-0 z-30 flex flex-col bg-emory-dark-blue overflow-y-auto">
+        <!-- Logo / Header -->
+        <div class="sidebar-logo flex items-center gap-3 px-5 py-4 border-b border-white/10">
+            <div class="flex-shrink-0 w-9 h-9 rounded-lg bg-emory-gold flex items-center justify-center shadow-lg">
+                <span class="text-emory-dark font-bold text-sm font-heading">NG</span>
             </div>
-            <p>Secure, evidence-based reviews powered by Azure AI</p>
-            <nav>
-                <a href="{{ url_for('index') }}">📊 Dashboard</a>
-                <a href="{{ url_for('applications.students') }}">👥 2026 Applicants</a>
-                <a href="{{ url_for('testing.test_data') }}">🧪 Test Data</a>
-                <a href="{{ url_for('training.training') }}">📚 Training</a>
-                <a href="{{ url_for('telemetry.telemetry_dashboard') }}">📡 Telemetry</a>
-                <a href="{{ url_for('admin.data_management') }}">🗄️ Data Management</a>
-                <a href="{{ url_for('upload.upload') }}">📤 Upload Application</a>
-                <a href="{{ url_for('feedback.submit_feedback') }}">📝 Feedback</a>
-                <a href="{{ url_for('testing.test') }}" style="color: #fbbf24; font-weight: bold;">⚡ Quick Test</a>
+            <div class="sidebar-header-text">
+                <div class="text-white font-semibold text-sm leading-tight">NextGen</div>
+                <div class="text-white/50 text-xs">Evaluation System</div>
+            </div>
+        </div>
+        <div class="gradient-line mx-3 mt-0.5"></div>
+
+        <!-- Navigation -->
+        <nav class="flex-1 px-3 py-4 space-y-1">
+            <!-- Main -->
+            <div class="sidebar-section-label text-[0.65rem] uppercase tracking-wider text-white/35 font-semibold px-3 mb-2">Main</div>
+            <a href="{{ url_for('index') }}" class="sidebar-link {% if request.endpoint == 'index' %}active{% endif %}">
+                <span class="nav-icon">📊</span><span class="nav-label">Dashboard</span>
+            </a>
+            <a href="{{ url_for('applications.students') }}" class="sidebar-link {% if request.endpoint and 'applications.' in request.endpoint %}active{% endif %}">
+                <span class="nav-icon">👥</span><span class="nav-label">2026 Applicants</span>
+            </a>
+            <a href="{{ url_for('upload.upload') }}" class="sidebar-link {% if request.endpoint == 'upload.upload' %}active{% endif %}">
+                <span class="nav-icon">📤</span><span class="nav-label">Upload Application</span>
+            </a>
+
+            <!-- Training & Testing -->
+            <div class="sidebar-section-label text-[0.65rem] uppercase tracking-wider text-white/35 font-semibold px-3 mt-5 mb-2">Training & Testing</div>
+            <a href="{{ url_for('training.training') }}" class="sidebar-link {% if request.endpoint and 'training.' in request.endpoint %}active{% endif %}">
+                <span class="nav-icon">📚</span><span class="nav-label">Training Data</span>
+            </a>
+            <a href="{{ url_for('testing.test') }}" class="sidebar-link {% if request.endpoint == 'testing.test' %}active{% endif %}">
+                <span class="nav-icon">⚡</span><span class="nav-label">Quick Test</span>
+            </a>
+            <a href="{{ url_for('testing.test_data') }}" class="sidebar-link {% if request.endpoint == 'testing.test_data' %}active{% endif %}">
+                <span class="nav-icon">🧪</span><span class="nav-label">Test Data</span>
+            </a>
+
+            <!-- Data -->
+            <div class="sidebar-section-label text-[0.65rem] uppercase tracking-wider text-white/35 font-semibold px-3 mt-5 mb-2">Data</div>
+            <a href="{{ url_for('schools.schools_dashboard') }}" class="sidebar-link {% if request.endpoint and 'schools.' in request.endpoint %}active{% endif %}">
+                <span class="nav-icon">🏫</span><span class="nav-label">Schools</span>
+            </a>
+            <a href="{{ url_for('admin.data_management') }}" class="sidebar-link {% if request.endpoint == 'admin.data_management' %}active{% endif %}">
+                <span class="nav-icon">🗄️</span><span class="nav-label">Data Management</span>
+            </a>
+
+            <!-- System -->
+            <div class="sidebar-section-label text-[0.65rem] uppercase tracking-wider text-white/35 font-semibold px-3 mt-5 mb-2">System</div>
+            <a href="{{ url_for('telemetry.telemetry_dashboard') }}" class="sidebar-link {% if request.endpoint and 'telemetry.' in request.endpoint %}active{% endif %}">
+                <span class="nav-icon">📡</span><span class="nav-label">Telemetry</span>
+            </a>
+            <a href="{{ url_for('feedback.submit_feedback') }}" class="sidebar-link {% if request.endpoint and 'feedback.' in request.endpoint %}active{% endif %}">
+                <span class="nav-icon">📝</span><span class="nav-label">Feedback</span>
+            </a>
+        </nav>
+
+        <!-- Footer -->
+        <div class="px-4 py-3 border-t border-white/10">
+            <!-- Decorative DNA helix -->
+            <svg width="100%" height="24" viewBox="0 0 200 24" preserveAspectRatio="none" fill="none" xmlns="http://www.w3.org/2000/svg" class="mb-2 opacity-20" aria-hidden="true">
+                <path d="M0 12 Q25 2 50 12 T100 12 T150 12 T200 12" stroke="white" stroke-width="1" fill="none"/>
+                <path d="M0 12 Q25 22 50 12 T100 12 T150 12 T200 12" stroke="white" stroke-width="1" fill="none"/>
+                <circle cx="50" cy="6" r="2" fill="#F2A900" fill-opacity="0.5"/>
+                <circle cx="150" cy="18" r="2" fill="#41B6E6" fill-opacity="0.5"/>
+            </svg>
+            <div class="sidebar-footer-text text-white/40 text-[0.7rem]">
+                <div>Emory Dept. of Human Genetics</div>
+                <div class="mt-0.5">v{{ app_version }}</div>
+            </div>
+        </div>
+    </aside>
+
+    <!-- ═══ MOBILE OVERLAY ═══ -->
+    <div class="mobile-overlay" data-action="toggleSidebar"></div>
+
+    <!-- ═══ MAIN CONTENT ═══ -->
+    <div id="main-content" class="main-content flex flex-col min-h-screen">
+        <!-- Top Bar -->
+        <header class="topbar sticky top-0 z-20 flex items-center justify-between px-6">
+            <!-- Left: hamburger + breadcrumb -->
+            <div class="flex items-center gap-3">
+                <button data-action="toggleSidebar" class="text-emory-gray-500 hover:text-emory-dark p-1 rounded-lg hover:bg-emory-gray-100 transition md:hidden" aria-label="Toggle menu">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"/></svg>
+                </button>
+                <button data-action="toggleSidebarDesktop" class="hidden md:block text-emory-gray-500 hover:text-emory-dark p-1 rounded-lg hover:bg-emory-gray-100 transition" aria-label="Collapse sidebar">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"/></svg>
+                </button>
+                <h1 class="font-heading text-lg font-semibold text-emory-dark truncate">{% block page_title %}NextGen{% endblock %}</h1>
+            </div>
+
+            <!-- Right: user menu -->
+            <div class="flex items-center gap-3">
+                <!-- Dark mode toggle -->
+                <button data-action="toggleDarkMode" class="p-1.5 rounded-lg text-emory-gray-500 hover:text-emory-dark hover:bg-emory-gray-100 transition" aria-label="Toggle dark mode" title="Toggle dark mode">
+                    <svg id="darkModeIcon" class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z"/>
+                    </svg>
+                </button>
                 {% if session.get('authenticated') %}
-                <a href="{{ url_for('auth.logout') }}" style="margin-left: auto; background: rgba(239,68,68,0.18); border-color: rgba(239,68,68,0.35); color: #fca5a5;">🔒 Logout</a>
+                <span class="text-sm text-emory-gray-500">{{ session.get('username', '') }}</span>
+                <a href="{{ url_for('auth.logout') }}" class="btn-emory btn-emory-sm btn-emory-secondary" style="color: var(--emory-red);">Sign Out</a>
                 {% endif %}
-            </nav>
+            </div>
         </header>
 
+        <!-- Flash Messages -->
         {% with messages = get_flashed_messages(with_categories=true) %}
-            {% if messages %}
-                {% for category, message in messages %}
-                    <div class="alert alert-{{ category }}">{{ message }}</div>
-                {% endfor %}
-            {% endif %}
+        {% if messages %}
+        <div class="px-6 pt-4 space-y-2">
+            {% for category, message in messages %}
+            <div class="flash-{{ category }} px-4 py-3 rounded-lg text-sm font-medium" role="alert">
+                {{ message }}
+            </div>
+            {% endfor %}
+        </div>
+        {% endif %}
         {% endwith %}
 
-        {% block content %}{% endblock %}
+        <!-- Page Content -->
+        <main class="flex-1 px-6 py-6 fade-in">
+            {% block content %}{% endblock %}
+        </main>
+
+        <!-- Footer -->
+        <footer class="px-6 py-4 border-t border-emory-gray-200 text-xs text-emory-gray-500">
+            <div class="flex items-center justify-between">
+                <span>© 2026 Emory University · Department of Human Genetics</span>
+                <span>NextGen Evaluation System v{{ app_version }}</span>
+            </div>
+        </footer>
     </div>
 
+    <!-- ═══ SCRIPTS ═══ -->
     <script nonce="{{ csp_nonce }}">
-    // Auto-include CSRF token on all mutating fetch() requests — MUST load before child template JS
+    /* ── Sidebar toggle ─────────────────────────────────────── */
+    function toggleSidebar() {
+        document.getElementById('sidebar').classList.toggle('mobile-open');
+    }
+    function toggleSidebarDesktop() {
+        const sidebar = document.getElementById('sidebar');
+        const main = document.getElementById('main-content');
+        sidebar.classList.toggle('collapsed');
+        main.classList.toggle('sidebar-collapsed');
+    }
+
+    /* ── Dark mode toggle ───────────────────────────────────── */
+    function toggleDarkMode() {
+        document.documentElement.classList.toggle('dark');
+        const isDark = document.documentElement.classList.contains('dark');
+        localStorage.setItem('nextgen-dark-mode', isDark ? 'true' : 'false');
+        const icon = document.getElementById('darkModeIcon');
+        if (icon) {
+            icon.innerHTML = isDark
+                ? '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z"/>'
+                : '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z"/>';
+        }
+    }
+    // Restore dark mode preference
+    if (localStorage.getItem('nextgen-dark-mode') === 'true') {
+        document.documentElement.classList.add('dark');
+        var di = document.getElementById('darkModeIcon');
+        if (di) di.innerHTML = '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z"/>';
+    }
+
+    /* ── Delegated event handler for data-action attributes ── */
+    /* Replaces inline onclick= handlers for CSP compliance (#77, #91) */
+    document.addEventListener('click', function(e) {
+        const el = e.target.closest('[data-action]');
+        if (!el) return;
+        const action = el.dataset.action;
+        // Accordion toggle
+        if (action === 'toggleAccordion') {
+            el.classList.toggle('active');
+            const body = el.nextElementSibling;
+            if (body) body.classList.toggle('open');
+            return;
+        }
+        // Modal close
+        if (action === 'closeModal') {
+            const modal = el.dataset.modal ? document.getElementById(el.dataset.modal) : el.closest('.fixed');
+            if (modal) { modal.classList.add('hidden'); modal.classList.remove('flex'); }
+            return;
+        }
+        // Modal open
+        if (action === 'openModal') {
+            const modal = document.getElementById(el.dataset.modal);
+            if (modal) { modal.classList.remove('hidden'); modal.classList.add('flex'); }
+            return;
+        }
+        // Click a file input target
+        if (action === 'clickTarget') {
+            var target = document.getElementById(el.dataset.target);
+            if (target) target.click();
+            return;
+        }
+        // Clear a file input
+        if (action === 'clearFileInput') {
+            var input = document.getElementById(el.dataset.target);
+            if (input) { input.value = ''; }
+            if (typeof updateFileCount === 'function') updateFileCount();
+            return;
+        }
+        // Generic function call with optional data-arg
+        if (typeof window[action] === 'function') {
+            e.preventDefault();
+            const arg = el.dataset.arg;
+            arg !== undefined ? window[action](arg) : window[action](el);
+        }
+    });
+    // Delegated change handler
+    document.addEventListener('change', function(e) {
+        const el = e.target.closest('[data-onchange]');
+        if (!el) return;
+        const fn = el.dataset.onchange;
+        if (typeof window[fn] === 'function') window[fn](el);
+    });
+    // Delegated submit handler
+    document.addEventListener('submit', function(e) {
+        const form = e.target.closest('[data-onsubmit]');
+        if (!form) return;
+        e.preventDefault();
+        const fn = form.dataset.onsubmit;
+        if (typeof window[fn] === 'function') window[fn](e, form);
+    });
+
+    /* ── CSRF auto-include on fetch — MUST load before child template JS ── */
     (function() {
         const _origFetch = window.fetch;
         window.fetch = function(url, opts) {
@@ -310,13 +290,9 @@
                 if (token) {
                     opts.headers = opts.headers || {};
                     if (opts.headers instanceof Headers) {
-                        if (!opts.headers.has('X-CSRFToken')) {
-                            opts.headers.set('X-CSRFToken', token.content);
-                        }
+                        if (!opts.headers.has('X-CSRFToken')) opts.headers.set('X-CSRFToken', token.content);
                     } else {
-                        if (!opts.headers['X-CSRFToken']) {
-                            opts.headers['X-CSRFToken'] = token.content;
-                        }
+                        if (!opts.headers['X-CSRFToken']) opts.headers['X-CSRFToken'] = token.content;
                     }
                 }
             }
@@ -324,6 +300,7 @@
         };
     })();
     </script>
+
     {% block extra_js %}{% endblock %}
 </body>
 </html>

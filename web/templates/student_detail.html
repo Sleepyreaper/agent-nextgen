@@ -1,338 +1,370 @@
 {% extends "base.html" %}
 
-{% block title %}Student Dashboard - {{ summary.name }}{% endblock %}
+{% block title %}{{ summary.applicant_name or summary.name or "Unknown" }} — NextGen Evaluation{% endblock %}
+{% block page_title %}Student Review{% endblock %}
 
 {% block extra_css %}
 <style>
-    body { background: #f4f7fa; }
-    .dashboard-container { max-width: 1100px; margin: 2rem auto; padding: 2rem; background: #fff; border-radius: 14px; box-shadow: 0 2px 16px rgba(0,0,0,0.07); }
-    .dashboard-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 2rem; }
-    .student-info { flex: 1; }
-    .student-info h1 { font-size: 2.5rem; margin-bottom: 0.3rem; color: #1e293b; }
-    .student-info p { color: #475569; margin-bottom: 0.2rem; }
-    .dashboard-badges { text-align: right; }
-    .badge { display: inline-block; padding: 0.4rem 0.9rem; border-radius: 4px; font-size: 0.95rem; font-weight: 500; margin-left: 0.5rem; }
-    .badge-training { background: #dbeafe; color: #1e40af; }
-    .badge-selected { background: #d1fae5; color: #065f46; }
-    .dashboard-stats { display: flex; gap: 2rem; margin-bottom: 2.5rem; }
-    .stat-card { flex: 1; background: #f1f5f9; border-radius: 10px; padding: 1.5rem; text-align: center; box-shadow: 0 1px 4px rgba(0,0,0,0.03); }
-    .stat-value { font-size: 2.2rem; font-weight: bold; color: #0f172a; }
-    .stat-label { color: #64748b; font-size: 1rem; margin-top: 0.5rem; }
-    .section { margin-bottom: 2.5rem; }
-    .section-title { font-size: 1.4rem; color: #334155; border-bottom: 2px solid #38bdf8; padding-bottom: 0.4rem; margin-bottom: 1.2rem; }
-    .agent-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 1.5rem; }
-    .agent-card { background: #f8fafc; border-radius: 10px; box-shadow: 0 1px 4px rgba(0,0,0,0.04); padding: 1.2rem 1.5rem; }
-    .agent-card.agent-card-wide { grid-column: 1 / -1; }
-    .agent-card h3 { margin-top: 0; color: #2563eb; font-size: 1.15rem; margin-bottom: 0.7rem; }
-    .agent-summary { color: #334155; font-size: 1.05rem; margin-bottom: 0.7rem; }
-    .agent-details { color: #64748b; font-size: 0.98rem; }
-    .score-badge { display: inline-block; background: #38bdf8; color: #fff; border-radius: 4px; padding: 0.2rem 0.7rem; font-size: 1.1rem; font-weight: 600; margin-left: 0.5rem; }
-    /* Grade table styling */
-    .grade-table-wrapper { max-height: 420px; overflow-y: auto; margin-top: 0.8rem; border: 1px solid #e2e8f0; border-radius: 6px; }
-    .grade-table { width: 100%; border-collapse: collapse; font-size: 0.92rem; }
-    .grade-table th { background: #f1f5f9; color: #334155; padding: 0.5rem 0.7rem; text-align: left; font-weight: 600; position: sticky; top: 0; border-bottom: 2px solid #cbd5e1; }
-    .grade-table td { padding: 0.4rem 0.7rem; border-bottom: 1px solid #f1f5f9; color: #475569; }
-    .grade-table tr:hover { background: #f8fafc; }
-    .rapunzel-perspective { margin-top: 0.8rem; padding: 0.8rem; background: #fefce8; border-left: 3px solid #eab308; border-radius: 4px; font-size: 0.98rem; color: #334155; line-height: 1.6; }
-    .rapunzel-stats { display: flex; gap: 1.2rem; flex-wrap: wrap; margin-top: 0.6rem; }
-    .rapunzel-stat { background: #eff6ff; padding: 0.3rem 0.8rem; border-radius: 4px; font-size: 0.9rem; color: #1e40af; }
+    /* ── Animated Score Ring ── */
+    .score-ring { position: relative; width: 140px; height: 140px; }
+    .score-ring svg { transform: rotate(-90deg); }
+    .score-ring-bg { fill: none; stroke: #e5e7eb; stroke-width: 8; }
+    .score-ring-fill { fill: none; stroke-width: 8; stroke-linecap: round;
+        stroke-dasharray: 408; stroke-dashoffset: 408;
+        animation: ringFill 1.5s ease-out forwards; }
+    .score-ring-text { position: absolute; inset: 0; display: flex; flex-direction: column;
+        align-items: center; justify-content: center; }
+    @keyframes ringFill { to { stroke-dashoffset: var(--ring-offset); } }
+
+    /* ── Verdict Glow ── */
+    .verdict-strong { --glow: rgba(16, 185, 129, 0.15); }
+    .verdict-moderate { --glow: rgba(245, 158, 11, 0.15); }
+    .verdict-weak { --glow: rgba(239, 68, 68, 0.15); }
+
+    /* ── Accordion ── */
+    .accordion-trigger { cursor: pointer; user-select: none; }
+    .accordion-trigger:hover { background: rgba(0,0,0,0.02); }
+    .accordion-body { max-height: 0; overflow: hidden; transition: max-height 0.4s ease, padding 0.3s ease; padding: 0; }
+    .accordion-body.open { max-height: 2000px; padding: 1.25rem; }
+    .accordion-chevron { transition: transform 0.3s ease; }
+    .accordion-body.open ~ .accordion-trigger .accordion-chevron,
+    .accordion-trigger.active .accordion-chevron { transform: rotate(180deg); }
+
+    /* ── Agent stripe ── */
+    .agent-stripe { width: 4px; border-radius: 4px; flex-shrink: 0; }
+
+    /* ── Grade table ── */
+    .grade-table-wrapper { max-height: 500px; overflow-y: auto; }
+    .grade-table-wrapper::-webkit-scrollbar { width: 6px; }
+    .grade-table-wrapper::-webkit-scrollbar-thumb { background: #d0d0ce; border-radius: 3px; }
 </style>
 {% endblock %}
 
-{# ── Resolve each agent explicitly so stale/unknown keys never leak through ── #}
-{% set merlin  = agent_results.get('merlin')  if agent_results else None %}
-{% set aurora  = agent_results.get('aurora')  if agent_results else None %}
-{% set tiana   = agent_results.get('tiana')   if agent_results else None %}
+{# ── Resolve agents ── #}
+{% set merlin   = agent_results.get('merlin')   if agent_results else None %}
+{% set aurora   = agent_results.get('aurora')   if agent_results else None %}
+{% set tiana    = agent_results.get('tiana')    if agent_results else None %}
 {% set rapunzel = agent_results.get('rapunzel') if agent_results else None %}
-{% set mulan   = agent_results.get('mulan')   if agent_results else None %}
-{% set moana   = agent_results.get('moana')   if agent_results else None %}
+{% set mulan    = agent_results.get('mulan')    if agent_results else None %}
+{% set moana    = agent_results.get('moana')    if agent_results else None %}
+
+{# ── Compute verdict class ── #}
+{% set verdict_class = 'verdict-weak' %}
+{% if nextgen_match is defined and nextgen_match is not none %}
+    {% if nextgen_match >= 60 %}{% set verdict_class = 'verdict-strong' %}
+    {% elif nextgen_match >= 30 %}{% set verdict_class = 'verdict-moderate' %}
+    {% endif %}
+{% endif %}
 
 {% block content %}
-<div class="dashboard-container">
-    {# ════════════════════  HEADER  ════════════════════ #}
-    <div class="dashboard-header">
-        <div class="student-info">
-            <h1>{{ summary.name }}</h1>
-            <p style="color: #64748b; font-size: 0.95rem; margin-bottom: 0.5rem;">Student evaluation dashboard — scores, agent results, and assessment details</p>
-            <p>📧 {{ summary.email }}</p>
-            <p>📅 Uploaded: {{ summary.uploaded_date.strftime('%B %d, %Y') if summary.uploaded_date else 'Unknown' }}</p>
-        </div>
-        <div class="dashboard-badges">
-            {% if summary.is_training %}
-                <span class="badge badge-training">Training Data</span>
-            {% endif %}
-            {% if summary.was_selected %}
-                <span class="badge badge-selected">Selected</span>
-            {% endif %}
-        </div>
-    </div>
+<div class="max-w-5xl mx-auto">
 
-    {# ════════════════════  SCORE CARDS  ════════════════════ #}
-    <div class="dashboard-stats">
-        <div class="stat-card" style="{% if nextgen_match is defined and nextgen_match is not none %}{% if nextgen_match >= 60 %}background:linear-gradient(135deg,#d1fae5,#a7f3d0); border:2px solid #10b981;{% elif nextgen_match >= 30 %}background:linear-gradient(135deg,#fef9c3,#fde68a); border:2px solid #f59e0b;{% else %}background:linear-gradient(135deg,#fee2e2,#fecaca); border:2px solid #ef4444;{% endif %}{% endif %}">
-            <div class="stat-value" style="font-size:2.6rem;">
-                {% if nextgen_match is defined and nextgen_match is not none %}
-                    {{ nextgen_match }}%
-                {% else %}
-                    N/A
-                {% endif %}
-            </div>
-            <div class="stat-label" style="font-weight:600; font-size:1.1rem;">Next Gen Match</div>
-            <div style="font-size:0.8rem; color:#64748b; margin-top:0.3rem;">~30 spots / 1,000+ applicants</div>
-        </div>
-        <div class="stat-card">
-            <div class="stat-value">{{ merlin.overall_score if merlin and merlin.overall_score else 'N/A' }}</div>
-            <div class="stat-label">Overall Score</div>
-        </div>
-        <div class="stat-card">
-            <div class="stat-value">{{ merlin.recommendation if merlin and merlin.recommendation else 'N/A' }}</div>
-            <div class="stat-label">Recommendation</div>
-        </div>
-    </div>
+    {# ══════════════  BACK NAV  ══════════════ #}
+    <a href="{{ url_for('applications.students') }}" class="inline-flex items-center gap-1.5 text-sm text-emory-gray-500 hover:text-emory-dark-blue transition mb-5 group">
+        <svg class="w-4 h-4 transition group-hover:-translate-x-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/></svg>
+        All Students
+    </a>
 
-    {# ════════════════════  EXECUTIVE SUMMARY  ════════════════════ #}
-    <div class="section">
-        <div class="section-title">🧙 Executive Summary</div>
-        {% set merlin_text = None %}
-        {% if merlin %}
-            {% if merlin.human_summary %}
-                {% set merlin_text = merlin.human_summary %}
-            {% elif merlin.executive_summary %}
-                {% set merlin_text = merlin.executive_summary %}
-            {% elif merlin.rationale %}
-                {% set merlin_text = merlin.rationale %}
-            {% elif merlin.summary %}
-                {% set merlin_text = merlin.summary %}
-            {% endif %}
-        {% endif %}
-        {% if merlin_text %}
-            <div style="font-size:1.15rem; background:#f1f5f9; border-radius:8px; padding:1.2rem; border-left:4px solid #6366f1; color:#334155; line-height:1.7;">
-                {{ merlin_text | nl2br }}
-            </div>
-            {% if merlin and merlin.confidence %}
-            <div style="margin-top:0.5rem; color:#64748b; font-size:0.9rem;">
-                <strong>Confidence:</strong> {{ merlin.confidence }}
-                {% if merlin.key_strengths %} · <strong>Strengths:</strong> {{ merlin.key_strengths }}{% endif %}
-                {% if merlin.key_risks %} · <strong>Risks:</strong> {{ merlin.key_risks }}{% endif %}
-            </div>
-            {% endif %}
-        {% else %}
-            <div class="agent-summary" style="color:#94a3b8;">Student has not been evaluated yet.</div>
-        {% endif %}
-    </div>
-
-    {# ════════════════════  AGENT SUMMARIES  ════════════════════ #}
-    <div class="section">
-        <div class="section-title">Agent Summaries</div>
-        <div class="agent-cards">
-
-            {# ── Application Reader ── #}
-            {% if tiana and (tiana.human_summary or tiana.essay_summary or tiana.essaysummary) %}
-            <div class="agent-card">
-                <h3>👸 Application Reader {% if tiana.readiness_score or tiana.readinessscore %}<span class="score-badge">{{ tiana.readiness_score or tiana.readinessscore }}</span>{% endif %}</h3>
-                <div class="agent-summary">{{ tiana.human_summary or tiana.essay_summary or tiana.essaysummary }}</div>
-            </div>
-            {% endif %}
-
-            {# ── Grade Analyzer ── #}
-            {% if rapunzel and (rapunzel.human_summary or rapunzel.summary or rapunzel.full_analysis) %}
-            <div class="agent-card agent-card-wide">
-                <h3>💇 Grade Analyzer {% if rapunzel.gpa %}<span class="score-badge">GPA: {{ rapunzel.gpa }}</span>{% endif %}{% if rapunzel.course_rigor_index %}<span class="score-badge" style="background:#8b5cf6;">Rigor: {{ rapunzel.course_rigor_index }}</span>{% endif %}</h3>
-
-                {# Stats row #}
-                <div class="rapunzel-stats">
-                    {% if rapunzel.academic_strength %}<div class="rapunzel-stat"><strong>Academic Strength:</strong> {{ rapunzel.academic_strength }}</div>{% endif %}
-                    {% if rapunzel.transcript_quality %}<div class="rapunzel-stat"><strong>Transcript Quality:</strong> {{ rapunzel.transcript_quality }}</div>{% endif %}
-                    {% if rapunzel.confidence_level %}<div class="rapunzel-stat"><strong>Confidence:</strong> {{ rapunzel.confidence_level }}</div>{% endif %}
-                    {% if rapunzel.detected_format %}<div class="rapunzel-stat"><strong>Format:</strong> {{ rapunzel.detected_format }}</div>{% endif %}
+    {# ══════════════════════════════════════════════════════════════
+       THE VERDICT — The first thing a reviewer sees
+       ══════════════════════════════════════════════════════════════ #}
+    <div class="bg-white rounded-2xl shadow-lg border border-emory-gray-200 overflow-hidden mb-8 {{ verdict_class }}" style="box-shadow: 0 0 0 1px rgba(0,0,0,0.04), 0 8px 40px var(--glow, rgba(0,0,0,0.06));">
+        {# Top: student identity bar #}
+        <div class="relative overflow-hidden" style="background: linear-gradient(135deg, var(--emory-dark-blue) 0%, #1a3a6b 50%, var(--emory-medium-blue) 100%);">
+            <img src="{{ url_for('static', filename='img/dna-abstract.jpg') }}" class="absolute inset-0 w-full h-full object-cover opacity-[0.07]" alt="">
+            <div class="relative z-10 px-8 py-5 flex items-center justify-between">
+                <div>
+                    <div class="text-white/40 text-xs font-semibold uppercase tracking-widest mb-1">NextGen Scholarship Candidate</div>
+                    <h1 class="font-heading text-3xl font-bold text-white tracking-tight">{{ summary.applicant_name or summary.name or "Unknown" }}</h1>
+                    <div class="flex items-center gap-4 mt-1.5 text-white/50 text-sm">
+                        <span>{{ summary.email }}</span>
+                        <span>{{ summary.uploaded_date.strftime('%B %d, %Y') if summary.uploaded_date else '' }}</span>
+                    </div>
                 </div>
+                <div class="flex flex-col items-end gap-1.5">
+                    {% if summary.is_training_example or summary.is_training %}<span class="text-xs px-3 py-1 rounded-full bg-white/10 text-white/70 border border-white/20">Training Data</span>{% endif %}
+                    {% if summary.was_selected %}<span class="text-xs px-3 py-1 rounded-full bg-emerald-500/20 text-emerald-200 border border-emerald-400/30">✓ Was Selected</span>{% endif %}
+                </div>
+            </div>
+        </div>
 
-                {# Grade perspective narrative #}
-                {% if rapunzel.rapunzel_perspective %}
-                <div class="rapunzel-perspective">{{ rapunzel.rapunzel_perspective | nl2br }}</div>
-                {% elif rapunzel.human_summary or rapunzel.summary %}
-                <div class="agent-summary">{{ rapunzel.human_summary or rapunzel.summary }}</div>
+        {# Middle: the big verdict #}
+        <div class="px-8 py-8 flex items-center gap-10 flex-wrap">
+            {# Animated score ring #}
+            <div class="score-ring flex-shrink-0">
+                {% set score_val = nextgen_match if (nextgen_match is defined and nextgen_match is not none) else 0 %}
+                {% set ring_offset = 408 - (408 * score_val / 100) %}
+                {% if score_val >= 60 %}{% set ring_color = '#10b981' %}
+                {% elif score_val >= 30 %}{% set ring_color = '#f59e0b' %}
+                {% else %}{% set ring_color = '#ef4444' %}{% endif %}
+                <svg viewBox="0 0 140 140" style="--ring-offset: {{ ring_offset }};">
+                    <circle class="score-ring-bg" cx="70" cy="70" r="65"/>
+                    <circle class="score-ring-fill" cx="70" cy="70" r="65" stroke="{{ ring_color }}"/>
+                </svg>
+                <div class="score-ring-text">
+                    <span class="font-heading text-4xl font-bold text-emory-dark">{% if nextgen_match is defined and nextgen_match is not none %}{{ nextgen_match }}{% else %}—{% endif %}</span>
+                    <span class="text-xs text-emory-gray-500 font-semibold uppercase tracking-wider mt-0.5">Match %</span>
+                </div>
+            </div>
+
+            {# Verdict text #}
+            <div class="flex-1 min-w-0">
+                {% if merlin and merlin.recommendation %}
+                <div class="font-heading text-2xl font-bold text-emory-dark mb-2">{{ merlin.recommendation }}</div>
                 {% endif %}
 
-                {# Grade table #}
+                {% set merlin_text = None %}
+                {% if merlin %}
+                    {% if merlin.human_summary %}{% set merlin_text = merlin.human_summary %}
+                    {% elif merlin.executive_summary %}{% set merlin_text = merlin.executive_summary %}
+                    {% elif merlin.rationale %}{% set merlin_text = merlin.rationale %}
+                    {% elif merlin.summary %}{% set merlin_text = merlin.summary %}{% endif %}
+                {% endif %}
+                {% if merlin_text %}
+                <p class="text-sm text-emory-gray-700 leading-relaxed line-clamp-4">{{ merlin_text }}</p>
+                {% else %}
+                <p class="text-sm text-emory-gray-500 italic">Evaluation pending — run the agent pipeline to generate a verdict.</p>
+                {% endif %}
+
+                {# Quick metrics row #}
+                <div class="flex flex-wrap gap-3 mt-4">
+                    {% if merlin and merlin.overall_score %}
+                    <div class="px-3 py-1.5 rounded-lg bg-emory-dark-blue/5 border border-emory-dark-blue/10">
+                        <span class="text-xs text-emory-gray-500">Score</span>
+                        <span class="ml-1.5 font-heading text-lg font-bold text-emory-dark-blue">{{ merlin.overall_score }}</span>
+                    </div>
+                    {% endif %}
+                    {% if rapunzel and rapunzel.gpa %}
+                    <div class="px-3 py-1.5 rounded-lg bg-amber-50 border border-amber-200">
+                        <span class="text-xs text-amber-600">GPA</span>
+                        <span class="ml-1.5 font-heading text-lg font-bold text-amber-700">{{ rapunzel.gpa }}</span>
+                    </div>
+                    {% endif %}
+                    {% if rapunzel and rapunzel.course_rigor_index %}
+                    <div class="px-3 py-1.5 rounded-lg bg-purple-50 border border-purple-200">
+                        <span class="text-xs text-purple-600">Rigor</span>
+                        <span class="ml-1.5 font-heading text-lg font-bold text-purple-700">{{ rapunzel.course_rigor_index }}/5</span>
+                    </div>
+                    {% endif %}
+                    {% if merlin and merlin.confidence %}
+                    <div class="px-3 py-1.5 rounded-lg bg-blue-50 border border-blue-200">
+                        <span class="text-xs text-blue-600">Confidence</span>
+                        <span class="ml-1.5 text-sm font-semibold text-blue-700">{{ merlin.confidence }}</span>
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+
+    {# ══════════════════════════════════════════════════════════════
+       AGENT DEEP DIVES — Expandable accordion cards
+       ══════════════════════════════════════════════════════════════ #}
+    <div class="space-y-3 mb-8">
+        <h2 class="font-heading text-lg font-semibold text-emory-dark mb-1">Agent Analysis</h2>
+        <div class="stagger-in space-y-3">
+
+        {# ── Tiana: Application Reader ── #}
+        {% if tiana and (tiana.human_summary or tiana.essay_summary or tiana.essaysummary) %}
+        <div class="bg-white rounded-xl border border-emory-gray-200 overflow-hidden shadow-sm">
+            <div class="accordion-trigger flex items-center gap-3 px-5 py-4" data-action="toggleAccordion">
+                <div class="agent-stripe h-10" style="background: #F2A900;"></div>
+                <span class="agent-avatar agent-avatar-tiana">📝</span>
+                <div class="flex-1 min-w-0">
+                    <div class="font-semibold text-sm text-emory-dark">Tiana · Application Reader</div>
+                    <div class="text-xs text-emory-gray-500 truncate">{{ (tiana.human_summary or tiana.essay_summary or tiana.essaysummary)[:80] }}...</div>
+                </div>
+                {% if tiana.readiness_score or tiana.readinessscore %}<span class="badge-nextgen bg-amber-100 text-amber-700 text-xs">{{ tiana.readiness_score or tiana.readinessscore }}/100</span>{% endif %}
+                <svg class="accordion-chevron w-5 h-5 text-emory-gray-300 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
+            </div>
+            <div class="accordion-body border-t border-emory-gray-100">
+                <p class="text-sm text-emory-dark leading-relaxed">{{ tiana.human_summary or tiana.essay_summary or tiana.essaysummary }}</p>
+            </div>
+        </div>
+        {% endif %}
+
+        {# ── Rapunzel: Grade Analyzer ── #}
+        {% if rapunzel and (rapunzel.human_summary or rapunzel.summary or rapunzel.full_analysis or rapunzel.rapunzel_perspective) %}
+        <div class="bg-white rounded-xl border border-emory-gray-200 overflow-hidden shadow-sm">
+            <div class="accordion-trigger active flex items-center gap-3 px-5 py-4" data-action="toggleAccordion">
+                <div class="agent-stripe h-10" style="background: #9d174d;"></div>
+                <span class="agent-avatar agent-avatar-rapunzel">🎓</span>
+                <div class="flex-1 min-w-0">
+                    <div class="font-semibold text-sm text-emory-dark">Rapunzel · Grade Analyzer</div>
+                    <div class="text-xs text-emory-gray-500">{{ rapunzel.transcript_quality or '' }} · {{ rapunzel.detected_format or 'Transcript analysis' }}</div>
+                </div>
+                <div class="flex gap-1.5">
+                    {% if rapunzel.gpa %}<span class="badge-nextgen bg-amber-100 text-amber-700 text-xs font-bold">{{ rapunzel.gpa }}</span>{% endif %}
+                    {% if rapunzel.course_rigor_index %}<span class="badge-nextgen bg-purple-100 text-purple-700 text-xs">R{{ rapunzel.course_rigor_index }}</span>{% endif %}
+                </div>
+                <svg class="accordion-chevron w-5 h-5 text-emory-gray-300 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
+            </div>
+            <div class="accordion-body open border-t border-emory-gray-100">
+                {# Perspective callout #}
+                {% if rapunzel.rapunzel_perspective %}
+                <div class="bg-gradient-to-r from-amber-50 to-orange-50 border border-amber-200 rounded-lg p-4 mb-4">
+                    <div class="flex items-center gap-2 mb-2">
+                        <span class="text-lg">👑</span>
+                        <span class="text-xs font-bold text-amber-700 uppercase tracking-widest">Rapunzel's Perspective</span>
+                    </div>
+                    <div class="text-sm text-emory-dark leading-relaxed">{{ rapunzel.rapunzel_perspective | nl2br }}</div>
+                </div>
+                {% elif rapunzel.human_summary or rapunzel.summary %}
+                <p class="text-sm text-emory-dark leading-relaxed mb-4">{{ rapunzel.human_summary or rapunzel.summary }}</p>
+                {% endif %}
+
+                {# Transcript table #}
                 {% if rapunzel.standardized_transcript_rows and rapunzel.standardized_transcript_rows | length > 0 %}
-                <div class="grade-table-wrapper">
-                    <table class="grade-table">
-                        <thead><tr>
-                            <th>Year</th><th>Course</th><th>Level</th><th>Grade</th><th>Numeric</th><th>Credits</th>
-                        </tr></thead>
+                <div class="grade-table-wrapper rounded-lg border border-emory-gray-200 overflow-hidden">
+                    <table class="table-nextgen">
+                        <thead><tr><th>Yr</th><th>Course</th><th>Level</th><th>Grade</th><th>%</th><th>Cr</th></tr></thead>
                         <tbody>
                         {% for row in rapunzel.standardized_transcript_rows %}
-                            <tr>
-                                <td>{{ row.year or row.Year or '' }}</td>
-                                <td>{{ row.course or row.Course or '' }}</td>
-                                <td>{{ row.level or row.Level or '' }}</td>
-                                <td>{{ row.grade or row.Grade or '' }}</td>
-                                <td>{{ row.numeric or row.Numeric or '' }}</td>
-                                <td>{{ row.credits or row.Credits or '' }}</td>
-                            </tr>
+                        <tr>
+                            <td class="text-emory-gray-500">{{ row.year or row.Year or '' }}</td>
+                            <td class="font-medium">{{ row.course or row.Course or '' }}</td>
+                            <td>{% set lvl = (row.level or row.Level or '')|upper %}{% if 'AP' in lvl %}<span class="inline-block px-2 py-0.5 rounded text-[0.7rem] font-bold bg-purple-100 text-purple-700">AP</span>{% elif 'HONOR' in lvl %}<span class="inline-block px-2 py-0.5 rounded text-[0.7rem] font-bold bg-blue-100 text-blue-700">HON</span>{% elif 'DE' in lvl or 'DUAL' in lvl %}<span class="inline-block px-2 py-0.5 rounded text-[0.7rem] font-bold bg-emerald-100 text-emerald-700">DE</span>{% else %}<span class="text-emory-gray-400 text-xs">{{ row.level or row.Level or '—' }}</span>{% endif %}</td>
+                            <td class="font-bold">{{ row.grade or row.Grade or '' }}</td>
+                            <td class="text-emory-gray-500">{{ row.numeric or row.Numeric or '' }}</td>
+                            <td class="text-emory-gray-400">{{ row.credits or row.Credits or '' }}</td>
+                        </tr>
                         {% endfor %}
                         </tbody>
                     </table>
                 </div>
                 {% elif rapunzel.standardized_transcript %}
-                <div class="grade-table-wrapper" style="padding: 0.8rem; white-space: pre-wrap; font-family: monospace; font-size: 0.88rem;">
-                    {{ rapunzel.standardized_transcript }}
-                </div>
-                {% elif rapunzel.grade_table_markdown %}
-                <div class="grade-table-wrapper" style="padding: 0.8rem; white-space: pre-wrap; font-family: monospace; font-size: 0.88rem;">
-                    {{ rapunzel.grade_table_markdown }}
-                </div>
+                <pre class="text-xs text-emory-dark whitespace-pre-wrap font-mono bg-emory-gray-100 rounded-lg p-4">{{ rapunzel.standardized_transcript }}</pre>
                 {% endif %}
 
-                {# Notable patterns #}
                 {% if rapunzel.notable_patterns %}
-                <div class="agent-details" style="margin-top: 0.6rem;">
-                    <strong>Notable Patterns:</strong>
-                    {% if rapunzel.notable_patterns is string %}
-                        {{ rapunzel.notable_patterns }}
-                    {% elif rapunzel.notable_patterns is iterable %}
-                        {{ rapunzel.notable_patterns | join(', ') }}
-                    {% endif %}
+                <div class="mt-4 flex flex-wrap gap-2">
+                    <span class="text-xs font-semibold text-emory-gray-500 mr-1">Patterns:</span>
+                    {% if rapunzel.notable_patterns is string %}<span class="badge-nextgen bg-emory-gray-100 text-emory-dark text-xs">{{ rapunzel.notable_patterns }}</span>
+                    {% elif rapunzel.notable_patterns is iterable %}{% for p in rapunzel.notable_patterns %}<span class="badge-nextgen bg-emory-gray-100 text-emory-dark text-xs">{{ p }}</span>{% endfor %}{% endif %}
                 </div>
                 {% endif %}
             </div>
-            {% endif %}
+        </div>
+        {% endif %}
 
-            {# ── Recommendation Reader ── #}
-            {% if mulan %}
+        {# ── Mulan: Recommendation Reader ── #}
+        {% if mulan %}
+        <div class="bg-white rounded-xl border border-emory-gray-200 overflow-hidden shadow-sm">
+            <div class="accordion-trigger flex items-center gap-3 px-5 py-4" data-action="toggleAccordion">
+                <div class="agent-stripe h-10" style="background: #991b1b;"></div>
+                <span class="agent-avatar agent-avatar-mulan">💌</span>
+                <div class="flex-1 min-w-0">
+                    <div class="font-semibold text-sm text-emory-dark">Mulan · Recommendation Reader</div>
+                    <div class="text-xs text-emory-gray-500">{% if mulan is sequence %}{{ mulan | length }} recommendation letter{{ 's' if mulan|length > 1 }}{% else %}Analysis complete{% endif %}</div>
+                </div>
+                <svg class="accordion-chevron w-5 h-5 text-emory-gray-300 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
+            </div>
+            <div class="accordion-body border-t border-emory-gray-100">
                 {% if mulan is mapping and (mulan.human_summary or mulan.summary) %}
-                <div class="agent-card">
-                    <h3>🗡️ Recommendation Reader {% if mulan.endorsement_strength or mulan.endorsementstrength %}<span class="score-badge">{{ mulan.endorsement_strength or mulan.endorsementstrength }}/100</span>{% endif %}</h3>
-                    <div class="agent-summary">{{ mulan.human_summary or mulan.summary }}</div>
-                </div>
-                {% elif mulan is sequence and mulan | length > 0 %}
-                <div class="agent-card">
-                    <h3>🗡️ Recommendation Reader <span class="score-badge">{{ mulan | length }} rec{{ 's' if mulan | length > 1 }}</span></h3>
-                    {% for rec in mulan %}
-                    <div class="agent-summary" style="{% if not loop.last %}border-bottom:1px solid #e2e8f0; padding-bottom:0.5rem; margin-bottom:0.5rem;{% endif %}">
-                        <strong>{{ rec.recommender_name or rec.recommendername or 'Recommender' }}</strong>
-                        {% if rec.recommender_role or rec.recommenderrole %}<span style="color:#64748b;"> ({{ rec.recommender_role or rec.recommenderrole }})</span>{% endif %}
-                        {% if rec.endorsement_strength or rec.endorsementstrength %} · Strength: {{ rec.endorsement_strength or rec.endorsementstrength }}/100{% endif %}
-                        {% if rec.summary %}<br>{{ rec.summary }}{% endif %}
+                <p class="text-sm text-emory-dark leading-relaxed">{{ mulan.human_summary or mulan.summary }}</p>
+                {% elif mulan is sequence %}
+                {% for rec in mulan %}
+                <div class="{% if not loop.last %}border-b border-emory-gray-100 pb-3 mb-3{% endif %}">
+                    <div class="flex items-center gap-2">
+                        <span class="font-semibold text-sm text-emory-dark">{{ rec.recommender_name or rec.recommendername or 'Recommender' }}</span>
+                        {% if rec.recommender_role or rec.recommenderrole %}<span class="text-xs text-emory-gray-500">{{ rec.recommender_role or rec.recommenderrole }}</span>{% endif %}
+                        {% if rec.endorsement_strength or rec.endorsementstrength %}<span class="ml-auto badge-nextgen bg-red-50 text-red-700 text-xs">{{ rec.endorsement_strength or rec.endorsementstrength }}/100</span>{% endif %}
                     </div>
-                    {% endfor %}
+                    {% if rec.summary %}<p class="text-sm text-emory-dark mt-1.5 leading-relaxed">{{ rec.summary }}</p>{% endif %}
                 </div>
+                {% endfor %}
                 {% endif %}
-            {% endif %}
-
-            {# ── School Context ── #}
-            {% if moana and (moana.human_summary or moana.comparison_notes or moana.comparisonnotes or moana.context) %}
-            <div class="agent-card agent-card-wide">
-                <h3>🌊 School Context</h3>
-                <div class="agent-summary">{{ moana.human_summary or moana.comparison_notes or moana.comparisonnotes or moana.context }}</div>
             </div>
-            {% endif %}
-
-            {# ── Results Formatter ── #}
-            {% if aurora and aurora.human_summary %}
-            <div class="agent-card">
-                <h3>🌅 Results Formatter</h3>
-                <div class="agent-summary">{{ aurora.human_summary }}</div>
-            </div>
-            {% endif %}
-
         </div>
-    </div>
+        {% endif %}
 
-    {# ════════════════════  TRAINING INSIGHTS  ════════════════════ #}
-    <div class="section">
-        <div class="section-title">📊 Training Insights</div>
+        {# ── Moana: School Context ── #}
+        {% if moana and (moana.human_summary or moana.comparison_notes or moana.comparisonnotes or moana.context) %}
+        <div class="bg-white rounded-xl border border-emory-gray-200 overflow-hidden shadow-sm">
+            <div class="accordion-trigger flex items-center gap-3 px-5 py-4" data-action="toggleAccordion">
+                <div class="agent-stripe h-10" style="background: #115e59;"></div>
+                <span class="agent-avatar agent-avatar-moana">🌊</span>
+                <div class="flex-1 min-w-0">
+                    <div class="font-semibold text-sm text-emory-dark">Moana · School Context</div>
+                    <div class="text-xs text-emory-gray-500">{% if school_context and school_context.school_name %}{{ school_context.school_name }}{% else %}Environmental analysis{% endif %}</div>
+                </div>
+                <svg class="accordion-chevron w-5 h-5 text-emory-gray-300 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
+            </div>
+            <div class="accordion-body border-t border-emory-gray-100">
+                <p class="text-sm text-emory-dark leading-relaxed">{{ moana.human_summary or moana.comparison_notes or moana.comparisonnotes or moana.context }}</p>
+            </div>
+        </div>
+        {% endif %}
+
+        {# ── Milo: Training Insights ── #}
         {% if milo_insights and milo_insights.status == 'success' %}
-            {% if milo_insights.summary %}
-                <p><strong>Summary:</strong> {{ milo_insights.summary }}</p>
-            {% endif %}
-            {% if milo_insights.differentiators %}
-                <strong>Differentiators:</strong>
-                <ul>
-                    {% for item in milo_insights.differentiators %}
-                        <li>{{ item }}</li>
-                    {% endfor %}
-                </ul>
-            {% endif %}
-            {% if milo_insights.average_merlin_score is defined %}
-                <p><em>Average evaluation score for training set: {{ milo_insights.average_merlin_score }}</em></p>
-            {% endif %}
-        {% else %}
-            <p>Insights unavailable.</p>
-        {% endif %}
-
-        {% if milo_alignment and milo_alignment.status == 'success' %}
-            <div style="margin-top:1rem; padding:1rem; background:#f0fdf4; border-left:4px solid #10b981;">
-                <h4 style="margin:0 0 0.5rem 0; color:#065f46;">AI Alignment Analysis</h4>
-                {% if milo_alignment.match_score is defined %}
-                    <p><strong>Match score:</strong> {{ milo_alignment.match_score }} / 100</p>
-                {% endif %}
-                {% if milo_alignment.nextgen_align_score is defined %}
-                    <p><strong>NextGen align score:</strong> {{ milo_alignment.nextgen_align_score }} / 100</p>
-                {% endif %}
-                {% if milo_alignment.explanation %}
-                    <p><em>{{ milo_alignment.explanation }}</em></p>
-                {% endif %}
+        <div class="bg-white rounded-xl border border-emory-gray-200 overflow-hidden shadow-sm">
+            <div class="accordion-trigger flex items-center gap-3 px-5 py-4" data-action="toggleAccordion">
+                <div class="agent-stripe h-10" style="background: #065f46;"></div>
+                <span class="agent-avatar agent-avatar-milo">📊</span>
+                <div class="flex-1 min-w-0">
+                    <div class="font-semibold text-sm text-emory-dark">Milo · Data Scientist</div>
+                    <div class="text-xs text-emory-gray-500">Pattern analysis vs. training set</div>
+                </div>
+                <svg class="accordion-chevron w-5 h-5 text-emory-gray-300 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
             </div>
+            <div class="accordion-body border-t border-emory-gray-100">
+                {% if milo_insights.summary %}<p class="text-sm text-emory-dark mb-3">{{ milo_insights.summary }}</p>{% endif %}
+                {% if milo_insights.differentiators %}
+                <div class="flex flex-wrap gap-2 mb-2">{% for d in milo_insights.differentiators %}<span class="badge-nextgen bg-emerald-50 text-emerald-700 text-xs">{{ d }}</span>{% endfor %}</div>
+                {% endif %}
+                {% if milo_insights.average_merlin_score is defined %}<p class="text-xs text-emory-gray-500">Training avg: {{ milo_insights.average_merlin_score }}</p>{% endif %}
+            </div>
+        </div>
         {% endif %}
+    </div>{# close stagger-in #}
+    </div>{# close agent analysis section #}
+
+    {# ══════════════  APPLICATION ESSAY  ══════════════ #}
+    {% if summary.application_text or summary.text_preview or "" %}
+    <div class="bg-white rounded-xl border border-emory-gray-200 overflow-hidden shadow-sm mb-8">
+        <div class="accordion-trigger flex items-center gap-3 px-5 py-4" data-action="toggleAccordion">
+            <div class="agent-stripe h-10" style="background: #5b21b6;"></div>
+            <span class="agent-avatar agent-avatar-belle">📖</span>
+            <div class="flex-1"><div class="font-semibold text-sm text-emory-dark">Application Essay</div></div>
+            <svg class="accordion-chevron w-5 h-5 text-emory-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
+        </div>
+        <div class="accordion-body border-t border-emory-gray-100">
+            <p class="text-sm text-emory-dark whitespace-pre-wrap leading-relaxed">{{ summary.application_text or summary.text_preview or "" }}</p>
+        </div>
+    </div>
+    {% endif %}
+
+    {# ══════════════  FOOTER ACTIONS  ══════════════ #}
+    <div class="flex items-center justify-between pb-8">
+        <a href="{{ url_for('applications.students') }}" class="btn-emory btn-emory-secondary">← All Students</a>
+        <button data-action="openModal" data-modal="detailDeleteModal" class="text-sm text-red-400 hover:text-red-600 transition">Delete this student...</button>
     </div>
 
-    {# ════════════════════  ACTIONS  ════════════════════ #}
-    <div class="section" style="display:flex; justify-content:flex-end; gap:1rem;">
-        <a href="{{ url_for('applications.students') }}" class="btn btn-secondary" style="padding:0.6rem 1.2rem;">← Back to Students</a>
-        <button onclick="confirmDeleteThisStudent()" class="btn" style="padding:0.6rem 1.2rem; background:#ef4444; color:white; border:none; border-radius:4px; cursor:pointer;">🗑️ Delete Student</button>
-    </div>
-
-    <!-- Delete Confirmation Modal -->
-    <div id="detailDeleteModal" style="display:none; position:fixed; top:0; left:0; right:0; bottom:0; background:rgba(0,0,0,0.5); z-index:9999; justify-content:center; align-items:center;">
-        <div style="background:white; border-radius:12px; padding:2rem; max-width:440px; width:90%; box-shadow:0 20px 60px rgba(0,0,0,0.3); text-align:center;">
-            <h3 style="color:#991b1b; margin-bottom:1rem;">⚠️ Delete Student Record</h3>
-            <p style="color:#4b5563; margin-bottom:1.5rem;">Permanently delete <strong>{{ summary.name }}</strong> and all agent evaluations? This cannot be undone.</p>
-            <div style="display:flex; gap:1rem; justify-content:center;">
-                <button onclick="document.getElementById('detailDeleteModal').style.display='none'" class="btn btn-secondary">Cancel</button>
-                <button onclick="deleteThisStudent()" id="detailDeleteBtn" class="btn" style="background:#ef4444; color:white; border:none; border-radius:4px; cursor:pointer;">🗑️ Delete Permanently</button>
+    {# Delete Modal #}
+    <div id="detailDeleteModal" class="fixed inset-0 z-50 hidden items-center justify-center bg-black/50 backdrop-blur-sm" data-action="closeModal" >
+        <div class="bg-white rounded-2xl shadow-2xl max-w-sm w-[90%] p-8 text-center">
+            <div class="w-14 h-14 rounded-full bg-red-100 flex items-center justify-center mx-auto mb-4"><span class="text-2xl">⚠️</span></div>
+            <h3 class="font-heading text-xl font-bold text-emory-dark mb-2">Delete Student</h3>
+            <p class="text-sm text-emory-gray-500 mb-6">This will permanently delete <strong>{{ summary.applicant_name or summary.name or "Unknown" }}</strong> and all agent evaluations. This cannot be undone.</p>
+            <div class="flex gap-3 justify-center">
+                <button data-action="closeModal" data-modal="detailDeleteModal" class="btn-emory btn-emory-secondary px-6">Cancel</button>
+                <button data-action="deleteThisStudent" id="detailDeleteBtn" class="btn-emory px-6" style="background:#ef4444; color:#fff;">Delete</button>
             </div>
         </div>
     </div>
-
     <script nonce="{{ csp_nonce }}">
-    function confirmDeleteThisStudent() {
-        document.getElementById('detailDeleteModal').style.display = 'flex';
-    }
     function deleteThisStudent() {
         var btn = document.getElementById('detailDeleteBtn');
-        btn.textContent = 'Deleting...';
-        btn.disabled = true;
+        btn.textContent = 'Deleting...'; btn.disabled = true;
         fetch('/api/student/{{ summary.application_id }}/delete', { method: 'DELETE' })
             .then(function(r) { return r.json(); })
-            .then(function(data) {
-                if (data.status === 'success') {
-                    window.location.href = '{{ url_for("applications.students") }}';
-                } else {
-                    alert('Error: ' + (data.error || 'Unknown error'));
-                    btn.textContent = '🗑️ Delete Permanently';
-                    btn.disabled = false;
-                }
-            })
-            .catch(function(err) {
-                alert('Network error: ' + err);
-                btn.textContent = '🗑️ Delete Permanently';
-                btn.disabled = false;
-            });
+            .then(function(d) {
+                if (d.status === 'success') window.location.href = '{{ url_for("applications.students") }}';
+                else { alert(d.error || 'Error'); btn.textContent = 'Delete'; btn.disabled = false; }
+            }).catch(function() { btn.textContent = 'Delete'; btn.disabled = false; });
     }
-    document.addEventListener('keydown', function(e) { if (e.key === 'Escape') document.getElementById('detailDeleteModal').style.display='none'; });
+    document.addEventListener('keydown', function(e) { if (e.key==='Escape') { var m=document.getElementById('detailDeleteModal'); m.classList.add('hidden'); m.classList.remove('flex'); }});
     </script>
-
-    {# ════════════════════  APPLICATION CONTENT  ════════════════════ #}
-    <div class="section">
-        <div class="section-title">Application Content</div>
-        <div style="background: #f1f5f9; padding: 1.2rem; border-radius: 8px;">
-            <p style="white-space: pre-wrap; color: #334155;">{{ summary.text_preview }}</p>
-            {% if summary is defined and 'word_count' in summary and summary['word_count'] > 250 %}
-                <p style="color: #64748b; font-size: 0.95rem; margin-top: 1rem; font-style: italic;">... [{{ summary['word_count'] - 250 }} more words]</p>
-            {% endif %}
-        </div>
-    </div>
 </div>
 {% endblock %}

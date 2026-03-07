@@ -1,476 +1,88 @@
 {% extends "base.html" %}
 
-{% block title %}School Data Management{% endblock %}
+{% block title %}Schools — NextGen{% endblock %}
+{% block page_title %}School Management{% endblock %}
 
 {% block extra_css %}
 <style>
-    .school-management-container {
-        max-width: 1600px;
-        margin: 0 auto;
-        padding: 2rem;
-    }
-
-    .school-filters {
-        background: white;
-        padding: 1.5rem;
-        border-radius: 8px;
-        margin-bottom: 2rem;
-        box-shadow: 0 1px 3px rgba(0,0,0,0.1);
-        display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-        gap: 1rem;
-    }
-
-    .filter-group {
-        display: flex;
-        flex-direction: column;
-    }
-
-    .filter-group label {
-        font-weight: 600;
-        font-size: 0.85rem;
-        text-transform: uppercase;
-        color: #6b7280;
-        margin-bottom: 0.5rem;
-    }
-
-    .filter-group input,
-    .filter-group select {
-        padding: 0.75rem;
-        border: 1px solid #e5e7eb;
-        border-radius: 6px;
-        font-size: 0.95rem;
-    }
-
-    .school-list {
-        background: white;
-        border-radius: 8px;
-        box-shadow: 0 1px 3px rgba(0,0,0,0.1);
-        overflow: hidden;
-    }
-
-    .school-card {
-        padding: 1.5rem;
-        border-bottom: 1px solid #e5e7eb;
-        cursor: pointer;
-        transition: background 0.2s;
-    }
-
-    .school-card:hover {
-        background: #f9fafb;
-    }
-
-    .school-card-header {
-        display: flex;
-        justify-content: space-between;
-        align-items: flex-start;
-        margin-bottom: 1rem;
-    }
-
-    .school-name {
-        font-size: 1.25rem;
-        font-weight: 700;
-        color: #1f2937;
-    }
-
-    .school-district {
-        font-size: 0.9rem;
-        color: #6b7280;
-        margin-top: 0.25rem;
-    }
-
-    .opportunity-badge {
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        padding: 0.75rem 1.5rem;
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        color: white;
-        border-radius: 8px;
-        min-width: 120px;
-        text-align: center;
-    }
-
-    .opportunity-score {
-        font-size: 2rem;
-        font-weight: bold;
-    }
-
-    .opportunity-label {
-        font-size: 0.75rem;
-        text-transform: uppercase;
-        opacity: 0.9;
-    }
-
-    .school-metrics {
-        display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-        gap: 1rem;
-        margin-bottom: 1rem;
-    }
-
-    .metric-box {
-        padding: 0.75rem;
-        background: #f9fafb;
-        border-radius: 6px;
-        border-left: 3px solid #0ea5e9;
-    }
-
-    .metric-label {
-        font-size: 0.75rem;
-        text-transform: uppercase;
-        color: #6b7280;
-        font-weight: 600;
-        margin-bottom: 0.25rem;
-    }
-
-    .metric-value {
-        font-size: 1.25rem;
-        font-weight: bold;
-        color: #1f2937;
-    }
-
-    .review-status {
-        display: inline-block;
-        padding: 0.4rem 0.8rem;
-        border-radius: 4px;
-        font-size: 0.8rem;
-        font-weight: 600;
-        text-transform: uppercase;
-    }
-
-    .review-status.pending {
-        background: #fef3c7;
-        color: #b45309;
-    }
-
-    .review-status.approved {
-        background: #d1fae5;
-        color: #065f46;
-    }
-
-    .review-status.review-needed {
-        background: #fee2e2;
-        color: #991b1b;
-    }
-
-    .school-detail-modal {
-        display: none;
-        position: fixed;
-        top: 0;
-        left: 0;
-        right: 0;
-        bottom: 0;
-        background: rgba(0,0,0,0.5);
-        z-index: 1000;
-        align-items: center;
-        justify-content: center;
-    }
-
-    .school-detail-modal.active {
-        display: flex;
-    }
-
-    .school-detail-content {
-        background: white;
-        border-radius: 8px;
-        max-width: 90%;
-        max-height: 90vh;
-        overflow-y: auto;
-        padding: 2rem;
-        position: relative;
-    }
-
-    .close-modal {
-        position: absolute;
-        top: 1rem;
-        right: 1rem;
-        background: none;
-        border: none;
-        font-size: 1.5rem;
-        cursor: pointer;
-        color: #6b7280;
-    }
-
-    .edit-mode {
-        background: #fffbeb;
-        padding: 1rem;
-        border-radius: 6px;
-        border-left: 4px solid #fbbf24;
-        margin-bottom: 1rem;
-    }
-
-    .form-group {
-        margin-bottom: 1.5rem;
-    }
-
-    .form-group label {
-        display: block;
-        font-weight: 600;
-        margin-bottom: 0.5rem;
-        color: #374151;
-    }
-
-    .form-group input,
-    .form-group textarea,
-    .form-group select {
-        width: 100%;
-        padding: 0.75rem;
-        border: 1px solid #e5e7eb;
-        border-radius: 6px;
-        font-family: inherit;
-    }
-
-    .form-group textarea {
-        min-height: 100px;
-        resize: vertical;
-    }
-
-    .tabs {
-        display: flex;
-        gap: 1rem;
-        border-bottom: 2px solid #e5e7eb;
-        margin-bottom: 1.5rem;
-    }
-
-    .tab {
-        padding: 1rem;
-        cursor: pointer;
-        border-bottom: 3px solid transparent;
-        color: #6b7280;
-        font-weight: 600;
-        transition: all 0.2s;
-    }
-
-    .tab.active {
-        color: #667eea;
-        border-bottom-color: #667eea;
-    }
-
-    .tab-content {
-        display: none;
-    }
-
-    .tab-content.active {
-        display: block;
-    }
-
-    .button-group {
-        display: flex;
-        gap: 1rem;
-        margin-top: 2rem;
-    }
-
-    .btn-analyze {
-        background: #667eea;
-        color: white;
-    }
-
-    .btn-analyze:hover {
-        background: #5568d3;
-    }
-
-    .btn-delete {
-        background: #ef4444;
-        color: white;
-    }
-
-    .btn-delete:hover {
-        background: #dc2626;
-    }
-
-    .btn-approve {
-        background: #10b981;
-        color: white;
-    }
-
-    .btn-approve:hover {
-        background: #059669;
-    }
-
-    .btn-reject {
-        background: #ef4444;
-        color: white;
-    }
-
-    .btn-reject:hover {
-        background: #dc2626;
-    }
-
-    .score-breakdown {
-        display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-        gap: 1rem;
-    }
-
-    .score-component {
-        padding: 1rem;
-        background: #f9fafb;
-        border-radius: 6px;
-        border-left: 4px solid #667eea;
-    }
-
-    .score-component-label {
-        font-size: 0.85rem;
-        color: #6b7280;
-        text-transform: uppercase;
-        font-weight: 600;
-        margin-bottom: 0.5rem;
-    }
-
-    .score-component-value {
-        font-size: 1.75rem;
-        font-weight: bold;
-        color: #667eea;
-    }
-
-    .progress-bar {
-        width: 100%;
-        height: 8px;
-        background: #e5e7eb;
-        border-radius: 4px;
-        overflow: hidden;
-        margin-top: 0.5rem;
-    }
-
-    .progress-fill {
-        height: 100%;
-        background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
-        border-radius: 4px;
-    }
-
-    .web-sources {
-        background: #f9fafb;
-        padding: 1rem;
-        border-radius: 6px;
-        margin-top: 1rem;
-    }
-
-    .source-item {
-        padding: 0.75rem;
-        background: white;
-        border: 1px solid #e5e7eb;
-        border-radius: 4px;
-        margin-bottom: 0.5rem;
-        font-family: monospace;
-        font-size: 0.85rem;
-    }
-
-    .stats-grid {
-        display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-        gap: 1rem;
-        margin-bottom: 2rem;
-    }
-
-    .stat-card {
-        background: white;
-        padding: 1.5rem;
-        border-radius: 8px;
-        border-left: 4px solid #667eea;
-        box-shadow: 0 1px 3px rgba(0,0,0,0.1);
-    }
-
-    .stat-value {
-        font-size: 2rem;
-        font-weight: bold;
-        color: #667eea;
-    }
-
-    .stat-label {
-        color: #6b7280;
-        font-size: 0.9rem;
-        margin-top: 0.25rem;
-    }
-
-    .batch-actions {
-        background: linear-gradient(135deg, #f0f9ff 0%, #f0fdfa 100%);
-        border: 1px solid #67e8f9;
-        border-radius: 8px;
-        padding: 1.25rem 1.5rem;
-        margin-bottom: 2rem;
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        flex-wrap: wrap;
-        gap: 1rem;
-    }
-
-    .batch-actions-info {
-        flex: 1;
-        min-width: 250px;
-    }
-
-    .batch-actions-info h3 {
-        margin: 0 0 0.25rem;
-        font-size: 1rem;
-        color: #0e7490;
-    }
-
-    .batch-actions-info p {
-        margin: 0;
-        font-size: 0.85rem;
-        color: #6b7280;
-    }
-
-    .batch-btn {
-        display: inline-flex;
-        align-items: center;
-        gap: 0.5rem;
-        padding: 0.75rem 1.5rem;
-        background: linear-gradient(135deg, #667eea 0%, #0ea5e9 100%);
-        color: white;
-        border: none;
-        border-radius: 8px;
-        font-weight: 600;
-        font-size: 0.95rem;
-        cursor: pointer;
-        transition: all 0.2s;
-        white-space: nowrap;
-    }
-
-    .batch-btn:hover {
-        transform: translateY(-1px);
-        box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
-    }
-
-    .batch-btn:disabled {
-        opacity: 0.6;
-        cursor: not-allowed;
-        transform: none;
-        box-shadow: none;
-    }
-
-    .batch-result {
-        margin-top: 1rem;
-        padding: 1rem;
-        border-radius: 6px;
-        font-size: 0.9rem;
-        display: none;
-    }
-
-    .batch-result.success {
-        background: #d1fae5;
-        border: 1px solid #6ee7b7;
-        color: #065f46;
-    }
-
-    .batch-result.error {
-        background: #fee2e2;
-        border: 1px solid #fca5a5;
-        color: #991b1b;
-    }
+    .school-management-container { max-width: 1600px; margin: 0 auto; }
+    .school-filters { background: white; padding: 1.25rem; border-radius: 0.75rem; margin-bottom: 1.5rem; border: 1px solid var(--emory-gray-200); display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 0.75rem; }
+    .filter-group { display: flex; flex-direction: column; }
+    .filter-group label { font-weight: 600; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--emory-gray-500); margin-bottom: 0.35rem; }
+    .filter-group input, .filter-group select { padding: 0.5rem 0.75rem; border: 1px solid var(--emory-gray-200); border-radius: 0.5rem; font-size: 0.875rem; transition: border-color 150ms; }
+    .filter-group input:focus, .filter-group select:focus { outline: none; border-color: var(--emory-medium-blue); box-shadow: 0 0 0 2px rgba(0,125,186,0.15); }
+    .school-list { background: white; border-radius: 0.75rem; border: 1px solid var(--emory-gray-200); overflow: hidden; }
+    .school-card { padding: 1.25rem; border-bottom: 1px solid var(--emory-gray-100); cursor: pointer; transition: background 150ms; }
+    .school-card:hover { background: #f8f9fb; }
+    .school-card-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 0.75rem; }
+    .school-name { font-size: 1.1rem; font-weight: 700; color: var(--emory-dark); font-family: 'Crimson Pro', serif; }
+    .school-district { font-size: 0.8rem; color: var(--emory-gray-500); margin-top: 0.15rem; }
+    .opportunity-badge { display: flex; flex-direction: column; align-items: center; padding: 0.6rem 1.25rem; background: linear-gradient(135deg, var(--emory-dark-blue), var(--emory-medium-blue)); color: white; border-radius: 0.625rem; min-width: 100px; text-align: center; }
+    .opportunity-score { font-size: 1.75rem; font-weight: bold; font-family: 'Crimson Pro', serif; }
+    .opportunity-label { font-size: 0.65rem; text-transform: uppercase; letter-spacing: 0.05em; opacity: 0.8; }
+    .school-metrics { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 0.75rem; margin-bottom: 0.75rem; }
+    .metric-box { padding: 0.6rem; background: var(--emory-gray-100); border-radius: 0.5rem; border-left: 3px solid var(--emory-medium-blue); }
+    .metric-label { font-size: 0.65rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--emory-gray-500); font-weight: 600; margin-bottom: 0.15rem; }
+    .metric-value { font-size: 1.1rem; font-weight: bold; color: var(--emory-dark); font-family: 'Crimson Pro', serif; }
+    .review-status { display: inline-flex; padding: 0.2rem 0.6rem; border-radius: 9999px; font-size: 0.75rem; font-weight: 600; }
+    .review-status.pending { background: #fef3c7; color: #b45309; }
+    .review-status.approved { background: #d1fae5; color: #065f46; }
+    .review-status.review-needed { background: #fee2e2; color: #991b1b; }
+    .school-detail-modal { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.5); backdrop-filter: blur(4px); z-index: 1000; align-items: center; justify-content: center; }
+    .school-detail-modal.active { display: flex; }
+    .school-detail-content { background: white; border-radius: 1rem; max-width: 90%; max-height: 90vh; overflow-y: auto; padding: 2rem; position: relative; box-shadow: 0 20px 60px rgba(0,0,0,0.2); }
+    .close-modal { position: absolute; top: 1rem; right: 1rem; background: none; border: none; font-size: 1.5rem; cursor: pointer; color: var(--emory-gray-500); transition: color 150ms; }
+    .close-modal:hover { color: var(--emory-dark); }
+    .form-group { margin-bottom: 1.25rem; }
+    .form-group label { display: block; font-weight: 600; margin-bottom: 0.35rem; color: var(--emory-dark); font-size: 0.875rem; }
+    .form-group input, .form-group textarea, .form-group select { width: 100%; padding: 0.5rem 0.75rem; border: 1px solid var(--emory-gray-200); border-radius: 0.5rem; font-family: inherit; font-size: 0.875rem; transition: border-color 150ms; }
+    .form-group input:focus, .form-group textarea:focus, .form-group select:focus { outline: none; border-color: var(--emory-medium-blue); box-shadow: 0 0 0 2px rgba(0,125,186,0.15); }
+    .form-group textarea { min-height: 80px; resize: vertical; }
+    .tabs { display: flex; gap: 0; border-bottom: 2px solid var(--emory-gray-200); margin-bottom: 1.25rem; }
+    .tab { padding: 0.75rem 1.25rem; cursor: pointer; border-bottom: 3px solid transparent; color: var(--emory-gray-500); font-weight: 600; font-size: 0.875rem; transition: all 150ms; margin-bottom: -2px; }
+    .tab.active { color: var(--emory-dark-blue); border-bottom-color: var(--emory-dark-blue); }
+    .tab:hover:not(.active) { color: var(--emory-dark); }
+    .tab-content { display: none; }
+    .tab-content.active { display: block; }
+    .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 0.75rem; margin-bottom: 1.5rem; }
+    .stat-card { background: white; padding: 1.25rem; border-radius: 0.75rem; border: 1px solid var(--emory-gray-200); transition: border-color 200ms, transform 200ms; }
+    .stat-card:hover { border-color: var(--emory-medium-blue); transform: translateY(-1px); }
+    .stat-value { font-size: 1.75rem; font-weight: bold; color: var(--emory-medium-blue); font-family: 'Crimson Pro', serif; }
+    .stat-label { color: var(--emory-gray-500); font-size: 0.8rem; margin-top: 0.2rem; }
+    .batch-actions { background: white; border: 1px solid var(--emory-gray-200); border-radius: 0.75rem; padding: 1rem 1.25rem; margin-bottom: 1.5rem; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 0.75rem; }
+    .batch-actions-info h3 { margin: 0 0 0.15rem; font-size: 0.95rem; color: var(--emory-dark); font-family: 'Crimson Pro', serif; }
+    .batch-actions-info p { margin: 0; font-size: 0.8rem; color: var(--emory-gray-500); }
+    .batch-btn { display: inline-flex; align-items: center; gap: 0.4rem; padding: 0.6rem 1.25rem; background: var(--emory-dark-blue); color: white; border: none; border-radius: 0.5rem; font-weight: 600; font-size: 0.875rem; cursor: pointer; transition: all 150ms; }
+    .batch-btn:hover { filter: brightness(1.15); transform: translateY(-1px); }
+    .batch-btn:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
+    .score-breakdown { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 0.75rem; }
+    .score-component { padding: 0.75rem; background: var(--emory-gray-100); border-radius: 0.5rem; border-left: 3px solid var(--emory-medium-blue); }
+    .score-component-label { font-size: 0.75rem; color: var(--emory-gray-500); text-transform: uppercase; letter-spacing: 0.05em; font-weight: 600; margin-bottom: 0.3rem; }
+    .score-component-value { font-size: 1.5rem; font-weight: bold; color: var(--emory-dark-blue); font-family: 'Crimson Pro', serif; }
+    .progress-bar { width: 100%; height: 6px; background: var(--emory-gray-200); border-radius: 9999px; overflow: hidden; margin-top: 0.35rem; }
+    .progress-fill { height: 100%; background: linear-gradient(90deg, var(--emory-dark-blue), var(--emory-medium-blue)); border-radius: 9999px; transition: width 0.5s ease; }
+    .batch-result { margin-top: 0.75rem; padding: 0.75rem 1rem; border-radius: 0.5rem; font-size: 0.85rem; display: none; }
+    .batch-result.success { background: #d1fae5; border: 1px solid #6ee7b7; color: #065f46; }
+    .batch-result.error { background: #fee2e2; border: 1px solid #fca5a5; color: #991b1b; }
 </style>
 {% endblock %}
 
 {% block content %}
 <div class="school-management-container">
-    <div style="margin-bottom: 2rem; display: flex; justify-content: space-between; align-items: flex-start;">
-        <div>
-            <h1 style="color: #1f2937; margin-bottom: 0.5rem;">🏫 School Data Management</h1>
-            <p style="color: #6b7280;">Comprehensive school profiles, opportunity scores, and human review</p>
+    <!-- Hero Banner -->
+    <div class="relative rounded-xl overflow-hidden mb-6 h-32" style="background: linear-gradient(135deg, var(--emory-dark-blue) 0%, var(--emory-green) 100%);">
+        <img src="{{ url_for('static', filename='img/school-campus.jpg') }}" class="absolute inset-0 w-full h-full object-cover opacity-15" alt="">
+        <div class="absolute inset-0 bg-genome-dots opacity-20"></div>
+        <div class="relative z-10 p-6 flex items-center justify-between">
+            <div class="flex items-center gap-4">
+                <span class="text-3xl">🏫</span>
+                <div>
+                    <h1 class="font-heading text-xl font-bold text-white m-0">School Data Management</h1>
+                    <p class="text-white/60 text-sm mt-1">School profiles, opportunity scores, and human review</p>
+                </div>
+            </div>
+            <button data-action="openAddSchoolModal" class="btn-emory btn-emory-sm btn-emory-gold">+ Add School</button>
         </div>
-        <button onclick="openAddSchoolModal()" style="padding: 0.6rem 1.2rem; background: linear-gradient(135deg, #667eea, #764ba2); color: white; border: none; border-radius: 8px; font-size: 0.9rem; font-weight: 600; cursor: pointer; white-space: nowrap;">+ Add School</button>
     </div>
 
     <!-- Statistics -->
@@ -506,7 +118,7 @@
                 <option value="15">15 Schools</option>
                 <option value="20">20 Schools</option>
             </select>
-            <button class="batch-btn" id="batchBtn" onclick="triggerBatchAnalysis()">
+            <button class="batch-btn" id="batchBtn" data-action="triggerBatchAnalysis">
                 🚀 Start Batch Analysis
             </button>
         </div>
@@ -557,10 +169,10 @@
 <!-- Add School Modal -->
 <div id="addSchoolModal" class="school-detail-modal">
     <div class="school-detail-content" style="max-width: 500px;">
-        <button class="close-modal" onclick="closeAddSchoolModal()">&times;</button>
+        <button class="close-modal" data-action="closeAddSchoolModal">&times;</button>
         <h2 style="margin-bottom: 1rem; color: #1f2937;">➕ Add New School</h2>
         <p style="color: #6b7280; font-size: 0.85rem; margin-bottom: 1.5rem;">Add a school to the database. Duplicates are automatically prevented — if this school already exists (matched by name + state), you'll be notified.</p>
-        <form onsubmit="submitAddSchool(event)">
+        <form data-onsubmit="submitAddSchool">
             <div style="margin-bottom: 1rem;">
                 <label style="display: block; font-weight: 600; margin-bottom: 0.3rem; color: #374151;">School Name *</label>
                 <input type="text" id="addSchoolName" required placeholder="e.g. Northview High School" style="width: 100%; padding: 0.5rem; border: 1px solid #d1d5db; border-radius: 6px; font-size: 0.9rem;">
@@ -586,7 +198,7 @@
             <div id="addSchoolResult" style="display: none; margin-bottom: 1rem; padding: 0.75rem; border-radius: 6px; font-size: 0.85rem;"></div>
             <div style="display: flex; gap: 1rem;">
                 <button type="submit" id="addSchoolBtn" style="flex: 1; padding: 0.6rem; background: #10b981; color: white; border: none; border-radius: 6px; font-weight: 600; cursor: pointer;">Add School</button>
-                <button type="button" onclick="closeAddSchoolModal()" style="padding: 0.6rem 1.2rem; background: #e5e7eb; color: #374151; border: none; border-radius: 6px; font-weight: 600; cursor: pointer;">Cancel</button>
+                <button type="button" data-action="closeAddSchoolModal" style="padding: 0.6rem 1.2rem; background: #e5e7eb; color: #374151; border: none; border-radius: 6px; font-weight: 600; cursor: pointer;">Cancel</button>
             </div>
         </form>
     </div>
@@ -595,7 +207,7 @@
 <!-- School Detail Modal -->
 <div id="schoolDetailModal" class="school-detail-modal">
     <div class="school-detail-content">
-        <button class="close-modal" onclick="closeSchoolDetail()">&times;</button>
+        <button class="close-modal" data-action="closeSchoolDetail">&times;</button>
         
         <div id="schoolDetailContent"></div>
     </div>
@@ -760,10 +372,10 @@ function openSchoolDetail(schoolId) {
         <h2 style="margin-bottom: 1rem;">${school.school_name}</h2>
         
         <div class="tabs">
-            <div class="tab active" onclick="showTab('overview')">Overview</div>
-            <div class="tab" onclick="showTab('academics')">Academics</div>
-            <div class="tab" onclick="showTab('outcomes')">Outcomes</div>
-            <div class="tab" onclick="showTab('review')">Review</div>
+            <div class="tab active" data-action="showTab" data-arg="overview" >Overview</div>
+            <div class="tab" data-action="showTab" data-arg="academics" >Academics</div>
+            <div class="tab" data-action="showTab" data-arg="outcomes" >Outcomes</div>
+            <div class="tab" data-action="showTab" data-arg="review" >Review</div>
         </div>
         
         <div id="overview" class="tab-content active">
@@ -905,7 +517,7 @@ function openSchoolDetail(schoolId) {
                 </div>
             </div>
             
-            <form onsubmit="submitReview(event, ${schoolId})">
+            <form data-onsubmit="submitReview" data-school-id="${schoolId}">
                 <div class="form-group">
                     <label>School Website (for verification)</label>
                     <input type="url" name="schoolUrl" placeholder="https://example.edu" value="${school.school_url || ''}">
@@ -933,8 +545,8 @@ function openSchoolDetail(schoolId) {
                 
                 <div class="button-group">
                     <button type="submit" class="btn btn-approve">✓ Save & Submit</button>
-                    <button type="button" class="btn btn-analyze" onclick="reanalyzeSchool(${schoolId})">🔄 Reanalyze School</button>
-                    <button type="button" class="btn btn-delete" onclick="deleteSchool(${schoolId}, '${(school.school_name || '').replace(/'/g, "\\'")}')" style="margin-left: auto;">🗑 Delete School</button>
+                    <button type="button" class="btn btn-analyze" data-action="reanalyzeSchool" data-arg="${schoolId}">🔄 Reanalyze School</button>
+                    <button type="button" class="btn btn-delete" data-action="deleteSchool" data-arg="${schoolId}" data-name="${(school.school_name || '').replace(/'/g, "\\'")}" style="margin-left: auto;">🗑 Delete School</button>
                 </div>
             </form>
         </div>

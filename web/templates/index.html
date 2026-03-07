@@ -1,105 +1,154 @@
 {% extends "base.html" %}
 
-{% block title %}NextGen Dashboard - Application Evaluation{% endblock %}
+{% block title %}Dashboard — NextGen Evaluation{% endblock %}
+{% block page_title %}Dashboard{% endblock %}
 
 {% block content %}
-<div style="background: linear-gradient(135deg, rgba(0,51,102,0.05) 0%, rgba(0,153,169,0.05) 100%); padding: 2rem; border-radius: 8px; margin-bottom: 2rem; border-left: 4px solid var(--accent-teal);">
-    <div style="display: flex; align-items: center; justify-content: space-between; gap: 1rem; flex-wrap: wrap;">
-        <h2 style="color: var(--emory-blue); margin-bottom: 0.5rem;">NextGen High School Internship Program</h2>
+<!-- Mission Banner with decorative background -->
+<div class="relative rounded-xl overflow-hidden mb-6" style="background: linear-gradient(135deg, var(--emory-dark-blue) 0%, var(--emory-medium-blue) 60%, var(--emory-green) 100%);">
+    <div class="absolute inset-0 bg-genome-dots opacity-30"></div>
+    <img src="{{ url_for('static', filename='img/dashboard-students.jpg') }}" class="absolute inset-0 w-full h-full object-cover opacity-10" alt="Students collaborating">
+    <div class="relative z-10 p-6 md:p-8 flex items-center gap-6">
+        <!-- DNA Helix SVG -->
+        <div class="hidden md:block flex-shrink-0">
+            <svg width="64" height="64" viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+                <circle cx="32" cy="32" r="30" fill="white" fill-opacity="0.1" stroke="white" stroke-opacity="0.2" stroke-width="1.5"/>
+                <text x="32" y="38" text-anchor="middle" fill="white" font-size="28">🧬</text>
+            </svg>
+        </div>
+        <div>
+            <h2 class="font-heading text-xl md:text-2xl font-bold text-white">NextGen High School Internship Program</h2>
+            <p class="text-white/70 text-sm mt-1 max-w-xl">Recognizing that our differences make us stronger, we actively recruit and support learners from all backgrounds in STEM to improve outcomes for our entire community.</p>
+            <div class="flex items-center gap-4 mt-3 text-white/50 text-xs">
+                <span>🏫 Emory Dept. of Human Genetics</span>
+                <span>📍 Atlanta, GA</span>
+            </div>
+        </div>
     </div>
-    <p style="color: #555;">Our mission: Recognizing that our differences make us stronger, we actively recruit and support learners from all backgrounds in STEM to improve outcomes for our entire community.</p>
 </div>
 
-<div class="stats">
-    <div class="stat-card">
-        <div class="stat-value" style="color: var(--emory-blue);">{{ pending_count }}</div>
-        <div class="stat-label">Pending Review</div>
+<!-- Stats Grid -->
+<div class="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6 stagger-in">
+    <div class="stat-card-nextgen hover-lift">
+        <div class="flex items-center justify-between">
+            <div>
+                <div class="stat-value-nextgen text-emory-dark-blue">{{ pending_count }}</div>
+                <div class="stat-label-nextgen">Pending Review</div>
+            </div>
+            <div class="w-12 h-12 rounded-xl bg-emory-dark-blue/10 flex items-center justify-center text-2xl">⏳</div>
+        </div>
     </div>
-    <div class="stat-card">
-        <div class="stat-value" style="color: var(--accent-teal);">{{ evaluated_count }}</div>
-        <div class="stat-label">Evaluated</div>
+    <div class="stat-card-nextgen hover-lift">
+        <div class="flex items-center justify-between">
+            <div>
+                <div class="stat-value-nextgen text-emory-green">{{ evaluated_count }}</div>
+                <div class="stat-label-nextgen">Evaluated</div>
+            </div>
+            <div class="w-12 h-12 rounded-xl bg-emerald-100 flex items-center justify-center text-2xl">✅</div>
+        </div>
     </div>
-    <div class="stat-card">
-        <div class="stat-value" style="color: var(--emory-gold);">{{ total_count }}</div>
-        <div class="stat-label">Total Students</div>
+    <div class="stat-card-nextgen hover-lift">
+        <div class="flex items-center justify-between">
+            <div>
+                <div class="stat-value-nextgen text-emory-gold">{{ total_count }}</div>
+                <div class="stat-label-nextgen">Total Students</div>
+            </div>
+            <div class="w-12 h-12 rounded-xl bg-amber-100 flex items-center justify-center text-2xl">👥</div>
+        </div>
     </div>
 </div>
 
-<div class="card">
-    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem; border-bottom: 1px solid #eee; padding-bottom: 1rem;">
-        <h2 style="color: var(--emory-blue);">📋 Recent Applications</h2>
-        <div style="display: flex; gap: 1rem; flex-wrap: wrap;">
-            <a href="{{ url_for('applications.students') }}" class="btn btn-secondary">👥 View All Students</a>
-            <a href="{{ url_for('upload.upload') }}" class="btn btn-success">+ Add New Student</a>
+<!-- Quick Actions -->
+<div class="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6 stagger-in">
+    <a href="{{ url_for('upload.upload') }}" class="card-nextgen p-4 hover-lift group text-center">
+        <div class="text-2xl mb-2">📤</div>
+        <div class="text-sm font-semibold text-emory-dark group-hover:text-emory-dark-blue transition">Upload Application</div>
+    </a>
+    <a href="{{ url_for('testing.test') }}" class="card-nextgen p-4 hover-lift group text-center">
+        <div class="text-2xl mb-2">⚡</div>
+        <div class="text-sm font-semibold text-emory-dark group-hover:text-emory-dark-blue transition">Quick Test</div>
+    </a>
+    <a href="{{ url_for('training.training') }}" class="card-nextgen p-4 hover-lift group text-center">
+        <div class="text-2xl mb-2">📚</div>
+        <div class="text-sm font-semibold text-emory-dark group-hover:text-emory-dark-blue transition">Training Data</div>
+    </a>
+    <a href="{{ url_for('schools.schools_dashboard') }}" class="card-nextgen p-4 hover-lift group text-center">
+        <div class="text-2xl mb-2">🏫</div>
+        <div class="text-sm font-semibold text-emory-dark group-hover:text-emory-dark-blue transition">Schools</div>
+    </a>
+</div>
+
+<!-- Recent Applications -->
+<div class="card-nextgen">
+    <div class="flex items-center justify-between px-5 py-4 border-b border-emory-gray-200">
+        <h2 class="font-heading text-lg font-semibold text-emory-dark">Recent Applications</h2>
+        <div class="flex gap-2">
+            <a href="{{ url_for('applications.students') }}" class="btn-emory btn-emory-sm btn-emory-secondary">View All</a>
+            <a href="{{ url_for('upload.upload') }}" class="btn-emory btn-emory-sm btn-emory-primary">+ New Student</a>
         </div>
     </div>
 
-    <!-- Recent Student List Component -->
-    {% set students = students %}
-    {% include '_student_list.html' %}
-    
-    <div style="margin-top: 2rem; text-align: center;">
-        <a href="{{ url_for('applications.students') }}" class="btn" style="display: inline-block;">
-            View All {{ total_count }} Students →
+    {% if students %}
+    <div class="overflow-x-auto">
+        <table class="table-nextgen">
+            <thead>
+                <tr>
+                    <th>Name</th>
+                    <th>Email</th>
+                    <th>Status</th>
+                    <th>Uploaded</th>
+                    <th></th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for student in students %}
+                <tr>
+                    <td class="font-medium">{{ student.full_name or 'Unknown' }}</td>
+                    <td class="text-emory-gray-500">{{ student.email or '—' }}</td>
+                    <td>
+                        {% set status = (student.status or 'Uploaded')|lower %}
+                        {% if status == 'completed' %}
+                        <span class="badge-nextgen bg-emerald-100 text-emerald-700">Completed</span>
+                        {% elif status == 'processing' %}
+                        <span class="badge-nextgen bg-blue-100 text-blue-700">Processing</span>
+                        {% elif status == 'needs docs' %}
+                        <span class="badge-nextgen bg-amber-100 text-amber-700">Needs Docs</span>
+                        {% else %}
+                        <span class="badge-nextgen bg-gray-100 text-emory-gray-500">Uploaded</span>
+                        {% endif %}
+                    </td>
+                    <td class="text-emory-gray-500 text-sm">{{ student.uploaded_date.strftime('%b %d, %Y') if student.uploaded_date else '—' }}</td>
+                    <td class="text-right">
+                        <a href="{{ url_for('applications.student_detail', application_id=student.application_id) }}" class="btn-emory btn-emory-sm btn-emory-secondary">View →</a>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <div class="px-5 py-12 text-center">
+        <svg class="mx-auto mb-4" width="100" height="100" viewBox="0 0 120 120" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+            <circle cx="60" cy="60" r="55" fill="#F2F2F0" stroke="#D0D0CE" stroke-width="2"/>
+            <rect x="35" y="22" width="42" height="56" rx="4" fill="white" stroke="#D0D0CE" stroke-width="2"/>
+            <rect x="43" y="22" width="42" height="56" rx="4" fill="white" stroke="#007DBA" stroke-opacity="0.3" stroke-width="2"/>
+            <line x1="51" y1="35" x2="77" y2="35" stroke="#D0D0CE" stroke-width="2" stroke-linecap="round"/>
+            <line x1="51" y1="43" x2="73" y2="43" stroke="#D0D0CE" stroke-width="2" stroke-linecap="round"/>
+            <line x1="51" y1="51" x2="75" y2="51" stroke="#D0D0CE" stroke-width="2" stroke-linecap="round"/>
+            <circle cx="78" cy="80" r="16" fill="#012169" fill-opacity="0.1" stroke="#012169" stroke-opacity="0.2" stroke-width="2"/>
+            <path d="M74 80l3 3 7-7" stroke="#348338" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+        <p class="text-emory-gray-500 text-sm">No applications yet.</p>
+        <a href="{{ url_for('upload.upload') }}" class="btn-emory btn-emory-primary mt-4">Upload First Application</a>
+    </div>
+    {% endif %}
+
+    {% if total_count > 10 %}
+    <div class="px-5 py-3 border-t border-emory-gray-200 text-center">
+        <a href="{{ url_for('applications.students') }}" class="text-sm text-emory-medium-blue hover:text-emory-dark-blue font-medium">
+            View all {{ total_count }} students →
         </a>
     </div>
+    {% endif %}
 </div>
-
-
-{% endblock %}
-
-{% block extra_js %}
-<script nonce="{{ csp_nonce }}">
-async function evaluateOne(button) {
-    if (!confirm('Evaluate this application with AI?')) return;
-    
-    const applicationId = button.dataset.appId;
-    button.disabled = true;
-    button.textContent = 'Evaluating...';
-    
-    try {
-        const response = await fetch(`/evaluate/${applicationId}`, { method: 'POST' });
-        const data = await response.json();
-        
-        if (response.ok) {
-            alert(`Evaluation complete!\nScore: ${data.overall_score}/100\nRecommendation: ${data.recommendation}`);
-            location.reload();
-        } else {
-            alert(`Error: ${data.error}`);
-            btn.disabled = false;
-            btn.textContent = 'Evaluate';
-        }
-    } catch (error) {
-        alert(`Error: ${error.message}`);
-        btn.disabled = false;
-        btn.textContent = 'Evaluate';
-    }
-}
-
-async function evaluateAll() {
-    if (!confirm('Evaluate all pending applications? This may take a few minutes.')) return;
-    
-    const btn = event.target;
-    btn.disabled = true;
-    btn.textContent = 'Evaluating...';
-    
-    try {
-        const response = await fetch('/evaluate_all', { method: 'POST' });
-        const data = await response.json();
-        
-        if (response.ok) {
-            alert(`Evaluated ${data.evaluations.length} applications!`);
-            location.reload();
-        } else {
-            alert(`Error: ${data.error}`);
-            btn.disabled = false;
-            btn.textContent = '🤖 Evaluate All Pending';
-        }
-    } catch (error) {
-        alert(`Error: ${error.message}`);
-        btn.disabled = false;
-        btn.textContent = '🤖 Evaluate All Pending';
-    }
-}
-</script>
 {% endblock %}

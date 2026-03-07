@@ -1,0 +1,468 @@
+/*  NextGen Application Evaluation — Custom styles
+    Built on Tailwind CSS CDN, extends with Emory brand tokens.
+    ----------------------------------------------------------- */
+
+/* ── Emory Brand Color Tokens ──────────────────────────────── */
+:root {
+    --emory-dark-blue:   #012169;
+    --emory-medium-blue: #007DBA;
+    --emory-light-blue:  #41B6E6;
+    --emory-gold:        #F2A900;
+    --emory-gold-light:  #FFCD59;
+    --emory-green:       #348338;
+    --emory-dark:        #101820;
+    --emory-gray-700:    #424447;
+    --emory-gray-500:    #63666A;
+    --emory-gray-300:    #B1B3B3;
+    --emory-gray-200:    #D0D0CE;
+    --emory-gray-100:    #F2F2F0;
+    --emory-white:       #FFFFFF;
+    --emory-red:         #DA291C;
+
+    /* Sidebar */
+    --sidebar-width: 260px;
+    --sidebar-collapsed-width: 68px;
+
+    /* Transitions */
+    --transition-speed: 200ms;
+}
+
+/* ── Typography ────────────────────────────────────────────── */
+body {
+    font-family: 'Open Sans', ui-sans-serif, system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
+}
+h1, h2, h3, h4, h5, h6 {
+    font-family: 'Crimson Pro', ui-serif, Georgia, serif;
+}
+
+/* ── Sidebar ───────────────────────────────────────────────── */
+.sidebar {
+    width: var(--sidebar-width);
+    transition: width var(--transition-speed) ease;
+    scrollbar-width: thin;
+    scrollbar-color: rgba(255,255,255,0.15) transparent;
+}
+.sidebar.collapsed {
+    width: var(--sidebar-collapsed-width);
+}
+.sidebar.collapsed .nav-label,
+.sidebar.collapsed .sidebar-header-text,
+.sidebar.collapsed .sidebar-section-label,
+.sidebar.collapsed .sidebar-footer-text {
+    display: none;
+}
+.sidebar.collapsed .sidebar-logo {
+    justify-content: center;
+}
+
+.sidebar-link {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.55rem 0.9rem;
+    border-radius: 0.5rem;
+    font-size: 0.875rem;
+    font-weight: 500;
+    color: rgba(255,255,255,0.72);
+    text-decoration: none;
+    transition: all 150ms ease;
+    white-space: nowrap;
+    overflow: hidden;
+}
+.sidebar-link:hover {
+    background: rgba(255,255,255,0.08);
+    color: #fff;
+}
+.sidebar-link.active {
+    background: rgba(255,255,255,0.12);
+    color: #fff;
+    font-weight: 600;
+}
+.sidebar-link .nav-icon {
+    flex-shrink: 0;
+    width: 1.25rem;
+    text-align: center;
+    font-size: 1.05rem;
+}
+
+/* ── Main content area ─────────────────────────────────────── */
+.main-content {
+    margin-left: var(--sidebar-width);
+    transition: margin-left var(--transition-speed) ease;
+    min-height: 100vh;
+}
+.sidebar.collapsed ~ .main-content,
+.main-content.sidebar-collapsed {
+    margin-left: var(--sidebar-collapsed-width);
+}
+
+/* ── Topbar ────────────────────────────────────────────────── */
+.topbar {
+    height: 3.5rem;
+    border-bottom: 1px solid var(--emory-gray-200);
+    backdrop-filter: blur(8px);
+    background: rgba(255,255,255,0.85);
+}
+
+/* ── Cards ─────────────────────────────────────────────────── */
+.card-nextgen {
+    background: #fff;
+    border-radius: 0.75rem;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04);
+    border: 1px solid var(--emory-gray-200);
+    transition: box-shadow 200ms ease;
+}
+.card-nextgen:hover {
+    box-shadow: 0 4px 12px rgba(0,0,0,0.08), 0 2px 4px rgba(0,0,0,0.04);
+}
+
+/* ── Stat Cards ────────────────────────────────────────────── */
+.stat-card-nextgen {
+    background: #fff;
+    border-radius: 0.75rem;
+    padding: 1.25rem 1.5rem;
+    border: 1px solid var(--emory-gray-200);
+    box-shadow: 0 1px 2px rgba(0,0,0,0.04);
+}
+.stat-value-nextgen {
+    font-family: 'Crimson Pro', serif;
+    font-size: 2rem;
+    font-weight: 700;
+    line-height: 1.1;
+}
+.stat-label-nextgen {
+    font-size: 0.8rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--emory-gray-500);
+    margin-top: 0.25rem;
+}
+
+/* ── Buttons ───────────────────────────────────────────────── */
+.btn-emory {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.5rem 1rem;
+    font-size: 0.875rem;
+    font-weight: 600;
+    border-radius: 0.5rem;
+    border: none;
+    cursor: pointer;
+    text-decoration: none;
+    transition: all 150ms ease;
+}
+.btn-emory-primary {
+    background: var(--emory-dark-blue);
+    color: #fff;
+}
+.btn-emory-primary:hover {
+    background: #001a54;
+}
+.btn-emory-secondary {
+    background: var(--emory-gray-100);
+    color: var(--emory-dark);
+    border: 1px solid var(--emory-gray-200);
+}
+.btn-emory-secondary:hover {
+    background: var(--emory-gray-200);
+}
+.btn-emory-gold {
+    background: var(--emory-gold);
+    color: var(--emory-dark);
+}
+.btn-emory-gold:hover {
+    background: #d99200;
+}
+.btn-emory-sm {
+    padding: 0.35rem 0.75rem;
+    font-size: 0.8rem;
+}
+
+/* ── Badges ────────────────────────────────────────────────── */
+.badge-nextgen {
+    display: inline-flex;
+    align-items: center;
+    padding: 0.2rem 0.6rem;
+    border-radius: 9999px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    line-height: 1.3;
+}
+
+/* ── Tables ────────────────────────────────────────────────── */
+.table-nextgen {
+    width: 100%;
+    border-collapse: separate;
+    border-spacing: 0;
+    font-size: 0.875rem;
+}
+.table-nextgen thead th {
+    background: var(--emory-gray-100);
+    color: var(--emory-gray-700);
+    font-weight: 600;
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    padding: 0.6rem 1rem;
+    border-bottom: 2px solid var(--emory-gray-200);
+    text-align: left;
+}
+.table-nextgen tbody td {
+    padding: 0.7rem 1rem;
+    border-bottom: 1px solid var(--emory-gray-100);
+    color: var(--emory-dark);
+}
+.table-nextgen tbody tr:hover {
+    background: #f8f9fb;
+}
+
+/* ── Flash Messages ────────────────────────────────────────── */
+.flash-success { background: #ecfdf5; border-left: 4px solid var(--emory-green); color: #065f46; }
+.flash-error   { background: #fef2f2; border-left: 4px solid var(--emory-red);   color: #991b1b; }
+.flash-warning { background: #fffbeb; border-left: 4px solid var(--emory-gold);  color: #92400e; }
+.flash-info    { background: #eff6ff; border-left: 4px solid var(--emory-medium-blue); color: #1e40af; }
+
+/* ── Spinner ───────────────────────────────────────────────── */
+.spinner-nextgen {
+    width: 2rem;
+    height: 2rem;
+    border: 3px solid var(--emory-gray-200);
+    border-top-color: var(--emory-medium-blue);
+    border-radius: 50%;
+    animation: spin 0.7s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* ── Mobile ────────────────────────────────────────────────── */
+@media (max-width: 768px) {
+    .sidebar {
+        position: fixed;
+        z-index: 50;
+        transform: translateX(-100%);
+        transition: transform var(--transition-speed) ease;
+    }
+    .sidebar.mobile-open {
+        transform: translateX(0);
+    }
+    .main-content {
+        margin-left: 0 !important;
+    }
+    .mobile-overlay {
+        display: none;
+        position: fixed;
+        inset: 0;
+        background: rgba(0,0,0,0.4);
+        z-index: 40;
+    }
+    .sidebar.mobile-open ~ .mobile-overlay {
+        display: block;
+    }
+}
+
+/* ── Grade table (Rapunzel) ────────────────────────────────── */
+.grade-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 2rem;
+    padding: 0.15rem 0.45rem;
+    border-radius: 9999px;
+    font-weight: 700;
+    font-size: 0.8rem;
+}
+.level-badge {
+    display: inline-flex;
+    padding: 0.15rem 0.5rem;
+    border-radius: 9999px;
+    font-size: 0.75rem;
+    font-weight: 600;
+}
+
+/* ── Agent progress cards ──────────────────────────────────── */
+.agent-card-nextgen {
+    background: #f8f9fb;
+    border: 1px solid var(--emory-gray-200);
+    border-radius: 0.625rem;
+    padding: 1rem 1.25rem;
+    transition: border-color 200ms ease;
+}
+.agent-card-nextgen:hover {
+    border-color: var(--emory-medium-blue);
+}
+
+/* ── Utility ───────────────────────────────────────────────── */
+.text-emory-blue  { color: var(--emory-dark-blue); }
+.text-emory-gold  { color: var(--emory-gold); }
+.text-emory-green { color: var(--emory-green); }
+.bg-emory-blue    { background-color: var(--emory-dark-blue); }
+.bg-emory-gold    { background-color: var(--emory-gold); }
+.bg-emory-light   { background-color: var(--emory-gray-100); }
+
+/* ── Animated gradient line (hero banners) ─────────────────── */
+.gradient-line {
+    height: 3px;
+    background: linear-gradient(90deg, var(--emory-dark-blue), var(--emory-medium-blue), var(--emory-gold), var(--emory-green), var(--emory-medium-blue), var(--emory-dark-blue));
+    background-size: 300% 100%;
+    animation: gradientSlide 6s ease infinite;
+    border-radius: 2px;
+}
+@keyframes gradientSlide {
+    0% { background-position: 0% 50%; }
+    50% { background-position: 100% 50%; }
+    100% { background-position: 0% 50%; }
+}
+
+/* ── Glassmorphism cards ───────────────────────────────────── */
+.glass-card {
+    background: rgba(255, 255, 255, 0.7);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border: 1px solid rgba(255, 255, 255, 0.3);
+    border-radius: 0.75rem;
+    box-shadow: 0 4px 30px rgba(0, 0, 0, 0.06);
+}
+
+/* ── Hover lift effect ─────────────────────────────────────── */
+.hover-lift {
+    transition: transform 200ms ease, box-shadow 200ms ease;
+}
+.hover-lift:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 25px rgba(0, 0, 0, 0.1);
+}
+
+/* ── Fade-in animation on page load ────────────────────────── */
+.fade-in {
+    animation: fadeIn 0.5s ease forwards;
+}
+@keyframes fadeIn {
+    from { opacity: 0; transform: translateY(8px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+/* ── Staggered fade-in for lists ───────────────────────────── */
+.stagger-in > * {
+    opacity: 0;
+    animation: fadeIn 0.4s ease forwards;
+}
+.stagger-in > *:nth-child(1) { animation-delay: 0.05s; }
+.stagger-in > *:nth-child(2) { animation-delay: 0.1s; }
+.stagger-in > *:nth-child(3) { animation-delay: 0.15s; }
+.stagger-in > *:nth-child(4) { animation-delay: 0.2s; }
+.stagger-in > *:nth-child(5) { animation-delay: 0.25s; }
+.stagger-in > *:nth-child(6) { animation-delay: 0.3s; }
+
+/* ── Pulse dot (processing indicator) ──────────────────────── */
+.pulse-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--emory-green);
+    animation: pulse 1.5s ease infinite;
+}
+@keyframes pulse {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50% { opacity: 0.5; transform: scale(0.8); }
+}
+
+/* ── Count-up number animation ─────────────────────────────── */
+.count-up {
+    display: inline-block;
+    transition: all 0.6s ease;
+}
+
+/* ── Gradient text ─────────────────────────────────────────── */
+.gradient-text {
+    background: linear-gradient(135deg, var(--emory-dark-blue), var(--emory-medium-blue));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+}
+
+/* ── Smooth page transitions ───────────────────────────────── */
+main {
+    animation: fadeIn 0.3s ease;
+}
+
+/* ── Tooltip ───────────────────────────────────────────────── */
+.tooltip-wrapper {
+    position: relative;
+}
+.tooltip-wrapper .tooltip-text {
+    visibility: hidden;
+    opacity: 0;
+    position: absolute;
+    bottom: calc(100% + 6px);
+    left: 50%;
+    transform: translateX(-50%);
+    background: var(--emory-dark);
+    color: white;
+    font-size: 0.75rem;
+    padding: 0.3rem 0.6rem;
+    border-radius: 0.375rem;
+    white-space: nowrap;
+    transition: opacity 150ms, visibility 150ms;
+    z-index: 50;
+}
+.tooltip-wrapper:hover .tooltip-text {
+    visibility: visible;
+    opacity: 1;
+}
+
+/* ── Dark Mode Support ──────────────────────────────────────── */
+@media (prefers-color-scheme: dark) {
+    html.dark-auto,
+    html:not(.light-force) {
+        /* Only apply if user hasn't forced light mode */
+    }
+}
+html.dark {
+    --emory-dark: #e8e8e6;
+    --emory-gray-700: #d0d0ce;
+    --emory-gray-500: #b1b3b3;
+    --emory-gray-300: #63666a;
+    --emory-gray-200: #2a2d30;
+    --emory-gray-100: #1a1d20;
+    --emory-white: #101316;
+}
+html.dark body {
+    background-color: #0f1114;
+    color: #e8e8e6;
+}
+html.dark .card-nextgen,
+html.dark .stat-card-nextgen,
+html.dark .agent-card-nextgen {
+    background: #1a1d20;
+    border-color: #2a2d30;
+}
+html.dark .table-nextgen thead th {
+    background: #1a1d20;
+    color: #b1b3b3;
+    border-color: #2a2d30;
+}
+html.dark .table-nextgen tbody td {
+    border-color: #1a1d20;
+    color: #d0d0ce;
+}
+html.dark .table-nextgen tbody tr:hover {
+    background: #22252a;
+}
+html.dark .topbar {
+    background: rgba(15, 17, 20, 0.85);
+    border-color: #2a2d30;
+}
+html.dark .flash-success { background: #052e16; border-color: #166534; color: #86efac; }
+html.dark .flash-error { background: #450a0a; border-color: #991b1b; color: #fca5a5; }
+html.dark .flash-warning { background: #451a03; border-color: #92400e; color: #fde68a; }
+
+/* ── Progress bar animated ─────────────────────────────────── */
+.progress-bar-animated {
+    background: linear-gradient(90deg, var(--emory-dark-blue), var(--emory-medium-blue), var(--emory-gold));
+    background-size: 200% 100%;
+    animation: gradientSlide 2s ease infinite;
+    border-radius: 9999px;
+    height: 6px;
+    transition: width 0.5s ease;
+}

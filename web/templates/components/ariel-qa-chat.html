@@ -22,7 +22,7 @@ Requires context:
         
         .chat-header {
             padding: 16px;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            background: linear-gradient(135deg, var(--emory-dark-blue) 0%, var(--emory-medium-blue) 100%);
             color: white;
             border-radius: 8px 8px 0 0;
             border-bottom: 1px solid #e5e7eb;
@@ -89,7 +89,7 @@ Requires context:
         }
         
         .message.user .message-content {
-            background: #667eea;
+            background: var(--emory-medium-blue);
             color: white;
             border-radius: 8px 8px 0 8px;
         }
@@ -120,7 +120,7 @@ Requires context:
             width: 8px;
             height: 8px;
             border-radius: 50%;
-            background: #667eea;
+            background: var(--emory-medium-blue);
             animation: pulse 1.4s infinite;
         }
         
@@ -186,13 +186,13 @@ Requires context:
         
         #question-input:focus {
             outline: none;
-            border-color: #667eea;
+            border-color: var(--emory-medium-blue);
             box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
         }
         
         #send-button {
             padding: 10px 16px;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            background: linear-gradient(135deg, var(--emory-dark-blue) 0%, var(--emory-medium-blue) 100%);
             color: white;
             border: none;
             border-radius: 6px;
@@ -294,13 +294,13 @@ Requires context:
             <h4>Ask about this student</h4>
             <p>Questions about grades, school capabilities, qualifications, and more</p>
             <div style="margin-top: 12px; display: flex; flex-wrap: wrap; gap: 6px; justify-content: center;">
-                <div class="suggestion" onclick="suggestQuestion('What is this student\'s GPA and how does it compare to their school\'s average?')">
+                <div class="suggestion" data-action="suggestQuestion" data-arg="What is this student's GPA and how does it compare to their school's average?">
                     GPA Context
                 </div>
-                <div class="suggestion" onclick="suggestQuestion('What AP/Honors courses are available at this student\'s school?')">
+                <div class="suggestion" data-action="suggestQuestion" data-arg="What AP/Honors courses are available at this student's school?">
                     School Capabilities
                 </div>
-                <div class="suggestion" onclick="suggestQuestion('What factors affect this student\'s contextual rigor score?')">
+                <div class="suggestion" data-action="suggestQuestion" data-arg="What factors affect this student's contextual rigor score?">
                     Rigor Analysis
                 </div>
             </div>
@@ -315,7 +315,7 @@ Requires context:
             rows="1"
             style="height: 40px;"
         ></textarea>
-        <button id="send-button" onclick="sendQuestion()">Send</button>
+        <button id="send-button" data-action="sendQuestion">Send</button>
     </div>
 </div>
 

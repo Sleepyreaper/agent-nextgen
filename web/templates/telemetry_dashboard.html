@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 
-{% block title %}Telemetry & Observability{% endblock %}
+{% block title %}Telemetry — NextGen{% endblock %}
+{% block page_title %}Telemetry & Monitoring{% endblock %}
 
 {% block extra_css %}
 <style>
@@ -18,7 +19,8 @@
     }
 
     .telem-header h1 {
-        color: #1f2937;
+        color: var(--emory-dark);
+        font-family: 'Crimson Pro', serif;
         margin: 0;
     }
 
@@ -30,28 +32,28 @@
 
     .refresh-btn {
         padding: 0.5rem 1rem;
-        border: 1px solid #e5e7eb;
-        border-radius: 6px;
+        border: 1px solid var(--emory-gray-200);
+        border-radius: 0.5rem;
         background: white;
         cursor: pointer;
-        font-size: 0.9rem;
+        font-size: 0.85rem;
         transition: all 0.2s;
     }
 
     .refresh-btn:hover {
-        background: #f9fafb;
-        border-color: #667eea;
+        background: var(--emory-gray-100);
+        border-color: var(--emory-medium-blue);
     }
 
     .auto-refresh-label {
-        font-size: 0.85rem;
-        color: #6b7280;
+        font-size: 0.8rem;
+        color: var(--emory-gray-500);
     }
 
     /* Status Banner */
     .status-banner {
         padding: 1rem 1.5rem;
-        border-radius: 8px;
+        border-radius: 0.75rem;
         margin-bottom: 2rem;
         display: flex;
         align-items: center;
@@ -101,8 +103,8 @@
     .stat-card {
         background: white;
         padding: 1.5rem;
-        border-radius: 8px;
-        box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        border-radius: 0.75rem;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.06);
         position: relative;
         overflow: hidden;
     }
@@ -116,7 +118,7 @@
         height: 3px;
     }
 
-    .stat-card.purple::before { background: linear-gradient(90deg, #667eea, #764ba2); }
+    .stat-card.purple::before { background: linear-gradient(90deg, var(--emory-medium-blue), #764ba2); }
     .stat-card.green::before { background: linear-gradient(90deg, #10b981, #059669); }
     .stat-card.blue::before { background: linear-gradient(90deg, #0ea5e9, #0284c7); }
     .stat-card.orange::before { background: linear-gradient(90deg, #f59e0b, #d97706); }
@@ -126,13 +128,13 @@
     .stat-value {
         font-size: 2.25rem;
         font-weight: 700;
-        color: #1f2937;
+        color: var(--emory-dark);
         line-height: 1;
     }
 
     .stat-label {
-        font-size: 0.85rem;
-        color: #6b7280;
+        font-size: 0.8rem;
+        color: var(--emory-gray-500);
         margin-top: 0.5rem;
         text-transform: uppercase;
         font-weight: 600;
@@ -141,7 +143,7 @@
 
     .stat-sub {
         font-size: 0.8rem;
-        color: #9ca3af;
+        color: var(--emory-gray-300);
         margin-top: 0.25rem;
     }
 
@@ -159,17 +161,18 @@
 
     .telem-section {
         background: white;
-        border-radius: 8px;
+        border-radius: 0.75rem;
         box-shadow: 0 1px 3px rgba(0,0,0,0.05);
         overflow: hidden;
     }
 
     .section-header {
         padding: 1rem 1.5rem;
-        border-bottom: 1px solid #f3f4f6;
+        border-bottom: 1px solid var(--emory-gray-100);
         font-weight: 700;
         font-size: 1rem;
-        color: #374151;
+        color: var(--emory-gray-700);
+        font-family: 'Crimson Pro', serif;
         display: flex;
         align-items: center;
         gap: 0.5rem;
@@ -190,26 +193,26 @@
         padding: 0.75rem 1rem;
         font-size: 0.75rem;
         text-transform: uppercase;
-        color: #6b7280;
+        color: var(--emory-gray-500);
         font-weight: 600;
-        border-bottom: 2px solid #f3f4f6;
+        border-bottom: 2px solid var(--emory-gray-100);
         letter-spacing: 0.05em;
     }
 
     .agent-table td {
         padding: 0.75rem 1rem;
-        font-size: 0.9rem;
-        border-bottom: 1px solid #f9fafb;
-        color: #374151;
+        font-size: 0.85rem;
+        border-bottom: 1px solid var(--emory-gray-100);
+        color: var(--emory-gray-700);
     }
 
     .agent-table tr:hover td {
-        background: #f9fafb;
+        background: var(--emory-gray-100);
     }
 
     .agent-name {
         font-weight: 600;
-        color: #1f2937;
+        color: var(--emory-dark);
     }
 
     .success-rate {
@@ -230,16 +233,16 @@
 
     .pipeline-label {
         width: 120px;
-        font-size: 0.85rem;
+        font-size: 0.8rem;
         font-weight: 600;
-        color: #374151;
+        color: var(--emory-gray-700);
         text-transform: capitalize;
     }
 
     .pipeline-track {
         flex: 1;
         height: 24px;
-        background: #f3f4f6;
+        background: var(--emory-gray-100);
         border-radius: 12px;
         overflow: hidden;
     }
@@ -260,20 +263,20 @@
     .pipeline-fill.complete { background: linear-gradient(90deg, #10b981, #059669); }
     .pipeline-fill.pending { background: linear-gradient(90deg, #f59e0b, #d97706); }
     .pipeline-fill.error { background: linear-gradient(90deg, #ef4444, #dc2626); }
-    .pipeline-fill.null { background: linear-gradient(90deg, #9ca3af, #6b7280); }
+    .pipeline-fill.null { background: linear-gradient(90deg, var(--emory-gray-300), var(--emory-gray-500)); }
 
     .pipeline-count {
         width: 50px;
         text-align: right;
-        font-size: 0.9rem;
+        font-size: 0.85rem;
         font-weight: 600;
-        color: #374151;
+        color: var(--emory-gray-700);
     }
 
     /* Recent Executions */
     .exec-item {
         padding: 0.75rem 1rem;
-        border-bottom: 1px solid #f9fafb;
+        border-bottom: 1px solid var(--emory-gray-100);
         display: flex;
         justify-content: space-between;
         align-items: center;
@@ -285,13 +288,13 @@
 
     .exec-agent {
         font-weight: 600;
-        font-size: 0.9rem;
-        color: #1f2937;
+        font-size: 0.85rem;
+        color: var(--emory-dark);
     }
 
     .exec-meta {
         font-size: 0.8rem;
-        color: #6b7280;
+        color: var(--emory-gray-500);
         margin-top: 0.25rem;
     }
 
@@ -324,17 +327,17 @@
         display: flex;
         justify-content: space-between;
         padding: 0.5rem 0;
-        border-bottom: 1px solid #f9fafb;
-        font-size: 0.9rem;
+        border-bottom: 1px solid var(--emory-gray-100);
+        font-size: 0.85rem;
     }
 
     .config-key {
-        color: #6b7280;
+        color: var(--emory-gray-500);
         font-weight: 500;
     }
 
     .config-val {
-        color: #1f2937;
+        color: var(--emory-dark);
         font-weight: 600;
     }
 
@@ -344,7 +347,7 @@
     .loading-spinner {
         text-align: center;
         padding: 3rem;
-        color: #6b7280;
+        color: var(--emory-gray-500);
     }
 
     .full-width {
@@ -354,19 +357,18 @@
 {% endblock %}
 
 {% block content %}
+{% from 'macros/components.html' import hero_banner %}
 <div class="telem-container">
-    <div class="telem-header">
-        <div>
-            <h1>📡 Telemetry & Observability</h1>
-            <p style="color: #6b7280; margin-top: 0.25rem;">Agent performance, Application Insights, and school pipeline status</p>
-        </div>
-        <div class="header-actions">
-            <label class="auto-refresh-label">
-                <input type="checkbox" id="autoRefresh" checked> Auto-refresh (30s)
-            </label>
-            <button class="refresh-btn" onclick="loadTelemetry()">🔄 Refresh Now</button>
-        </div>
-    </div>
+    <!-- Hero Banner -->
+    {% set telem_actions %}
+    <label class="text-white/60 text-xs flex items-center gap-1.5">
+        <input type="checkbox" id="autoRefresh" checked> Auto-refresh
+    </label>
+    <button class="btn-emory btn-emory-sm" style="background:rgba(255,255,255,0.15); color:#fff; border:1px solid rgba(255,255,255,0.2);" data-action="loadTelemetry">🔄 Refresh</button>
+    {% endset %}
+    {{ hero_banner('📡', 'Telemetry & Observability', 
+                   'Agent performance, Application Insights, and school pipeline status',
+                   image='telemetry-data.jpg', gradient='blue', actions=telem_actions) }}
 
     <!-- Status Banner -->
     <div id="statusBanner" class="status-banner disconnected">
@@ -476,7 +478,7 @@
         <div class="telem-section full-width">
             <div class="section-header">
                 🎯 Agent Quality &amp; Accuracy
-                <button class="refresh-btn" style="margin-left:auto;font-size:0.75rem;padding:0.25rem 0.5rem;" onclick="runEvaluation()">▶ Run Evaluation</button>
+                <button class="refresh-btn" style="margin-left:auto;font-size:0.75rem;padding:0.25rem 0.5rem;" data-action="runEvaluation">▶ Run Evaluation</button>
             </div>
             <div class="section-body" id="agentAccuracy">
                 <div class="loading-spinner">Loading evaluation data...</div>
@@ -509,7 +511,7 @@
 
         <!-- Recent Model Calls -->
         <div class="telem-section full-width">
-            <div class="section-header">⚡ Recent Model Calls <button class="refresh-btn" style="margin-left:auto;font-size:0.75rem;padding:0.25rem 0.5rem;" onclick="resetTokenUsage()">🗑️ Reset Counters</button></div>
+            <div class="section-header">⚡ Recent Model Calls <button class="refresh-btn" style="margin-left:auto;font-size:0.75rem;padding:0.25rem 0.5rem;" data-action="resetTokenUsage">🗑️ Reset Counters</button></div>
             <div class="section-body" style="padding: 0; max-height: 350px; overflow-y: auto;" id="recentModelCalls">
                 <div class="loading-spinner">Loading...</div>
             </div>
@@ -985,7 +987,7 @@ function renderAgentAccuracy(results) {
         container.innerHTML = `
             <div style="text-align: center; padding: 2rem;">
                 <div style="color: #6b7280; margin-bottom: 1rem;">No evaluation runs yet.</div>
-                <button onclick="runEvaluation()" style="background: #2563eb; color: white; border: none; padding: 0.5rem 1rem; border-radius: 6px; cursor: pointer; font-size: 0.9rem;">
+                <button data-action="runEvaluation" style="background: #2563eb; color: white; border: none; padding: 0.5rem 1rem; border-radius: 6px; cursor: pointer; font-size: 0.9rem;">
                     ▶ Run First Evaluation
                 </button>
                 <div style="color: #9ca3af; font-size: 0.8rem; margin-top: 0.5rem;">
