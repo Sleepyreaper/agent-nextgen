@@ -30,17 +30,52 @@
 <!-- Stats Grid -->
 <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6 stagger-in">
     <div class="stat-card-nextgen hover-lift">
-        <div class="stat-value-nextgen text-emory-dark-blue">{{ pending_count }}</div>
-        <div class="stat-label-nextgen">Pending Review</div>
+        <div class="flex items-center justify-between">
+            <div>
+                <div class="stat-value-nextgen text-emory-dark-blue">{{ pending_count }}</div>
+                <div class="stat-label-nextgen">Pending Review</div>
+            </div>
+            <div class="w-12 h-12 rounded-xl bg-emory-dark-blue/10 flex items-center justify-center text-2xl">⏳</div>
+        </div>
     </div>
     <div class="stat-card-nextgen hover-lift">
-        <div class="stat-value-nextgen text-emory-green">{{ evaluated_count }}</div>
-        <div class="stat-label-nextgen">Evaluated</div>
+        <div class="flex items-center justify-between">
+            <div>
+                <div class="stat-value-nextgen text-emory-green">{{ evaluated_count }}</div>
+                <div class="stat-label-nextgen">Evaluated</div>
+            </div>
+            <div class="w-12 h-12 rounded-xl bg-emerald-100 flex items-center justify-center text-2xl">✅</div>
+        </div>
     </div>
     <div class="stat-card-nextgen hover-lift">
-        <div class="stat-value-nextgen text-emory-gold">{{ total_count }}</div>
-        <div class="stat-label-nextgen">Total Students</div>
+        <div class="flex items-center justify-between">
+            <div>
+                <div class="stat-value-nextgen text-emory-gold">{{ total_count }}</div>
+                <div class="stat-label-nextgen">Total Students</div>
+            </div>
+            <div class="w-12 h-12 rounded-xl bg-amber-100 flex items-center justify-center text-2xl">👥</div>
+        </div>
     </div>
+</div>
+
+<!-- Quick Actions -->
+<div class="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6 stagger-in">
+    <a href="{{ url_for('upload.upload') }}" class="card-nextgen p-4 hover-lift group text-center">
+        <div class="text-2xl mb-2">📤</div>
+        <div class="text-sm font-semibold text-emory-dark group-hover:text-emory-dark-blue transition">Upload Application</div>
+    </a>
+    <a href="{{ url_for('testing.test') }}" class="card-nextgen p-4 hover-lift group text-center">
+        <div class="text-2xl mb-2">⚡</div>
+        <div class="text-sm font-semibold text-emory-dark group-hover:text-emory-dark-blue transition">Quick Test</div>
+    </a>
+    <a href="{{ url_for('training.training') }}" class="card-nextgen p-4 hover-lift group text-center">
+        <div class="text-2xl mb-2">📚</div>
+        <div class="text-sm font-semibold text-emory-dark group-hover:text-emory-dark-blue transition">Training Data</div>
+    </a>
+    <a href="{{ url_for('schools.schools_dashboard') }}" class="card-nextgen p-4 hover-lift group text-center">
+        <div class="text-2xl mb-2">🏫</div>
+        <div class="text-sm font-semibold text-emory-dark group-hover:text-emory-dark-blue transition">Schools</div>
+    </a>
 </div>
 
 <!-- Recent Applications -->

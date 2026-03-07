@@ -42,24 +42,24 @@
     </div>
 
     <!-- Stats Row -->
-    <div class="grid grid-cols-2 sm:grid-cols-5 gap-3 px-5 py-4 border-b border-emory-gray-200 bg-emory-gray-100/50">
-        <div class="stat-card-nextgen text-center">
+    <div class="grid grid-cols-2 sm:grid-cols-5 gap-3 px-5 py-4 border-b border-emory-gray-200 bg-emory-gray-100/30 stagger-in">
+        <div class="stat-card-nextgen text-center hover-lift">
             <div class="stat-value-nextgen text-emory-dark-blue">{{ total_count }}</div>
-            <div class="stat-label-nextgen">Total</div>
+            <div class="stat-label-nextgen">📋 Total</div>
         </div>
-        <div class="stat-card-nextgen text-center">
+        <div class="stat-card-nextgen text-center hover-lift">
             <div class="stat-value-nextgen text-emory-green">{{ selected_count }}</div>
             <div class="stat-label-nextgen">✓ Selected</div>
         </div>
-        <div class="stat-card-nextgen text-center">
+        <div class="stat-card-nextgen text-center hover-lift">
             <div class="stat-value-nextgen text-emory-gold">{{ not_selected_count }}</div>
             <div class="stat-label-nextgen">✗ Not Selected</div>
         </div>
-        <div class="stat-card-nextgen text-center">
+        <div class="stat-card-nextgen text-center hover-lift">
             <div class="stat-value-nextgen text-emory-medium-blue">{{ matched_count }}</div>
             <div class="stat-label-nextgen">📊 XLSX</div>
         </div>
-        <div class="stat-card-nextgen text-center cursor-pointer hover:border-emory-green transition" data-action="switchTab" data-arg="schools" >
+        <div class="stat-card-nextgen text-center hover-lift cursor-pointer" data-action="switchTab" data-arg="schools">
             <div class="stat-value-nextgen text-emory-green">{{ school_count }}</div>
             <div class="stat-label-nextgen">🏫 Schools</div>
         </div>
