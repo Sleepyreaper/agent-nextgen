@@ -357,16 +357,21 @@ def upload():
                 group_school = group.get('school_name')
 
                 aggregated = _aggregate_documents(group['files'])
-                match = find_high_probability_match(
-                    student_name=group_name,
-                    student_first_name=group_first,
-                    student_last_name=group_last,
-                    student_email=group_email,
-                    school_name=group_school,
-                    transcript_text=aggregated.get('transcript_text'),
-                    is_training=is_training,
-                    is_test=is_test
-                )
+                # For test uploads, always create a new record — don't match against
+                # existing students (training, 2026, or previous test data)
+                if is_test:
+                    match = None
+                else:
+                    match = find_high_probability_match(
+                        student_name=group_name,
+                        student_first_name=group_first,
+                        student_last_name=group_last,
+                        student_email=group_email,
+                        school_name=group_school,
+                        transcript_text=aggregated.get('transcript_text'),
+                        is_training=is_training,
+                        is_test=is_test
+                    )
 
                 if match and match.get('application_id'):
                     application_id = match['application_id']
@@ -445,9 +450,14 @@ def upload():
                     hash_obj.update(fe.get('file_content') or b'')
                 file_content_hash = hash_obj.hexdigest()
 
-                dup = db.check_duplicate_file(
-                    file_content_hash, is_training=(is_training or is_test)
-                )
+                # Skip duplicate check for test uploads — test data is ephemeral
+                # and the same file should be uploadable for each test run
+                if not is_test:
+                    dup = db.check_duplicate_file(
+                        file_content_hash, is_training=(is_training or is_test)
+                    )
+                else:
+                    dup = None
                 if dup:
                     dup_name = dup.get('applicant_name', 'Unknown')
                     dup_file = dup.get('original_file_name', '')
