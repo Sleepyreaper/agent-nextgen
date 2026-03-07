@@ -31,6 +31,19 @@ def telemetry_overview():
         db_stats = NextGenTelemetry.query_db_overview_stats()
         agent_summary = NextGenTelemetry.query_db_agent_summary()
         recent_execs = NextGenTelemetry.query_db_recent_executions(limit=20)
+        
+        # If DB stats are empty, fall back to in-memory token usage
+        # which accumulates during the current process lifetime
+        if not db_stats or db_stats.get('total_calls', 0) == 0:
+            in_mem = telemetry.get_token_usage()
+            totals = in_mem.get('totals', {})
+            if totals.get('call_count', 0) > 0:
+                db_stats = {
+                    'total_calls': totals.get('call_count', 0),
+                    'total_errors': 0,  # in-memory doesn't track errors separately
+                    'avg_duration_ms': 0,
+                }
+                logger.info("Telemetry: using in-memory stats (DB empty), %d calls tracked", totals.get('call_count', 0))
 
         monitor = get_agent_monitor()
         live_status = monitor.get_status()
@@ -60,6 +73,23 @@ def telemetry_overview():
 
         from datetime import datetime as _dt_now
         token_usage = telemetry.get_token_usage()
+        
+        # Build agent summary from in-memory data if DB is empty
+        if not agent_summary and token_usage.get('by_agent'):
+            for agent_name, stats in token_usage['by_agent'].items():
+                agent_summary[agent_name] = {
+                    'total': stats.get('call_count', 0),
+                    'success': stats.get('call_count', 0),
+                    'failed': 0,
+                    'avg_duration_ms': 0,
+                    'success_rate': 100.0,
+                    'total_tokens': stats.get('total_tokens', 0),
+                    'models_used': [],
+                }
+        
+        # Build recent executions from in-memory if DB is empty
+        if not recent_execs and token_usage.get('recent_calls'):
+            recent_execs = token_usage['recent_calls'][-20:]
         return jsonify({
             'status': 'success',
             'timestamp': _dt_now.utcnow().isoformat(),

@@ -132,6 +132,7 @@ class NextGenTelemetry:
         """Write a model call to the DB (fire-and-forget)."""
         try:
             if not self._ensure_db_table():
+                _logger.warning("telemetry_events table not available — skipping DB write for %s", agent_name)
                 return
             from src.database import db
             db.execute_non_query(
