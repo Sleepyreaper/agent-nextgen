@@ -34,9 +34,9 @@ USER appuser
 # Expose port
 EXPOSE 8000
 
-# Health check
-HEALTHCHECK --interval=30s --timeout=10s --start-period=20s --retries=3 \
-    CMD curl -f http://localhost:8000/ || exit 1
+# Health check — hit /healthz which is excluded from auth and returns 200
+HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
+    CMD curl -f http://localhost:8000/healthz || exit 1
 
 # Gunicorn — single worker for container mode (scale via replicas).
 # Override defaults from gunicorn.conf.py via environment variables.

@@ -282,37 +282,8 @@ start_retention_scheduler()
 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 logger.info("Flask app initialized", extra={'upload_folder': app.config['UPLOAD_FOLDER']})
 
-# One-time DB migration: strip gaston data from all stored agent_results & student_summary
-try:
-    _gaston_cleaned = db.execute_non_query(
-        "UPDATE applications SET agent_results = agent_results - 'gaston' "
-        "WHERE agent_results::jsonb ? 'gaston'"
-    )
-    if _gaston_cleaned:
-        logger.info(f"Startup migration: cleaned gaston from {_gaston_cleaned} agent_results rows")
-except Exception:
-    # SQLite fallback or no rows — safe to ignore
-    try:
-        import json as _json
-        _rows = db.execute_query(
-            "SELECT application_id, agent_results FROM applications "
-            "WHERE agent_results LIKE '%gaston%'"
-        )
-        for _row in _rows:
-            _ar = _row.get('agent_results')
-            if isinstance(_ar, str):
-                try:
-                    _ar = _json.loads(_ar)
-                except Exception:
-                    continue
-            if isinstance(_ar, dict) and 'gaston' in _ar:
-                _ar.pop('gaston', None)
-                db.execute_non_query(
-                    "UPDATE applications SET agent_results = %s WHERE application_id = %s",
-                    (_json.dumps(_ar), _row['application_id'])
-                )
-    except Exception:
-        pass
+# Gaston cleanup migration removed (Issue #90) — data was cleaned in v1.0.x.
+# Agent was removed from the workflow; no new gaston data is created.
 
 # Agent factories, OCR callback, and processing helpers moved to extensions.py (Issue #23)
 
