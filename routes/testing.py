@@ -8,7 +8,7 @@ import threading
 import time
 import uuid
 
-from flask import Blueprint, Response, flash, jsonify, redirect, render_template, request, stream_with_context, url_for
+from flask import Blueprint, Response, current_app, flash, jsonify, redirect, render_template, request, stream_with_context, url_for
 from werkzeug.utils import secure_filename
 
 from extensions import (
