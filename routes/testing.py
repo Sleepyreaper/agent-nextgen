@@ -558,7 +558,9 @@ def upload_test_files():
                 # Use the same processing path as the upload page
                 start_application_processing(application_id)
                 created_ids.append(application_id)
-                logger.info(f"Test file upload: created application {application_id} for {student_name}")
+                logger.info(f"Test file upload: created application {application_id} for {student_name}, text={len(application_text)} chars")
+            else:
+                logger.error(f"Test file upload: db.create_application returned None for {student_name}")
         
         return jsonify({
             'status': 'success',

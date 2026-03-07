@@ -181,9 +181,31 @@ def get_telemetry_status():
     try:
         telemetry_enabled = is_observability_enabled()
         observability_status = get_observability_status()
+        
+        # Also check telemetry_events table
+        telem_table_status = 'unknown'
+        telem_row_count = 0
+        try:
+            from src.telemetry import NextGenTelemetry
+            if NextGenTelemetry._ensure_db_table():
+                rows = db.execute_query("SELECT COUNT(*) as cnt FROM telemetry_events")
+                telem_row_count = rows[0]['cnt'] if rows else 0
+                telem_table_status = 'ok'
+            else:
+                telem_table_status = 'table_creation_failed'
+        except Exception as e:
+            telem_table_status = f'error: {str(e)[:100]}'
+        
+        # In-memory stats
+        in_mem = telemetry.get_token_usage()
+        in_mem_calls = in_mem.get('totals', {}).get('call_count', 0)
+        
         return jsonify({
             'telemetry_enabled': telemetry_enabled,
             'app_insights_configured': observability_status.get('connection_string_set'),
+            'telemetry_events_table': telem_table_status,
+            'telemetry_events_rows': telem_row_count,
+            'in_memory_call_count': in_mem_calls,
             'observability': {
                 'configured': observability_status.get('configured'),
                 'azure_monitor_available': observability_status.get('azure_monitor_available'),
