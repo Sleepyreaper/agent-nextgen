@@ -1662,6 +1662,85 @@ def get_application_status(application_id):
         return jsonify({'error': 'An internal error occurred'}), 500
 
 
+@applications_bp.route('/api/applications/reprocess-2026', methods=['POST'])
+def reprocess_2026_applications():
+    """Reprocess all 2026 applicants through the full agent pipeline.
+    
+    This re-runs all agents on every 2026 student (non-training, non-test).
+    Processing happens in background threads — one student at a time to
+    avoid overwhelming the AI models.
+    
+    POST body (optional): {"delay_seconds": 30}  — delay between students
+    """
+    try:
+        training_col = db.get_training_example_column()
+        test_col = db.get_test_data_column()
+        
+        # Get all 2026 application IDs
+        where = f"{training_col} = FALSE"
+        if db.has_applications_column(test_col):
+            where += f" AND ({test_col} = FALSE OR {test_col} IS NULL)"
+        
+        apps = db.execute_query(
+            f"SELECT application_id, applicant_name, status FROM applications WHERE {where} ORDER BY application_id"
+        )
+        
+        if not apps:
+            return jsonify({'status': 'success', 'message': 'No 2026 applications found', 'count': 0})
+        
+        body = request.get_json(silent=True) or {}
+        delay_seconds = int(body.get('delay_seconds', 30))
+        
+        app_ids = [a['application_id'] for a in apps]
+        app_names = [a.get('applicant_name', 'Unknown') for a in apps]
+        
+        def background_reprocess(ids, delay):
+            """Process students sequentially with delays to manage API capacity."""
+            for i, app_id in enumerate(ids):
+                try:
+                    logger.info(f"Reprocess 2026 [{i+1}/{len(ids)}]: starting application {app_id}")
+                    application = db.get_application(app_id)
+                    if not application:
+                        continue
+                    
+                    orchestrator = get_orchestrator()
+                    result = run_async(orchestrator.coordinate_evaluation(
+                        application=application,
+                        evaluation_steps=['application_reader', 'grade_reader', 'recommendation_reader',
+                                         'school_context', 'data_scientist', 'student_evaluator', 'aurora']
+                    ))
+                    
+                    db.update_application_status(app_id, 'Completed')
+                    logger.info(f"Reprocess 2026 [{i+1}/{len(ids)}]: completed application {app_id}")
+                    
+                    if i < len(ids) - 1:
+                        time.sleep(delay)
+                        
+                except Exception as e:
+                    logger.error(f"Reprocess 2026: failed for {app_id}: {e}", exc_info=True)
+                    db.update_application_status(app_id, 'Uploaded')
+            
+            logger.info(f"Reprocess 2026: COMPLETE — processed {len(ids)} applications")
+        
+        # Start in background thread
+        threading.Thread(
+            target=background_reprocess,
+            args=(app_ids, delay_seconds),
+            daemon=True
+        ).start()
+        
+        return jsonify({
+            'status': 'success',
+            'message': f'Reprocessing {len(app_ids)} 2026 applications in background',
+            'count': len(app_ids),
+            'students': [{'id': a['application_id'], 'name': a.get('applicant_name', 'Unknown')} for a in apps],
+            'estimated_minutes': len(app_ids) * (delay_seconds + 120) // 60  # ~2 min per student + delay
+        })
+    except Exception as e:
+        logger.error(f"Reprocess 2026 error: {e}", exc_info=True)
+        return jsonify({'status': 'error', 'error': 'An internal error occurred'}), 500
+
+
 
 @applications_bp.route('/api/verify/applications', methods=['GET'])
 def verify_applications():

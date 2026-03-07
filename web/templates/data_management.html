@@ -84,6 +84,16 @@
         </div>
     </div>
 
+    <!-- Reprocess 2026 Applications -->
+    <div class="card-nextgen p-5 flex flex-col gap-3" style="border-top: 4px solid var(--emory-medium-blue);">
+        <h3>🔄 Reprocess 2026 Applications</h3>
+        <p>Re-run all agents on every 2026 applicant with the latest agent improvements. Runs in background — ~3 min per student.</p>
+        <div id="reprocess2026Status" class="text-sm text-emory-gray-500 hidden"></div>
+        <div class="flex gap-2 flex-wrap mt-auto pt-2">
+            <button class="btn-emory btn-emory-primary" data-action="reprocess2026" id="btnReprocess2026">🔄 Reprocess All 2026</button>
+        </div>
+    </div>
+
     <!-- Clear Schools -->
     <div class="card-nextgen p-5 flex flex-col gap-3 border-t-4 border-amber-400">
         <h3>🧹 Clear School Data</h3>
@@ -267,6 +277,40 @@ async function fetchMiloInsights() {
     } finally {
         btn.disabled = false;
         btn.textContent = '📊 Run Training Analysis';
+    }
+}
+
+// ── Reprocess 2026 Applications ──
+async function reprocess2026() {
+    const btn = document.getElementById('btnReprocess2026');
+    const status = document.getElementById('reprocess2026Status');
+    
+    if (!confirm('This will re-run ALL agents on every 2026 applicant. This may take a while (3-5 min per student). Continue?')) return;
+    
+    btn.disabled = true;
+    btn.textContent = '🔄 Starting...';
+    status.classList.remove('hidden');
+    status.textContent = 'Sending reprocess request...';
+    
+    try {
+        const resp = await fetch('/api/applications/reprocess-2026', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({delay_seconds: 30})
+        });
+        const data = await resp.json();
+        if (resp.ok && data.status === 'success') {
+            status.innerHTML = `✅ <strong>${data.count} students</strong> queued for reprocessing. Estimated time: ~${data.estimated_minutes} minutes.<br>Check the <a href="/students" style="color:var(--emory-medium-blue); font-weight:600;">2026 Applicants</a> page to monitor progress.`;
+            btn.textContent = '✅ Reprocessing Started';
+        } else {
+            status.textContent = '❌ Error: ' + (data.error || 'Failed to start reprocessing');
+            btn.disabled = false;
+            btn.textContent = '🔄 Reprocess All 2026';
+        }
+    } catch (err) {
+        status.textContent = '❌ Error: ' + err.message;
+        btn.disabled = false;
+        btn.textContent = '🔄 Reprocess All 2026';
     }
 }
 </script>
