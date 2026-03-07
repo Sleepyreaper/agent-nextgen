@@ -616,6 +616,12 @@
 </div>
 
 <script nonce="{{ csp_nonce }}">
+// CSRF helper — used by all POST fetch calls
+function csrfHeaders(extra) {
+    const token = document.querySelector('meta[name="csrf-token"]')?.content || '';
+    return Object.assign({'X-CSRFToken': token}, extra || {});
+}
+
 const agentNames = {
     'smee': 'Orchestration',
     'belle': 'Document intake',
@@ -693,10 +699,9 @@ function startTest(type = 'dynamic') {
                    : type === 'single' ? '/api/test/submit-single'
                    : '/api/test/submit';
     
-    const csrfToken = document.querySelector('meta[name="csrf-token"]')?.content || '';
     fetch(endpoint, {
         method: 'POST',
-        headers: {'Content-Type': 'application/json', 'X-CSRFToken': csrfToken}
+        headers: csrfHeaders({'Content-Type': 'application/json'})
     })
     .then(r => r.json())
     .then(data => {
@@ -1083,7 +1088,7 @@ function clearTestData() {
     
     fetch('/api/test/cleanup', {
         method: 'POST',
-        headers: {'Content-Type': 'application/json', 'X-CSRFToken': document.querySelector('meta[name="csrf-token"]')?.content || ''}
+        headers: csrfHeaders({'Content-Type': 'application/json'})
     })
     .then(r => r.json())
     .then(data => {
@@ -1151,7 +1156,7 @@ async function _chunkUploadFile(file, uploadId, onProgress) {
         let resp, retries = 3;
         while (retries > 0) {
             try {
-                resp = await fetch('/api/file/upload-chunk', { method: 'POST', body: fd });
+                resp = await fetch('/api/file/upload-chunk', { method: 'POST', body: fd, headers: csrfHeaders() });
                 if (resp.ok) break;
             } catch (_) { /* retry */ }
             retries--;
@@ -1224,7 +1229,8 @@ async function uploadTestFiles() {
 
         const response = await fetch('/api/test/upload-files', {
             method: 'POST',
-            body: fd
+            body: fd,
+            headers: csrfHeaders()
         });
         
         const result = await response.json();
