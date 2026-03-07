@@ -285,7 +285,7 @@ class Config:
         self.azure_front_door_id: Optional[str] = os.getenv("AZURE_FRONT_DOOR_ID")
 
         # App metadata
-        self.app_version: str = self._read_env_version() or self._read_version_file() or "0.1"
+        self.app_version: str = self._read_version_file() or self._read_env_version() or "0.1"
 
         # GitHub feedback tracking (Key Vault first, then env)
         self.github_repo: str = (
