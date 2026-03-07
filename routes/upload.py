@@ -434,6 +434,9 @@ def upload():
                     start_application_processing(application_id)
 
                     if is_training:
+                        # Ensure was_selected is set on matched training records
+                        if was_selected is not None:
+                            db.update_application_fields(application_id, {'was_selected': was_selected})
                         refresh_foundry_dataset_async("training_match_update")
 
                     results.append({

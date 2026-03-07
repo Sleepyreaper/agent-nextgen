@@ -3077,7 +3077,7 @@ class Database:
                 FROM {applications_table} a
                 WHERE {where_clause}
                 ORDER BY LOWER(COALESCE(a.{applicant_col}, '')) ASC
-                LIMIT 200
+                LIMIT 1000
             """
 
             results = self.execute_query(query, tuple(params) if params else None)
