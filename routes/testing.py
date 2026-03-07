@@ -534,7 +534,7 @@ def upload_test_files():
                 application_text=application_text,
                 file_name=', '.join(record.get('filenames', ['test_upload'])),
                 file_type='pdf',
-                is_training=True,  # Test data uses is_training=True
+                is_training=False,  # Test data: is_training=FALSE, is_test_data=TRUE
                 is_test_data=True,
                 was_selected=None,
                 student_id=student_id,
