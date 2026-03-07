@@ -516,25 +516,55 @@ def upload_test_files():
         if len(uploaded_students) == 0:
             return jsonify({'status': 'error', 'error': 'No valid files uploaded'}), 400
         
-        # Generate session ID for tracking
-        session_id = str(uuid.uuid4())
-        
-        # Track submission
-        test_submissions[session_id] = {
-            'students': uploaded_students,
-            'application_ids': [],
-            'created_at': time.time(),
-            'status': 'processing',
-            'queue': queue.Queue()
-        }
-
-        start_session_processing(session_id)
+        # Create DB records and kick off processing — same path as the upload page
+        # This ensures consistent behavior regardless of which page the file was uploaded from
+        created_ids = []
+        for record in uploaded_students:
+            student_name = record.get('name') or 'Test Student'
+            student_email = record.get('email') or ''
+            application_text = record.get('application_text') or ''
+            transcript_text = record.get('transcript_text') or ''
+            recommendation_text = record.get('recommendation_text') or ''
+            school_data = record.get('school_data', {})
+            
+            student_id = storage.generate_student_id()
+            application_id = db.create_application(
+                applicant_name=student_name,
+                email=student_email,
+                application_text=application_text,
+                file_name=', '.join(record.get('filenames', ['test_upload'])),
+                file_type='pdf',
+                is_training=True,  # Test data uses is_training=True
+                is_test_data=True,
+                was_selected=None,
+                student_id=student_id,
+                first_name=student_name.split()[0] if student_name else None,
+                last_name=student_name.split()[-1] if student_name and len(student_name.split()) > 1 else None,
+                high_school=school_data.get('name')
+            )
+            
+            if application_id:
+                # Add transcript and recommendation fields
+                updates = {}
+                if transcript_text:
+                    updates['transcript_text'] = transcript_text
+                if recommendation_text:
+                    updates['recommendation_text'] = recommendation_text
+                if updates:
+                    db.update_application_fields(application_id, updates)
+                
+                db.set_missing_fields(application_id, [])
+                
+                # Use the same processing path as the upload page
+                start_application_processing(application_id)
+                created_ids.append(application_id)
+                logger.info(f"Test file upload: created application {application_id} for {student_name}")
         
         return jsonify({
             'status': 'success',
-            'session_id': session_id,
-            'count': len(uploaded_students),
-            'stream_url': url_for('testing.test_stream', session_id=session_id)
+            'count': len(created_ids),
+            'application_ids': created_ids,
+            'message': f'Created {len(created_ids)} test student(s) — processing via standard pipeline'
         })
         
     except Exception as e:

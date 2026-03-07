@@ -841,13 +841,18 @@ async function uploadTestFiles() {
                     pollInterval = setInterval(pollStudentStatus, 1000);
                 }
             } else {
-                // No stream available, just show success
+                // File upload uses standard pipeline — no SSE stream needed
+                uploadProgressText.innerHTML = `✅ Created ${result.count || 1} student(s) — agents processing in background.<br>Check <strong>Test Data</strong> page or <strong>2026 Applicants</strong> for results.`;
+                btnUpload.disabled = false;
+                btnUpload.innerHTML = '📤 Upload & Test';
+                // Start polling for student status
                 setTimeout(() => {
-                    uploadProgress.style.display = 'none';
-                    btnUpload.disabled = false;
-                    btnUpload.innerHTML = '📤 Upload & Test';
-                    loadPersistentTestData(); // Reload to show new students
-                }, 2000);
+                    loadPersistentTestData();
+                    pollStudentStatus();
+                    if (!pollInterval) {
+                        pollInterval = setInterval(pollStudentStatus, 5000);
+                    }
+                }, 3000);
             }
         } else {
             uploadProgressText.textContent = `❌ Error: ${result.error}`;
