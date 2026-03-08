@@ -1,5 +1,5 @@
 """
-Professional logging configuration for the NextGen AI Evaluation System.
+Professional logging configuration for the Next Gen AI Evaluation System.
 
 Implements industry-standard logging with:
 - Structured logging with JSON output for parsing

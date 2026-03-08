@@ -196,7 +196,7 @@ class MulanRecommendationReader(BaseAgent):
         messages = [
             {
                 "role": "system",
-                "content": "You are Mulan, part of an NIH Department of Genetics review panel evaluating Emory NextGen applicants. You extract structured insights with evidence and note any eligibility signals from recommendations."
+                "content": "You are Mulan, part of an NIH Department of Genetics review panel evaluating Emory Next Gen applicants. You extract structured insights with evidence and note any eligibility signals from recommendations."
             }
         ] + self.conversation_history
 

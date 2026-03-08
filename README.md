@@ -1,4 +1,4 @@
-# NextGen Multi-Agent Student Evaluation System
+# Next Gen Multi-Agent Student Evaluation System
 
 > **Version 1.0.83** · Production AI evaluation pipeline with 15+ specialized agents, 4-tier model architecture, and enterprise security via Azure Front Door + WAF.
 
@@ -189,7 +189,7 @@ The application provides a full-featured web UI built with Flask and Jinja2 temp
 
 ```bash
 # Clone and navigate
-cd "Agent NextGen"
+cd "Agent Next Gen"
 
 # Activate virtual environment
 source .venv/bin/activate

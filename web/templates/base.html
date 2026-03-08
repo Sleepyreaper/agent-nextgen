@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="csrf-token" content="{{ csrf_token() }}">
-    <title>{% block title %}NextGen — Application Evaluation System{% endblock %}</title>
+    <title>{% block title %}Next Gen — Application Evaluation System{% endblock %}</title>
 
     <!-- Favicon -->
     <link rel="icon" type="image/svg+xml" href="{{ url_for('static', filename='img/favicon.svg') }}">
@@ -42,7 +42,7 @@
     }
     </script>
 
-    <!-- NextGen custom styles -->
+    <!-- Next Gen custom styles -->
     <link rel="stylesheet" href="{{ url_for('static', filename='css/nextgen.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/agents.css') }}">
 
@@ -59,7 +59,7 @@
                 <span class="text-emory-dark font-bold text-sm font-heading">NG</span>
             </div>
             <div class="sidebar-header-text">
-                <div class="text-white font-semibold text-sm leading-tight">NextGen</div>
+                <div class="text-white font-semibold text-sm leading-tight">Next Gen</div>
                 <div class="text-white/50 text-xs">Evaluation System</div>
             </div>
         </div>
@@ -141,7 +141,7 @@
                 <button data-action="toggleSidebarDesktop" class="hidden md:block text-emory-gray-500 hover:text-emory-dark p-1 rounded-lg hover:bg-emory-gray-100 transition" aria-label="Collapse sidebar">
                     <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"/></svg>
                 </button>
-                <h1 class="font-heading text-lg font-semibold text-emory-dark truncate">{% block page_title %}NextGen{% endblock %}</h1>
+                <h1 class="font-heading text-lg font-semibold text-emory-dark truncate">{% block page_title %}Next Gen{% endblock %}</h1>
             </div>
 
             <!-- Right: user menu -->
@@ -181,7 +181,7 @@
         <footer class="px-6 py-4 border-t border-emory-gray-200 text-xs text-emory-gray-500">
             <div class="flex items-center justify-between">
                 <span>© 2026 Emory University · Department of Human Genetics</span>
-                <span>NextGen Evaluation System v{{ app_version }}</span>
+                <span>Next Gen Evaluation System v{{ app_version }}</span>
             </div>
         </footer>
     </div>

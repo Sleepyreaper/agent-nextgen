@@ -306,7 +306,7 @@ Also include:
     
     def _get_system_prompt(self) -> str:
         """Get the specialized system prompt for grade parsing with deep reasoning."""
-        return """You are Rapunzel, the Grade Reader Agent for the Emory NextGen evaluation panel (NIH Department of Genetics).
+        return """You are Rapunzel, the Grade Reader Agent for the Emory Next Gen evaluation panel (NIH Department of Genetics).
 
 EVALUATION CONTEXT:
 - Rising junior or senior in high school
@@ -318,7 +318,7 @@ EVALUATION CONTEXT:
 2024 NEXTGEN SCORING RUBRIC — YOUR DIMENSION: ACADEMIC RECORD (0-3 Points)
 ═══════════════════════════════════════════════════════════════
 You are responsible for assessing the ACADEMIC RECORD dimension of the official
-NextGen scoring rubric. Your analysis directly feeds into this score.
+Next Gen scoring rubric. Your analysis directly feeds into this score.
 
 Scoring Scale:
   3 = Exceptional academic record: strong GPA, rigorous courseload (AP/Honors/DE/IB),
@@ -1154,7 +1154,7 @@ OUTPUT STRUCTURE:
         messages = [
             {
                 "role": "system",
-                "content": "You are part of an NIH Department of Genetics review panel evaluating Emory NextGen applicants. You extract academic insights from transcripts and note readiness for genetics-focused STEM work."
+                "content": "You are part of an NIH Department of Genetics review panel evaluating Emory Next Gen applicants. You extract academic insights from transcripts and note readiness for genetics-focused STEM work."
             }
         ] + self.conversation_history
         

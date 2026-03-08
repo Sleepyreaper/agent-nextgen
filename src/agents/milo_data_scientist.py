@@ -1,6 +1,6 @@
 """Milo Data Scientist - Deep-learning pattern analysis for student selection.
 
-Milo is the quantitative brain of the NextGen Scholars evaluation system.
+Milo is the quantitative brain of the Next Gen Scholars evaluation system.
 He studies every accepted and rejected student from prior cohorts, learns
 what separates the best from the rest, and applies that intelligence to
 score, rank, and recommend the 2026 applicant pool.
@@ -514,7 +514,7 @@ class MiloDataScientist(BaseAgent):
                     "role": "system",
                     "content": (
                         "You are Milo, a data scientist who analyzes patterns "
-                        "in student selection data for the Emory NextGen Scholars program."
+                        "in student selection data for the Emory Next Gen Scholars program."
                     ),
                 }
             ]
@@ -532,7 +532,7 @@ class MiloDataScientist(BaseAgent):
 
     def _system_prompt_insights(self) -> str:
         return (
-            "You are Milo, the chief data scientist for the Emory NextGen Scholars "
+            "You are Milo, the chief data scientist for the Emory Next Gen Scholars "
             "program - a highly selective NIH-funded summer research program for "
             "high school students interested in STEM and genetics.\n\n"
             "PROGRAM FACTS:\n"
@@ -575,7 +575,7 @@ class MiloDataScientist(BaseAgent):
 
     def _system_prompt_evaluate(self) -> str:
         return (
-            "You are Milo, the chief data scientist for the Emory NextGen Scholars program.\n\n"
+            "You are Milo, the chief data scientist for the Emory Next Gen Scholars program.\n\n"
             "You have studied 100+ rejected and 20+ accepted students from prior cohorts. "
             "You know exactly what separates winners from the rest.\n\n"
             "SCORING CALIBRATION (critical - be realistic):\n"

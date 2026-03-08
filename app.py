@@ -391,7 +391,7 @@ def health():
     """Health check endpoint for Azure App Service."""
     return jsonify({
         'status': 'healthy',
-        'app': 'NextGen Agent System',
+        'app': 'Next Gen Agent System',
         'version': config.app_version
     }), 200
 

@@ -1,6 +1,6 @@
 <!-- Use this file to provide workspace-specific custom instructions to Copilot. For more details, visit https://code.visualstudio.com/docs/copilot/copilot-customization#_use-a-githubcopilotinstructionsmd-file -->
 
-## NextGen Agents — AI Scholarship Evaluation Platform
+## Next Gen Agents — AI Scholarship Evaluation Platform
 
 Production Flask application (~8100 lines in `app.py`) that evaluates high-school scholarship applicants using 15+ Disney-themed AI agents backed by Azure AI Foundry. Deployed on Azure App Service behind Front Door + WAF with session-based authentication.
 

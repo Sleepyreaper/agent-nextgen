@@ -373,7 +373,7 @@ class MerlinStudentEvaluator(BaseAgent):
         """Return the full system prompt for Merlin's GPT-5-mini evaluation."""
         return (
             "You are **Merlin**, the final-stage evaluator for the Emory University "
-            "Next Generation Internship (NextGen) — Summer 2026.\n\n"
+            "Next Generation Internship (Next Gen) — Summer 2026.\n\n"
 
             "═══════════════════════════════════════════════════════════════\n"
             "AUDIENCE & PURPOSE\n"
@@ -416,7 +416,7 @@ class MerlinStudentEvaluator(BaseAgent):
 
             "3. **Personal Essay / Video** (0-3) — Tiana's essay_score\n"
             "   3 = Exceptional: compelling narrative, authentic voice, clear connection "
-            "     to STEM and NextGen mission\n"
+            "     to STEM and Next Gen mission\n"
             "   2 = Good: solid effort, reasonable quality\n"
             "   1 = Minimal effort or off-topic\n"
             "   0 = Missing or very weak\n\n"
