@@ -2079,50 +2079,49 @@ def get_school_context_multiplier(school_id):
 
 @schools_bp.route('/api/schools/bulk-approve', methods=['POST'])
 def bulk_approve_schools():
-    """Bulk-approve all schools that have been analyzed by Naveen.
-
-    Sets human_review_status='approved' for schools where:
-    - analysis_status = 'complete' (Naveen has scored them)
-    - human_review_status is NOT already 'approved'
-
-    Optional body: {"min_confidence": 50} — only approve above this threshold.
-    """
+    """Bulk-approve all schools that have an opportunity_score."""
     try:
-        data = request.get_json() or {}
-        min_confidence = float(data.get('min_confidence', 0))
+        # Debug: check what's actually in the DB
+        debug_rows = db.execute_query("""
+            SELECT analysis_status, human_review_status,
+                   COUNT(*) as cnt,
+                   COUNT(opportunity_score) as with_opp
+            FROM school_enriched_data
+            WHERE is_active = TRUE
+            GROUP BY analysis_status, human_review_status
+            ORDER BY cnt DESC
+        """)
+        debug_info = [dict(r) for r in (debug_rows or [])]
 
-        where = "opportunity_score IS NOT NULL AND (human_review_status IS NULL OR human_review_status != 'approved')"
-        params = []
-        if min_confidence > 0:
-            where += " AND COALESCE(data_confidence_score, 0) >= %s"
-            params.append(min_confidence)
-
-        # Count first
+        # Simple: approve any active school with an opportunity_score
         count_rows = db.execute_query(
-            f"SELECT COUNT(*) as cnt FROM school_enriched_data WHERE {where}",
-            tuple(params) if params else None,
+            "SELECT COUNT(*) as cnt FROM school_enriched_data WHERE is_active = TRUE AND opportunity_score IS NOT NULL AND human_review_status != 'approved'"
         )
         count = count_rows[0]['cnt'] if count_rows else 0
 
         if count == 0:
-            return jsonify({'status': 'success', 'message': 'No schools to approve', 'approved': 0})
+            return jsonify({
+                'status': 'success',
+                'message': 'No schools to approve',
+                'approved': 0,
+                'debug': debug_info,
+            })
 
-        # Approve
         db.execute_non_query(
-            f"""UPDATE school_enriched_data
+            """UPDATE school_enriched_data
                 SET human_review_status = 'approved',
                     reviewed_date = CURRENT_TIMESTAMP,
                     reviewed_by = 'bulk_approve',
                     updated_at = CURRENT_TIMESTAMP
-                WHERE {where}""",
-            tuple(params) if params else None,
+                WHERE is_active = TRUE AND opportunity_score IS NOT NULL AND human_review_status != 'approved'"""
         )
 
-        logger.info(f"Bulk approved {count} schools (min_confidence={min_confidence})")
+        logger.info(f"Bulk approved {count} schools")
         return jsonify({
             'status': 'success',
             'approved': count,
             'message': f'Approved {count} schools',
+            'debug': debug_info,
         })
     except Exception as e:
         logger.error(f"Bulk approve failed: {e}", exc_info=True)
