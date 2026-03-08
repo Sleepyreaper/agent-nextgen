@@ -538,7 +538,30 @@ def guardrails():
             'status': 'active',
         })
 
-        # 6. Human-in-the-loop
+        # 6. Data availability bias prevention
+        guardrails_list.append({
+            'id': 'data_availability_bias',
+            'title': 'Data Availability Bias Prevention',
+            'icon': '🏫',
+            'description': (
+                'Private, charter, and religious schools often do not report to '
+                'NCES or GOSA. Missing data does NOT indicate an under-resourced school. '
+                'Schools are classified as sufficient/partial/insufficient data. '
+                'Schools with insufficient data receive a neutral multiplier (1.0x) — '
+                'no boost and no penalty. Merlin is explicitly told to evaluate these '
+                'students purely on their application materials.'
+            ),
+            'measures': [
+                'Data sufficiency classification (≥3 of 8 key fields required)',
+                'Insufficient-data schools excluded from Pocahontas tier calculations',
+                'Neutral 1.0x multiplier for insufficient-data schools',
+                'Merlin receives "SCHOOL DATA NOTICE" instead of equity multiplier',
+                'Prevents wealthy private school students from getting equity boosts',
+            ],
+            'status': 'active',
+        })
+
+        # 7. Human-in-the-loop
         guardrails_list.append({
             'id': 'human_review',
             'title': 'Human-in-the-Loop Oversight',

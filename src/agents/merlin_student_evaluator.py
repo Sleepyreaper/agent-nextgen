@@ -303,7 +303,21 @@ class MerlinStudentEvaluator(BaseAgent):
         ctx_mult = agent_outputs.get("_context_multiplier") or {}
         multiplier = ctx_mult.get("multiplier", 1.0) if isinstance(ctx_mult, dict) else 1.0
         ctx_reasons = ctx_mult.get("reasons", []) if isinstance(ctx_mult, dict) else []
-        if multiplier > 1.0:
+        data_avail = ctx_mult.get("data_availability", "sufficient") if isinstance(ctx_mult, dict) else "sufficient"
+
+        if data_avail == 'insufficient':
+            prompt_parts.extend([
+                "═══════════════════════════════════════════════════════════════",
+                "SCHOOL DATA NOTICE",
+                "═══════════════════════════════════════════════════════════════",
+                "This student's school has INSUFFICIENT publicly available data.",
+                "This is common for private, charter, and religious schools that",
+                "do not report to NCES/GOSA. This does NOT indicate an under-resourced school.",
+                "Do NOT adjust scores based on school context. Evaluate this student",
+                "purely on their application materials, transcript, and recommendations.",
+                "",
+            ])
+        elif multiplier > 1.0:
             prompt_parts.extend([
                 "═══════════════════════════════════════════════════════════════",
                 "EQUITY CONTEXT MULTIPLIER (from Pocahontas Cohort Analysis)",

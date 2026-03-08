@@ -51,6 +51,33 @@ TIER_THRESHOLDS = {
     # <45: under-resourced
 }
 
+# Key fields that indicate real school data (not just a name + state)
+_DATA_SUFFICIENCY_FIELDS = [
+    'total_students', 'graduation_rate', 'free_lunch_percentage',
+    'ap_course_count', 'act_composite_avg', 'fesr_star_rating',
+    'school_ppe', 'hope_eligible_pct',
+]
+_DATA_SUFFICIENCY_THRESHOLD = 3  # need at least 3 of these populated
+
+
+def classify_data_availability(school: Dict[str, Any]) -> str:
+    """Classify a school's data availability.
+
+    Returns:
+        'sufficient'    — enough real data to score and compare
+        'partial'       — some data, treat with caution
+        'insufficient'  — too little data, do NOT assign equity tier/multiplier
+    """
+    populated = sum(
+        1 for f in _DATA_SUFFICIENCY_FIELDS
+        if school.get(f) is not None and school.get(f) != 0
+    )
+    if populated >= _DATA_SUFFICIENCY_THRESHOLD:
+        return 'sufficient'
+    elif populated >= 1:
+        return 'partial'
+    return 'insufficient'
+
 
 class PocahontasCohortAnalyst(BaseAgent):
     """Pocahontas — Cohort Analyst Agent
@@ -122,8 +149,17 @@ class PocahontasCohortAnalyst(BaseAgent):
                         'timestamp': datetime.now(timezone.utc).isoformat(),
                     }
 
+                # Classify data availability — only use schools with sufficient
+                # data for tier/multiplier calculations to avoid bias
+                sufficient = [s for s in scored if classify_data_availability(s) == 'sufficient']
+                partial = [s for s in scored if classify_data_availability(s) == 'partial']
+                insufficient = [s for s in scored if classify_data_availability(s) == 'insufficient']
+
+                # Use sufficient-data schools for tier assignment and multipliers
+                tier_schools = sufficient if len(sufficient) >= 5 else scored
+
                 # Build tiers
-                tiers = self._assign_tiers(scored)
+                tiers = self._assign_tiers(tier_schools)
 
                 # Compute percentiles
                 percentiles = self._compute_percentiles(scored)
@@ -145,6 +181,12 @@ class PocahontasCohortAnalyst(BaseAgent):
                     'total_schools': len(schools),
                     'scored_schools': len(scored),
                     'unscored_schools': len(unscored),
+                    'data_availability': {
+                        'sufficient': len(sufficient),
+                        'partial': len(partial),
+                        'insufficient': len(insufficient),
+                        'note': 'Schools with insufficient data receive neutral multiplier (1.0x) to prevent bias against private/charter/religious schools that do not report to NCES/GOSA.',
+                    },
                     'tiers': tiers,
                     'percentiles': percentiles,
                     'equity_analysis': equity,
@@ -306,6 +348,21 @@ class PocahontasCohortAnalyst(BaseAgent):
         result = {}
         for s in schools:
             sid = s.get('school_enrichment_id')
+            data_avail = classify_data_availability(s)
+
+            # Schools with insufficient data get neutral multiplier — do NOT
+            # boost or penalize based on missing data (prevents bias against
+            # private/charter/religious schools that don't report to NCES/GOSA)
+            if data_avail == 'insufficient':
+                result[sid] = {
+                    'multiplier': 1.0,
+                    'reasons': ['Data unavailable — neutral multiplier (no boost or penalty)'],
+                    'school_name': s.get('school_name'),
+                    'percentile': percentiles.get(sid, 50),
+                    'data_availability': 'insufficient',
+                }
+                continue
+
             frpl = float(s['free_lunch_percentage']) if s.get('free_lunch_percentage') is not None else None
             title_i = s.get('is_title_i', False)
             pctile = percentiles.get(sid, 50)
@@ -335,6 +392,7 @@ class PocahontasCohortAnalyst(BaseAgent):
                 'reasons': reasons,
                 'school_name': s.get('school_name'),
                 'percentile': pctile,
+                'data_availability': data_avail,
             }
         return result
 
