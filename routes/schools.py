@@ -878,6 +878,11 @@ def batch_naveen_moana():
                         )
 
                         enriched = result.get('enriched_data', {})
+                        logger.info(f"  Naveen raw keys: {list(enriched.keys()) if isinstance(enriched, dict) else 'NOT DICT'}")
+                        logger.info(f"  Naveen academic_courses={enriched.get('academic_courses')}, "
+                                    f"ap_course_count={enriched.get('ap_course_count')}, "
+                                    f"honors_programs={enriched.get('honors_programs')}, "
+                                    f"graduation_rate={enriched.get('graduation_rate')}")
 
                         def _dig(d, *keys):
                             if not isinstance(d, dict):
@@ -916,12 +921,12 @@ def batch_naveen_moana():
                         grad = _to_num(_dig(enriched, 'graduation_rate') or result.get('graduation_rate') or 0)
                         col = _to_num(_dig(enriched, 'college_acceptance_rate', 'college_placement_rate') or result.get('college_placement_rate') or 0)
                         fl = _to_num(_dig(enriched, 'free_lunch_percentage') or result.get('free_lunch_percentage') or 0)
-                        ap = _to_num(_dig(enriched, 'ap_course_count', 'ap_classes_count') or result.get('ap_classes_count') or 0, True)
+                        ap = _to_num(_dig(enriched, 'academic_courses', 'ap_course_count', 'ap_classes_count', 'ap_courses') or result.get('ap_classes_count') or result.get('academic_courses') or 0, True)
                         ap_p = _to_num(_dig(enriched, 'ap_exam_pass_rate', 'ap_pass_rate') or result.get('ap_exam_pass_rate') or 0)
                         stem = bool(_dig(enriched, 'stem_programs', 'stem_program_available') or False)
-                        ib = bool(_dig(enriched, 'ib_program_available', 'ib_offerings') or False)
-                        dual = bool(_dig(enriched, 'dual_enrollment_available') or False)
-                        hon = _to_num(_dig(enriched, 'honors_course_count', 'honors_programs', 'honors_courses_available') or 0, True)
+                        ib = bool(_dig(enriched, 'ib_program_available', 'ib_offerings', 'ib_program') or False)
+                        dual = bool(_dig(enriched, 'dual_enrollment_available', 'dual_enrollment') or False)
+                        hon = _to_num(_dig(enriched, 'honors_programs', 'honors_course_count', 'honors_courses_available', 'honors_courses') or 0, True)
                         if not hon and _dig(enriched, 'honors_programs', 'honors_courses_available'):
                             hon = 10  # Default: most schools offer ~10 honors courses
                         inv = _dig(enriched, 'school_investment_level', 'funding_level') or result.get('school_investment_level') or 'medium'
@@ -936,7 +941,7 @@ def batch_naveen_moana():
                             WHERE school_enrichment_id=%s""",
                             (opp, a_status, conf, tot, grad, col, fl, ap, ap_p, stem, ib, dual, hon, inv, sid)
                         )
-                        logger.info(f"  ✓ Naveen complete for {name}: score={opp}, students={tot}")
+                        logger.info(f"  ✓ Naveen complete for {name}: score={opp}, AP={ap}, honors={hon}, grad={grad}, students={tot}, confidence={conf}")
                     except Exception as e:
                         logger.error(f"  ✗ Naveen failed for {name}: {e}", exc_info=True)
                         try:
