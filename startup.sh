@@ -53,3 +53,4 @@ export PYTHONUNBUFFERED=1
 # Start gunicorn
 echo "[$(date '+%Y-%m-%d %H:%M:%S')] Starting gunicorn..."
 exec gunicorn -c gunicorn.conf.py wsgi:app
+# restart trigger
