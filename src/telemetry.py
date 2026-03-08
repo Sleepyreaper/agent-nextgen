@@ -599,6 +599,63 @@ class NextGenTelemetry:
         # Persist to DB outside the lock (fire-and-forget)
         self._persist_to_db(model, agent_name, input_tokens, output_tokens, duration_ms, success)
 
+    # ---- Cost estimation (per 1M tokens, Azure AI pricing as of 2025-Q2) ----
+    _MODEL_COST_PER_1M: Dict[str, Dict[str, float]] = {
+        # model-name-prefix → { input $/1M, output $/1M }
+        "gpt-4.1":      {"input": 2.00,  "output": 8.00},
+        "gpt-4.1-mini": {"input": 0.40,  "output": 1.60},
+        "gpt-4.1-nano": {"input": 0.10,  "output": 0.40},
+        "gpt-4o":       {"input": 2.50,  "output": 10.00},
+        "gpt-4o-mini":  {"input": 0.15,  "output": 0.60},
+        "o3-mini":      {"input": 1.10,  "output": 4.40},
+        "o3":           {"input": 10.00, "output": 40.00},
+        "o1":           {"input": 15.00, "output": 60.00},
+        "o1-mini":      {"input": 1.10,  "output": 4.40},
+        "gpt-4":        {"input": 30.00, "output": 60.00},
+        "gpt-35-turbo": {"input": 0.50,  "output": 1.50},
+    }
+    _DEFAULT_COST = {"input": 2.00, "output": 8.00}
+
+    @classmethod
+    def _estimate_cost(cls, model: str, input_tokens: int, output_tokens: int) -> float:
+        """Estimate USD cost for a model call."""
+        model_lower = (model or "").lower().strip()
+        pricing = cls._DEFAULT_COST
+        # Match longest prefix first
+        for prefix in sorted(cls._MODEL_COST_PER_1M.keys(), key=len, reverse=True):
+            if model_lower.startswith(prefix):
+                pricing = cls._MODEL_COST_PER_1M[prefix]
+                break
+        return (input_tokens * pricing["input"] + output_tokens * pricing["output"]) / 1_000_000
+
+    @classmethod
+    def _enrich_with_cost(cls, data: Dict[str, Any]) -> Dict[str, Any]:
+        """Add estimated_cost_usd fields to token usage data."""
+        # Totals cost (use default pricing — model-specific is in by_model)
+        totals = data.get("totals", {})
+        total_cost = 0.0
+
+        # By-model cost
+        for model, stats in data.get("by_model", {}).items():
+            c = cls._estimate_cost(model, stats.get("input_tokens", 0), stats.get("output_tokens", 0))
+            stats["estimated_cost_usd"] = round(c, 4)
+            total_cost += c
+
+        # By-agent cost (sum across models per agent using agent_model breakdown)
+        agent_costs: Dict[str, float] = {}
+        for key, stats in data.get("by_agent_model", {}).items():
+            parts = key.split("::", 1)
+            agent = parts[0] if parts else "unknown"
+            model = parts[1] if len(parts) > 1 else "unknown"
+            c = cls._estimate_cost(model, stats.get("input_tokens", 0), stats.get("output_tokens", 0))
+            stats["estimated_cost_usd"] = round(c, 4)
+            agent_costs[agent] = agent_costs.get(agent, 0.0) + c
+        for agent, stats in data.get("by_agent", {}).items():
+            stats["estimated_cost_usd"] = round(agent_costs.get(agent, 0.0), 4)
+
+        totals["estimated_cost_usd"] = round(total_cost, 4)
+        return data
+
     def get_token_usage(self) -> Dict[str, Any]:
         """Return accumulated token usage statistics.
 
@@ -607,10 +664,10 @@ class NextGenTelemetry:
         """
         db_data = self.query_db_token_usage()
         if db_data.get("totals", {}).get("call_count", 0) > 0:
-            return db_data
+            return self._enrich_with_cost(db_data)
         # Fallback: in-memory
         with self._lock:
-            return {
+            return self._enrich_with_cost({
                 "totals": dict(self._token_total),
                 "by_model": {k: dict(v) for k, v in self._token_by_model.items()},
                 "by_agent": {k: dict(v) for k, v in self._token_by_agent.items()},
