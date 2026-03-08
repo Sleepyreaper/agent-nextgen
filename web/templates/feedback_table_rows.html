@@ -7,6 +7,7 @@
             <th style="text-align:left; padding:0.5rem;">Status</th>
             <th style="text-align:left; padding:0.5rem;">Title</th>
             <th style="text-align:left; padding:0.5rem;">Issue</th>
+            <th style="text-align:left; padding:0.5rem;">When</th>
         </tr>
     </thead>
     <tbody>
@@ -25,6 +26,9 @@
                 {% if item.issue_url or item.IssueUrl %}
                 <a href="{{ item.issue_url or item.IssueUrl }}" target="_blank" rel="noopener">Link</a>
                 {% else %}—{% endif %}
+            </td>
+            <td style="padding:0.5rem; color:#6b7280; font-size:0.8rem; white-space:nowrap;">
+                {{ (item.created_at or item.CreatedAt or '')|string }}
             </td>
         </tr>
         {% endfor %}

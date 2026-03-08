@@ -3417,7 +3417,22 @@ class Database:
                 tb = set(t for t in b.split() if len(t) > 1)
                 if not ta or not tb:
                     return 0.0
-                return len(ta & tb) / len(ta | tb)
+                # Exact token overlap
+                exact = ta & tb
+                # Fuzzy token matching for remaining tokens
+                remaining_a = ta - exact
+                remaining_b = tb - exact
+                fuzzy_matches = 0
+                matched_b = set()
+                for tok_a in remaining_a:
+                    for tok_b in remaining_b - matched_b:
+                        if difflib.SequenceMatcher(None, tok_a, tok_b).ratio() >= 0.75:
+                            fuzzy_matches += 1
+                            matched_b.add(tok_b)
+                            break
+                matched = len(exact) + fuzzy_matches
+                total = len(ta | tb) - fuzzy_matches  # fuzzy pairs count as 1
+                return matched / max(total, 1)
 
             cand_norm = _normalize(school_name)
             if not cand_norm:

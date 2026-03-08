@@ -674,6 +674,126 @@ def school_enrichment_score(school_id):
 
 
 
+@schools_bp.route('/api/school/<int:school_id>/discover-website', methods=['POST'])
+def discover_school_website(school_id):
+    """Auto-discover a school's website via web search.
+
+    Uses the AI client to search for and validate a school's official website.
+    Updates the school record with the discovered URL.
+    """
+    import requests as http_requests
+
+    try:
+        school = db.get_school_enriched_data(school_id)
+        if not school:
+            return jsonify({'status': 'error', 'error': 'School not found'}), 404
+
+        school_name = school.get('school_name', '')
+        state_code = school.get('state_code', '')
+        district = school.get('school_district', '')
+
+        if not school_name:
+            return jsonify({'status': 'error', 'error': 'School name is empty'}), 400
+
+        # Build a search query
+        search_query = f"{school_name} {state_code} official website"
+        if district:
+            search_query = f"{school_name} {district} {state_code} official website"
+
+        # Use AI to determine the school website
+        try:
+            client = get_ai_client_mini()
+            prompt = (
+                f"Find the official website URL for this school:\n"
+                f"- School: {school_name}\n"
+                f"- State: {state_code}\n"
+                f"- District: {district or 'unknown'}\n\n"
+                f"Return ONLY the URL (e.g., https://www.example.com). "
+                f"If you cannot determine it with confidence, return 'UNKNOWN'."
+            )
+            response = run_async(client.complete(
+                model=config.model_tier_lightweight,
+                messages=[{"role": "user", "content": prompt}],
+                max_tokens=100,
+                temperature=0,
+            ))
+            url_result = (response.choices[0].message.content or '').strip()
+
+            if url_result and url_result != 'UNKNOWN' and url_result.startswith('http'):
+                # Verify the URL is reachable
+                verified = False
+                try:
+                    resp = http_requests.head(url_result, timeout=5, allow_redirects=True)
+                    verified = resp.status_code < 400
+                except Exception:
+                    pass
+
+                db.update_school_enriched_data(school_id, {
+                    'school_url': url_result,
+                    'school_url_verified': verified,
+                    'school_url_verified_date': datetime.now(timezone.utc).isoformat() if verified else None,
+                })
+
+                return jsonify({
+                    'status': 'success',
+                    'school_url': url_result,
+                    'verified': verified,
+                    'school_id': school_id,
+                })
+            else:
+                return jsonify({
+                    'status': 'not_found',
+                    'message': 'Could not determine official website with confidence',
+                    'school_id': school_id,
+                })
+        except Exception as ai_err:
+            logger.warning(f"AI website discovery failed for school {school_id}: {ai_err}")
+            return jsonify({'status': 'error', 'error': f'AI lookup failed: {str(ai_err)}'}), 500
+
+    except Exception as e:
+        logger.error(f"Website discovery error for school {school_id}: {e}", exc_info=True)
+        return jsonify({'status': 'error', 'error': 'An internal error occurred'}), 500
+
+
+@schools_bp.route('/api/schools/needing-enrichment', methods=['GET'])
+def schools_needing_enrichment():
+    """Return schools that need enrichment (low enrichment score or missing key data)."""
+    try:
+        limit = request.args.get('limit', 50, type=int)
+        threshold = request.args.get('threshold', 60.0, type=float)
+
+        # Get all active schools
+        rows = db.execute_query(
+            "SELECT * FROM school_enriched_data WHERE is_active = TRUE ORDER BY school_name LIMIT %s",
+            (min(limit * 3, 500),)  # fetch more, filter by score
+        )
+
+        needing = []
+        for row in (rows or []):
+            score_info = _compute_enrichment_completeness(dict(row))
+            if score_info['overall_percentage'] < threshold:
+                needing.append({
+                    'school_id': row.get('id'),
+                    'school_name': row.get('school_name'),
+                    'state_code': row.get('state_code'),
+                    'enrichment_score': score_info['overall_percentage'],
+                    'missing_fields': score_info['missing_fields'],
+                    'categories': score_info['categories'],
+                })
+                if len(needing) >= limit:
+                    break
+
+        return jsonify({
+            'status': 'success',
+            'count': len(needing),
+            'threshold': threshold,
+            'schools': needing,
+        })
+    except Exception as e:
+        logger.error(f"Needing-enrichment endpoint error: {e}", exc_info=True)
+        return jsonify({'status': 'error', 'error': 'An internal error occurred'}), 500
+
+
 @schools_bp.route('/api/school/lookup', methods=['POST'])
 def lookup_or_create_school():
     """Auto-lookup: if a school exists, return it. If not, create a skeleton record.

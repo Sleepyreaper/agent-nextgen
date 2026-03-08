@@ -118,6 +118,7 @@ function renderFeedbackTable(items) {
     html += '<th style="text-align:left; padding:0.5rem;">Status</th>';
     html += '<th style="text-align:left; padding:0.5rem;">Title</th>';
     html += '<th style="text-align:left; padding:0.5rem;">Issue</th>';
+    html += '<th style="text-align:left; padding:0.5rem;">When</th>';
     html += '</tr></thead><tbody>';
     for (const item of items) {
         const triage = item.triage_json || {};
@@ -126,11 +127,14 @@ function renderFeedbackTable(items) {
         const message = item.message || '';
         const title = triage.title || (message ? message.substring(0, 60) : 'Feedback');
         const issueUrl = item.issue_url || item.IssueUrl || '';
+        const createdAt = item.created_at || item.CreatedAt || '';
+        const timeAgo = createdAt ? new Date(createdAt).toLocaleDateString(undefined, {month:'short', day:'numeric', hour:'2-digit', minute:'2-digit'}) : '—';
         html += '<tr>';
         html += `<td style="padding:0.5rem;"><span class="${typeBadgeClass(feedbackType)}">${escapeHtml(feedbackType)}</span></td>`;
         html += `<td style="padding:0.5rem;"><span class="${statusBadgeClass(status)}">${escapeHtml(status)}</span></td>`;
         html += `<td style="padding:0.5rem;"><strong>${escapeHtml(title)}</strong><br><span style="color:#6b7280;font-size:0.9rem;">${escapeHtml(message.substring(0, 120))}${message.length > 120 ? '…' : ''}</span></td>`;
         html += `<td style="padding:0.5rem;">${issueUrl ? `<a href="${escapeHtml(issueUrl)}" target="_blank" rel="noopener">Link</a>` : '—'}</td>`;
+        html += `<td style="padding:0.5rem; color:#6b7280; font-size:0.8rem; white-space:nowrap;">${timeAgo}</td>`;
         html += '</tr>';
     }
     html += '</tbody></table>';
@@ -237,5 +241,15 @@ async function loadGithubIssues() {
     } catch (e) { /* silently fail */ }
 }
 loadGithubIssues();
+
+// Wire up issue tab clicks
+document.querySelectorAll('.issue-tab').forEach(tab => {
+    tab.addEventListener('click', () => switchIssueTab(tab.dataset.tab));
+});
+
+// Auto-refresh feedback list every 30s by default
+refreshFeedbackList();
+refreshTimer = setInterval(refreshFeedbackList, 30000);
+autoRefreshToggle.checked = true;
 </script>
 {% endblock %}
