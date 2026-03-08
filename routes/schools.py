@@ -1922,6 +1922,27 @@ def bulk_approve_schools():
         return jsonify({'status': 'error', 'error': str(e)}), 500
 
 
+@schools_bp.route('/api/schools/import-gosa-from-repo', methods=['POST'])
+def import_gosa_from_repo():
+    """Import the GOSA merged CSV directly from the repo — no file upload needed."""
+    from src.csv_school_importer import import_supplemental_csv
+    import os as _os
+    try:
+        db.ensure_gosa_columns()
+    except Exception:
+        pass
+    try:
+        # The CSV is in the repo at data/gosa_merged.csv
+        csv_path = _os.path.join(_os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))), 'data', 'gosa_merged.csv')
+        if not _os.path.isfile(csv_path):
+            return jsonify({'status': 'error', 'error': f'File not found: {csv_path}'}), 404
+        result = import_supplemental_csv(csv_path, db, source_name='GOSA_2015-2025')
+        return jsonify(result)
+    except Exception as e:
+        logger.error(f"GOSA repo import error: {e}", exc_info=True)
+        return jsonify({'status': 'error', 'error': str(e)}), 500
+
+
 @schools_bp.route('/api/schools/reset-for-reanalysis', methods=['POST'])
 def reset_schools_for_reanalysis():
     """Reset all complete schools back to csv_imported so Naveen re-analyzes them.

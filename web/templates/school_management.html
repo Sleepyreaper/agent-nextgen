@@ -169,6 +169,20 @@
     </div>
     <div id="suppResult" class="batch-result"></div>
 
+    <!-- One-click GOSA import from repo -->
+    <div class="batch-actions" style="margin-top: 1rem; background: linear-gradient(135deg, #ecfdf5, #d1fae5); border: 1px solid #34d399;">
+        <div class="batch-actions-info">
+            <h3>📊 Import GOSA Data (Pre-Built)</h3>
+            <p>Import the pre-processed GOSA dataset (AP, ACT, graduation, HOPE, dropout, EOC, expenditure, educator quality, FESR, direct cert) directly from the server. No file upload needed.</p>
+        </div>
+        <div style="display: flex; align-items: center; gap: 0.75rem;">
+            <button class="batch-btn" style="background: #059669;" id="gosaImportBtn" data-action="importGosaFromRepo">
+                📊 Import GOSA Data
+            </button>
+        </div>
+    </div>
+    <div id="gosaResult" class="batch-result"></div>
+
     <!-- AI Academic Data Lookup -->
     <div class="batch-actions" style="margin-top: 1rem; background: linear-gradient(135deg, #fff7ed, #ffedd5); border: 1px solid #fb923c;">
         <div class="batch-actions-info">
@@ -948,6 +962,39 @@ async function loadUnmatched() {
     }
     btn.disabled = false;
     btn.innerHTML = '🔍 Find Unmatched';
+}
+
+// ── One-click GOSA import ───────────────────────────────────────────
+async function importGosaFromRepo() {
+    const btn = document.getElementById('gosaImportBtn');
+    const resultDiv = document.getElementById('gosaResult');
+    if (!confirm('Import the pre-built GOSA dataset (2,800+ GA schools, 25 data fields)?')) return;
+
+    btn.disabled = true;
+    btn.innerHTML = '⏳ Importing...';
+    resultDiv.style.display = 'none';
+
+    try {
+        const resp = await fetch('/api/schools/import-gosa-from-repo', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({})});
+        const data = await resp.json();
+        if (data.status === 'success') {
+            const fields = data.fields_updated || {};
+            const fieldList = Object.entries(fields).map(([k, v]) => `${k}: ${v}`).join(', ');
+            resultDiv.className = 'batch-result success';
+            resultDiv.innerHTML = `<strong>✅ GOSA import complete!</strong><br>${data.matched} matched, ${data.updated} updated, ${data.not_found} not found<br><strong>Fields:</strong> ${fieldList || 'none'}`;
+            if (data.updated > 0) setTimeout(() => loadSchools(), 1000);
+        } else {
+            resultDiv.className = 'batch-result error';
+            resultDiv.innerHTML = '❌ ' + (data.error || 'Failed');
+        }
+        resultDiv.style.display = 'block';
+    } catch (err) {
+        resultDiv.className = 'batch-result error';
+        resultDiv.innerHTML = '❌ Error: ' + err.message;
+        resultDiv.style.display = 'block';
+    }
+    btn.disabled = false;
+    btn.innerHTML = '📊 Import GOSA Data';
 }
 
 // ── Supplemental CSV Import ────────────────────────────────────────
