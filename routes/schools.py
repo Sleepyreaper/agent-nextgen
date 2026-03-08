@@ -864,10 +864,11 @@ def batch_naveen_moana():
                 logger.info(f"🔬 Batch [{idx+1}/{total}] Starting: {name} (id={sid})")
 
                 # ── Step 1: Naveen analysis (if needed) ──────────────
-                needs_naveen = sch.get('analysis_status') in (None, 'pending', 'error')
+                needs_naveen = sch.get('analysis_status') in (None, 'pending', 'csv_imported', 'error')
                 if needs_naveen:
                     try:
                         full_school = db.get_school_enriched_data(sid) or {}
+                        logger.info(f"  → Calling Naveen AI model for {name} (status={sch.get('analysis_status')})")
 
                         result = scientist.analyze_school(
                             school_name=name,
@@ -945,6 +946,8 @@ def batch_naveen_moana():
                             )
                         except Exception:
                             pass
+                else:
+                    logger.info(f"  → Naveen skipped for {name} (already status={sch.get('analysis_status')})")
 
                 # ── Step 2: Moana validation (if school now has data) ─
                 try:
