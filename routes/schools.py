@@ -1523,6 +1523,8 @@ def seed_school_academics():
         def background_seed(schools_to_process, delay_sec, state_path):
             import time as _time
             try:
+                # Ensure GOSA columns exist before importing
+                db.ensure_gosa_columns()
                 client = get_ai_client()
                 model = config.model_tier_workhorse or config.foundry_model_name or config.deployment_name
                 source_name = 'AI_Knowledge_GA_2025'
@@ -1537,37 +1539,61 @@ def seed_school_academics():
 
                     try:
                         prompt = (
-                            f"Look up this Georgia high school and provide its REAL academic data.\n\n"
+                            f"Look up this Georgia high school and provide its REAL academic data "
+                            f"from GOSA (Governor's Office of Student Achievement), GA DOE, and CollegeBoard.\n\n"
                             f"School: {name}\n"
                             f"District: {sch.get('school_district', '')}\n"
                             f"NCES ID: {sch.get('nces_id', '')}\n"
                             f"Enrollment: {sch.get('total_students', 0)}\n\n"
-                            f"Return JSON with: ap_course_count (int), graduation_rate (float %), "
-                            f"honors_course_count (int), college_acceptance_rate (float %), "
-                            f"stem_program_available (bool), ib_program_available (bool), "
-                            f"dual_enrollment_available (bool), school_url (string). "
-                            f"Set null for fields you cannot verify."
+                            f"Return JSON with ALL of these fields (use null if unknown):\n"
+                            f"- ap_course_count: int (AP courses offered)\n"
+                            f"- ap_students_tested: int (students taking AP exams)\n"
+                            f"- ap_exam_pass_rate: float (% of AP exams scoring 3+)\n"
+                            f"- honors_course_count: int\n"
+                            f"- graduation_rate: float (4-year cohort %)\n"
+                            f"- college_going_rate: float (% enrolled in college within 16 months, from GOSA C11 report)\n"
+                            f"- college_going_4yr_rate: float (% in 4-year institutions)\n"
+                            f"- act_composite_avg: float (school average ACT composite)\n"
+                            f"- sat_total_avg: int (school average SAT total, 400-1600 scale)\n"
+                            f"- hope_eligible_pct: float (% of graduates HOPE eligible)\n"
+                            f"- dropout_rate: float (9-12 annual dropout %)\n"
+                            f"- stem_program_available: bool\n"
+                            f"- ib_program_available: bool\n"
+                            f"- dual_enrollment_available: bool\n"
+                            f"- school_url: string (official school website)\n"
+                            f"Use the most recent data year available. Be precise."
                         )
                         resp = client.chat.completions.create(
                             model=model,
                             messages=[
                                 {"role": "system", "content": (
-                                    "You are a school data researcher. Provide real, publicly verifiable data "
-                                    "about Georgia high schools from GA DOE, CollegeBoard, NCES, and school websites. "
-                                    "Only return data you are confident about. Use null for uncertain fields."
+                                    "You are a Georgia education data researcher with access to GOSA "
+                                    "(Governor's Office of Student Achievement) downloadable data, "
+                                    "GA DOE report cards, CollegeBoard AP data, and school profiles. "
+                                    "Provide real, publicly verifiable data for Georgia high schools. "
+                                    "Use data from the most recent school year available. "
+                                    "Only return data you are confident about. Use null for uncertain fields. "
+                                    "These data points are publicly available at gosa.georgia.gov."
                                 )},
                                 {"role": "user", "content": prompt},
                             ],
-                            max_tokens=400,
+                            max_tokens=600,
                             temperature=0.1,
                             response_format={"type": "json_object"},
                         )
                         ai_data = json.loads(resp.choices[0].message.content)
 
                         row = {'ncessch': sch.get('nces_id', '')}
-                        for field in ['ap_course_count', 'graduation_rate', 'honors_course_count',
-                                      'college_acceptance_rate', 'stem_program_available',
-                                      'ib_program_available', 'dual_enrollment_available', 'school_url']:
+                        all_fields = [
+                            'ap_course_count', 'ap_students_tested', 'ap_exam_pass_rate',
+                            'honors_course_count', 'graduation_rate',
+                            'college_going_rate', 'college_going_4yr_rate',
+                            'act_composite_avg', 'sat_total_avg',
+                            'hope_eligible_pct', 'dropout_rate',
+                            'stem_program_available', 'ib_program_available',
+                            'dual_enrollment_available', 'school_url',
+                        ]
+                        for field in all_fields:
                             val = ai_data.get(field)
                             if val is True:
                                 row[field] = 'true'
@@ -1592,9 +1618,15 @@ def seed_school_academics():
 
                 # Write CSV and import
                 if rows:
-                    fieldnames = ['ncessch', 'ap_course_count', 'graduation_rate', 'honors_course_count',
-                                  'college_acceptance_rate', 'stem_program_available', 'ib_program_available',
-                                  'dual_enrollment_available', 'school_url']
+                    fieldnames = [
+                        'ncessch', 'ap_course_count', 'ap_students_tested', 'ap_exam_pass_rate',
+                        'honors_course_count', 'graduation_rate',
+                        'college_going_rate', 'college_going_4yr_rate',
+                        'act_composite_avg', 'sat_total_avg',
+                        'hope_eligible_pct', 'dropout_rate',
+                        'stem_program_available', 'ib_program_available',
+                        'dual_enrollment_available', 'school_url',
+                    ]
                     with open(csv_path, 'w', newline='', encoding='utf-8') as cf:
                         writer = csv_mod.DictWriter(cf, fieldnames=fieldnames)
                         writer.writeheader()

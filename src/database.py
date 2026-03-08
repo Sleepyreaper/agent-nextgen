@@ -3520,6 +3520,51 @@ class Database:
         except Exception as e:
             logger.warning(f"Could not create school_aliases table: {e}")
 
+    def ensure_gosa_columns(self) -> None:
+        """Add GOSA data columns to school_enriched_data if missing."""
+        gosa_columns = [
+            ('act_composite_avg', 'NUMERIC(4,1)'),
+            ('act_english_avg', 'NUMERIC(4,1)'),
+            ('act_math_avg', 'NUMERIC(4,1)'),
+            ('act_reading_avg', 'NUMERIC(4,1)'),
+            ('act_science_avg', 'NUMERIC(4,1)'),
+            ('act_students_tested', 'INTEGER'),
+            ('sat_total_avg', 'INTEGER'),
+            ('sat_ebrw_avg', 'INTEGER'),
+            ('sat_math_avg', 'INTEGER'),
+            ('sat_students_tested', 'INTEGER'),
+            ('college_going_rate', 'NUMERIC(5,2)'),
+            ('college_going_2yr_rate', 'NUMERIC(5,2)'),
+            ('college_going_4yr_rate', 'NUMERIC(5,2)'),
+            ('hope_eligible_pct', 'NUMERIC(5,2)'),
+            ('dropout_rate', 'NUMERIC(5,2)'),
+            ('milestones_ela_proficient_pct', 'NUMERIC(5,2)'),
+            ('milestones_math_proficient_pct', 'NUMERIC(5,2)'),
+            ('ap_students_tested', 'INTEGER'),
+            ('ap_tests_administered', 'INTEGER'),
+            ('ap_tests_3plus', 'INTEGER'),
+            ('gosa_data_years', 'TEXT'),
+        ]
+        for col_name, col_type in gosa_columns:
+            if not self.has_applications_column_on_table('school_enriched_data', col_name):
+                try:
+                    self.execute_non_query(
+                        f"ALTER TABLE school_enriched_data ADD COLUMN IF NOT EXISTS {col_name} {col_type}"
+                    )
+                except Exception:
+                    pass  # Column may already exist
+
+    def has_applications_column_on_table(self, table_name: str, column_name: str) -> bool:
+        """Check if a column exists on a specific table."""
+        try:
+            rows = self.execute_query(
+                "SELECT 1 FROM information_schema.columns WHERE table_name = %s AND column_name = %s",
+                (table_name.lower(), column_name.lower()),
+            )
+            return bool(rows)
+        except Exception:
+            return False
+
     def add_school_alias(self, school_enrichment_id: int, alias_name: str,
                          state_code: Optional[str] = None, source: str = 'manual') -> Optional[int]:
         """Add an alias for a school. Returns alias_id or None."""

@@ -420,6 +420,46 @@ _SUPPLEMENT_FIELD_MAP = {
     'school_url': 'school_url',
     'website': 'school_url',
     'url': 'school_url',
+    # ACT scores
+    'act_composite_avg': 'act_composite_avg',
+    'act_composite': 'act_composite_avg',
+    'act_avg': 'act_composite_avg',
+    'act_english_avg': 'act_english_avg',
+    'act_english': 'act_english_avg',
+    'act_math_avg': 'act_math_avg',
+    'act_math': 'act_math_avg',
+    'act_reading_avg': 'act_reading_avg',
+    'act_reading': 'act_reading_avg',
+    'act_science_avg': 'act_science_avg',
+    'act_science': 'act_science_avg',
+    'act_students_tested': 'act_students_tested',
+    # SAT scores
+    'sat_total_avg': 'sat_total_avg',
+    'sat_total': 'sat_total_avg',
+    'sat_ebrw_avg': 'sat_ebrw_avg',
+    'sat_ebrw': 'sat_ebrw_avg',
+    'sat_math_avg': 'sat_math_avg',
+    'sat_math': 'sat_math_avg',
+    'sat_students_tested': 'sat_students_tested',
+    # College going
+    'college_going_rate': 'college_going_rate',
+    'college_going': 'college_going_rate',
+    'college_going_2yr_rate': 'college_going_2yr_rate',
+    'college_going_4yr_rate': 'college_going_4yr_rate',
+    # HOPE
+    'hope_eligible_pct': 'hope_eligible_pct',
+    'hope_eligible': 'hope_eligible_pct',
+    'hope_pct': 'hope_eligible_pct',
+    # Dropout
+    'dropout_rate': 'dropout_rate',
+    # Milestones
+    'milestones_ela_proficient_pct': 'milestones_ela_proficient_pct',
+    'milestones_math_proficient_pct': 'milestones_math_proficient_pct',
+    # AP extended
+    'ap_students_tested': 'ap_students_tested',
+    'ap_tests_administered': 'ap_tests_administered',
+    'ap_tests_3plus': 'ap_tests_3plus',
+    'ap_tests_3_or_higher': 'ap_tests_3plus',
 }
 
 # Fields to match on — any of these can be the school identifier

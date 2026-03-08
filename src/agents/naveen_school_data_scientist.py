@@ -313,6 +313,30 @@ class NaveenSchoolDataScientist(BaseAgent):
             f"Latest School Year: {ed.get('latest_school_year') or 'Unknown'}",
         ]
 
+        # GOSA test scores and outcomes (if available)
+        gosa_fields = [
+            ('act_composite_avg', 'ACT Composite Avg'),
+            ('sat_total_avg', 'SAT Total Avg'),
+            ('college_going_rate', 'College-Going Rate (%)'),
+            ('college_going_4yr_rate', 'College-Going 4yr (%)'),
+            ('hope_eligible_pct', 'HOPE Eligible (%)'),
+            ('dropout_rate', 'Dropout Rate 9-12 (%)'),
+            ('ap_students_tested', 'AP Students Tested'),
+            ('ap_tests_3plus', 'AP Tests Scoring 3+'),
+            ('milestones_ela_proficient_pct', 'GA Milestones ELA Proficient (%)'),
+            ('milestones_math_proficient_pct', 'GA Milestones Math Proficient (%)'),
+        ]
+        has_gosa = any(ed.get(f[0]) for f in gosa_fields)
+        if has_gosa:
+            data_lines.append("")
+            data_lines.append("-- GOSA TEST SCORES & OUTCOMES (from GA Governor's Office of Student Achievement) --")
+            for field_key, label in gosa_fields:
+                val = ed.get(field_key)
+                if val is not None and val != 0:
+                    data_lines.append(f"{label}: {val}")
+                else:
+                    data_lines.append(f"{label}: Not available")
+
         # Academic programs — check provenance for authoritative vs missing
         ap_count = ed.get('ap_course_count')
         honors_count = ed.get('honors_course_count')
@@ -735,6 +759,15 @@ class NaveenSchoolDataScientist(BaseAgent):
             features['school_investment_tier'] = 2
         elif invest == 'low':
             features['school_investment_tier'] = 1
+
+        # GOSA test scores (when available)
+        for key in ('act_composite_avg', 'sat_total_avg', 'college_going_rate',
+                     'college_going_4yr_rate', 'hope_eligible_pct', 'dropout_rate',
+                     'ap_students_tested', 'ap_tests_3plus',
+                     'milestones_ela_proficient_pct', 'milestones_math_proficient_pct'):
+            v = _num(school_data.get(key))
+            if v is not None:
+                features[f'school_{key}'] = v
 
         # Remove None values
         return {k: v for k, v in features.items() if v is not None}

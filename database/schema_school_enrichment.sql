@@ -99,6 +99,50 @@ ALTER TABLE school_enriched_data ADD COLUMN IF NOT EXISTS
 ALTER TABLE school_enriched_data ADD COLUMN IF NOT EXISTS
   naep_fetched_at TIMESTAMP;
 
+-- GOSA (Georgia Governor's Office of Student Achievement) data fields
+ALTER TABLE school_enriched_data ADD COLUMN IF NOT EXISTS
+  act_composite_avg NUMERIC(4,1);       -- Average ACT composite score
+ALTER TABLE school_enriched_data ADD COLUMN IF NOT EXISTS
+  act_english_avg NUMERIC(4,1);
+ALTER TABLE school_enriched_data ADD COLUMN IF NOT EXISTS
+  act_math_avg NUMERIC(4,1);
+ALTER TABLE school_enriched_data ADD COLUMN IF NOT EXISTS
+  act_reading_avg NUMERIC(4,1);
+ALTER TABLE school_enriched_data ADD COLUMN IF NOT EXISTS
+  act_science_avg NUMERIC(4,1);
+ALTER TABLE school_enriched_data ADD COLUMN IF NOT EXISTS
+  act_students_tested INTEGER;
+ALTER TABLE school_enriched_data ADD COLUMN IF NOT EXISTS
+  sat_total_avg INTEGER;                -- Average SAT total score (400-1600)
+ALTER TABLE school_enriched_data ADD COLUMN IF NOT EXISTS
+  sat_ebrw_avg INTEGER;                 -- Evidence-Based Reading & Writing
+ALTER TABLE school_enriched_data ADD COLUMN IF NOT EXISTS
+  sat_math_avg INTEGER;
+ALTER TABLE school_enriched_data ADD COLUMN IF NOT EXISTS
+  sat_students_tested INTEGER;
+ALTER TABLE school_enriched_data ADD COLUMN IF NOT EXISTS
+  college_going_rate NUMERIC(5,2);      -- % enrolled in college within 16 months (GOSA C11)
+ALTER TABLE school_enriched_data ADD COLUMN IF NOT EXISTS
+  college_going_2yr_rate NUMERIC(5,2);  -- % enrolled in 2-year institution
+ALTER TABLE school_enriched_data ADD COLUMN IF NOT EXISTS
+  college_going_4yr_rate NUMERIC(5,2);  -- % enrolled in 4-year institution
+ALTER TABLE school_enriched_data ADD COLUMN IF NOT EXISTS
+  hope_eligible_pct NUMERIC(5,2);       -- % of graduates HOPE eligible
+ALTER TABLE school_enriched_data ADD COLUMN IF NOT EXISTS
+  dropout_rate NUMERIC(5,2);            -- 9-12 annual dropout rate
+ALTER TABLE school_enriched_data ADD COLUMN IF NOT EXISTS
+  milestones_ela_proficient_pct NUMERIC(5,2);  -- GA Milestones EOC: % proficient+ in ELA
+ALTER TABLE school_enriched_data ADD COLUMN IF NOT EXISTS
+  milestones_math_proficient_pct NUMERIC(5,2); -- GA Milestones EOC: % proficient+ in Math
+ALTER TABLE school_enriched_data ADD COLUMN IF NOT EXISTS
+  ap_students_tested INTEGER;           -- Number of students taking AP exams
+ALTER TABLE school_enriched_data ADD COLUMN IF NOT EXISTS
+  ap_tests_administered INTEGER;        -- Total AP exams taken
+ALTER TABLE school_enriched_data ADD COLUMN IF NOT EXISTS
+  ap_tests_3plus INTEGER;               -- AP exams scoring 3+
+ALTER TABLE school_enriched_data ADD COLUMN IF NOT EXISTS
+  gosa_data_years TEXT;                 -- JSON: which years of GOSA data loaded
+
 -- Web sources and links for each school
 CREATE TABLE IF NOT EXISTS school_web_sources (
     source_id SERIAL PRIMARY KEY,
