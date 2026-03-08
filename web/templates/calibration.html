@@ -1,0 +1,261 @@
+{% extends "base.html" %}
+
+{% block title %}Calibration Report — Next Gen{% endblock %}
+{% block page_title %}Calibration Report{% endblock %}
+
+{% block content %}
+<div class="max-w-7xl mx-auto space-y-8">
+
+    <!-- Header -->
+    <div class="bg-white rounded-2xl shadow-sm border border-emory-gray-200 overflow-hidden">
+        <div class="bg-gradient-to-r from-emory-dark-blue to-emory-medium-blue px-8 py-6">
+            <div class="flex items-start gap-4">
+                <div class="flex-shrink-0 w-12 h-12 rounded-xl bg-white/10 flex items-center justify-center">
+                    <span class="text-2xl">📐</span>
+                </div>
+                <div>
+                    <h2 class="text-xl font-heading font-bold text-white">AI vs. Human Score Calibration</h2>
+                    <p class="text-white/70 text-sm mt-1 max-w-2xl">
+                        Compares AI agent scores against the 2024 faculty rubric scores for training applicants.
+                        This is the primary evidence that the evaluation pipeline produces trustworthy results.
+                    </p>
+                </div>
+            </div>
+        </div>
+        <!-- Quick stats -->
+        <div id="cal-stats" class="grid grid-cols-2 md:grid-cols-5 gap-px bg-emory-gray-200">
+            <div class="bg-white px-4 py-3 text-center">
+                <div class="text-xl font-bold text-emory-dark-blue" id="stat-paired">—</div>
+                <div class="text-[0.65rem] text-emory-gray-500 mt-0.5">Paired Records</div>
+            </div>
+            <div class="bg-white px-4 py-3 text-center">
+                <div class="text-xl font-bold text-emory-green" id="stat-with-ai">—</div>
+                <div class="text-[0.65rem] text-emory-gray-500 mt-0.5">With AI Scores</div>
+            </div>
+            <div class="bg-white px-4 py-3 text-center">
+                <div class="text-xl font-bold text-emory-gold" id="stat-without-ai">—</div>
+                <div class="text-[0.65rem] text-emory-gray-500 mt-0.5">Awaiting AI</div>
+            </div>
+            <div class="bg-white px-4 py-3 text-center">
+                <div class="text-xl font-bold text-emory-medium-blue" id="stat-correlation">—</div>
+                <div class="text-[0.65rem] text-emory-gray-500 mt-0.5">Overall r</div>
+            </div>
+            <div class="bg-white px-4 py-3 text-center">
+                <div class="text-xl font-bold text-emory-green" id="stat-accuracy">—</div>
+                <div class="text-[0.65rem] text-emory-gray-500 mt-0.5">Selection Accuracy</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Dimension Correlations -->
+    <section>
+        <div class="bg-white rounded-2xl shadow-sm border border-emory-gray-200 overflow-hidden">
+            <div class="px-6 py-5 border-b border-emory-gray-200">
+                <h3 class="font-heading font-semibold text-lg">Dimension-Level Comparison</h3>
+                <p class="text-sm text-emory-gray-500">How well does each AI agent score correlate with the matching human rubric dimension?</p>
+            </div>
+            <div class="p-6" id="dimensions-content">
+                <div class="flex items-center justify-center py-12 text-emory-gray-500">
+                    <svg class="animate-spin h-5 w-5 mr-3" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" fill="none"/><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>
+                    Loading calibration data…
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Per-Student Comparison Table -->
+    <section>
+        <div class="bg-white rounded-2xl shadow-sm border border-emory-gray-200 overflow-hidden">
+            <div class="px-6 py-5 border-b border-emory-gray-200">
+                <div class="flex items-center justify-between">
+                    <div>
+                        <h3 class="font-heading font-semibold text-lg">Student-Level Comparison</h3>
+                        <p class="text-sm text-emory-gray-500">Side-by-side human vs AI scores for each training applicant</p>
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <label class="text-xs text-emory-gray-500">Show:</label>
+                        <select id="filter-select" class="text-xs border border-emory-gray-200 rounded-lg px-2 py-1" data-onchange="filterStudents">
+                            <option value="all">All</option>
+                            <option value="with_ai">With AI Scores</option>
+                            <option value="divergent">Divergent Only</option>
+                            <option value="selected">Selected</option>
+                            <option value="not_selected">Not Selected</option>
+                        </select>
+                    </div>
+                </div>
+            </div>
+            <div class="p-6" id="students-content">
+                <div class="flex items-center justify-center py-12 text-emory-gray-500">
+                    <svg class="animate-spin h-5 w-5 mr-3" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" fill="none"/><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>
+                    Loading…
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Interpretation Guide -->
+    <section>
+        <div class="bg-white rounded-2xl shadow-sm border border-emory-gray-200 overflow-hidden">
+            <div class="px-6 py-5 border-b border-emory-gray-200">
+                <h3 class="font-heading font-semibold text-lg">📖 How to Read This Report</h3>
+            </div>
+            <div class="p-6 text-sm text-emory-gray-700 space-y-3">
+                <p><strong>Correlation (r)</strong> measures how well AI and human scores move together. r=1.0 is perfect agreement, r=0 is random, r&lt;0 is inverted. For rubric scoring, r≥0.7 is strong, r≥0.5 is moderate, r&lt;0.3 is weak.</p>
+                <p><strong>MAE (Mean Absolute Error)</strong> for same-scale comparisons (Milo estimates) — how far off the AI is on average. MAE&lt;0.5 on a 0-3 scale is excellent, MAE&lt;1.0 is acceptable.</p>
+                <p><strong>Selection Accuracy</strong> — what percentage of students would the AI classify the same way as faculty (selected vs. not). Above 80% is the target.</p>
+                <p><strong>Divergent cases</strong> — where AI and human scores disagree most — are the highest-value learning opportunities. Every divergence should be investigated: is the AI wrong, or did it see something the human missed?</p>
+                <p class="text-emory-gold font-medium">⚠️ If most records show "Awaiting AI" scores, you need to reprocess training data through the current pipeline first.</p>
+            </div>
+        </div>
+    </section>
+
+</div>
+
+<script nonce="{{ csp_nonce }}">
+(function() {
+    'use strict';
+
+    var allPairs = [];
+
+    function escapeHtml(s) {
+        var d = document.createElement('div');
+        d.textContent = s || '';
+        return d.innerHTML;
+    }
+
+    function corrColor(r) {
+        if (r === null || r === undefined) return 'text-emory-gray-500';
+        if (r >= 0.7) return 'text-emory-green';
+        if (r >= 0.4) return 'text-emory-gold';
+        return 'text-emory-red';
+    }
+
+    function corrBg(r) {
+        if (r === null || r === undefined) return 'bg-emory-gray-200';
+        if (r >= 0.7) return 'bg-emory-green';
+        if (r >= 0.4) return 'bg-emory-gold';
+        return 'bg-emory-red';
+    }
+
+    function renderDimensions(dims) {
+        var container = document.getElementById('dimensions-content');
+        if (!dims || dims.length === 0) {
+            container.innerHTML = '<p class="text-center text-emory-gray-500 py-8">No dimension data available. Reprocess training data first.</p>';
+            return;
+        }
+
+        var html = '<div class="grid grid-cols-1 md:grid-cols-2 gap-4">';
+        dims.forEach(function(d) {
+            var rVal = d.correlation !== null && d.correlation !== undefined ? d.correlation.toFixed(2) : '—';
+            var rPct = d.correlation !== null ? Math.max(0, d.correlation) * 100 : 0;
+            html += '<div class="rounded-xl border border-emory-gray-200 p-4">';
+            html += '<div class="flex items-center justify-between mb-2">';
+            html += '<span class="font-medium text-sm">' + escapeHtml(d.label) + '</span>';
+            html += '<span class="text-sm font-bold ' + corrColor(d.correlation) + '">' + rVal + '</span>';
+            html += '</div>';
+            html += '<div class="w-full bg-emory-gray-200 rounded-full h-2 mb-2">';
+            html += '<div class="' + corrBg(d.correlation) + ' h-2 rounded-full transition-all" style="width:' + rPct + '%"></div>';
+            html += '</div>';
+            html += '<div class="flex justify-between text-xs text-emory-gray-500">';
+            html += '<span>Human: ' + escapeHtml(d.human_scale) + '</span>';
+            html += '<span>AI: ' + escapeHtml(d.ai_scale) + '</span>';
+            html += '<span>n=' + d.n_pairs + '</span>';
+            html += '</div>';
+            if (d.mae !== null && d.mae !== undefined) {
+                html += '<div class="text-xs mt-1 text-emory-gray-500">MAE: ' + d.mae + '</div>';
+            }
+            html += '</div>';
+        });
+        html += '</div>';
+        container.innerHTML = html;
+    }
+
+    function renderStudents(pairs) {
+        var container = document.getElementById('students-content');
+        if (!pairs || pairs.length === 0) {
+            container.innerHTML = '<p class="text-center text-emory-gray-500 py-8">No paired records found.</p>';
+            return;
+        }
+
+        var html = '<div class="overflow-x-auto border rounded-xl border-emory-gray-200">';
+        html += '<table class="min-w-full text-xs">';
+        html += '<thead><tr class="bg-emory-gray-100 text-left">';
+        html += '<th class="px-3 py-2 font-medium text-emory-gray-500">Student</th>';
+        html += '<th class="px-3 py-2 font-medium text-emory-gray-500">Selected</th>';
+        html += '<th class="px-3 py-2 font-medium text-emory-gray-500" title="Human total (0-12)">H Total</th>';
+        html += '<th class="px-3 py-2 font-medium text-emory-gray-500" title="AI overall (0-100)">AI Score</th>';
+        html += '<th class="px-3 py-2 font-medium text-emory-gray-500" title="Milo nextgen_match (0-100)">Milo</th>';
+        html += '<th class="px-3 py-2 font-medium text-emory-gray-500" title="Human: Acad/STEM/Essay/Rec/Bonus">H Rubric</th>';
+        html += '<th class="px-3 py-2 font-medium text-emory-gray-500">AI Rec</th>';
+        html += '<th class="px-3 py-2 font-medium text-emory-gray-500">Status</th>';
+        html += '</tr></thead><tbody>';
+
+        pairs.forEach(function(p, i) {
+            var rowClass = i % 2 === 0 ? 'bg-white' : 'bg-emory-gray-100/50';
+            var sel = p.was_selected === true ? '✅' : p.was_selected === false ? '❌' : '—';
+            var ht = p.human.total_rating !== null ? p.human.total_rating.toFixed(1) : '—';
+            var ai = p.ai_overall !== null && p.ai_overall !== undefined ? p.ai_overall.toFixed(0) : '—';
+            var milo = p.nextgen_match !== null && p.nextgen_match !== undefined ? p.nextgen_match.toFixed(0) : '—';
+
+            var rubric = [
+                p.human.academic_record, p.human.stem_interest,
+                p.human.essay_video, p.human.recommendation, p.human.bonus
+            ].map(function(v) { return v !== null && v !== undefined ? v.toFixed(0) : '-'; }).join('/');
+
+            var aiRec = p.ai_recommendation ? escapeHtml(p.ai_recommendation) : '—';
+            var status = p.has_ai_scores ? '<span class="text-emory-green font-medium">Ready</span>' : '<span class="text-emory-gold">Needs reprocess</span>';
+
+            html += '<tr class="' + rowClass + ' border-t border-emory-gray-200/60">';
+            html += '<td class="px-3 py-2"><div class="font-medium">' + escapeHtml(p.name) + '</div><div class="text-emory-gray-500">' + escapeHtml(p.school || '') + '</div></td>';
+            html += '<td class="px-3 py-2 text-center">' + sel + '</td>';
+            html += '<td class="px-3 py-2 font-bold tabular-nums">' + ht + '</td>';
+            html += '<td class="px-3 py-2 font-bold tabular-nums">' + ai + '</td>';
+            html += '<td class="px-3 py-2 tabular-nums">' + milo + '</td>';
+            html += '<td class="px-3 py-2 tabular-nums font-mono">' + rubric + '</td>';
+            html += '<td class="px-3 py-2">' + aiRec + '</td>';
+            html += '<td class="px-3 py-2">' + status + '</td>';
+            html += '</tr>';
+        });
+
+        html += '</tbody></table></div>';
+        container.innerHTML = html;
+    }
+
+    window.filterStudents = function() {
+        var filter = document.getElementById('filter-select').value;
+        var filtered = allPairs;
+        if (filter === 'with_ai') filtered = allPairs.filter(function(p) { return p.has_ai_scores; });
+        else if (filter === 'divergent') filtered = allPairs.filter(function(p) {
+            if (!p.has_ai_scores || p.was_selected === null || p.was_selected === undefined) return false;
+            var aiPred = (p.nextgen_match || 0) >= 50;
+            return aiPred !== p.was_selected;
+        });
+        else if (filter === 'selected') filtered = allPairs.filter(function(p) { return p.was_selected === true; });
+        else if (filter === 'not_selected') filtered = allPairs.filter(function(p) { return p.was_selected === false; });
+        renderStudents(filtered);
+    };
+
+    // Load data
+    fetch('/api/calibration/report').then(function(r) { return r.json(); }).then(function(data) {
+        if (data.status === 'error') {
+            document.getElementById('dimensions-content').innerHTML = '<p class="text-emory-red py-8 text-center">Error: ' + escapeHtml(data.error) + '</p>';
+            return;
+        }
+
+        var s = data.summary || {};
+        document.getElementById('stat-paired').textContent = s.total_paired || 0;
+        document.getElementById('stat-with-ai').textContent = s.with_ai_scores || 0;
+        document.getElementById('stat-without-ai').textContent = s.without_ai_scores || 0;
+        document.getElementById('stat-correlation').textContent = s.overall_correlation !== null && s.overall_correlation !== undefined ? s.overall_correlation.toFixed(2) : '—';
+        document.getElementById('stat-accuracy').textContent = s.selection_accuracy !== null && s.selection_accuracy !== undefined ? s.selection_accuracy + '%' : '—';
+
+        renderDimensions(s.dimensions || []);
+
+        allPairs = data.pairs || [];
+        renderStudents(allPairs);
+    }).catch(function(e) {
+        document.getElementById('dimensions-content').innerHTML = '<p class="text-emory-red py-8 text-center">Failed to load: ' + e.message + '</p>';
+    });
+})();
+</script>
+{% endblock %}

@@ -169,7 +169,7 @@ class GastonEvaluator(BaseAgent):
                     {"role": "user", "content": "\n".join(parts)},
                 ],
                 max_completion_tokens=600,
-                temperature=0.3,
+                temperature=0,
                 response_format={"type": "json_object"},
             )
             if response and hasattr(response, 'choices') and response.choices:

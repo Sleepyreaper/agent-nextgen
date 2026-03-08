@@ -485,12 +485,14 @@ def import_supplemental_csv(
     db,
     source_name: str = 'supplemental_csv',
     dry_run: bool = False,
+    create_if_missing: bool = False,
+    default_state: str = '',
 ) -> Dict[str, Any]:
     """Import supplemental academic data and merge onto existing schools by NCES ID.
 
-    This does NOT create new school records — it only UPDATES existing ones.
-    Use this for CRDC data, state DOE report cards, or any authoritative
-    academic program dataset.
+    By default only UPDATES existing records. Set create_if_missing=True to
+    also INSERT new school records for unmatched names (useful for GOSA data
+    that has school names not present in the NCES CCD import).
 
     The CSV must have a column matching one of: ncessch, nces_id, nces_school_id.
     All other columns are matched flexibly against known field names.
@@ -596,6 +598,7 @@ def import_supplemental_csv(
 
         matched = 0
         updated = 0
+        created = 0
         not_found = 0
         errors = 0
         total_rows = 0
@@ -641,8 +644,34 @@ def import_supplemental_csv(
                         pass
 
             if not existing:
-                not_found += 1
-                continue
+                if create_if_missing and match_mode == 'name':
+                    # Create a new school record from this CSV row
+                    school_name_val = (row.get(name_col) or '').strip()
+                    if not school_name_val:
+                        not_found += 1
+                        continue
+                    try:
+                        new_data = {
+                            'school_name': school_name_val,
+                            'state_code': default_state or 'GA',
+                            'analysis_status': 'csv_imported',
+                            'human_review_status': 'pending',
+                            'created_by': 'csv_import',
+                        }
+                        new_id = db.create_school_enriched_data(new_data)
+                        if new_id:
+                            existing = [{'school_enrichment_id': new_id, 'data_source_notes': '{}'}]
+                            created += 1
+                        else:
+                            not_found += 1
+                            continue
+                    except Exception as ce:
+                        logger.warning(f"Could not create school '{school_name_val}': {ce}")
+                        not_found += 1
+                        continue
+                else:
+                    not_found += 1
+                    continue
 
             matched += 1
             sid = existing[0]['school_enrichment_id']
@@ -704,14 +733,15 @@ def import_supplemental_csv(
                 logger.error(f"  Error updating {nces_id}: {e}")
 
     elapsed = (datetime.utcnow() - start).total_seconds()
-    logger.info(f"✅ Supplemental import complete: {matched} matched, {updated} updated, "
-                f"{not_found} not found, {errors} errors, {elapsed:.1f}s")
+    logger.info(f"✅ Supplemental import complete: {matched} matched, {created} created, "
+                f"{updated} updated, {not_found} not found, {errors} errors, {elapsed:.1f}s")
 
     return {
         'status': 'success',
         'source': source_name,
         'csv_rows': total_rows,
         'matched': matched,
+        'created': created,
         'updated': updated,
         'not_found': not_found,
         'errors': errors,

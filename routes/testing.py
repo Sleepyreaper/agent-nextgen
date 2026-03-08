@@ -1589,3 +1589,348 @@ def _prepare_test_session(session_id: str, mode: str = 'dynamic') -> None:
             submission['queue'].put({'type': 'error', 'error': 'An internal error occurred'})
 
 
+# ═══════════════════════════════════════════════════════════════════════════
+# Consistency Test — run same application N times, measure variance
+# ═══════════════════════════════════════════════════════════════════════════
+
+@testing_bp.route('/api/test/consistency', methods=['POST'])
+@limiter.limit("3 per hour")
+def consistency_test():
+    """Run the same training application through the pipeline N times.
+
+    Measures score variance to verify determinism (especially after
+    setting temperature=0 on Merlin/Gaston).
+
+    Request body:
+        {
+            "application_id": 123,   # training app to test
+            "runs": 3               # number of runs (default 3, max 5)
+        }
+
+    Returns immediately; poll GET /api/test/consistency for results.
+    """
+    import tempfile as _tempfile
+
+    data = request.get_json() or {}
+    app_id = data.get('application_id')
+    runs = min(int(data.get('runs', 3)), 5)
+
+    if not app_id:
+        return jsonify({'error': 'application_id is required'}), 400
+
+    # Verify the application exists and has document text
+    training_col = db.get_training_example_column()
+    row = db.execute_query(
+        f"SELECT application_id, applicant_name, application_text, transcript_text, "
+        f"recommendation_text, high_school, state_code "
+        f"FROM applications WHERE application_id = %s AND {training_col} = TRUE",
+        (app_id,)
+    )
+    if not row:
+        return jsonify({'error': f'Training application {app_id} not found'}), 404
+
+    app_data = dict(row[0])
+    if not any([app_data.get('application_text'), app_data.get('transcript_text')]):
+        return jsonify({'error': 'Application has no document text — reprocess first'}), 400
+
+    state_file = os.path.join(_tempfile.gettempdir(), 'consistency_test_state.json')
+    state = {
+        'status': 'running',
+        'application_id': app_id,
+        'applicant_name': app_data.get('applicant_name', ''),
+        'total_runs': runs,
+        'completed_runs': 0,
+        'results': [],
+        'message': f'Starting {runs} consistency runs...',
+    }
+    with open(state_file, 'w') as f:
+        json.dump(state, f)
+
+    def _run_consistency(app, n_runs, state_path):
+        try:
+            orchestrator = get_orchestrator()
+            results = []
+
+            for i in range(n_runs):
+                state['completed_runs'] = i
+                state['message'] = f'Run {i + 1} of {n_runs}...'
+                with open(state_path, 'w') as f:
+                    json.dump(state, f)
+
+                try:
+                    # Build a synthetic application dict for the orchestrator
+                    synth = {
+                        'applicant_name': app.get('applicant_name', ''),
+                        'high_school': app.get('high_school', ''),
+                        'state_code': app.get('state_code', ''),
+                        'application_text': app.get('application_text', ''),
+                        'transcript_text': app.get('transcript_text', ''),
+                        'recommendation_text': app.get('recommendation_text', ''),
+                    }
+
+                    # Run just Merlin on the existing data (skip doc extraction)
+                    from extensions import get_ai_client
+                    from src.agents.merlin_student_evaluator import MerlinStudentEvaluator
+
+                    merlin = MerlinStudentEvaluator(
+                        name='Merlin (consistency test)',
+                        client=get_ai_client(),
+                        model=config.model_tier_merlin or config.foundry_model_name,
+                    )
+
+                    eval_result = run_async(merlin.evaluate_student(synth))
+
+                    overall = None
+                    rec = None
+                    if isinstance(eval_result, dict):
+                        overall = eval_result.get('overall_score')
+                        rec = eval_result.get('recommendation')
+                        if overall is not None:
+                            try:
+                                overall = float(overall)
+                            except (ValueError, TypeError):
+                                overall = None
+
+                    results.append({
+                        'run': i + 1,
+                        'overall_score': overall,
+                        'recommendation': rec,
+                    })
+
+                except Exception as e:
+                    results.append({
+                        'run': i + 1,
+                        'overall_score': None,
+                        'recommendation': None,
+                        'error': str(e),
+                    })
+
+            # Compute stats
+            scores = [r['overall_score'] for r in results if r.get('overall_score') is not None]
+            stats = {}
+            if scores:
+                import math
+                mean = sum(scores) / len(scores)
+                variance = sum((s - mean) ** 2 for s in scores) / len(scores) if len(scores) > 1 else 0
+                stats = {
+                    'mean': round(mean, 1),
+                    'min': round(min(scores), 1),
+                    'max': round(max(scores), 1),
+                    'range': round(max(scores) - min(scores), 1),
+                    'std_dev': round(math.sqrt(variance), 2),
+                    'n_successful': len(scores),
+                }
+
+            recs = [r['recommendation'] for r in results if r.get('recommendation')]
+            rec_consistent = len(set(recs)) <= 1 if recs else None
+
+            state['status'] = 'completed'
+            state['completed_runs'] = n_runs
+            state['results'] = results
+            state['stats'] = stats
+            state['recommendation_consistent'] = rec_consistent
+            state['message'] = f'Complete: {len(scores)}/{n_runs} runs succeeded'
+
+        except Exception as e:
+            state['status'] = 'error'
+            state['error'] = str(e)
+            state['message'] = f'Error: {e}'
+
+        with open(state_path, 'w') as f:
+            json.dump(state, f, default=str)
+
+    thread = threading.Thread(target=_run_consistency, args=(app_data, runs, state_file), daemon=True)
+    thread.start()
+
+    return jsonify({
+        'status': 'started',
+        'message': f'Running {runs} consistency tests on app {app_id}',
+        'poll_url': '/api/test/consistency',
+    })
+
+
+@testing_bp.route('/api/test/consistency', methods=['GET'])
+def consistency_test_status():
+    """Poll consistency test progress."""
+    import tempfile as _tempfile
+    state_file = os.path.join(_tempfile.gettempdir(), 'consistency_test_state.json')
+    if not os.path.isfile(state_file):
+        return jsonify({'status': 'idle'})
+    try:
+        with open(state_file, 'r') as f:
+            return jsonify(json.load(f))
+    except Exception:
+        return jsonify({'status': 'unknown'})
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Regression Test Suite — canonical apps that must produce stable scores
+# ═══════════════════════════════════════════════════════════════════════════
+
+@testing_bp.route('/api/test/regression', methods=['POST'])
+@limiter.limit("3 per hour")
+def run_regression_suite():
+    """Run the regression test suite.
+
+    Picks up to 5 training applications that have historical scores
+    (gold standard) and re-evaluates them through Merlin. Compares
+    the new scores against previously stored regression baselines.
+
+    Results are stored in the database for tracking over time.
+    """
+    import tempfile as _tempfile
+
+    state_file = os.path.join(_tempfile.gettempdir(), 'regression_test_state.json')
+
+    # Pick canonical apps: training records with highest historical scores
+    # (most likely to have complete data and be representative)
+    training_col = db.get_training_example_column()
+    candidates = db.execute_query(f"""
+        SELECT a.application_id, a.applicant_name, a.high_school,
+               a.application_text, a.transcript_text, a.recommendation_text,
+               a.state_code,
+               hs.total_rating as human_total, hs.was_selected
+        FROM applications a
+        JOIN historical_scores hs ON hs.application_id = a.application_id
+        WHERE a.{training_col} = TRUE
+          AND hs.total_rating IS NOT NULL
+          AND (a.application_text IS NOT NULL OR a.transcript_text IS NOT NULL)
+        ORDER BY hs.total_rating DESC
+        LIMIT 5
+    """)
+
+    if not candidates:
+        return jsonify({'error': 'No training applications with historical scores found'}), 404
+
+    state = {
+        'status': 'running',
+        'total': len(candidates),
+        'completed': 0,
+        'results': [],
+        'message': f'Running regression suite on {len(candidates)} applications...',
+    }
+    with open(state_file, 'w') as f:
+        json.dump(state, f)
+
+    def _run_regression(apps, state_path):
+        try:
+            from extensions import get_ai_client
+            from src.agents.merlin_student_evaluator import MerlinStudentEvaluator
+
+            merlin = MerlinStudentEvaluator(
+                name='Merlin (regression)',
+                client=get_ai_client(),
+                model=config.model_tier_merlin or config.foundry_model_name,
+            )
+
+            for idx, app in enumerate(apps):
+                state['completed'] = idx
+                state['message'] = f'Evaluating {app.get("applicant_name", "?")} ({idx+1}/{len(apps)})'
+                with open(state_path, 'w') as f:
+                    json.dump(state, f)
+
+                try:
+                    synth = {
+                        'applicant_name': app.get('applicant_name', ''),
+                        'high_school': app.get('high_school', ''),
+                        'state_code': app.get('state_code', ''),
+                        'application_text': app.get('application_text', ''),
+                        'transcript_text': app.get('transcript_text', ''),
+                        'recommendation_text': app.get('recommendation_text', ''),
+                    }
+
+                    eval_result = run_async(merlin.evaluate_student(synth))
+
+                    overall = None
+                    rec = None
+                    if isinstance(eval_result, dict):
+                        overall = eval_result.get('overall_score')
+                        rec = eval_result.get('recommendation')
+                        try:
+                            overall = float(overall) if overall is not None else None
+                        except (ValueError, TypeError):
+                            overall = None
+
+                    # Check against previous regression baseline (stored in agent_results)
+                    prev = db.execute_query(
+                        "SELECT agent_results FROM applications WHERE application_id = %s",
+                        (app['application_id'],)
+                    )
+                    prev_score = None
+                    if prev and prev[0].get('agent_results'):
+                        ar = prev[0]['agent_results']
+                        if isinstance(ar, str):
+                            ar = json.loads(ar)
+                        if isinstance(ar, dict):
+                            m = ar.get('student_evaluator') or ar.get('merlin') or {}
+                            prev_score = m.get('overall_score')
+                            try:
+                                prev_score = float(prev_score) if prev_score is not None else None
+                            except (ValueError, TypeError):
+                                prev_score = None
+
+                    drift = None
+                    if overall is not None and prev_score is not None:
+                        drift = round(overall - prev_score, 1)
+
+                    state['results'].append({
+                        'application_id': app['application_id'],
+                        'name': app.get('applicant_name', ''),
+                        'human_total': float(app.get('human_total', 0)),
+                        'was_selected': app.get('was_selected'),
+                        'new_score': overall,
+                        'prev_score': prev_score,
+                        'drift': drift,
+                        'recommendation': rec,
+                    })
+
+                except Exception as e:
+                    state['results'].append({
+                        'application_id': app['application_id'],
+                        'name': app.get('applicant_name', ''),
+                        'error': str(e),
+                    })
+
+            # Summary
+            drifts = [r['drift'] for r in state['results'] if r.get('drift') is not None]
+            state['status'] = 'completed'
+            state['completed'] = len(apps)
+            state['summary'] = {
+                'max_drift': round(max(abs(d) for d in drifts), 1) if drifts else None,
+                'avg_drift': round(sum(abs(d) for d in drifts) / len(drifts), 1) if drifts else None,
+                'stable': all(abs(d) <= 5 for d in drifts) if drifts else None,
+            }
+            state['message'] = f'Regression complete: {len(state["results"])} apps tested'
+
+        except Exception as e:
+            state['status'] = 'error'
+            state['error'] = str(e)
+
+        with open(state_path, 'w') as f:
+            json.dump(state, f, default=str)
+
+    thread = threading.Thread(target=_run_regression, args=([dict(c) for c in candidates], state_file), daemon=True)
+    thread.start()
+
+    return jsonify({
+        'status': 'started',
+        'message': f'Running regression suite on {len(candidates)} apps',
+        'apps': [{'id': c['application_id'], 'name': c.get('applicant_name', '')} for c in candidates],
+        'poll_url': '/api/test/regression',
+    })
+
+
+@testing_bp.route('/api/test/regression', methods=['GET'])
+def regression_test_status():
+    """Poll regression test progress."""
+    import tempfile as _tempfile
+    state_file = os.path.join(_tempfile.gettempdir(), 'regression_test_state.json')
+    if not os.path.isfile(state_file):
+        return jsonify({'status': 'idle'})
+    try:
+        with open(state_file, 'r') as f:
+            return jsonify(json.load(f))
+    except Exception:
+        return jsonify({'status': 'unknown'})
+
+

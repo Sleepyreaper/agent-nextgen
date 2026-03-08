@@ -3,6 +3,7 @@
 import json
 import logging
 import os
+import tempfile
 import threading
 import time
 
@@ -18,6 +19,96 @@ from src.database import db
 logger = logging.getLogger(__name__)
 
 admin_bp = Blueprint('admin', __name__)
+
+
+# ── Background Task Registry ────────────────────────────────────────
+# Centralised list of all background tasks and their state files/poll endpoints.
+_BACKGROUND_TASKS = [
+    {
+        'id': 'gosa_import',
+        'label': 'GOSA Data Import',
+        'state_file': os.path.join(tempfile.gettempdir(), 'gosa_import_state.json'),
+        'poll_url': '/api/schools/import-gosa-from-repo',
+    },
+    {
+        'id': 'school_csv_import',
+        'label': 'School CSV Import',
+        'state_file': os.path.join(tempfile.gettempdir(), 'school_csv_import_state.json'),
+        'poll_url': '/api/schools/import-csv',
+    },
+    {
+        'id': 'batch_naveen',
+        'label': 'Batch School Analysis',
+        'state_file': os.path.join(tempfile.gettempdir(), 'batch_naveen_state.json'),
+        'poll_url': '/api/schools/batch-naveen-moana',
+    },
+    {
+        'id': 'milo_validation',
+        'label': 'Milo Validation',
+        'state_file': os.path.join(tempfile.gettempdir(), 'milo_validation_state.json'),
+        'poll_url': '/api/milo/validate',
+    },
+    {
+        'id': 'training_reprocess',
+        'label': 'Training Reprocess',
+        'state_file': os.path.join('uploads', 'reprocess_state.json'),
+        'poll_url': '/api/training/reprocess',
+    },
+    {
+        'id': 'training_reevaluate',
+        'label': 'Training Re-evaluation',
+        'state_file': os.path.join(tempfile.gettempdir(), 'training_reevaluate_state.json'),
+        'poll_url': '/api/training/re-evaluate',
+    },
+    {
+        'id': 'consistency_test',
+        'label': 'Consistency Test',
+        'state_file': os.path.join(tempfile.gettempdir(), 'consistency_test_state.json'),
+        'poll_url': '/api/test/consistency',
+    },
+    {
+        'id': 'regression_test',
+        'label': 'Regression Test Suite',
+        'state_file': os.path.join(tempfile.gettempdir(), 'regression_test_state.json'),
+        'poll_url': '/api/test/regression',
+    },
+    {
+        'id': 'cross_validation',
+        'label': 'Milo Cross-Validation',
+        'state_file': os.path.join(tempfile.gettempdir(), 'cross_validation_state.json'),
+        'poll_url': '/api/calibration/cross-validate',
+    },
+]
+
+
+@admin_bp.route('/api/tasks/status')
+def background_task_status():
+    """Return the status of all known background tasks.
+
+    Used by the persistent task banner in base.html to show active work
+    that survives page refreshes.
+    """
+    tasks = []
+    for task in _BACKGROUND_TASKS:
+        path = task['state_file']
+        if not os.path.isfile(path):
+            continue
+        try:
+            with open(path, 'r') as f:
+                state = json.load(f)
+        except Exception:
+            continue
+        status = state.get('status') or state.get('state', 'unknown')
+        if status in ('idle', 'unknown'):
+            continue
+        tasks.append({
+            'id': task['id'],
+            'label': task['label'],
+            'status': status,
+            'poll_url': task['poll_url'],
+            'detail': state,
+        })
+    return jsonify({'tasks': tasks})
 
 
 @admin_bp.route('/debug/dataset')

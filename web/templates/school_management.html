@@ -143,11 +143,17 @@
     <div class="batch-actions" style="margin-top: 1rem; background: linear-gradient(135deg, #fffbeb, #fef3c7); border: 1px solid #fbbf24;">
         <div class="batch-actions-info">
             <h3>⚠️ Unmatched Schools</h3>
-            <p>Schools from student applications that don't match any enriched school record. Add an alias to link them.</p>
+            <p>Schools from student applications that don't match any enriched school record. Auto-resolve uses fuzzy matching to create aliases automatically.</p>
         </div>
-        <div style="display: flex; align-items: center; gap: 1rem;">
+        <div style="display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap;">
             <button class="batch-btn" style="background: #d97706;" id="unmatchedBtn" data-action="loadUnmatched">
                 🔍 Find Unmatched
+            </button>
+            <button class="batch-btn" style="background: #059669;" id="autoResolveBtn" data-action="autoResolveUnmatched">
+                🪄 Auto-Resolve All
+            </button>
+            <button class="batch-btn" style="background: #7c3aed;" id="seedAliasBtn" data-action="seedKnownAliases">
+                📝 Seed Known Aliases
             </button>
         </div>
     </div>
@@ -919,6 +925,12 @@ async function runCohortAnalysis() {
 }
 
 // ── Unmatched Schools ───────────────────────────────────────────────
+function escapeHtml(s) {
+    var d = document.createElement('div');
+    d.textContent = s || '';
+    return d.innerHTML;
+}
+
 async function loadUnmatched() {
     const btn = document.getElementById('unmatchedBtn');
     const resultDiv = document.getElementById('unmatchedResult');
@@ -927,7 +939,7 @@ async function loadUnmatched() {
     resultDiv.style.display = 'none';
 
     try {
-        const resp = await fetch('/api/schools/unmatched');
+        const resp = await fetch('/api/schools/unmatched?resolve=1');
         const data = await resp.json();
         if (data.count === 0) {
             resultDiv.className = 'batch-result success';
@@ -936,23 +948,32 @@ async function loadUnmatched() {
             resultDiv.className = 'batch-result';
             resultDiv.style.background = '#fffbeb';
             resultDiv.style.border = '1px solid #fbbf24';
-            resultDiv.innerHTML = `
-                <strong>⚠️ ${data.count} unmatched school names found</strong>
-                <div style="margin-top: 0.5rem; max-height: 300px; overflow-y: auto;">
-                    ${data.unmatched.map(s => `
-                        <div style="padding: 0.4rem 0; border-bottom: 1px solid #fde68a; display: flex; justify-content: space-between; align-items: center;">
-                            <div>
-                                <strong>${s.school_name}</strong>
-                                ${s.state_code ? `<span style="color: #6b7280; font-size: 0.8rem;">(${s.state_code})</span>` : ''}
-                                <span style="color: #9ca3af; font-size: 0.8rem;">— ${s.student_count} student(s)</span>
-                            </div>
-                        </div>
-                    `).join('')}
-                </div>
-                <div style="margin-top: 0.5rem; font-size: 0.8rem; color: #6b7280;">
-                    💡 Add aliases on the school detail page to link these names to existing enriched records.
-                </div>
-            `;
+            var withMatch = data.unmatched.filter(function(s) { return s.suggested_match; });
+            var noMatch = data.unmatched.filter(function(s) { return !s.suggested_match; });
+            var html = '<strong>⚠️ ' + data.count + ' unmatched school names</strong>';
+            if (withMatch.length > 0) {
+                html += '<div style="margin-top:0.5rem;font-size:0.85rem;color:#059669;">✅ ' + withMatch.length + ' can be auto-resolved via fuzzy matching</div>';
+            }
+            html += '<div style="margin-top:0.5rem;max-height:400px;overflow-y:auto;">';
+            data.unmatched.forEach(function(s) {
+                html += '<div style="padding:0.5rem 0;border-bottom:1px solid #fde68a;">';
+                html += '<div style="display:flex;justify-content:space-between;align-items:center;">';
+                html += '<div><strong>' + escapeHtml(s.school_name) + '</strong>';
+                if (s.state_code) html += ' <span style="color:#6b7280;font-size:0.8rem;">(' + escapeHtml(s.state_code) + ')</span>';
+                html += ' <span style="color:#9ca3af;font-size:0.8rem;">— ' + s.student_count + ' student(s)</span></div>';
+                html += '</div>';
+                if (s.suggested_match) {
+                    html += '<div style="margin-top:0.25rem;font-size:0.8rem;color:#059669;padding-left:1rem;">↳ Match: <strong>' + escapeHtml(s.suggested_match.school_name) + '</strong>';
+                    if (s.suggested_match.state_code) html += ' (' + escapeHtml(s.suggested_match.state_code) + ')';
+                    html += '</div>';
+                } else {
+                    html += '<div style="margin-top:0.25rem;font-size:0.8rem;color:#dc2626;padding-left:1rem;">↳ No match found — may need manual alias or out-of-state enrichment</div>';
+                }
+                html += '</div>';
+            });
+            html += '</div>';
+            html += '<div style="margin-top:0.75rem;font-size:0.8rem;color:#6b7280;">💡 Click <strong>Auto-Resolve All</strong> to create aliases for all fuzzy matches at once.</div>';
+            resultDiv.innerHTML = html;
         }
         resultDiv.style.display = 'block';
     } catch (err) {
@@ -964,62 +985,133 @@ async function loadUnmatched() {
     btn.innerHTML = '🔍 Find Unmatched';
 }
 
-// ── One-click GOSA import ───────────────────────────────────────────
-async function importGosaFromRepo() {
-    const btn = document.getElementById('gosaImportBtn');
-    const resultDiv = document.getElementById('gosaResult');
-    if (!confirm('Import the pre-built GOSA dataset (2,800+ GA schools, 25 data fields)?')) return;
+async function autoResolveUnmatched() {
+    const btn = document.getElementById('autoResolveBtn');
+    const resultDiv = document.getElementById('unmatchedResult');
+    if (!confirm('Auto-resolve will create aliases for all unmatched schools that have a fuzzy match. Continue?')) return;
 
     btn.disabled = true;
-    btn.innerHTML = '⏳ Starting import...';
-    resultDiv.style.display = 'none';
+    btn.innerHTML = '⏳ Resolving...';
 
     try {
-        const resp = await fetch('/api/schools/import-gosa-from-repo', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({})});
+        const resp = await fetch('/api/schools/auto-resolve-unmatched', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({}) });
         const data = await resp.json();
-        if (data.status === 'started') {
-            resultDiv.className = 'batch-result';
-            resultDiv.style.background = '#ecfdf5';
-            resultDiv.style.border = '1px solid #34d399';
-            resultDiv.innerHTML = '<strong>📊 GOSA import running...</strong> This may take a few minutes.';
+        if (data.status === 'success') {
+            var html = '<div style="margin-bottom:0.75rem;"><strong>✅ Auto-resolved ' + data.resolved + ' school names into aliases</strong></div>';
+            if (data.resolved_list && data.resolved_list.length > 0) {
+                html += '<div style="max-height:250px;overflow-y:auto;margin-bottom:0.5rem;">';
+                data.resolved_list.forEach(function(r) {
+                    html += '<div style="padding:0.3rem 0;border-bottom:1px solid #d1fae5;font-size:0.85rem;">';
+                    html += '✅ <strong>' + escapeHtml(r.alias) + '</strong> → ' + escapeHtml(r.matched_to);
+                    html += ' <span style="color:#9ca3af;">(' + r.students + ' students)</span></div>';
+                });
+                html += '</div>';
+            }
+            if (data.remaining > 0) {
+                html += '<div style="margin-top:0.5rem;padding:0.75rem;background:#fef2f2;border:1px solid #fca5a5;border-radius:8px;">';
+                html += '<strong>⚠️ ' + data.remaining + ' schools could not be auto-resolved:</strong>';
+                html += '<div style="margin-top:0.25rem;">';
+                data.remaining_list.forEach(function(r) {
+                    html += '<div style="padding:0.2rem 0;font-size:0.85rem;">• ' + escapeHtml(r.school_name);
+                    if (r.state_code) html += ' (' + escapeHtml(r.state_code) + ')';
+                    html += ' — ' + r.students + ' student(s)</div>';
+                });
+                html += '</div>';
+                html += '<div style="margin-top:0.5rem;font-size:0.8rem;color:#6b7280;">These may be out-of-state schools, test data, or extraction errors. Add aliases manually on each school\'s detail page.</div>';
+                html += '</div>';
+            }
+            resultDiv.className = 'batch-result success';
+            resultDiv.innerHTML = html;
             resultDiv.style.display = 'block';
-            // Poll for completion
-            const poll = setInterval(async () => {
-                try {
-                    const pr = await fetch('/api/schools/import-gosa-from-repo');
-                    const ps = await pr.json();
-                    if (ps.status === 'completed') {
-                        clearInterval(poll);
-                        const fields = ps.fields_updated || {};
-                        const fieldList = Object.entries(fields).map(([k, v]) => `${k}: ${v}`).join(', ');
-                        resultDiv.className = 'batch-result success';
-                        resultDiv.innerHTML = `<strong>✅ GOSA import complete!</strong><br>${ps.matched || 0} matched, ${ps.updated || 0} updated, ${ps.not_found || 0} not found<br><strong>Fields:</strong> ${fieldList || 'none'}`;
-                        btn.disabled = false;
-                        btn.innerHTML = '📊 Import GOSA Data';
-                        setTimeout(() => loadSchools(), 1000);
-                    } else if (ps.status === 'error') {
-                        clearInterval(poll);
-                        resultDiv.className = 'batch-result error';
-                        resultDiv.innerHTML = '❌ ' + (ps.error || 'Failed');
-                        btn.disabled = false;
-                        btn.innerHTML = '📊 Import GOSA Data';
-                    }
-                } catch(e) { /* keep polling */ }
-            }, 5000);
         } else {
             resultDiv.className = 'batch-result error';
-            resultDiv.innerHTML = '❌ ' + (data.error || 'Failed to start');
+            resultDiv.innerHTML = '❌ ' + (data.error || 'Unknown error');
             resultDiv.style.display = 'block';
-            btn.disabled = false;
-            btn.innerHTML = '📊 Import GOSA Data';
         }
     } catch (err) {
         resultDiv.className = 'batch-result error';
         resultDiv.innerHTML = '❌ Error: ' + err.message;
         resultDiv.style.display = 'block';
-        btn.disabled = false;
-        btn.innerHTML = '📊 Import GOSA Data';
     }
+    btn.disabled = false;
+    btn.innerHTML = '🪄 Auto-Resolve All';
+}
+
+// ── Seed Known Aliases ──────────────────────────────────────────────
+async function seedKnownAliases() {
+    var btn = document.getElementById('seedAliasBtn');
+    var resultDiv = document.getElementById('unmatchedResult');
+    btn.disabled = true;
+    btn.innerHTML = '⏳ Seeding aliases...';
+
+    try {
+        var resp = await fetch('/api/schools/seed-known-aliases', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({}) });
+        var data = await resp.json();
+        if (data.status === 'success') {
+            var html = '';
+            if (data.schools_created > 0) html += '<strong>🏫 Created ' + data.schools_created + ' missing school records</strong><br>';
+            html += '<strong>✅ Seeded ' + data.aliases_created + ' aliases</strong>';
+            if (data.skipped > 0) html += '<br>' + data.skipped + ' already existed';
+            if (data.not_found > 0) {
+                html += '<br><span style="color:#dc2626;">⚠️ ' + data.not_found + ' target schools not found in DB:</span>';
+                (data.not_found_list || []).forEach(function(nf) {
+                    html += '<br>&nbsp;&nbsp;• "' + escapeHtml(nf.alias) + '" → "' + escapeHtml(nf.target) + '"';
+                });
+            }
+            resultDiv.className = 'batch-result success';
+            resultDiv.innerHTML = html;
+            resultDiv.style.display = 'block';
+        } else {
+            resultDiv.className = 'batch-result error';
+            resultDiv.innerHTML = '❌ ' + (data.error || 'Failed');
+            resultDiv.style.display = 'block';
+        }
+    } catch (err) {
+        resultDiv.className = 'batch-result error';
+        resultDiv.innerHTML = '❌ Error: ' + err.message;
+        resultDiv.style.display = 'block';
+    }
+    btn.disabled = false;
+    btn.innerHTML = '📝 Seed Known Aliases';
+}
+
+// ── One-click GOSA import ───────────────────────────────────────────
+async function importGosaFromRepo() {
+    const btn = document.getElementById('gosaImportBtn');
+    const resultDiv = document.getElementById('gosaResult');
+    if (!confirm('Import the pre-built GOSA dataset (2,800+ GA schools, 25 data fields)? This runs synchronously and may take ~60 seconds.')) return;
+
+    btn.disabled = true;
+    btn.innerHTML = '⏳ Importing (may take ~60s)...';
+    resultDiv.style.display = 'none';
+
+    try {
+        const resp = await fetch('/api/schools/import-gosa-from-repo?sync=1', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({})});
+        const data = await resp.json();
+        if (data.status === 'completed') {
+            var summary = 'Matched: ' + (data.matched || 0) +
+                ', Created: ' + (data.created || 0) +
+                ', Updated: ' + (data.updated || 0) +
+                ', Not found: ' + (data.not_found || 0) +
+                ', Total rows: ' + (data.total_rows || 0);
+            var fields = data.fields_updated || {};
+            var fieldList = Object.entries(fields).map(function(e) { return e[0] + ': ' + e[1]; }).join(', ');
+            resultDiv.className = 'batch-result success';
+            resultDiv.innerHTML = '<strong>\u2705 GOSA import complete!</strong><br>' + summary + '<br><strong>Fields updated:</strong> ' + (fieldList || 'none');
+            resultDiv.style.display = 'block';
+            setTimeout(function() { if (typeof loadSchools === 'function') loadSchools(); }, 1000);
+        } else {
+            resultDiv.className = 'batch-result error';
+            resultDiv.innerHTML = '\u274c ' + (data.error || 'Import failed');
+            resultDiv.style.display = 'block';
+        }
+    } catch (err) {
+        resultDiv.className = 'batch-result error';
+        resultDiv.innerHTML = '\u274c Error: ' + err.message;
+        resultDiv.style.display = 'block';
+    }
+    btn.disabled = false;
+    btn.innerHTML = '\ud83d\udcca Import GOSA Data';
 }
 
 // ── Supplemental CSV Import ────────────────────────────────────────

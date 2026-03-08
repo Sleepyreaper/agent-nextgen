@@ -102,6 +102,12 @@
 
             <!-- System -->
             <div class="sidebar-section-label text-[0.65rem] uppercase tracking-wider text-white/35 font-semibold px-3 mt-5 mb-2">System</div>
+            <a href="{{ url_for('governance.dashboard') }}" class="sidebar-link {% if request.endpoint and 'governance.' in request.endpoint %}active{% endif %}">
+                <span class="nav-icon">🛡️</span><span class="nav-label">Trust & Governance</span>
+            </a>
+            <a href="{{ url_for('calibration.calibration_dashboard') }}" class="sidebar-link {% if request.endpoint and 'calibration.' in request.endpoint %}active{% endif %}">
+                <span class="nav-icon">📐</span><span class="nav-label">Calibration Report</span>
+            </a>
             <a href="{{ url_for('telemetry.telemetry_dashboard') }}" class="sidebar-link {% if request.endpoint and 'telemetry.' in request.endpoint %}active{% endif %}">
                 <span class="nav-icon">📡</span><span class="nav-label">Telemetry</span>
             </a>
@@ -171,6 +177,22 @@
         </div>
         {% endif %}
         {% endwith %}
+
+        <!-- ═══ PERSISTENT TASK BANNER ═══ -->
+        <div id="task-banner" class="hidden px-6 pt-3">
+            <div class="bg-emory-dark-blue/5 border border-emory-medium-blue/30 rounded-xl px-4 py-3">
+                <div class="flex items-center gap-3">
+                    <svg class="animate-spin h-4 w-4 text-emory-medium-blue flex-shrink-0" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" fill="none"/><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>
+                    <div class="flex-1 min-w-0">
+                        <div id="task-banner-text" class="text-sm font-medium text-emory-dark truncate"></div>
+                        <div id="task-banner-detail" class="text-xs text-emory-gray-500 mt-0.5 truncate"></div>
+                    </div>
+                    <button id="task-banner-dismiss" class="text-emory-gray-500 hover:text-emory-dark p-1" data-action="dismissTaskBanner" aria-label="Dismiss">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+                    </button>
+                </div>
+            </div>
+        </div>
 
         <!-- Page Content -->
         <main class="flex-1 px-6 py-6 fade-in">
@@ -298,6 +320,79 @@
             }
             return _origFetch.call(this, url, opts);
         };
+    })();
+
+    /* ── Persistent background task banner ──────────────────────── */
+    (function() {
+        var banner = document.getElementById('task-banner');
+        var bannerText = document.getElementById('task-banner-text');
+        var bannerDetail = document.getElementById('task-banner-detail');
+        var pollTimer = null;
+        var dismissed = {};
+
+        function statusLabel(s) {
+            if (s === 'running') return '⏳ Running';
+            if (s === 'completed') return '✅ Completed';
+            if (s === 'done') return '✅ Done';
+            if (s === 'error') return '❌ Error';
+            return s;
+        }
+
+        function detailText(task) {
+            var d = task.detail || {};
+            if (d.message) return d.message;
+            if (d.progress) return d.progress;
+            if (d.matched !== undefined) return 'Matched: ' + d.matched + ', Created: ' + (d.created || 0) + ', Updated: ' + (d.updated || 0);
+            if (d.error) return d.error;
+            return '';
+        }
+
+        function checkTasks() {
+            fetch('/api/tasks/status').then(function(r) { return r.json(); }).then(function(data) {
+                var tasks = (data.tasks || []).filter(function(t) { return !dismissed[t.id]; });
+                if (tasks.length === 0) {
+                    banner.classList.add('hidden');
+                    return;
+                }
+                // Show the most important active task
+                var active = tasks.filter(function(t) { return t.status === 'running'; });
+                var show = active.length > 0 ? active[0] : tasks[0];
+
+                var label = show.label + ' — ' + statusLabel(show.status);
+                if (tasks.length > 1) {
+                    var otherRunning = active.length > 1 ? ' (+' + (active.length - 1) + ' more)' : '';
+                    label += otherRunning;
+                }
+                bannerText.textContent = label;
+                bannerDetail.textContent = detailText(show);
+                banner.classList.remove('hidden');
+
+                // Keep polling if anything is still running
+                if (active.length > 0) {
+                    pollTimer = setTimeout(checkTasks, 4000);
+                } else {
+                    // Final state — show for 15s then auto-dismiss
+                    pollTimer = setTimeout(function() {
+                        banner.classList.add('hidden');
+                    }, 15000);
+                }
+            }).catch(function() {
+                // Silent fail — don't disrupt the page
+            });
+        }
+
+        // Dismiss handler
+        window.dismissTaskBanner = function() {
+            // Mark all currently shown tasks as dismissed for this page load
+            fetch('/api/tasks/status').then(function(r) { return r.json(); }).then(function(data) {
+                (data.tasks || []).forEach(function(t) { dismissed[t.id] = true; });
+            });
+            banner.classList.add('hidden');
+            if (pollTimer) clearTimeout(pollTimer);
+        };
+
+        // Check on page load
+        checkTasks();
     })();
     </script>
 

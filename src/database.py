@@ -3398,18 +3398,25 @@ class Database:
                 s2 = ''.join(ch for ch in s2 if not unicodedata.combining(ch))
                 s2 = s2.lower()
                 s2 = re.sub(r"[^a-z0-9\s]", ' ', s2)
+                # Fix common misspellings of "highschool" / "high school"
+                for typo in ('highschool', 'higschool', 'hghschool', 'highschol',
+                             'hischool', 'highscool', 'hihgschool'):
+                    s2 = s2.replace(typo, '')
                 # Expand common abbreviations
                 abbrevs = {
                     'hs': 'high school', 'elem': 'elementary', 'ms': 'middle school',
                     'acad': 'academy', 'prep': 'preparatory', 'tech': 'technology',
                     'sci': 'science', 'intl': 'international', 'jr': 'junior',
-                    'sr': 'senior', 'st': 'saint', 'mt': 'mount', 'ft': 'fort',
-                    'cty': 'county', 'co': 'county', 'twp': 'township',
+                    'sr': 'senior', 'st': 'saint', 'mt': 'mount', 'mtn': 'mountain',
+                    'ft': 'fort', 'cty': 'county', 'co': 'county', 'twp': 'township',
                 }
                 words = s2.split()
                 words = [abbrevs.get(w, w) for w in words]
+                # Strip leading "the"
+                if words and words[0] == 'the':
+                    words = words[1:]
                 s2 = ' '.join(words)
-                s2 = re.sub(r"\b(high school|highschool|school|academy|charter|magnet|preparatory)\b", ' ', s2)
+                s2 = re.sub(r"\b(high school|highschool|high|school|academy|charter|magnet|preparatory)\b", ' ', s2)
                 return re.sub(r"\s{2,}", ' ', s2).strip()
 
             def _token_set_ratio(a: str, b: str) -> float:

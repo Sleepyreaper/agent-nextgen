@@ -53,7 +53,7 @@ class MerlinStudentEvaluator(BaseAgent):
                         {"role": "user", "content": user_prompt}
                     ],
                     max_completion_tokens=2400,
-                    temperature=1,
+                    temperature=0,
                     refinements=2,
                     refinement_instruction=(
                         "Refine the JSON recommendation: (1) ensure each decision_driver "
@@ -124,7 +124,7 @@ class MerlinStudentEvaluator(BaseAgent):
                                     {"role": "user", "content": user_prompt}
                                 ],
                                 max_completion_tokens=3000,
-                                temperature=1,
+                                temperature=0,
                                 refinements=1,
                                 refinement_instruction=(
                                     "Ensure the JSON contains overall_score, recommendation, "
@@ -508,7 +508,7 @@ class MerlinStudentEvaluator(BaseAgent):
             model=self.model,
             messages=messages,
             max_completion_tokens=1200,
-            temperature=1,
+            temperature=0,
             refinements=2,
             refinement_instruction=(
                 "Refine your response to be more decisive. Map evidence to "

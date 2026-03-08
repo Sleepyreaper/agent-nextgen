@@ -3,6 +3,7 @@
 import json
 import logging
 import os
+import tempfile
 import threading
 import time
 
@@ -823,12 +824,16 @@ def batch_naveen_moana():
                  AND (analysis_status IS NULL
                       OR analysis_status = 'pending'
                       OR analysis_status = 'csv_imported'
-                      OR analysis_status = 'error'
-                      OR moana_requirements_met IS NULL)
+                      OR (analysis_status = 'error'
+                          AND updated_at < CURRENT_TIMESTAMP - INTERVAL '1 hour')
+                      OR (analysis_status = 'complete'
+                          AND moana_requirements_met IS NULL))
                ORDER BY
-                  CASE WHEN analysis_status IN ('pending', 'error') OR analysis_status IS NULL THEN 0
-                       WHEN moana_requirements_met IS NULL THEN 1
-                       ELSE 2 END,
+                  CASE WHEN analysis_status IN ('pending') OR analysis_status IS NULL THEN 0
+                       WHEN analysis_status = 'csv_imported' THEN 1
+                       WHEN analysis_status = 'complete' AND moana_requirements_met IS NULL THEN 2
+                       WHEN analysis_status = 'error' THEN 3
+                       ELSE 4 END,
                   school_enrichment_id
                LIMIT %s""",
             (limit,)
@@ -841,13 +846,31 @@ def batch_naveen_moana():
                 'queued': 0
             })
 
-        def background_batch(schools_to_process):
+        # Write initial state for progress tracking
+        _batch_state_file = os.path.join(tempfile.gettempdir(), 'batch_naveen_state.json')
+        with open(_batch_state_file, 'w') as _bf:
+            json.dump({'status': 'running', 'total': len(pending), 'completed': 0,
+                       'current': '', 'message': f'Starting batch of {len(pending)} schools...'}, _bf)
+
+        def background_batch(schools_to_process, state_path):
             """Process each school through Naveen then Moana, sequentially."""
             import time as _time
             from src.agents.naveen_school_data_scientist import NaveenSchoolDataScientist
             from src.school_workflow import SchoolDataWorkflow
             from src.agents.base_agent import BaseAgent
             from decimal import Decimal
+
+            def _update_batch_state(completed, current_name, error=None):
+                try:
+                    st = {'status': 'running', 'total': len(schools_to_process),
+                          'completed': completed, 'current': current_name,
+                          'message': f'Processing {current_name} ({completed}/{len(schools_to_process)})'}
+                    if error:
+                        st['last_error'] = str(error)
+                    with open(state_path, 'w') as sf:
+                        json.dump(st, sf)
+                except Exception:
+                    pass
             import re as _re
 
             client_mini = get_ai_client_mini()
@@ -865,6 +888,7 @@ def batch_naveen_moana():
             for idx, sch in enumerate(schools_to_process):
                 sid = sch['school_enrichment_id']
                 name = sch['school_name']
+                _update_batch_state(idx, name)
                 logger.info(f"🔬 Batch [{idx+1}/{total}] Starting: {name} (id={sid})")
 
                 # ── Step 1: Naveen analysis (if needed) ──────────────
@@ -1052,11 +1076,17 @@ def batch_naveen_moana():
                     _time.sleep(60)
 
             logger.info(f"🏁 Batch Naveen+Moana complete: processed {total} schools")
+            try:
+                with open(state_path, 'w') as sf:
+                    json.dump({'status': 'completed', 'total': total, 'completed': total,
+                               'message': f'Batch complete: {total} schools processed'}, sf)
+            except Exception:
+                pass
 
         # Launch background thread
         thread = threading.Thread(
             target=background_batch,
-            args=([dict(s) for s in pending],)
+            args=([dict(s) for s in pending], _batch_state_file)
         )
         thread.daemon = True
         thread.start()
@@ -1075,6 +1105,18 @@ def batch_naveen_moana():
         logger.error('Request failed: %s', e, exc_info=True)
         return jsonify({'status': 'error', 'error': 'An internal error occurred'}), 500
 
+
+@schools_bp.route('/api/schools/batch-naveen-moana', methods=['GET'])
+def batch_naveen_moana_status():
+    """Poll batch Naveen+Moana progress."""
+    state_file = os.path.join(tempfile.gettempdir(), 'batch_naveen_state.json')
+    if not os.path.isfile(state_file):
+        return jsonify({'status': 'idle'})
+    try:
+        with open(state_file, 'r') as f:
+            return jsonify(json.load(f))
+    except Exception:
+        return jsonify({'status': 'unknown'})
 
 
 @schools_bp.route('/api/schools/clear', methods=['POST'])
@@ -1732,28 +1774,33 @@ def _compute_enrichment_completeness(school: dict) -> dict:
     """
     categories = {
         'basic': {
-            'fields': ['school_name', 'state_code', 'school_district', 'county_name'],
-            'weight': 0.15,
+            'fields': ['school_name', 'state_code'],
+            'weight': 0.10,
         },
         'demographics': {
             'fields': ['total_students', 'free_lunch_percentage', 'graduation_rate'],
-            'weight': 0.20,
+            'weight': 0.15,
         },
         'academics': {
             'fields': ['ap_course_count', 'honors_course_count', 'college_acceptance_rate',
-                       'stem_program_available', 'ib_program_available', 'dual_enrollment_available'],
-            'weight': 0.25,
-        },
-        'web_presence': {
-            'fields': ['school_url', 'school_url_verified', 'web_sources_analyzed'],
+                       'stem_program_available'],
             'weight': 0.15,
+        },
+        'gosa_data': {
+            'fields': ['act_composite_avg', 'hope_eligible_pct', 'dropout_rate',
+                       'fesr_star_rating', 'school_ppe', 'direct_certification_pct'],
+            'weight': 0.20,
         },
         'analysis': {
             'fields': ['opportunity_score', 'data_confidence_score', 'analysis_status'],
             'weight': 0.15,
         },
+        'context': {
+            'fields': ['school_district', 'school_url', 'moana_requirements_met'],
+            'weight': 0.15,
+        },
         'review': {
-            'fields': ['human_review_status', 'moana_requirements_met'],
+            'fields': ['human_review_status'],
             'weight': 0.10,
         },
     }
@@ -1831,10 +1878,170 @@ def get_cohort_analysis():
 
 @schools_bp.route('/api/schools/unmatched', methods=['GET'])
 def get_unmatched_schools():
-    """Find school names from applications that don't match any enriched school."""
+    """Find school names from applications that don't match any enriched school.
+
+    With ?resolve=1, also runs fuzzy matching to suggest potential matches.
+    """
     db.ensure_school_aliases_table()
     unmatched = db.get_unmatched_school_names()
+
+    resolve = request.args.get('resolve') == '1'
+    if resolve and unmatched:
+        for item in unmatched:
+            name = item.get('school_name', '')
+            state = item.get('state_code')
+            match = db.get_school_enriched_data_fuzzy(name, state_code=state, threshold=0.55)
+            if match:
+                item['suggested_match'] = {
+                    'school_enrichment_id': match.get('school_enrichment_id'),
+                    'school_name': match.get('school_name'),
+                    'state_code': match.get('state_code'),
+                }
+
     return jsonify({'unmatched': unmatched, 'count': len(unmatched)})
+
+
+@schools_bp.route('/api/schools/auto-resolve-unmatched', methods=['POST'])
+def auto_resolve_unmatched():
+    """Run fuzzy matching on all unmatched school names and create aliases.
+
+    For each unmatched school name, if fuzzy matching finds a match in
+    school_enriched_data, an alias is created automatically.
+
+    Returns summary of resolved and remaining unmatched schools.
+    """
+    db.ensure_school_aliases_table()
+    unmatched = db.get_unmatched_school_names()
+
+    resolved = []
+    remaining = []
+
+    for item in unmatched:
+        name = item.get('school_name', '')
+        state = item.get('state_code')
+        students = item.get('student_count', 0)
+
+        match = db.get_school_enriched_data_fuzzy(name, state_code=state, threshold=0.55)
+        if match:
+            sid = match.get('school_enrichment_id')
+            matched_name = match.get('school_name', '?')
+            alias_id = db.add_school_alias(sid, name, state_code=state, source='auto_resolve')
+            resolved.append({
+                'alias': name,
+                'matched_to': matched_name,
+                'school_enrichment_id': sid,
+                'alias_id': alias_id,
+                'students': students,
+            })
+            logger.info(f"Auto-resolved: '{name}' → '{matched_name}' (alias_id={alias_id})")
+        else:
+            remaining.append({
+                'school_name': name,
+                'state_code': state,
+                'students': students,
+            })
+
+    return jsonify({
+        'status': 'success',
+        'resolved': len(resolved),
+        'remaining': len(remaining),
+        'resolved_list': resolved,
+        'remaining_list': remaining,
+    })
+
+
+@schools_bp.route('/api/schools/seed-known-aliases', methods=['POST'])
+def seed_known_aliases():
+    """Create missing school records and aliases for known student misspellings.
+
+    Step 1: Create any schools from CREATE_IF_MISSING that don't exist yet.
+    Step 2: Create aliases from ALIAS_MAP linking student typos to canonical names.
+    """
+    from scripts.seed_known_aliases import ALIAS_MAP, CREATE_IF_MISSING
+
+    db.ensure_school_aliases_table()
+
+    # Step 1: Create missing schools
+    schools_created = []
+    for school in CREATE_IF_MISSING:
+        name = school['school_name']
+        state = school.get('state_code', 'GA')
+        # Check if already exists
+        existing = db.execute_query(
+            "SELECT school_enrichment_id FROM school_enriched_data "
+            "WHERE LOWER(school_name) = LOWER(%s) AND is_active = TRUE LIMIT 1",
+            (name,)
+        )
+        if not existing:
+            new_id = db.create_school_enriched_data({
+                'school_name': name,
+                'state_code': state,
+                'analysis_status': 'csv_imported',
+                'human_review_status': 'pending',
+                'created_by': 'seed_known_aliases',
+            })
+            if new_id:
+                schools_created.append({'name': name, 'state': state, 'id': new_id})
+
+    # Step 2: Create aliases
+    created = []
+    skipped = []
+    not_found = []
+
+    for alias_name, target_name in ALIAS_MAP:
+        # Skip if alias already exists
+        existing_alias = db.execute_query(
+            "SELECT alias_id FROM school_aliases WHERE LOWER(alias_name) = LOWER(%s) LIMIT 1",
+            (alias_name,)
+        )
+        if existing_alias:
+            skipped.append({'alias': alias_name, 'target': target_name, 'reason': 'already exists'})
+            continue
+
+        # Find the target school — try exact, case-insensitive, then LIKE
+        target = db.get_school_enriched_data(school_name=target_name)
+        if not target:
+            rows = db.execute_query(
+                "SELECT school_enrichment_id, school_name FROM school_enriched_data "
+                "WHERE LOWER(school_name) = LOWER(%s) AND is_active = TRUE LIMIT 1",
+                (target_name,)
+            )
+            if rows:
+                target = rows[0]
+        if not target:
+            # LIKE fallback for names with commas or slight differences
+            like_pattern = '%' + target_name.split(',')[0].split('(')[0].strip() + '%'
+            rows = db.execute_query(
+                "SELECT school_enrichment_id, school_name FROM school_enriched_data "
+                "WHERE school_name ILIKE %s AND is_active = TRUE ORDER BY school_enrichment_id LIMIT 1",
+                (like_pattern,)
+            )
+            if rows:
+                target = rows[0]
+
+        if not target:
+            not_found.append({'alias': alias_name, 'target': target_name})
+            continue
+
+        sid = target.get('school_enrichment_id')
+
+        alias_id = db.add_school_alias(sid, alias_name, state_code='GA', source='seed')
+        if alias_id:
+            created.append({'alias': alias_name, 'target': target_name, 'alias_id': alias_id})
+        else:
+            skipped.append({'alias': alias_name, 'target': target_name, 'reason': 'insert failed'})
+
+    return jsonify({
+        'status': 'success',
+        'schools_created': len(schools_created),
+        'schools_created_list': schools_created,
+        'aliases_created': len(created),
+        'skipped': len(skipped),
+        'not_found': len(not_found),
+        'created_list': created,
+        'not_found_list': not_found,
+        'skipped_list': skipped,
+    })
 
 
 @schools_bp.route('/api/school/<int:school_id>/aliases', methods=['GET'])
@@ -1924,7 +2131,11 @@ def bulk_approve_schools():
 
 @schools_bp.route('/api/schools/import-gosa-from-repo', methods=['POST'])
 def import_gosa_from_repo():
-    """Import the GOSA merged CSV directly from the repo — runs in background."""
+    """Import the GOSA merged CSV directly from the repo.
+
+    With ?sync=1, runs synchronously (blocks until complete, ~30-60s for 2800 rows).
+    Without sync, runs in a background thread with polling.
+    """
     from src.csv_school_importer import import_supplemental_csv
     import os as _os
     import tempfile
@@ -1938,6 +2149,28 @@ def import_gosa_from_repo():
     if not _os.path.isfile(csv_path):
         return jsonify({'status': 'error', 'error': f'File not found: {csv_path}'}), 404
 
+    sync = request.args.get('sync') == '1'
+
+    if sync:
+        # Synchronous mode — blocks until done, returns full result
+        try:
+            result = import_supplemental_csv(
+                csv_path, db, source_name='GOSA_2015-2025',
+                create_if_missing=True, default_state='GA',
+            )
+            result['status'] = 'completed'
+            logger.info(f"GOSA import (sync) complete: matched={result.get('matched')}, "
+                        f"created={result.get('created')}, updated={result.get('updated')}, "
+                        f"not_found={result.get('not_found')}")
+            return jsonify(result)
+        except Exception as e:
+            logger.error(f"GOSA import (sync) failed: {e}", exc_info=True)
+            return jsonify({'status': 'error', 'error': str(e)}), 500
+
+    csv_path = _os.path.join(_os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))), 'data', 'gosa_merged.csv')
+    if not _os.path.isfile(csv_path):
+        return jsonify({'status': 'error', 'error': f'File not found: {csv_path}'}), 404
+
     state_file = _os.path.join(tempfile.gettempdir(), 'gosa_import_state.json')
     state = {'status': 'running', 'message': 'Importing GOSA data...'}
     with open(state_file, 'w') as f:
@@ -1945,11 +2178,15 @@ def import_gosa_from_repo():
 
     def background_import(path, state_path):
         try:
-            result = import_supplemental_csv(path, db, source_name='GOSA_2015-2025')
+            result = import_supplemental_csv(
+                path, db, source_name='GOSA_2015-2025',
+                create_if_missing=True, default_state='GA',
+            )
             result['status'] = 'completed'
             with open(state_path, 'w') as f:
                 json.dump(result, f, default=str)
-            logger.info(f"GOSA import complete: {result.get('matched')} matched, {result.get('updated')} updated")
+            logger.info(f"GOSA import complete: {result.get('matched')} matched, "
+                        f"{result.get('created')} created, {result.get('updated')} updated")
         except Exception as e:
             with open(state_path, 'w') as f:
                 json.dump({'status': 'error', 'error': str(e)}, f)

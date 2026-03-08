@@ -423,6 +423,197 @@ def api_clear_historical_scores():
     return jsonify({'status': 'success', 'deleted': deleted})
 
 
+@training_bp.route('/api/training/reset-agent-outputs', methods=['POST'])
+def reset_training_agent_outputs():
+    """Reset agent_results, student_summary, nextgen_match, and status
+    for all training records so they can be re-evaluated through the
+    current pipeline.
+
+    This preserves the original document text (application_text,
+    transcript_text, recommendation_text) and student info — it only
+    wipes the AI evaluation outputs.
+
+    Use this after pipeline changes to get a clean-slate re-evaluation.
+    """
+    try:
+        training_col = db.get_training_example_column()
+        test_col = db.get_test_data_column()
+
+        where = f"{training_col} = TRUE"
+        if db.has_applications_column(test_col):
+            where += f" AND ({test_col} = FALSE OR {test_col} IS NULL)"
+
+        count_rows = db.execute_query(f"SELECT COUNT(*) as cnt FROM applications WHERE {where}")
+        count = count_rows[0]['cnt'] if count_rows else 0
+
+        if count == 0:
+            return jsonify({'status': 'success', 'message': 'No training records found', 'reset': 0})
+
+        # Reset AI outputs but keep document text and student info
+        db.execute_non_query(f"""
+            UPDATE applications
+            SET agent_results = NULL,
+                student_summary = NULL,
+                nextgen_match = NULL,
+                status = 'Pending',
+                updated_date = CURRENT_TIMESTAMP
+            WHERE {where}
+        """)
+
+        # Also clear dependent agent tables for these records
+        app_ids = db.execute_query(f"SELECT application_id FROM applications WHERE {where}")
+        for row in (app_ids or []):
+            aid = row['application_id']
+            for table in ('ai_evaluations', 'aurora_evaluations', 'merlin_evaluations',
+                          'agent_audit_logs'):
+                try:
+                    db.execute_non_query(f"DELETE FROM {table} WHERE application_id = %s", (aid,))
+                except Exception:
+                    pass  # Table may not exist
+
+        logger.info(f"Reset agent outputs for {count} training records")
+        return jsonify({
+            'status': 'success',
+            'reset': count,
+            'message': f'Reset AI outputs for {count} training records. Document text preserved. Re-evaluate to regenerate.',
+        })
+    except Exception as e:
+        logger.error(f"Error resetting training outputs: {e}", exc_info=True)
+        return jsonify({'status': 'error', 'error': str(e)}), 500
+
+
+@training_bp.route('/api/training/re-evaluate', methods=['POST'])
+def re_evaluate_training():
+    """Re-run the full evaluation pipeline on all training records that
+    have status='Pending' (i.e., after a reset-agent-outputs call).
+
+    Processes sequentially in a background thread with progress tracking.
+    Each record goes through the full Smee orchestrator pipeline.
+
+    Optional body: {"limit": 20} — max records per batch (default 50, cap 100)
+    """
+    import tempfile as _tempfile
+
+    data = request.get_json(silent=True) or {}
+    limit = min(int(data.get('limit', 50)), 100)
+
+    training_col = db.get_training_example_column()
+    test_col = db.get_test_data_column()
+    test_filter = ""
+    if db.has_applications_column(test_col):
+        test_filter = f" AND ({test_col} = FALSE OR {test_col} IS NULL)"
+
+    pending = db.execute_query(f"""
+        SELECT application_id, applicant_name
+        FROM applications
+        WHERE {training_col} = TRUE{test_filter}
+          AND (status = 'Pending' OR agent_results IS NULL)
+        ORDER BY application_id
+        LIMIT %s
+    """, (limit,))
+
+    if not pending:
+        return jsonify({'status': 'success', 'message': 'No pending training records to re-evaluate', 'queued': 0})
+
+    state_file = os.path.join(_tempfile.gettempdir(), 'training_reevaluate_state.json')
+    state = {
+        'status': 'running',
+        'total': len(pending),
+        'completed': 0,
+        'succeeded': 0,
+        'failed': 0,
+        'current': '',
+        'message': f'Starting re-evaluation of {len(pending)} training records...',
+    }
+    with open(state_file, 'w') as f:
+        json.dump(state, f)
+
+    def _background_reevaluate(records, state_path):
+        from extensions import start_training_processing, run_async, get_orchestrator
+        import time as _time
+
+        for idx, rec in enumerate(records):
+            app_id = rec['application_id']
+            name = rec.get('applicant_name', f'ID#{app_id}')
+            state['completed'] = idx
+            state['current'] = name
+            state['message'] = f'Evaluating {name} ({idx+1}/{len(records)})'
+            try:
+                with open(state_path, 'w') as f:
+                    json.dump(state, f)
+            except Exception:
+                pass
+
+            try:
+                # Run full orchestrator evaluation
+                application = db.get_application(app_id)
+                if not application:
+                    state['failed'] += 1
+                    continue
+
+                orchestrator = get_orchestrator()
+                result = run_async(orchestrator.coordinate_evaluation(
+                    application=application,
+                    evaluation_steps=[
+                        'application_reader', 'grade_reader', 'recommendation_reader',
+                        'school_context', 'data_scientist', 'student_evaluator', 'aurora'
+                    ]
+                ))
+
+                if isinstance(result, dict) and result.get('status') != 'error':
+                    db.update_application_status(app_id, 'Completed')
+                    state['succeeded'] += 1
+                else:
+                    state['failed'] += 1
+
+                logger.info(f"Re-eval [{idx+1}/{len(records)}] {name}: "
+                           f"{'OK' if state['succeeded'] > idx else 'FAIL'}")
+
+            except Exception as e:
+                logger.error(f"Re-eval failed for {name}: {e}", exc_info=True)
+                state['failed'] += 1
+
+            # Rate limit
+            if idx < len(records) - 1:
+                _time.sleep(5)
+
+        state['status'] = 'completed'
+        state['completed'] = len(records)
+        state['message'] = f'Re-evaluation complete: {state["succeeded"]} succeeded, {state["failed"]} failed'
+        try:
+            with open(state_path, 'w') as f:
+                json.dump(state, f)
+        except Exception:
+            pass
+
+    thread = threading.Thread(
+        target=_background_reevaluate,
+        args=([dict(r) for r in pending], state_file),
+        daemon=True
+    )
+    thread.start()
+
+    return jsonify({
+        'status': 'started',
+        'message': f'Re-evaluating {len(pending)} training records in background',
+        'queued': len(pending),
+        'poll_url': '/api/training/re-evaluate',
+    })
+
+
+@training_bp.route('/api/training/re-evaluate', methods=['GET'])
+def re_evaluate_training_status():
+    """Poll training re-evaluation progress."""
+    import tempfile as _tempfile
+    state_file = os.path.join(_tempfile.gettempdir(), 'training_reevaluate_state.json')
+    if not os.path.isfile(state_file):
+        return jsonify({'status': 'idle'})
+    try:
+        with open(state_file, 'r') as f:
+            return jsonify(json.load(f))
+    except Exception:
+        return jsonify({'status': 'unknown'})
+
 
 @training_bp.route('/api/training/reprocess', methods=['POST'])
 def api_reprocess_training():
