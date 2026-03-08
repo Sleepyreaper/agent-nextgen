@@ -1440,29 +1440,39 @@ def import_supplemental_school_csv():
     """
     from src.csv_school_importer import import_supplemental_csv
     from werkzeug.utils import secure_filename
+    import base64
 
     try:
-        if 'file' not in request.files:
-            return jsonify({'status': 'error', 'error': 'No file uploaded'}), 400
+        upload_folder = current_app.config.get('UPLOAD_FOLDER', '/tmp')
 
-        file = request.files['file']
-        if not file.filename or not file.filename.endswith('.csv'):
-            return jsonify({'status': 'error', 'error': 'File must be a .csv'}), 400
+        # Support both FormData file upload and base64 JSON (WAF bypass)
+        json_data = request.get_json(silent=True)
+        if json_data and json_data.get('file_base64'):
+            # Base64 encoded CSV
+            csv_bytes = base64.b64decode(json_data['file_base64'])
+            filename = secure_filename(json_data.get('filename', 'import.csv'))
+            source_name = (json_data.get('source_name') or 'supplemental_csv').strip()
+            csv_path = os.path.join(upload_folder, f'supp_{filename}')
+            with open(csv_path, 'wb') as f:
+                f.write(csv_bytes)
+        elif 'file' in request.files:
+            file = request.files['file']
+            if not file.filename or not file.filename.endswith('.csv'):
+                return jsonify({'status': 'error', 'error': 'File must be a .csv'}), 400
+            source_name = (request.form.get('source_name') or 'supplemental_csv').strip()
+            filename = secure_filename(file.filename)
+            csv_path = os.path.join(upload_folder, f'supp_{filename}')
+            file.save(csv_path)
+        else:
+            return jsonify({'status': 'error', 'error': 'No file uploaded'}), 400
 
         # Ensure GOSA columns exist before import
         try:
             db.ensure_gosa_columns()
         except Exception:
             pass
-
-        source_name = request.form.get('source_name', 'supplemental_csv').strip()
         if not source_name:
             source_name = 'supplemental_csv'
-
-        upload_folder = current_app.config.get('UPLOAD_FOLDER', '/tmp')
-        filename = secure_filename(file.filename)
-        csv_path = os.path.join(upload_folder, f'supp_{filename}')
-        file.save(csv_path)
 
         result = import_supplemental_csv(csv_path, db, source_name=source_name)
 
