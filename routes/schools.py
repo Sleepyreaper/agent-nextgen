@@ -2095,7 +2095,7 @@ def bulk_approve_schools():
 
         # Simple: approve any active school with an opportunity_score
         count_rows = db.execute_query(
-            "SELECT COUNT(*) as cnt FROM school_enriched_data WHERE is_active = TRUE AND opportunity_score IS NOT NULL AND human_review_status != 'approved'"
+            "SELECT COUNT(*) as cnt FROM school_enriched_data WHERE is_active = TRUE AND opportunity_score IS NOT NULL AND COALESCE(human_review_status, 'pending') != 'approved'"
         )
         count = count_rows[0]['cnt'] if count_rows else 0
 
@@ -2113,7 +2113,7 @@ def bulk_approve_schools():
                     reviewed_date = CURRENT_TIMESTAMP,
                     reviewed_by = 'bulk_approve',
                     updated_at = CURRENT_TIMESTAMP
-                WHERE is_active = TRUE AND opportunity_score IS NOT NULL AND human_review_status != 'approved'"""
+                WHERE is_active = TRUE AND opportunity_score IS NOT NULL AND COALESCE(human_review_status, 'pending') != 'approved'"""
         )
 
         logger.info(f"Bulk approved {count} schools")
