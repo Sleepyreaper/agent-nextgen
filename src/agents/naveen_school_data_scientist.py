@@ -325,6 +325,8 @@ class NaveenSchoolDataScientist(BaseAgent):
             ('ap_tests_3plus', 'AP Tests Scoring 3+'),
             ('milestones_ela_proficient_pct', 'GA Milestones ELA Proficient (%)'),
             ('milestones_math_proficient_pct', 'GA Milestones Math Proficient (%)'),
+            ('instruction_expenditure_per_fte', 'Instruction Spending per Student ($)'),
+            ('inexperienced_teacher_pct', 'Inexperienced Teachers (%)'),
         ]
         has_gosa = any(ed.get(f[0]) for f in gosa_fields)
         if has_gosa:
@@ -764,7 +766,8 @@ class NaveenSchoolDataScientist(BaseAgent):
         for key in ('act_composite_avg', 'sat_total_avg', 'college_going_rate',
                      'college_going_4yr_rate', 'hope_eligible_pct', 'dropout_rate',
                      'ap_students_tested', 'ap_tests_3plus',
-                     'milestones_ela_proficient_pct', 'milestones_math_proficient_pct'):
+                     'milestones_ela_proficient_pct', 'milestones_math_proficient_pct',
+                     'instruction_expenditure_per_fte', 'inexperienced_teacher_pct'):
             v = _num(school_data.get(key))
             if v is not None:
                 features[f'school_{key}'] = v

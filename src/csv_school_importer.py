@@ -460,6 +460,14 @@ _SUPPLEMENT_FIELD_MAP = {
     'ap_tests_administered': 'ap_tests_administered',
     'ap_tests_3plus': 'ap_tests_3plus',
     'ap_tests_3_or_higher': 'ap_tests_3plus',
+    # EOC Milestones — map subject-specific to our two DB columns
+    'eoc_algebra_proficient_pct': 'milestones_math_proficient_pct',
+    'eoc_biology_proficient_pct': 'milestones_ela_proficient_pct',  # reuse as general proficiency
+    'eoc_amlit_proficient_pct': 'milestones_ela_proficient_pct',
+    # School expenditure
+    'instruction_expenditure_per_fte': 'instruction_expenditure_per_fte',
+    # Educator quality
+    'inexperienced_teacher_pct': 'inexperienced_teacher_pct',
 }
 
 # Fields to match on — any of these can be the school identifier

@@ -3544,6 +3544,8 @@ class Database:
             ('ap_tests_administered', 'INTEGER'),
             ('ap_tests_3plus', 'INTEGER'),
             ('gosa_data_years', 'TEXT'),
+            ('instruction_expenditure_per_fte', 'NUMERIC(10,2)'),
+            ('inexperienced_teacher_pct', 'NUMERIC(5,2)'),
         ]
         for col_name, col_type in gosa_columns:
             if not self.has_applications_column_on_table('school_enriched_data', col_name):

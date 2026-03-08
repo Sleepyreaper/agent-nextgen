@@ -282,6 +282,139 @@ def process_dropout_files(file_paths: List[str]) -> Dict[str, Dict[str, Any]]:
     return schools
 
 
+# ── GA Milestones EOC Processing ─────────────────────────────────────
+
+def process_eoc_files(file_paths: List[str]) -> Dict[str, Dict[str, Any]]:
+    """Process Georgia Milestones End-of-Course assessment files.
+    School-level, ALL Students, ALL GRADES, compute proficient+distinguished %."""
+    schools = defaultdict(lambda: defaultdict(dict))
+
+    for path in sorted(file_paths):
+        logger.info(f"  Reading EOC: {os.path.basename(path)}")
+        rows = _read_csv(path)
+        for row in rows:
+            subgroup = (row.get('SUBGROUP_NAME') or '').strip()
+            if subgroup != 'All Students':
+                continue
+            instn = (row.get('INSTN_NUMBER') or '').strip()
+            if instn in ('ALL', ''):
+                continue
+            detail = (row.get('DETAIL_LVL_DESC') or '').strip().upper()
+            if detail in ('DISTRICT', 'STATE', 'DISTRICT ALL SUBJECTS'):
+                continue
+
+            name = (row.get('INSTN_NAME') or '').strip()
+            year = (row.get('LONG_SCHOOL_YEAR') or '').strip()
+            subject = (row.get('TEST_CMPNT_TYP_NM') or '').strip()
+            if not name or not year or name in ('ALL', 'SCHOOL_ALL'):
+                continue
+
+            prof_pct = _safe_float(row.get('PROFICIENT_PCT') or row.get('Level3_PERCENT') or row.get('ADEQUATE_PERCENT'))
+            dist_pct = _safe_float(row.get('DISTINGUISHED_PCT') or row.get('Level4_PERCENT') or row.get('THOROUGH_PERCENT'))
+
+            if prof_pct is None and dist_pct is None:
+                continue
+
+            combined = (prof_pct or 0) + (dist_pct or 0)
+            norm = _normalize_name(name)
+            schools[norm][year]['name'] = name
+
+            subj_lower = subject.lower()
+            if 'algebra' in subj_lower:
+                schools[norm][year]['eoc_algebra_proficient_pct'] = combined
+            elif 'biology' in subj_lower:
+                schools[norm][year]['eoc_biology_proficient_pct'] = combined
+            elif 'american literature' in subj_lower or 'am lit' in subj_lower:
+                schools[norm][year]['eoc_amlit_proficient_pct'] = combined
+            elif 'us history' in subj_lower or 'u.s. history' in subj_lower:
+                schools[norm][year]['eoc_ushistory_proficient_pct'] = combined
+
+    return schools
+
+
+# ── Revenues & Expenditures Processing ───────────────────────────────
+
+def process_expenditure_files(file_paths: List[str]) -> Dict[str, Dict[str, Any]]:
+    """Process Revenues & Expenditures files. Extract per-school instruction $ per FTE."""
+    schools = defaultdict(lambda: defaultdict(dict))
+
+    for path in sorted(file_paths):
+        logger.info(f"  Reading Expenditure: {os.path.basename(path)}")
+        rows = _read_csv(path)
+        for row in rows:
+            rev_exp = (row.get('Revenues/Expenditures') or row.get('REVENUES/EXPENDITURES') or '').strip()
+            if rev_exp != 'K-12 Expenditures':
+                continue
+            desc = (row.get('Description') or row.get('DESCRIPTION') or '').strip()
+            if desc != 'Instruction':
+                continue
+
+            school_code = (row.get('SCHOOL_CODE') or row.get('INSTN_NUMBER') or '').strip()
+            if school_code in ('ALL', '8010', ''):  # Skip district aggregates and central office
+                continue
+            detail = (row.get('DETAIL_LVL_DESC') or '').strip().upper()
+            if detail in ('DISTRICT', 'STATE'):
+                continue
+
+            name = (row.get('SCHOOL_NAME') or row.get('INSTN_NAME') or '').strip()
+            year = (row.get('SCHOOL_YEAR') or row.get('LONG_SCHOOL_YEAR') or '').strip()
+            dollars_per_fte = _safe_float(row.get('Dollars per FTE') or row.get('DOLLARS_PER_FTE'))
+
+            if not name or not year or name in ('All Column Values',):
+                continue
+            if dollars_per_fte is None or dollars_per_fte <= 0:
+                continue
+            # Filter out obviously wrong values (some central office rows have per-FTE in millions)
+            if dollars_per_fte > 50000:
+                continue
+
+            norm = _normalize_name(name)
+            schools[norm][year] = {
+                'name': name,
+                'instruction_expenditure_per_fte': round(dollars_per_fte, 0),
+            }
+
+    return schools
+
+
+# ── Educator Inexperience Processing ─────────────────────────────────
+
+def process_educator_files(file_paths: List[str]) -> Dict[str, Dict[str, Any]]:
+    """Process Educator Inexperience files. Extract % inexperienced teachers per school."""
+    schools = defaultdict(lambda: defaultdict(dict))
+
+    for path in sorted(file_paths):
+        logger.info(f"  Reading Educator: {os.path.basename(path)}")
+        rows = _read_csv(path)
+        for row in rows:
+            role = (row.get('LABEL_LVL_3_DESC') or '').strip()
+            if role != 'Teachers':
+                continue
+            scope = (row.get('LABEL_LVL_2_DESC') or '').strip()
+            if scope != 'Total':
+                continue
+
+            name = (row.get('INSTN_NAME') or '').strip()
+            year = (row.get('LONG_SCHOOL_YEAR') or '').strip()
+            if not name or not year:
+                continue
+            # Skip district aggregates
+            if '- All Schools' in name or 'All Column Values' in name:
+                continue
+
+            pct = _safe_float(row.get('INEXPERIENCED_FTE_PCT') or row.get('CATEGORY_FTE_PCT'))
+            if pct is None:
+                continue
+
+            norm = _normalize_name(name)
+            schools[norm][year] = {
+                'name': name,
+                'inexperienced_teacher_pct': pct,
+            }
+
+    return schools
+
+
 # ── Merge & Output ───────────────────────────────────────────────────
 
 def get_latest(year_dict: Dict[str, Dict], field: str) -> Tuple[Optional[Any], Optional[str]]:
@@ -293,18 +426,18 @@ def get_latest(year_dict: Dict[str, Dict], field: str) -> Tuple[Optional[Any], O
     return None, None
 
 
-def merge_all(ap, act, grad, hope, dropout) -> List[Dict[str, Any]]:
+def merge_all(ap, act, grad, hope, dropout, eoc, expenditure, educator) -> List[Dict[str, Any]]:
     """Merge all datasets into a single per-school record."""
     # Collect all normalized school names
     all_names = set()
-    for d in [ap, act, grad, hope, dropout]:
+    for d in [ap, act, grad, hope, dropout, eoc, expenditure, educator]:
         all_names.update(d.keys())
 
     merged = []
     for norm_name in sorted(all_names):
         # Get the best display name
         display_name = None
-        for d in [ap, act, grad, hope, dropout]:
+        for d in [ap, act, grad, hope, dropout, eoc, expenditure, educator]:
             if norm_name in d:
                 for year_data in d[norm_name].values():
                     if year_data.get('name'):
@@ -350,6 +483,21 @@ def merge_all(ap, act, grad, hope, dropout) -> List[Dict[str, Any]]:
         if norm_name in dropout:
             record['dropout_rate'], _ = get_latest(dropout[norm_name], 'dropout_rate')
 
+        # EOC Milestones
+        if norm_name in eoc:
+            record['eoc_algebra_proficient_pct'], _ = get_latest(eoc[norm_name], 'eoc_algebra_proficient_pct')
+            record['eoc_biology_proficient_pct'], _ = get_latest(eoc[norm_name], 'eoc_biology_proficient_pct')
+            record['eoc_amlit_proficient_pct'], _ = get_latest(eoc[norm_name], 'eoc_amlit_proficient_pct')
+            record['eoc_ushistory_proficient_pct'], _ = get_latest(eoc[norm_name], 'eoc_ushistory_proficient_pct')
+
+        # School-level expenditure
+        if norm_name in expenditure:
+            record['instruction_expenditure_per_fte'], _ = get_latest(expenditure[norm_name], 'instruction_expenditure_per_fte')
+
+        # Educator inexperience
+        if norm_name in educator:
+            record['inexperienced_teacher_pct'], _ = get_latest(educator[norm_name], 'inexperienced_teacher_pct')
+
         # Only include if we have at least some data
         has_data = any(v is not None for k, v in record.items() if k != 'school_name')
         if has_data:
@@ -378,9 +526,15 @@ def main():
                         glob.glob(os.path.join(input_dir, 'Hope*')))
     dropout_files = sorted(glob.glob(os.path.join(input_dir, '9-12*')) +
                            glob.glob(os.path.join(input_dir, '9_12*')))
+    eoc_files = sorted(glob.glob(os.path.join(input_dir, 'EOC_*')))
+    expenditure_files = sorted(glob.glob(os.path.join(input_dir, 'Revenues*')) +
+                               glob.glob(os.path.join(input_dir, 'REVENUES*')))
+    educator_files = sorted(glob.glob(os.path.join(input_dir, 'Educator*')) +
+                            glob.glob(os.path.join(input_dir, 'EDUCATOR*')))
 
     logger.info(f"Found: {len(ap_files)} AP, {len(act_files)} ACT, {len(grad_files)} Graduation, "
-                f"{len(hope_files)} HOPE, {len(dropout_files)} Dropout files")
+                f"{len(hope_files)} HOPE, {len(dropout_files)} Dropout, {len(eoc_files)} EOC, "
+                f"{len(expenditure_files)} Expenditure, {len(educator_files)} Educator files")
 
     if not any([ap_files, act_files, grad_files, hope_files, dropout_files]):
         logger.error("No GOSA files found! Check --input-dir")
@@ -406,8 +560,21 @@ def main():
     dropout_data = process_dropout_files(dropout_files)
     logger.info(f"  {len(dropout_data)} schools with dropout data")
 
+    logger.info("\n� Processing GA Milestones EOC...")
+    eoc_data = process_eoc_files(eoc_files)
+    logger.info(f"  {len(eoc_data)} schools with EOC data")
+
+    logger.info("\n📊 Processing Revenues & Expenditures...")
+    expenditure_data = process_expenditure_files(expenditure_files)
+    logger.info(f"  {len(expenditure_data)} schools with expenditure data")
+
+    logger.info("\n📊 Processing Educator Inexperience...")
+    educator_data = process_educator_files(educator_files)
+    logger.info(f"  {len(educator_data)} schools with educator data")
+
     logger.info("\n🔗 Merging all datasets...")
-    merged = merge_all(ap_data, act_data, grad_data, hope_data, dropout_data)
+    merged = merge_all(ap_data, act_data, grad_data, hope_data, dropout_data,
+                       eoc_data, expenditure_data, educator_data)
     logger.info(f"  {len(merged)} total schools in merged dataset")
 
     # Write output
@@ -419,6 +586,9 @@ def main():
         'act_composite_avg', 'act_english_avg', 'act_math_avg',
         'act_reading_avg', 'act_science_avg', 'act_students_tested',
         'graduation_rate', 'hope_eligible_pct', 'dropout_rate',
+        'eoc_algebra_proficient_pct', 'eoc_biology_proficient_pct',
+        'eoc_amlit_proficient_pct', 'eoc_ushistory_proficient_pct',
+        'instruction_expenditure_per_fte', 'inexperienced_teacher_pct',
     ]
     with open(args.output, 'w', newline='', encoding='utf-8') as f:
         writer = csv.DictWriter(f, fieldnames=fieldnames, extrasaction='ignore')
@@ -443,7 +613,12 @@ def main():
     has_grad = sum(1 for r in merged if r.get('graduation_rate'))
     has_hope = sum(1 for r in merged if r.get('hope_eligible_pct'))
     has_dropout = sum(1 for r in merged if r.get('dropout_rate'))
-    logger.info(f"   AP: {has_ap} | ACT: {has_act} | Grad: {has_grad} | HOPE: {has_hope} | Dropout: {has_dropout}")
+    has_eoc = sum(1 for r in merged if r.get('eoc_algebra_proficient_pct'))
+    has_expend = sum(1 for r in merged if r.get('instruction_expenditure_per_fte'))
+    has_educator = sum(1 for r in merged if r.get('inexperienced_teacher_pct'))
+    logger.info(f"   AP: {has_ap} | ACT: {has_act} | Grad: {has_grad} | HOPE: {has_hope} | "
+                f"Dropout: {has_dropout} | EOC: {has_eoc} | Expenditure: {has_expend} | "
+                f"Educator: {has_educator}")
 
 
 if __name__ == '__main__':

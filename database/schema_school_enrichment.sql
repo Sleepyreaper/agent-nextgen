@@ -142,6 +142,10 @@ ALTER TABLE school_enriched_data ADD COLUMN IF NOT EXISTS
   ap_tests_3plus INTEGER;               -- AP exams scoring 3+
 ALTER TABLE school_enriched_data ADD COLUMN IF NOT EXISTS
   gosa_data_years TEXT;                 -- JSON: which years of GOSA data loaded
+ALTER TABLE school_enriched_data ADD COLUMN IF NOT EXISTS
+  instruction_expenditure_per_fte NUMERIC(10,2);  -- School-level instruction spending per FTE student
+ALTER TABLE school_enriched_data ADD COLUMN IF NOT EXISTS
+  inexperienced_teacher_pct NUMERIC(5,2);  -- % of teachers who are inexperienced
 
 -- Web sources and links for each school
 CREATE TABLE IF NOT EXISTS school_web_sources (
