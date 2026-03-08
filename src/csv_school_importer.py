@@ -558,6 +558,26 @@ def import_supplemental_csv(
 
         match_mode = 'nces' if nces_col else 'name'
         logger.info(f"  Match mode: {match_mode}")
+
+        # Pre-check which DB columns actually exist
+        valid_db_cols = set()
+        try:
+            col_rows = db.execute_query(
+                "SELECT column_name FROM information_schema.columns WHERE table_name = 'school_enriched_data'"
+            )
+            valid_db_cols = {r['column_name'] for r in (col_rows or [])}
+        except Exception:
+            valid_db_cols = set()
+
+        # Filter col_mapping to only include columns that exist in DB
+        if valid_db_cols:
+            filtered_mapping = {}
+            for csv_col, db_col in col_mapping.items():
+                if db_col in valid_db_cols:
+                    filtered_mapping[csv_col] = db_col
+                else:
+                    logger.warning(f"  Skipping column {db_col} — not found in school_enriched_data")
+            col_mapping = filtered_mapping
         if nces_col:
             logger.info(f"  NCES ID column: {nces_col}")
         else:

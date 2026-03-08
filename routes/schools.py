@@ -1445,6 +1445,12 @@ def import_supplemental_school_csv():
         if not file.filename or not file.filename.endswith('.csv'):
             return jsonify({'status': 'error', 'error': 'File must be a .csv'}), 400
 
+        # Ensure GOSA columns exist before import
+        try:
+            db.ensure_gosa_columns()
+        except Exception:
+            pass
+
         source_name = request.form.get('source_name', 'supplemental_csv').strip()
         if not source_name:
             source_name = 'supplemental_csv'
