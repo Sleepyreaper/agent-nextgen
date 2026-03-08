@@ -513,11 +513,25 @@ def import_supplemental_csv(
                     break
 
         if not nces_col:
-            return {
-                'status': 'error',
-                'error': f'No NCES ID column found. Expected one of: {_MATCH_COLUMNS}. '
-                         f'Found columns: {headers[:20]}',
-            }
+            # Fall back to school name matching
+            name_col = None
+            name_candidates = ['school_name', 'instn_name', 'institution_name', 'school']
+            for col in name_candidates:
+                if col in headers:
+                    name_col = col
+                    break
+            if not name_col:
+                for orig in (reader.fieldnames or []):
+                    if orig.strip().lower().replace(' ', '_') in name_candidates:
+                        name_col = orig.strip()
+                        break
+            if not name_col:
+                return {
+                    'status': 'error',
+                    'error': f'No NCES ID or school name column found. '
+                             f'Expected NCES: {_MATCH_COLUMNS} or name: {name_candidates}. '
+                             f'Found: {headers[:20]}',
+                }
 
         # Map CSV columns to DB fields
         col_mapping = {}
@@ -534,7 +548,12 @@ def import_supplemental_csv(
                          f'Your columns: {headers}',
             }
 
-        logger.info(f"  NCES ID column: {nces_col}")
+        match_mode = 'nces' if nces_col else 'name'
+        logger.info(f"  Match mode: {match_mode}")
+        if nces_col:
+            logger.info(f"  NCES ID column: {nces_col}")
+        else:
+            logger.info(f"  School name column: {name_col}")
         logger.info(f"  Mapped columns: {col_mapping}")
 
         # Reset reader to re-read with original headers
@@ -550,18 +569,42 @@ def import_supplemental_csv(
 
         for row in reader:
             total_rows += 1
-            nces_id = (row.get(nces_col) or '').strip()
-            if not nces_id:
-                continue
 
-            # Find existing school by NCES ID
-            try:
-                existing = db.execute_query(
-                    "SELECT school_enrichment_id, data_source_notes FROM school_enriched_data WHERE nces_id = %s",
-                    (nces_id,)
-                )
-            except Exception:
-                existing = None
+            # Find existing school
+            existing = None
+            if match_mode == 'nces':
+                nces_id = (row.get(nces_col) or '').strip()
+                if not nces_id:
+                    continue
+                try:
+                    existing = db.execute_query(
+                        "SELECT school_enrichment_id, data_source_notes FROM school_enriched_data WHERE nces_id = %s",
+                        (nces_id,)
+                    )
+                except Exception:
+                    existing = None
+            else:
+                school_name = (row.get(name_col) or '').strip()
+                if not school_name:
+                    continue
+                # Try exact match first
+                try:
+                    existing = db.execute_query(
+                        "SELECT school_enrichment_id, data_source_notes FROM school_enriched_data "
+                        "WHERE LOWER(school_name) = LOWER(%s) AND state_code = 'GA'",
+                        (school_name,)
+                    )
+                except Exception:
+                    existing = None
+                # Fuzzy fallback
+                if not existing:
+                    try:
+                        fuzzy = db.get_school_enriched_data_fuzzy(school_name, state_code='GA', threshold=0.7)
+                        if fuzzy:
+                            existing = [{'school_enrichment_id': fuzzy['school_enrichment_id'],
+                                         'data_source_notes': fuzzy.get('data_source_notes')}]
+                    except Exception:
+                        pass
 
             if not existing:
                 not_found += 1
