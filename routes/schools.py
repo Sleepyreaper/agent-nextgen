@@ -2091,7 +2091,7 @@ def bulk_approve_schools():
         data = request.get_json() or {}
         min_confidence = float(data.get('min_confidence', 0))
 
-        where = "(analysis_status = 'complete' OR (analysis_status = 'csv_imported' AND opportunity_score IS NOT NULL)) AND (human_review_status IS NULL OR human_review_status != 'approved')"
+        where = "opportunity_score IS NOT NULL AND (human_review_status IS NULL OR human_review_status != 'approved')"
         params = []
         if min_confidence > 0:
             where += " AND COALESCE(data_confidence_score, 0) >= %s"
