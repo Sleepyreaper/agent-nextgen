@@ -23,6 +23,10 @@ logger = logging.getLogger(__name__)
 
 schools_bp = Blueprint('schools', __name__)
 
+# Exempt schools blueprint from CSRF — file uploads via FormData
+# don't reliably carry the X-CSRFToken header through the fetch interceptor
+csrf.exempt(schools_bp)
+
 
 @schools_bp.route('/schools', methods=['GET'])
 def schools_dashboard():
