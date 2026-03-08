@@ -971,30 +971,55 @@ async function importGosaFromRepo() {
     if (!confirm('Import the pre-built GOSA dataset (2,800+ GA schools, 25 data fields)?')) return;
 
     btn.disabled = true;
-    btn.innerHTML = '⏳ Importing...';
+    btn.innerHTML = '⏳ Starting import...';
     resultDiv.style.display = 'none';
 
     try {
         const resp = await fetch('/api/schools/import-gosa-from-repo', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({})});
         const data = await resp.json();
-        if (data.status === 'success') {
-            const fields = data.fields_updated || {};
-            const fieldList = Object.entries(fields).map(([k, v]) => `${k}: ${v}`).join(', ');
-            resultDiv.className = 'batch-result success';
-            resultDiv.innerHTML = `<strong>✅ GOSA import complete!</strong><br>${data.matched} matched, ${data.updated} updated, ${data.not_found} not found<br><strong>Fields:</strong> ${fieldList || 'none'}`;
-            if (data.updated > 0) setTimeout(() => loadSchools(), 1000);
+        if (data.status === 'started') {
+            resultDiv.className = 'batch-result';
+            resultDiv.style.background = '#ecfdf5';
+            resultDiv.style.border = '1px solid #34d399';
+            resultDiv.innerHTML = '<strong>📊 GOSA import running...</strong> This may take a few minutes.';
+            resultDiv.style.display = 'block';
+            // Poll for completion
+            const poll = setInterval(async () => {
+                try {
+                    const pr = await fetch('/api/schools/import-gosa-from-repo');
+                    const ps = await pr.json();
+                    if (ps.status === 'completed') {
+                        clearInterval(poll);
+                        const fields = ps.fields_updated || {};
+                        const fieldList = Object.entries(fields).map(([k, v]) => `${k}: ${v}`).join(', ');
+                        resultDiv.className = 'batch-result success';
+                        resultDiv.innerHTML = `<strong>✅ GOSA import complete!</strong><br>${ps.matched || 0} matched, ${ps.updated || 0} updated, ${ps.not_found || 0} not found<br><strong>Fields:</strong> ${fieldList || 'none'}`;
+                        btn.disabled = false;
+                        btn.innerHTML = '📊 Import GOSA Data';
+                        setTimeout(() => loadSchools(), 1000);
+                    } else if (ps.status === 'error') {
+                        clearInterval(poll);
+                        resultDiv.className = 'batch-result error';
+                        resultDiv.innerHTML = '❌ ' + (ps.error || 'Failed');
+                        btn.disabled = false;
+                        btn.innerHTML = '📊 Import GOSA Data';
+                    }
+                } catch(e) { /* keep polling */ }
+            }, 5000);
         } else {
             resultDiv.className = 'batch-result error';
-            resultDiv.innerHTML = '❌ ' + (data.error || 'Failed');
+            resultDiv.innerHTML = '❌ ' + (data.error || 'Failed to start');
+            resultDiv.style.display = 'block';
+            btn.disabled = false;
+            btn.innerHTML = '📊 Import GOSA Data';
         }
-        resultDiv.style.display = 'block';
     } catch (err) {
         resultDiv.className = 'batch-result error';
         resultDiv.innerHTML = '❌ Error: ' + err.message;
         resultDiv.style.display = 'block';
+        btn.disabled = false;
+        btn.innerHTML = '📊 Import GOSA Data';
     }
-    btn.disabled = false;
-    btn.innerHTML = '📊 Import GOSA Data';
 }
 
 // ── Supplemental CSV Import ────────────────────────────────────────

@@ -1924,23 +1924,55 @@ def bulk_approve_schools():
 
 @schools_bp.route('/api/schools/import-gosa-from-repo', methods=['POST'])
 def import_gosa_from_repo():
-    """Import the GOSA merged CSV directly from the repo — no file upload needed."""
+    """Import the GOSA merged CSV directly from the repo — runs in background."""
     from src.csv_school_importer import import_supplemental_csv
     import os as _os
+    import tempfile
+
     try:
         db.ensure_gosa_columns()
     except Exception:
         pass
+
+    csv_path = _os.path.join(_os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))), 'data', 'gosa_merged.csv')
+    if not _os.path.isfile(csv_path):
+        return jsonify({'status': 'error', 'error': f'File not found: {csv_path}'}), 404
+
+    state_file = _os.path.join(tempfile.gettempdir(), 'gosa_import_state.json')
+    state = {'status': 'running', 'message': 'Importing GOSA data...'}
+    with open(state_file, 'w') as f:
+        json.dump(state, f)
+
+    def background_import(path, state_path):
+        try:
+            result = import_supplemental_csv(path, db, source_name='GOSA_2015-2025')
+            result['status'] = 'completed'
+            with open(state_path, 'w') as f:
+                json.dump(result, f, default=str)
+            logger.info(f"GOSA import complete: {result.get('matched')} matched, {result.get('updated')} updated")
+        except Exception as e:
+            with open(state_path, 'w') as f:
+                json.dump({'status': 'error', 'error': str(e)}, f)
+            logger.error(f"GOSA import failed: {e}", exc_info=True)
+
+    thread = threading.Thread(target=background_import, args=(csv_path, state_file), daemon=True)
+    thread.start()
+
+    return jsonify({'status': 'started', 'message': 'GOSA import running in background. Poll for progress.'})
+
+
+@schools_bp.route('/api/schools/import-gosa-from-repo', methods=['GET'])
+def import_gosa_from_repo_status():
+    """Poll GOSA import progress."""
+    import tempfile, os as _os
+    state_file = _os.path.join(tempfile.gettempdir(), 'gosa_import_state.json')
+    if not _os.path.isfile(state_file):
+        return jsonify({'status': 'idle'})
     try:
-        # The CSV is in the repo at data/gosa_merged.csv
-        csv_path = _os.path.join(_os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))), 'data', 'gosa_merged.csv')
-        if not _os.path.isfile(csv_path):
-            return jsonify({'status': 'error', 'error': f'File not found: {csv_path}'}), 404
-        result = import_supplemental_csv(csv_path, db, source_name='GOSA_2015-2025')
-        return jsonify(result)
-    except Exception as e:
-        logger.error(f"GOSA repo import error: {e}", exc_info=True)
-        return jsonify({'status': 'error', 'error': str(e)}), 500
+        with open(state_file, 'r') as f:
+            return jsonify(json.load(f))
+    except Exception:
+        return jsonify({'status': 'unknown'})
 
 
 @schools_bp.route('/api/schools/reset-for-reanalysis', methods=['POST'])
