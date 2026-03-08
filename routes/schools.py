@@ -1585,3 +1585,84 @@ def get_school_context_multiplier(school_id):
     return jsonify({'multiplier': 1.0, 'reasons': [], 'message': 'No cohort analysis available'})
 
 
+@schools_bp.route('/api/schools/bulk-approve', methods=['POST'])
+def bulk_approve_schools():
+    """Bulk-approve all schools that have been analyzed by Naveen.
+
+    Sets human_review_status='approved' for schools where:
+    - analysis_status = 'complete' (Naveen has scored them)
+    - human_review_status is NOT already 'approved'
+
+    Optional body: {"min_confidence": 50} — only approve above this threshold.
+    """
+    try:
+        data = request.get_json() or {}
+        min_confidence = float(data.get('min_confidence', 0))
+
+        where = "analysis_status = 'complete' AND (human_review_status IS NULL OR human_review_status != 'approved')"
+        params = []
+        if min_confidence > 0:
+            where += " AND COALESCE(data_confidence_score, 0) >= %s"
+            params.append(min_confidence)
+
+        # Count first
+        count_rows = db.execute_query(
+            f"SELECT COUNT(*) as cnt FROM school_enriched_data WHERE {where}",
+            tuple(params) if params else None,
+        )
+        count = count_rows[0]['cnt'] if count_rows else 0
+
+        if count == 0:
+            return jsonify({'status': 'success', 'message': 'No schools to approve', 'approved': 0})
+
+        # Approve
+        db.execute_non_query(
+            f"""UPDATE school_enriched_data
+                SET human_review_status = 'approved',
+                    reviewed_date = CURRENT_TIMESTAMP,
+                    reviewed_by = 'bulk_approve',
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE {where}""",
+            tuple(params) if params else None,
+        )
+
+        logger.info(f"Bulk approved {count} schools (min_confidence={min_confidence})")
+        return jsonify({
+            'status': 'success',
+            'approved': count,
+            'message': f'Approved {count} schools',
+        })
+    except Exception as e:
+        logger.error(f"Bulk approve failed: {e}", exc_info=True)
+        return jsonify({'status': 'error', 'error': str(e)}), 500
+
+
+@schools_bp.route('/api/schools/reset-for-reanalysis', methods=['POST'])
+def reset_schools_for_reanalysis():
+    """Reset all complete schools back to csv_imported so Naveen re-analyzes them.
+
+    Use after improving Naveen's prompt to get better results.
+    """
+    try:
+        count_rows = db.execute_query(
+            "SELECT COUNT(*) as cnt FROM school_enriched_data WHERE analysis_status = 'complete'"
+        )
+        count = count_rows[0]['cnt'] if count_rows else 0
+        if count == 0:
+            return jsonify({'status': 'success', 'message': 'No schools to reset', 'reset': 0})
+
+        db.execute_non_query(
+            """UPDATE school_enriched_data
+               SET analysis_status = 'csv_imported',
+                   moana_requirements_met = NULL,
+                   human_review_status = 'pending',
+                   updated_at = CURRENT_TIMESTAMP
+               WHERE analysis_status = 'complete'"""
+        )
+        logger.info(f"Reset {count} schools for re-analysis")
+        return jsonify({'status': 'success', 'reset': count, 'message': f'Reset {count} schools for re-analysis'})
+    except Exception as e:
+        logger.error(f"Reset schools failed: {e}", exc_info=True)
+        return jsonify({'status': 'error', 'error': str(e)}), 500
+
+

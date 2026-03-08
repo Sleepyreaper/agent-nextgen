@@ -287,13 +287,11 @@ class NaveenSchoolDataScientist(BaseAgent):
             f"County: {ed.get('county_name', 'Unknown')}",
             f"Data Quality: {data_tier['label']}",
             "",
-            "-- ENROLLMENT & DEMOGRAPHICS --",
+            "-- ENROLLMENT & DEMOGRAPHICS (from NCES CCD) --",
             f"Total Enrollment: {self._fmt_int(ed.get('total_students'))}",
             f"Student-Teacher Ratio: {self._fmt(ed.get('student_teacher_ratio'))}",
-            f"Graduation Rate: {self._fmt(ed.get('graduation_rate'))}%",
-            f"College Acceptance/Placement Rate: {self._fmt(ed.get('college_acceptance_rate'))}%",
             "",
-            "-- SOCIOECONOMIC --",
+            "-- SOCIOECONOMIC (from NCES CCD) --",
             f"Free Lunch %: {self._fmt(ed.get('free_lunch_percentage'))}",
             f"Reduced Lunch %: {self._fmt(ed.get('reduced_lunch_percentage'))}",
             f"Direct Certification %: {self._fmt(ed.get('direct_certification_pct'))}",
@@ -303,22 +301,10 @@ class NaveenSchoolDataScientist(BaseAgent):
             f"Virtual: {self._fmt_bool(ed.get('is_virtual'))}",
             f"Locale Code: {ed.get('locale_code') or 'Unknown'}",
             "",
-            "-- DISTRICT FINANCE --",
+            "-- DISTRICT FINANCE (from NCES CCD) --",
             f"Per-Pupil Expenditure: {self._fmt_dollars(ed.get('district_exp_per_pupil'))}",
             f"Per-Pupil Revenue: {self._fmt_dollars(ed.get('district_rev_per_pupil'))}",
             f"District Poverty %: {self._fmt(ed.get('district_poverty_pct'))}",
-            "",
-            "-- ACADEMIC PROGRAMS --",
-            f"AP Courses: {self._fmt_int(ed.get('ap_course_count'))}",
-            f"AP Exam Pass Rate: {self._fmt(ed.get('ap_exam_pass_rate'))}%",
-            f"Honors Courses: {self._fmt_int(ed.get('honors_course_count'))}",
-            f"STEM Programs: {self._fmt_bool(ed.get('stem_program_available'))}",
-            f"IB Program: {self._fmt_bool(ed.get('ib_program_available'))}",
-            f"Dual Enrollment: {self._fmt_bool(ed.get('dual_enrollment_available'))}",
-            "",
-            "-- INVESTMENT --",
-            f"School Investment Level: {ed.get('school_investment_level') or 'Unknown'}",
-            f"Avg Class Size: {self._fmt(ed.get('avg_class_size'))}",
             "",
             "-- TRENDS --",
             f"Enrollment Trend: {self._fmt_trend(ed.get('enrollment_trend_json'))}",
@@ -326,6 +312,25 @@ class NaveenSchoolDataScientist(BaseAgent):
             f"Years of Data: {ed.get('years_of_data') or 'Unknown'}",
             f"Latest School Year: {ed.get('latest_school_year') or 'Unknown'}",
         ]
+
+        # Academic programs — distinguish real data from unknown/defaults
+        ap_count = ed.get('ap_course_count')
+        honors_count = ed.get('honors_course_count')
+        grad_rate = ed.get('graduation_rate')
+        college_rate = ed.get('college_acceptance_rate')
+        data_lines.append("")
+        data_lines.append("-- ACADEMIC PROGRAMS & OUTCOMES --")
+        data_lines.append("NOTE: The CSV dataset does NOT include AP/honors/graduation data.")
+        data_lines.append("Values of 0 below mean 'NOT AVAILABLE', not 'zero'.")
+        data_lines.append("You MUST use your knowledge of this school to ESTIMATE these fields.")
+        data_lines.append(f"AP Courses (ESTIMATE NEEDED): {ap_count if ap_count and int(ap_count) > 0 else 'NOT IN DATA — estimate from school knowledge'}")
+        data_lines.append(f"AP Exam Pass Rate: {self._fmt(ed.get('ap_exam_pass_rate')) if ed.get('ap_exam_pass_rate') and float(ed.get('ap_exam_pass_rate', 0)) > 0 else 'NOT IN DATA — estimate'}")
+        data_lines.append(f"Honors Courses (ESTIMATE NEEDED): {honors_count if honors_count and int(honors_count) > 0 else 'NOT IN DATA — estimate from school knowledge'}")
+        data_lines.append(f"STEM Programs: {self._fmt_bool(ed.get('stem_program_available')) if ed.get('stem_program_available') else 'NOT IN DATA — estimate'}")
+        data_lines.append(f"IB Program: {self._fmt_bool(ed.get('ib_program_available')) if ed.get('ib_program_available') else 'NOT IN DATA — estimate'}")
+        data_lines.append(f"Dual Enrollment: {self._fmt_bool(ed.get('dual_enrollment_available')) if ed.get('dual_enrollment_available') else 'NOT IN DATA — estimate'}")
+        data_lines.append(f"Graduation Rate (ESTIMATE NEEDED): {self._fmt(grad_rate) + '%' if grad_rate and float(grad_rate) > 0 else 'NOT IN DATA — estimate from state/district data'}")
+        data_lines.append(f"College Acceptance Rate: {self._fmt(college_rate) + '%' if college_rate and float(college_rate) > 0 else 'NOT IN DATA — estimate'}")
 
         if ed.get('opportunity_score'):
             data_lines.append(f"\nPrevious Opportunity Score: {ed['opportunity_score']}")
@@ -338,26 +343,35 @@ class NaveenSchoolDataScientist(BaseAgent):
             prompt += f"\n\nFocus Area: {enrichment_focus}"
 
         prompt += (
-            "\n\nUsing the data above and your knowledge of this school/district/state, produce a "
-            "JSON evaluation with these keys:\n"
-            "- academic_rigor_score (0-100)\n"
-            "- resource_investment_score (0-100)\n"
-            "- student_outcomes_score (0-100)\n"
-            "- equity_access_score (0-100)\n"
-            "- opportunity_score (0-100)\n"
-            "- confidence_score (0-100)\n"
-            "- school_profile_summary (string: 3-5 sentence narrative)\n"
-            "- key_insights (array of 3-5 strings)\n"
-            "- context_for_student (string: 2-3 sentences on how to interpret student achievement here)\n"
-            "- graduation_rate (number: best estimate if not provided)\n"
-            "- college_acceptance_rate (number: best estimate)\n"
-            "- free_lunch_percentage (number: if known)\n"
-            "- total_enrollment (number: if known)\n"
-            "- funding_level (string: low / medium / high)\n"
-            "- academic_courses (number: AP course count)\n"
+            "\n\nUsing the NCES data above PLUS your knowledge of this specific school, "
+            "produce a JSON evaluation. For fields marked 'ESTIMATE NEEDED', you MUST "
+            "provide your best estimate — do NOT return 0.\n\n"
+            "OPPORTUNITY SCORE FORMULA (you compute this):\n"
+            "  opportunity_score = 0.30 * academic_rigor_score\n"
+            "                    + 0.25 * student_outcomes_score\n"
+            "                    + 0.25 * equity_access_score\n"
+            "                    + 0.20 * resource_investment_score\n"
+            "  Show your work in the school_profile_summary.\n\n"
+            "Required JSON keys:\n"
+            "- academic_rigor_score (0-100): AP/IB/honors breadth, STEM programs, dual enrollment\n"
+            "- resource_investment_score (0-100): per-pupil spending, student-teacher ratio, class size\n"
+            "- student_outcomes_score (0-100): graduation rate, college placement, AP pass rates\n"
+            "- equity_access_score (0-100): FRPL context, Title I, serving disadvantaged students,\n"
+            "  schools that BEAT expectations for their demographics score HIGHER\n"
+            "- opportunity_score (0-100): weighted average per formula above\n"
+            "- confidence_score (0-100): how confident you are in the data (lower if estimating)\n"
+            "- school_profile_summary (string): 4-6 sentence narrative including the score breakdown\n"
+            "- key_insights (array): 3-5 specific, non-generic insights about this school\n"
+            "- context_for_student (string): 2-3 sentences for evaluators\n"
+            "- graduation_rate (number): your best estimate\n"
+            "- college_acceptance_rate (number): your best estimate\n"
+            "- free_lunch_percentage (number): from data or estimate\n"
+            "- total_enrollment (number): from data or estimate\n"
+            "- funding_level (string): low / medium / high\n"
+            "- academic_courses (number): AP course COUNT — must be > 0 for any school with AP program\n"
             "- stem_programs (boolean)\n"
-            "- honors_programs (number: honors course count)\n"
-            "- diversity_indicators (string: brief description)"
+            "- honors_programs (number): honors course count estimate\n"
+            "- diversity_indicators (string)"
         )
 
         return prompt

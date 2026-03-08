@@ -153,6 +153,23 @@
     </div>
     <div id="unmatchedResult" class="batch-result"></div>
 
+    <!-- Bulk Approve + Reset -->
+    <div class="batch-actions" style="margin-top: 1rem; background: linear-gradient(135deg, #eff6ff, #dbeafe); border: 1px solid #93c5fd;">
+        <div class="batch-actions-info">
+            <h3>✅ Bulk Approve & Reset</h3>
+            <p>Approve all analyzed schools so they're flagged as enriched, or reset them for re-analysis with improved prompts.</p>
+        </div>
+        <div style="display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap;">
+            <button class="batch-btn" style="background: #16a34a;" id="bulkApproveBtn" data-action="bulkApprove">
+                ✅ Approve All Analyzed
+            </button>
+            <button class="batch-btn" style="background: #dc2626;" id="resetBtn" data-action="resetForReanalysis">
+                🔄 Reset All for Re-Analysis
+            </button>
+        </div>
+    </div>
+    <div id="bulkActionResult" class="batch-result"></div>
+
     <!-- Filters -->
     <div class="school-filters">
         <div class="filter-group">
@@ -901,6 +918,59 @@ async function loadUnmatched() {
     }
     btn.disabled = false;
     btn.innerHTML = '🔍 Find Unmatched';
+}
+
+// ── Bulk Approve ────────────────────────────────────────────────────
+async function bulkApprove() {
+    const resultDiv = document.getElementById('bulkActionResult');
+    if (!confirm('Approve ALL analyzed schools as enriched? This marks them as reviewed and available across all agents.')) return;
+
+    resultDiv.style.display = 'none';
+    const btn = document.getElementById('bulkApproveBtn');
+    btn.disabled = true;
+    btn.innerHTML = '⏳ Approving...';
+
+    try {
+        const resp = await fetch('/api/schools/bulk-approve', {method: 'POST', headers: {'Content-Type': 'application/json'}});
+        const data = await resp.json();
+        resultDiv.className = 'batch-result success';
+        resultDiv.innerHTML = `✅ ${data.approved || 0} schools approved as enriched.`;
+        resultDiv.style.display = 'block';
+        if (data.approved > 0) setTimeout(() => loadSchools(), 1000);
+    } catch (err) {
+        resultDiv.className = 'batch-result error';
+        resultDiv.innerHTML = '❌ Error: ' + err.message;
+        resultDiv.style.display = 'block';
+    }
+    btn.disabled = false;
+    btn.innerHTML = '✅ Approve All Analyzed';
+}
+
+// ── Reset for Re-Analysis ───────────────────────────────────────────
+async function resetForReanalysis() {
+    const resultDiv = document.getElementById('bulkActionResult');
+    if (!confirm('⚠️ Reset ALL analyzed schools back to csv_imported?\n\nThis clears Naveen scores and approval status.\nYou will need to re-run batch analysis.')) return;
+    if (!confirm('Are you sure? All school scores will be cleared.')) return;
+
+    resultDiv.style.display = 'none';
+    const btn = document.getElementById('resetBtn');
+    btn.disabled = true;
+    btn.innerHTML = '⏳ Resetting...';
+
+    try {
+        const resp = await fetch('/api/schools/reset-for-reanalysis', {method: 'POST', headers: {'Content-Type': 'application/json'}});
+        const data = await resp.json();
+        resultDiv.className = 'batch-result success';
+        resultDiv.innerHTML = `🔄 ${data.reset || 0} schools reset for re-analysis. Run Batch Analysis to re-score.`;
+        resultDiv.style.display = 'block';
+        if (data.reset > 0) setTimeout(() => loadSchools(), 1000);
+    } catch (err) {
+        resultDiv.className = 'batch-result error';
+        resultDiv.innerHTML = '❌ Error: ' + err.message;
+        resultDiv.style.display = 'block';
+    }
+    btn.disabled = false;
+    btn.innerHTML = '🔄 Reset All for Re-Analysis';
 }
 </script>
 {% endblock %}
