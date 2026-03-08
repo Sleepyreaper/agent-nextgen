@@ -126,10 +126,41 @@ class PocahontasCohortAnalyst(BaseAgent):
         with agent_run("Pocahontas", "analyze_cohort") as span:
             try:
                 if schools is None:
-                    schools = db.get_all_schools_enriched(
-                        filters={'is_active': True},
-                        limit=2000
-                    ) or []
+                    # Only analyze schools that applicants actually attend —
+                    # not every school in the database. This prevents unscored
+                    # or irrelevant schools from skewing the cohort analysis.
+                    try:
+                        applicant_school_ids = db.execute_query("""
+                            SELECT DISTINCT s.school_enrichment_id
+                            FROM applications a
+                            JOIN school_enriched_data s
+                              ON (LOWER(s.school_name) = LOWER(a.high_school)
+                                  OR EXISTS (
+                                      SELECT 1 FROM school_aliases sa
+                                      WHERE sa.school_enrichment_id = s.school_enrichment_id
+                                        AND LOWER(sa.alias_name) = LOWER(a.high_school)
+                                  ))
+                            WHERE a.high_school IS NOT NULL
+                              AND a.high_school != ''
+                              AND s.is_active = TRUE
+                        """)
+                        if applicant_school_ids:
+                            ids = [r['school_enrichment_id'] for r in applicant_school_ids]
+                            placeholders = ','.join(['%s'] * len(ids))
+                            schools = db.execute_query(
+                                f"SELECT * FROM school_enriched_data WHERE school_enrichment_id IN ({placeholders}) AND is_active = TRUE",
+                                tuple(ids)
+                            ) or []
+                            schools = [dict(s) for s in schools]
+                            logger.info(f"Pocahontas: analyzing {len(schools)} applicant schools (out of {len(applicant_school_ids)} matched)")
+                        else:
+                            schools = []
+                    except Exception as e:
+                        logger.warning(f"Pocahontas: applicant school filter failed, falling back to all schools: {e}")
+                        schools = db.get_all_schools_enriched(
+                            filters={'is_active': True},
+                            limit=2000
+                        ) or []
 
                 if not schools:
                     return {
@@ -138,8 +169,12 @@ class PocahontasCohortAnalyst(BaseAgent):
                         'timestamp': datetime.now(timezone.utc).isoformat(),
                     }
 
-                scored = [s for s in schools if s.get('opportunity_score') is not None]
-                unscored = [s for s in schools if s.get('opportunity_score') is None]
+                scored = [s for s in schools
+                         if s.get('opportunity_score') is not None
+                         and float(s.get('opportunity_score', 0)) > 0]
+                unscored = [s for s in schools
+                            if s.get('opportunity_score') is None
+                            or float(s.get('opportunity_score', 0)) == 0]
 
                 if not scored:
                     return {
