@@ -1469,6 +1469,188 @@ def import_supplemental_school_csv():
         return jsonify({'status': 'error', 'error': str(e)}), 500
 
 
+@schools_bp.route('/api/schools/seed-academics', methods=['POST'])
+def seed_school_academics():
+    """AI-powered academic data lookup for all GA schools.
+
+    Queries the AI model for each school's AP courses, graduation rate,
+    honors courses, etc. from its knowledge of public records. Results are
+    written as supplemental data with provenance tracking.
+
+    Runs in background. Poll GET /api/schools/seed-academics for progress.
+    """
+    import tempfile
+
+    try:
+        data = request.get_json() or {}
+        limit = int(data.get('limit', 0))
+        delay = float(data.get('delay', 2.0))
+
+        schools = db.execute_query(
+            """SELECT school_enrichment_id, nces_id, school_name, school_district,
+                      state_code, total_students, free_lunch_percentage,
+                      ap_course_count, graduation_rate
+               FROM school_enriched_data
+               WHERE state_code = 'GA' AND is_active = TRUE
+               ORDER BY school_name"""
+        )
+        if not schools:
+            return jsonify({'status': 'error', 'error': 'No GA schools found'})
+
+        # Filter to schools that need academic data
+        needs_data = [s for s in schools
+                      if not s.get('ap_course_count') or int(s.get('ap_course_count', 0)) == 0
+                      or not s.get('graduation_rate') or float(s.get('graduation_rate', 0)) == 0]
+
+        if limit > 0:
+            needs_data = needs_data[:limit]
+
+        if not needs_data:
+            return jsonify({'status': 'success', 'message': 'All schools already have academic data', 'count': 0})
+
+        state_file = os.path.join(tempfile.gettempdir(), 'seed_academics_state.json')
+        state = {
+            'status': 'running',
+            'total': len(needs_data),
+            'processed': 0,
+            'updated': 0,
+            'errors': 0,
+            'current_school': '',
+        }
+        with open(state_file, 'w') as f:
+            json.dump(state, f)
+
+        def background_seed(schools_to_process, delay_sec, state_path):
+            import time as _time
+            try:
+                client = get_ai_client()
+                model = config.model_tier_workhorse or config.foundry_model_name or config.deployment_name
+                source_name = 'AI_Knowledge_GA_2025'
+                import csv as csv_mod
+                csv_path = os.path.join(tempfile.gettempdir(), 'ga_academics_seed.csv')
+
+                rows = []
+                for idx, sch in enumerate(schools_to_process):
+                    name = sch['school_name']
+                    state['current_school'] = name
+                    state['processed'] = idx
+
+                    try:
+                        prompt = (
+                            f"Look up this Georgia high school and provide its REAL academic data.\n\n"
+                            f"School: {name}\n"
+                            f"District: {sch.get('school_district', '')}\n"
+                            f"NCES ID: {sch.get('nces_id', '')}\n"
+                            f"Enrollment: {sch.get('total_students', 0)}\n\n"
+                            f"Return JSON with: ap_course_count (int), graduation_rate (float %), "
+                            f"honors_course_count (int), college_acceptance_rate (float %), "
+                            f"stem_program_available (bool), ib_program_available (bool), "
+                            f"dual_enrollment_available (bool), school_url (string). "
+                            f"Set null for fields you cannot verify."
+                        )
+                        resp = client.chat.completions.create(
+                            model=model,
+                            messages=[
+                                {"role": "system", "content": (
+                                    "You are a school data researcher. Provide real, publicly verifiable data "
+                                    "about Georgia high schools from GA DOE, CollegeBoard, NCES, and school websites. "
+                                    "Only return data you are confident about. Use null for uncertain fields."
+                                )},
+                                {"role": "user", "content": prompt},
+                            ],
+                            max_tokens=400,
+                            temperature=0.1,
+                            response_format={"type": "json_object"},
+                        )
+                        ai_data = json.loads(resp.choices[0].message.content)
+
+                        row = {'ncessch': sch.get('nces_id', '')}
+                        for field in ['ap_course_count', 'graduation_rate', 'honors_course_count',
+                                      'college_acceptance_rate', 'stem_program_available',
+                                      'ib_program_available', 'dual_enrollment_available', 'school_url']:
+                            val = ai_data.get(field)
+                            if val is True:
+                                row[field] = 'true'
+                            elif val is False:
+                                row[field] = 'false'
+                            elif val is not None:
+                                row[field] = str(val)
+                            else:
+                                row[field] = ''
+                        rows.append(row)
+                        state['updated'] += 1
+                        logger.info(f"  Seed [{idx+1}/{len(schools_to_process)}] {name}: AP={ai_data.get('ap_course_count')}, Grad={ai_data.get('graduation_rate')}")
+                    except Exception as e:
+                        state['errors'] += 1
+                        logger.warning(f"  Seed failed for {name}: {e}")
+
+                    with open(state_path, 'w') as f:
+                        json.dump(state, f)
+
+                    if idx < len(schools_to_process) - 1:
+                        _time.sleep(delay_sec)
+
+                # Write CSV and import
+                if rows:
+                    fieldnames = ['ncessch', 'ap_course_count', 'graduation_rate', 'honors_course_count',
+                                  'college_acceptance_rate', 'stem_program_available', 'ib_program_available',
+                                  'dual_enrollment_available', 'school_url']
+                    with open(csv_path, 'w', newline='', encoding='utf-8') as cf:
+                        writer = csv_mod.DictWriter(cf, fieldnames=fieldnames)
+                        writer.writeheader()
+                        writer.writerows(rows)
+
+                    from src.csv_school_importer import import_supplemental_csv
+                    result = import_supplemental_csv(csv_path, db, source_name=source_name)
+                    logger.info(f"  Supplemental import: {result}")
+                    try:
+                        os.remove(csv_path)
+                    except Exception:
+                        pass
+
+                state['status'] = 'completed'
+                state['processed'] = len(schools_to_process)
+            except Exception as e:
+                state['status'] = 'error'
+                state['error'] = str(e)
+                logger.error(f"Seed academics failed: {e}", exc_info=True)
+            finally:
+                with open(state_path, 'w') as f:
+                    json.dump(state, f)
+
+        thread = threading.Thread(
+            target=background_seed,
+            args=(needs_data, delay, state_file),
+            daemon=True
+        )
+        thread.start()
+
+        return jsonify({
+            'status': 'started',
+            'total': len(needs_data),
+            'message': f'Looking up academic data for {len(needs_data)} GA schools in background. '
+                       f'Poll GET /api/schools/seed-academics for progress.',
+        })
+
+    except Exception as e:
+        logger.error(f"Seed academics error: {e}", exc_info=True)
+        return jsonify({'status': 'error', 'error': str(e)}), 500
+
+
+@schools_bp.route('/api/schools/seed-academics', methods=['GET'])
+def seed_school_academics_progress():
+    """Poll seed academics progress."""
+    import tempfile
+    state_file = os.path.join(tempfile.gettempdir(), 'seed_academics_state.json')
+    if not os.path.isfile(state_file):
+        return jsonify({'status': 'idle', 'message': 'No seed job running'})
+    try:
+        with open(state_file, 'r') as f:
+            return jsonify(json.load(f))
+    except Exception:
+        return jsonify({'status': 'unknown'})
+
+
 @schools_bp.route('/api/schools/purge', methods=['DELETE'])
 def purge_schools():
     """Delete ALL school enriched data records.

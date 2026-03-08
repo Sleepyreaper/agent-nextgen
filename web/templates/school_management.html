@@ -157,7 +157,7 @@
     <div class="batch-actions" style="margin-top: 1rem; background: linear-gradient(135deg, #fdf4ff, #fae8ff); border: 1px solid #d946ef;">
         <div class="batch-actions-info">
             <h3>📎 Import Supplemental Academic Data</h3>
-            <p>Upload a CSV with AP courses, graduation rates, honors counts, etc. Merges onto existing schools by NCES ID. This is how authoritative public data gets loaded.</p>
+            <p>Upload a CSV with AP courses, graduation rates, honors counts, etc. Merges onto existing schools by NCES ID.</p>
         </div>
         <div style="display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap;">
             <input type="file" id="suppCsvFile" accept=".csv" style="font-size: 0.85rem;">
@@ -168,6 +168,20 @@
         </div>
     </div>
     <div id="suppResult" class="batch-result"></div>
+
+    <!-- AI Academic Data Lookup -->
+    <div class="batch-actions" style="margin-top: 1rem; background: linear-gradient(135deg, #fff7ed, #ffedd5); border: 1px solid #fb923c;">
+        <div class="batch-actions-info">
+            <h3>🔍 AI Academic Data Lookup</h3>
+            <p>For schools missing AP/graduation data: queries AI model for publicly available academic data from GA DOE, CollegeBoard, and school websites. Data is tagged as AI-sourced with provenance tracking.</p>
+        </div>
+        <div style="display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap;">
+            <button class="batch-btn" style="background: #ea580c;" id="seedBtn" data-action="seedAcademics">
+                🔍 Look Up Academic Data
+            </button>
+        </div>
+    </div>
+    <div id="seedResult" class="batch-result"></div>
 
     <!-- Bulk Approve + Reset -->
     <div class="batch-actions" style="margin-top: 1rem; background: linear-gradient(135deg, #eff6ff, #dbeafe); border: 1px solid #93c5fd;">
@@ -982,6 +996,73 @@ async function importSupplemental() {
     }
     btn.disabled = false;
     btn.innerHTML = '📎 Import & Merge';
+}
+
+// ── AI Academic Data Seed ───────────────────────────────────────────
+async function seedAcademics() {
+    const btn = document.getElementById('seedBtn');
+    const resultDiv = document.getElementById('seedResult');
+
+    if (!confirm('This will query the AI model for academic data (AP courses, graduation rates, etc.) for all GA schools missing this data.\\n\\nThis may take several minutes and uses API calls. Continue?')) return;
+
+    btn.disabled = true;
+    btn.innerHTML = '⏳ Starting lookup...';
+    resultDiv.style.display = 'none';
+
+    try {
+        const resp = await fetch('/api/schools/seed-academics', {method: 'POST', headers: {'Content-Type': 'application/json'}});
+        const data = await resp.json();
+        if (data.status === 'started') {
+            resultDiv.className = 'batch-result';
+            resultDiv.style.background = '#fff7ed';
+            resultDiv.style.border = '1px solid #fb923c';
+            resultDiv.innerHTML = `<strong>🔍 Looking up ${data.total} schools...</strong><div id="seedProgress" style="margin-top:0.5rem;"></div>`;
+            resultDiv.style.display = 'block';
+            pollSeedProgress();
+        } else {
+            resultDiv.className = data.status === 'success' ? 'batch-result success' : 'batch-result error';
+            resultDiv.innerHTML = data.message || data.error || 'Unknown response';
+            resultDiv.style.display = 'block';
+            btn.disabled = false;
+            btn.innerHTML = '🔍 Look Up Academic Data';
+        }
+    } catch (err) {
+        resultDiv.className = 'batch-result error';
+        resultDiv.innerHTML = '❌ Error: ' + err.message;
+        resultDiv.style.display = 'block';
+        btn.disabled = false;
+        btn.innerHTML = '🔍 Look Up Academic Data';
+    }
+}
+
+let seedPollTimer = null;
+function pollSeedProgress() {
+    if (seedPollTimer) clearInterval(seedPollTimer);
+    seedPollTimer = setInterval(async () => {
+        try {
+            const resp = await fetch('/api/schools/seed-academics');
+            const data = await resp.json();
+            const prog = document.getElementById('seedProgress');
+            if (!prog) return;
+            const pct = data.total > 0 ? Math.round(data.processed / data.total * 100) : 0;
+            prog.innerHTML = `${data.processed}/${data.total} processed (${pct}%) | ${data.updated} updated | ${data.errors} errors${data.current_school ? ' | Current: ' + data.current_school : ''}`;
+
+            if (data.status === 'completed' || data.status === 'error') {
+                clearInterval(seedPollTimer);
+                const resultDiv = document.getElementById('seedResult');
+                if (data.status === 'completed') {
+                    resultDiv.className = 'batch-result success';
+                    resultDiv.innerHTML = `<strong>✅ Academic data lookup complete!</strong><br>${data.updated} schools updated, ${data.errors} errors out of ${data.total} total.`;
+                    setTimeout(() => loadSchools(), 1000);
+                } else {
+                    resultDiv.className = 'batch-result error';
+                    resultDiv.innerHTML = `❌ Seed failed: ${data.error || 'Unknown error'}`;
+                }
+                document.getElementById('seedBtn').disabled = false;
+                document.getElementById('seedBtn').innerHTML = '🔍 Look Up Academic Data';
+            }
+        } catch (e) { /* polling error, will retry */ }
+    }, 5000);
 }
 
 // ── Bulk Approve ────────────────────────────────────────────────────
