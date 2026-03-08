@@ -5,6 +5,22 @@
 
 {% block extra_css %}
 <style>
+    .source-badge {
+        display: inline-block;
+        font-size: 0.6rem;
+        font-weight: 600;
+        padding: 0.1rem 0.4rem;
+        border-radius: 3px;
+        margin-left: 0.4rem;
+        vertical-align: middle;
+        text-transform: uppercase;
+        letter-spacing: 0.03em;
+    }
+    .source-badge.verified { background: #d1fae5; color: #065f46; }
+    .source-badge.estimated { background: #fef3c7; color: #92400e; }
+    .source-badge.ccd { background: #dbeafe; color: #1e40af; }
+    .source-badge.missing { background: #fee2e2; color: #991b1b; }
+
     .school-detail-container {
         max-width: 1200px;
         margin: 0 auto;
@@ -310,6 +326,12 @@
 {% endblock %}
 
 {% block content %}
+{# Parse data provenance from data_source_notes JSON #}
+{% set provenance = {} %}
+{% if school.data_source_notes and school.data_source_notes.startswith('{') %}
+    {% set provenance = school.data_source_notes | tojson | default('{}') %}
+{% endif %}
+
 <div class="school-detail-container">
     <a href="{{ url_for('schools.schools_dashboard') }}" class="text-sm text-emory-medium-blue hover:text-emory-dark-blue mb-4 inline-block">← Back to Schools</a>
 
@@ -340,6 +362,29 @@
             </button>
             <button class="edit-button" data-action="showEditModal">✎ Edit Data</button>
             <button class="edit-button" data-action="deleteSchool" style="background: #ef4444; color: white;">🗑 Delete School</button>
+        </div>
+    </div>
+
+    <!-- Data Provenance Summary -->
+    <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 1rem; margin-bottom: 1.5rem;">
+        <h4 style="margin: 0 0 0.5rem; font-size: 0.85rem; color: #475569;">📊 Data Sources</h4>
+        <div style="display: flex; gap: 1rem; flex-wrap: wrap; font-size: 0.8rem;">
+            <div>
+                <span class="source-badge ccd">NCES CCD</span>
+                Enrollment, FRPL, Finance, Demographics
+            </div>
+            {% if school.data_source_notes and '{' in (school.data_source_notes or '') %}
+            <div>
+                <span class="source-badge verified">VERIFIED</span>
+                Academic data from supplemental import
+            </div>
+            {% endif %}
+            {% if school.analysis_status == 'complete' %}
+            <div>
+                <span class="source-badge estimated">AI ESTIMATE</span>
+                Naveen-estimated fields (where no authoritative data)
+            </div>
+            {% endif %}
         </div>
     </div>
 

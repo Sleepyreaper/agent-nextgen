@@ -7,7 +7,7 @@ import threading
 import time
 
 from datetime import datetime, timezone
-from flask import Blueprint, flash, jsonify, redirect, render_template, request, url_for
+from flask import Blueprint, current_app, flash, jsonify, redirect, render_template, request, url_for
 
 from extensions import (
     csrf, limiter, run_async,
@@ -1421,6 +1421,52 @@ def import_schools_csv_progress():
         logger.error('Request failed: %s', e, exc_info=True)
         return jsonify({'status': 'error', 'error': 'An internal error occurred'}), 500
 
+
+@schools_bp.route('/api/schools/import-supplemental', methods=['POST'])
+def import_supplemental_school_csv():
+    """Import supplemental academic data (AP, honors, graduation, etc.) and merge
+    onto existing schools by NCES ID.
+
+    This does NOT create new records — only updates existing ones where the
+    NCES ID matches. Use after importing the base CCD demographics CSV.
+
+    Form fields:
+        file: CSV file upload
+        source_name: provenance label (e.g., 'CRDC_2020-21', 'GA_DOE_2024')
+    """
+    from src.csv_school_importer import import_supplemental_csv
+    from werkzeug.utils import secure_filename
+
+    try:
+        if 'file' not in request.files:
+            return jsonify({'status': 'error', 'error': 'No file uploaded'}), 400
+
+        file = request.files['file']
+        if not file.filename or not file.filename.endswith('.csv'):
+            return jsonify({'status': 'error', 'error': 'File must be a .csv'}), 400
+
+        source_name = request.form.get('source_name', 'supplemental_csv').strip()
+        if not source_name:
+            source_name = 'supplemental_csv'
+
+        upload_folder = current_app.config.get('UPLOAD_FOLDER', '/tmp')
+        filename = secure_filename(file.filename)
+        csv_path = os.path.join(upload_folder, f'supp_{filename}')
+        file.save(csv_path)
+
+        result = import_supplemental_csv(csv_path, db, source_name=source_name)
+
+        # Cleanup
+        try:
+            os.remove(csv_path)
+        except Exception:
+            pass
+
+        return jsonify(result)
+
+    except Exception as e:
+        logger.error(f"Supplemental import error: {e}", exc_info=True)
+        return jsonify({'status': 'error', 'error': str(e)}), 500
 
 
 @schools_bp.route('/api/schools/purge', methods=['DELETE'])

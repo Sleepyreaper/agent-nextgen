@@ -313,24 +313,62 @@ class NaveenSchoolDataScientist(BaseAgent):
             f"Latest School Year: {ed.get('latest_school_year') or 'Unknown'}",
         ]
 
-        # Academic programs — distinguish real data from unknown/defaults
+        # Academic programs — check provenance for authoritative vs missing
         ap_count = ed.get('ap_course_count')
         honors_count = ed.get('honors_course_count')
         grad_rate = ed.get('graduation_rate')
         college_rate = ed.get('college_acceptance_rate')
+
+        # Load provenance if available
+        provenance = {}
+        dsn = ed.get('data_source_notes') or ''
+        if isinstance(dsn, str) and dsn.startswith('{'):
+            try:
+                provenance = json.loads(dsn)
+            except (json.JSONDecodeError, TypeError):
+                pass
+
+        def _field_status(field_name, value):
+            """Return (display_value, source_label) for a field."""
+            src = provenance.get(field_name)
+            if src:
+                return str(value), f"VERIFIED ({src})"
+            if value is not None and (not isinstance(value, (int, float)) or value > 0):
+                return str(value), "from previous analysis"
+            return None, "NOT AVAILABLE"
+
         data_lines.append("")
         data_lines.append("-- ACADEMIC PROGRAMS & OUTCOMES --")
-        data_lines.append("NOTE: The CSV dataset does NOT include AP/honors/graduation data.")
-        data_lines.append("Values of 0 below mean 'NOT AVAILABLE', not 'zero'.")
-        data_lines.append("You MUST use your knowledge of this school to ESTIMATE these fields.")
-        data_lines.append(f"AP Courses (ESTIMATE NEEDED): {ap_count if ap_count and int(ap_count) > 0 else 'NOT IN DATA — estimate from school knowledge'}")
-        data_lines.append(f"AP Exam Pass Rate: {self._fmt(ed.get('ap_exam_pass_rate')) if ed.get('ap_exam_pass_rate') and float(ed.get('ap_exam_pass_rate', 0)) > 0 else 'NOT IN DATA — estimate'}")
-        data_lines.append(f"Honors Courses (ESTIMATE NEEDED): {honors_count if honors_count and int(honors_count) > 0 else 'NOT IN DATA — estimate from school knowledge'}")
-        data_lines.append(f"STEM Programs: {self._fmt_bool(ed.get('stem_program_available')) if ed.get('stem_program_available') else 'NOT IN DATA — estimate'}")
-        data_lines.append(f"IB Program: {self._fmt_bool(ed.get('ib_program_available')) if ed.get('ib_program_available') else 'NOT IN DATA — estimate'}")
-        data_lines.append(f"Dual Enrollment: {self._fmt_bool(ed.get('dual_enrollment_available')) if ed.get('dual_enrollment_available') else 'NOT IN DATA — estimate'}")
-        data_lines.append(f"Graduation Rate (ESTIMATE NEEDED): {self._fmt(grad_rate) + '%' if grad_rate and float(grad_rate) > 0 else 'NOT IN DATA — estimate from state/district data'}")
-        data_lines.append(f"College Acceptance Rate: {self._fmt(college_rate) + '%' if college_rate and float(college_rate) > 0 else 'NOT IN DATA — estimate'}")
+
+        ap_val, ap_src = _field_status('ap_course_count', ap_count)
+        hon_val, hon_src = _field_status('honors_course_count', honors_count)
+        grad_val, grad_src = _field_status('graduation_rate', grad_rate)
+        col_val, col_src = _field_status('college_acceptance_rate', college_rate)
+        stem_val, stem_src = _field_status('stem_program_available', ed.get('stem_program_available'))
+        ib_val, ib_src = _field_status('ib_program_available', ed.get('ib_program_available'))
+        dual_val, dual_src = _field_status('dual_enrollment_available', ed.get('dual_enrollment_available'))
+        ap_pass_val, ap_pass_src = _field_status('ap_exam_pass_rate', ed.get('ap_exam_pass_rate'))
+
+        has_authoritative_academic = any(provenance.get(f) for f in [
+            'ap_course_count', 'honors_course_count', 'graduation_rate', 'college_acceptance_rate'
+        ])
+
+        if has_authoritative_academic:
+            data_lines.append("NOTE: Academic data below includes VERIFIED PUBLIC DATA from authoritative sources.")
+            data_lines.append("Use these numbers as-is. Only estimate fields marked NOT AVAILABLE.")
+        else:
+            data_lines.append("NOTE: No authoritative academic data imported for this school.")
+            data_lines.append("ALL academic fields below need YOUR ESTIMATE from school knowledge.")
+            data_lines.append("Mark your estimates with confidence levels in the response.")
+
+        data_lines.append(f"AP Courses: {ap_val or 'ESTIMATE NEEDED'} [{ap_src}]")
+        data_lines.append(f"AP Exam Pass Rate: {ap_pass_val or 'ESTIMATE NEEDED'} [{ap_pass_src}]")
+        data_lines.append(f"Honors Courses: {hon_val or 'ESTIMATE NEEDED'} [{hon_src}]")
+        data_lines.append(f"STEM Programs: {stem_val or 'ESTIMATE NEEDED'} [{stem_src}]")
+        data_lines.append(f"IB Program: {ib_val or 'ESTIMATE NEEDED'} [{ib_src}]")
+        data_lines.append(f"Dual Enrollment: {dual_val or 'ESTIMATE NEEDED'} [{dual_src}]")
+        data_lines.append(f"Graduation Rate: {(grad_val + '%') if grad_val else 'ESTIMATE NEEDED'} [{grad_src}]")
+        data_lines.append(f"College Acceptance Rate: {(col_val + '%') if col_val else 'ESTIMATE NEEDED'} [{col_src}]")
 
         if ed.get('opportunity_score'):
             data_lines.append(f"\nPrevious Opportunity Score: {ed['opportunity_score']}")

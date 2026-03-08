@@ -153,6 +153,22 @@
     </div>
     <div id="unmatchedResult" class="batch-result"></div>
 
+    <!-- Supplemental Data Import -->
+    <div class="batch-actions" style="margin-top: 1rem; background: linear-gradient(135deg, #fdf4ff, #fae8ff); border: 1px solid #d946ef;">
+        <div class="batch-actions-info">
+            <h3>📎 Import Supplemental Academic Data</h3>
+            <p>Upload a CSV with AP courses, graduation rates, honors counts, etc. Merges onto existing schools by NCES ID. This is how authoritative public data gets loaded.</p>
+        </div>
+        <div style="display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap;">
+            <input type="file" id="suppCsvFile" accept=".csv" style="font-size: 0.85rem;">
+            <input type="text" id="suppSourceName" placeholder="Source name (e.g., GA_DOE_2024)" style="padding: 0.5rem; border: 1px solid #e5e7eb; border-radius: 6px; font-size: 0.85rem; width: 200px;">
+            <button class="batch-btn" style="background: #a855f7;" id="suppImportBtn" data-action="importSupplemental">
+                📎 Import & Merge
+            </button>
+        </div>
+    </div>
+    <div id="suppResult" class="batch-result"></div>
+
     <!-- Bulk Approve + Reset -->
     <div class="batch-actions" style="margin-top: 1rem; background: linear-gradient(135deg, #eff6ff, #dbeafe); border: 1px solid #93c5fd;">
         <div class="batch-actions-info">
@@ -918,6 +934,54 @@ async function loadUnmatched() {
     }
     btn.disabled = false;
     btn.innerHTML = '🔍 Find Unmatched';
+}
+
+// ── Supplemental CSV Import ────────────────────────────────────────
+async function importSupplemental() {
+    const fileInput = document.getElementById('suppCsvFile');
+    const sourceName = document.getElementById('suppSourceName').value.trim() || 'supplemental_csv';
+    const resultDiv = document.getElementById('suppResult');
+    const btn = document.getElementById('suppImportBtn');
+
+    if (!fileInput.files || !fileInput.files[0]) {
+        alert('Please select a CSV file first.');
+        return;
+    }
+
+    btn.disabled = true;
+    btn.innerHTML = '⏳ Importing...';
+    resultDiv.style.display = 'none';
+
+    const formData = new FormData();
+    formData.append('file', fileInput.files[0]);
+    formData.append('source_name', sourceName);
+
+    try {
+        const resp = await fetch('/api/schools/import-supplemental', {method: 'POST', body: formData});
+        const data = await resp.json();
+        if (data.status === 'success') {
+            const fields = data.fields_updated || {};
+            const fieldList = Object.entries(fields).map(([k, v]) => `${k}: ${v} schools`).join(', ');
+            resultDiv.className = 'batch-result success';
+            resultDiv.innerHTML = `
+                <strong>✅ Supplemental import complete</strong> (source: ${data.source})<br>
+                ${data.matched} schools matched, ${data.updated} updated, ${data.not_found} not found<br>
+                <strong>Fields updated:</strong> ${fieldList || 'none'}<br>
+                <strong>Column mapping:</strong> ${JSON.stringify(data.column_mapping || {})}
+            `;
+            if (data.updated > 0) setTimeout(() => loadSchools(), 1000);
+        } else {
+            resultDiv.className = 'batch-result error';
+            resultDiv.innerHTML = '❌ ' + (data.error || 'Import failed');
+        }
+        resultDiv.style.display = 'block';
+    } catch (err) {
+        resultDiv.className = 'batch-result error';
+        resultDiv.innerHTML = '❌ Error: ' + err.message;
+        resultDiv.style.display = 'block';
+    }
+    btn.disabled = false;
+    btn.innerHTML = '📎 Import & Merge';
 }
 
 // ── Bulk Approve ────────────────────────────────────────────────────

@@ -377,6 +377,233 @@ def import_schools_from_csv(
     }
 
 
+# ── Supplemental CSV import (merges academic data onto existing records) ────
+
+# Flexible column name mapping: many possible header names → canonical DB field
+_SUPPLEMENT_FIELD_MAP = {
+    # AP courses
+    'ap_course_count': 'ap_course_count',
+    'ap_courses': 'ap_course_count',
+    'ap_count': 'ap_course_count',
+    'num_ap_courses': 'ap_course_count',
+    'ap_classes': 'ap_course_count',
+    'number_of_ap_courses': 'ap_course_count',
+    # AP pass rate
+    'ap_exam_pass_rate': 'ap_exam_pass_rate',
+    'ap_pass_rate': 'ap_exam_pass_rate',
+    'pct_ap_pass': 'ap_exam_pass_rate',
+    # Honors
+    'honors_course_count': 'honors_course_count',
+    'honors_courses': 'honors_course_count',
+    'num_honors': 'honors_course_count',
+    # Graduation rate
+    'graduation_rate': 'graduation_rate',
+    'grad_rate': 'graduation_rate',
+    'cohort_graduation_rate': 'graduation_rate',
+    'four_year_grad_rate': 'graduation_rate',
+    # College acceptance/placement
+    'college_acceptance_rate': 'college_acceptance_rate',
+    'college_readiness_rate': 'college_acceptance_rate',
+    'college_placement_rate': 'college_acceptance_rate',
+    'college_going_rate': 'college_acceptance_rate',
+    # STEM / IB / Dual
+    'stem_program_available': 'stem_program_available',
+    'stem': 'stem_program_available',
+    'has_stem': 'stem_program_available',
+    'ib_program_available': 'ib_program_available',
+    'ib': 'ib_program_available',
+    'has_ib': 'ib_program_available',
+    'dual_enrollment_available': 'dual_enrollment_available',
+    'dual_enrollment': 'dual_enrollment_available',
+    'has_dual_enrollment': 'dual_enrollment_available',
+    # School URL
+    'school_url': 'school_url',
+    'website': 'school_url',
+    'url': 'school_url',
+}
+
+# Fields to match on — any of these can be the school identifier
+_MATCH_COLUMNS = ['ncessch', 'nces_id', 'nces_school_id', 'school_id']
+
+
+def import_supplemental_csv(
+    csv_path: str,
+    db,
+    source_name: str = 'supplemental_csv',
+    dry_run: bool = False,
+) -> Dict[str, Any]:
+    """Import supplemental academic data and merge onto existing schools by NCES ID.
+
+    This does NOT create new school records — it only UPDATES existing ones.
+    Use this for CRDC data, state DOE report cards, or any authoritative
+    academic program dataset.
+
+    The CSV must have a column matching one of: ncessch, nces_id, nces_school_id.
+    All other columns are matched flexibly against known field names.
+
+    Args:
+        csv_path: Path to supplemental CSV
+        db: Database instance
+        source_name: Provenance label (e.g., 'CRDC_2020-21', 'GA_DOE_Report_Card_2024')
+        dry_run: Parse only, don't write
+
+    Returns:
+        dict with merge statistics
+    """
+    import csv as csv_mod
+
+    logger.info(f"📚 Starting supplemental CSV import from {csv_path} (source={source_name})")
+    start = datetime.utcnow()
+
+    with open(csv_path, 'r', encoding='utf-8-sig') as f:
+        reader = csv_mod.DictReader(f)
+        headers = [h.strip().lower().replace(' ', '_') for h in (reader.fieldnames or [])]
+
+        # Find the NCES ID column
+        nces_col = None
+        for col in _MATCH_COLUMNS:
+            if col in headers:
+                nces_col = col
+                break
+        # Also check original (un-lowered) headers
+        if not nces_col:
+            for orig in (reader.fieldnames or []):
+                if orig.strip().lower().replace(' ', '_') in _MATCH_COLUMNS:
+                    nces_col = orig.strip()
+                    break
+
+        if not nces_col:
+            return {
+                'status': 'error',
+                'error': f'No NCES ID column found. Expected one of: {_MATCH_COLUMNS}. '
+                         f'Found columns: {headers[:20]}',
+            }
+
+        # Map CSV columns to DB fields
+        col_mapping = {}
+        for header in headers:
+            canonical = _SUPPLEMENT_FIELD_MAP.get(header)
+            if canonical:
+                col_mapping[header] = canonical
+
+        if not col_mapping:
+            return {
+                'status': 'error',
+                'error': f'No recognized data columns found. Known fields: '
+                         f'{sorted(set(_SUPPLEMENT_FIELD_MAP.values()))}. '
+                         f'Your columns: {headers}',
+            }
+
+        logger.info(f"  NCES ID column: {nces_col}")
+        logger.info(f"  Mapped columns: {col_mapping}")
+
+        # Reset reader to re-read with original headers
+        f.seek(0)
+        reader = csv_mod.DictReader(f)
+
+        matched = 0
+        updated = 0
+        not_found = 0
+        errors = 0
+        total_rows = 0
+        fields_updated_count = {}
+
+        for row in reader:
+            total_rows += 1
+            nces_id = (row.get(nces_col) or '').strip()
+            if not nces_id:
+                continue
+
+            # Find existing school by NCES ID
+            try:
+                existing = db.execute_query(
+                    "SELECT school_enrichment_id, data_source_notes FROM school_enriched_data WHERE nces_id = %s",
+                    (nces_id,)
+                )
+            except Exception:
+                existing = None
+
+            if not existing:
+                not_found += 1
+                continue
+
+            matched += 1
+            sid = existing[0]['school_enrichment_id']
+
+            # Build update
+            updates = {}
+            provenance_updates = {}
+            for csv_col, db_col in col_mapping.items():
+                raw_val = (row.get(csv_col) or '').strip()
+                if not raw_val or raw_val.lower() in ('', 'na', 'n/a', '-', '.', '–'):
+                    continue
+
+                # Parse value
+                if db_col in ('stem_program_available', 'ib_program_available', 'dual_enrollment_available'):
+                    val = raw_val.lower() in ('true', 'yes', '1', 'y')
+                else:
+                    val = _safe_float(raw_val)
+                    if val is None:
+                        continue
+                    if db_col in ('ap_course_count', 'honors_course_count'):
+                        val = int(val)
+
+                updates[db_col] = val
+                provenance_updates[db_col] = source_name
+                fields_updated_count[db_col] = fields_updated_count.get(db_col, 0) + 1
+
+            if not updates or dry_run:
+                continue
+
+            # Merge provenance
+            existing_notes = existing[0].get('data_source_notes') or '{}'
+            try:
+                provenance = json.loads(existing_notes) if isinstance(existing_notes, str) and existing_notes.startswith('{') else {}
+            except (json.JSONDecodeError, TypeError):
+                provenance = {}
+            if not isinstance(provenance, dict):
+                provenance = {'_legacy_notes': str(provenance)} if provenance else {}
+            provenance.update(provenance_updates)
+
+            # Build UPDATE
+            set_parts = []
+            values = []
+            for col, val in updates.items():
+                set_parts.append(f"{col} = %s")
+                values.append(val)
+            set_parts.append("data_source_notes = %s")
+            values.append(json.dumps(provenance))
+            set_parts.append("updated_at = CURRENT_TIMESTAMP")
+            values.append(sid)
+
+            try:
+                db.execute_non_query(
+                    f"UPDATE school_enriched_data SET {', '.join(set_parts)} WHERE school_enrichment_id = %s",
+                    tuple(values)
+                )
+                updated += 1
+            except Exception as e:
+                errors += 1
+                logger.error(f"  Error updating {nces_id}: {e}")
+
+    elapsed = (datetime.utcnow() - start).total_seconds()
+    logger.info(f"✅ Supplemental import complete: {matched} matched, {updated} updated, "
+                f"{not_found} not found, {errors} errors, {elapsed:.1f}s")
+
+    return {
+        'status': 'success',
+        'source': source_name,
+        'csv_rows': total_rows,
+        'matched': matched,
+        'updated': updated,
+        'not_found': not_found,
+        'errors': errors,
+        'fields_updated': fields_updated_count,
+        'column_mapping': col_mapping,
+        'elapsed_seconds': round(elapsed, 1),
+    }
+
+
 # ── CLI entry point ────────────────────────────────────────────────────────
 if __name__ == '__main__':
     import sys
