@@ -468,6 +468,12 @@ _SUPPLEMENT_FIELD_MAP = {
     'instruction_expenditure_per_fte': 'instruction_expenditure_per_fte',
     # Educator quality
     'inexperienced_teacher_pct': 'inexperienced_teacher_pct',
+    # FESR / PPE
+    'school_ppe': 'school_ppe',
+    'fesr_star_rating': 'fesr_star_rating',
+    'fesr_academic_score': 'fesr_academic_score',
+    # Direct certification
+    'direct_cert_pct': 'direct_certification_pct',
 }
 
 # Fields to match on — any of these can be the school identifier

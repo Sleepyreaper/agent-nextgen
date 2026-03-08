@@ -426,23 +426,99 @@ def get_latest(year_dict: Dict[str, Dict], field: str) -> Tuple[Optional[Any], O
     return None, None
 
 
-def merge_all(ap, act, grad, hope, dropout, eoc, expenditure, educator) -> List[Dict[str, Any]]:
+# ── FESR / Per-Pupil Expenditure Processing ──────────────────────────
+
+def process_fesr_files(file_paths: List[str]) -> Dict[str, Dict[str, Any]]:
+    """Process School FESR files. Extract PPE, FESR star rating, and academic score."""
+    schools = defaultdict(dict)
+
+    for path in sorted(file_paths):
+        logger.info(f"  Reading FESR: {os.path.basename(path)}")
+        rows = _read_csv(path)
+        for row in rows:
+            name = (row.get('schoolname') or row.get('SchoolName') or '').strip()
+            if not name or name in ('All Column Values',):
+                continue
+
+            norm = _normalize_name(name)
+
+            # Get the latest year PPE (try _24, _23, then generic)
+            ppe = _safe_float(row.get('school_ppe_24') or row.get('school_ppe_23')
+                              or row.get('PPE_24') or row.get('PPE_23')
+                              or row.get('school_ppe_20') or row.get('school_ppe'))
+            fesr = _safe_float(row.get('FESR'))
+            single_score = _safe_float(row.get('single_score_24') or row.get('single_score_23')
+                                       or row.get('singlescore_19'))
+            ppe_avg = _safe_float(row.get('PPE_Avg'))
+
+            if ppe is None and fesr is None and single_score is None and ppe_avg is None:
+                continue
+
+            entry = {'name': name}
+            if ppe is not None:
+                entry['school_ppe'] = round(ppe, 0)
+            if ppe_avg is not None:
+                entry['school_ppe'] = round(ppe_avg, 0)  # prefer avg if available
+            if fesr is not None:
+                entry['fesr_star_rating'] = fesr
+            if single_score is not None:
+                entry['fesr_academic_score'] = single_score
+            schools[norm] = entry
+
+    return schools
+
+
+# ── Direct Certification Processing ──────────────────────────────────
+
+def process_direct_cert_files(file_paths: List[str]) -> Dict[str, Dict[str, Any]]:
+    """Process Direct Certification files. School-level poverty %."""
+    schools = defaultdict(dict)
+    # Process newest file last so latest year wins
+    for path in sorted(file_paths):
+        logger.info(f"  Reading DirectCert: {os.path.basename(path)}")
+        rows = _read_csv(path)
+        for row in rows:
+            name = (row.get('SCHOOL_NAME') or '').strip()
+            if not name or name in ('All Column Values',):
+                continue
+
+            pct = _safe_float(row.get('direct_cert_perc'))
+            if pct is None:
+                continue
+
+            norm = _normalize_name(name)
+            schools[norm] = {
+                'name': name,
+                'direct_cert_pct': pct,
+            }
+
+    return schools
+
+
+def merge_all(ap, act, grad, hope, dropout, eoc, expenditure, educator,
+              fesr, direct_cert) -> List[Dict[str, Any]]:
     """Merge all datasets into a single per-school record."""
     # Collect all normalized school names
     all_names = set()
-    for d in [ap, act, grad, hope, dropout, eoc, expenditure, educator]:
+    for d in [ap, act, grad, hope, dropout, eoc, expenditure, educator, fesr, direct_cert]:
         all_names.update(d.keys())
 
     merged = []
     for norm_name in sorted(all_names):
         # Get the best display name
         display_name = None
-        for d in [ap, act, grad, hope, dropout, eoc, expenditure, educator]:
+        for d in [ap, act, grad, hope, dropout, eoc, expenditure, educator, fesr, direct_cert]:
             if norm_name in d:
-                for year_data in d[norm_name].values():
-                    if year_data.get('name'):
-                        display_name = year_data['name']
-                        break
+                entry = d[norm_name]
+                # Year-keyed dicts (defaultdict of dicts)
+                if isinstance(entry, dict) and not entry.get('name'):
+                    for year_data in entry.values():
+                        if isinstance(year_data, dict) and year_data.get('name'):
+                            display_name = year_data['name']
+                            break
+                # Flat dicts with 'name' key directly
+                elif isinstance(entry, dict) and entry.get('name'):
+                    display_name = entry['name']
             if display_name:
                 break
         if not display_name:
@@ -498,6 +574,22 @@ def merge_all(ap, act, grad, hope, dropout, eoc, expenditure, educator) -> List[
         if norm_name in educator:
             record['inexperienced_teacher_pct'], _ = get_latest(educator[norm_name], 'inexperienced_teacher_pct')
 
+        # FESR (flat dict, not year-keyed)
+        if norm_name in fesr:
+            f = fesr[norm_name]
+            if f.get('school_ppe') is not None:
+                record['school_ppe'] = f['school_ppe']
+            if f.get('fesr_star_rating') is not None:
+                record['fesr_star_rating'] = f['fesr_star_rating']
+            if f.get('fesr_academic_score') is not None:
+                record['fesr_academic_score'] = f['fesr_academic_score']
+
+        # Direct certification (flat dict)
+        if norm_name in direct_cert:
+            dc = direct_cert[norm_name]
+            if dc.get('direct_cert_pct') is not None:
+                record['direct_cert_pct'] = dc['direct_cert_pct']
+
         # Only include if we have at least some data
         has_data = any(v is not None for k, v in record.items() if k != 'school_name')
         if has_data:
@@ -515,26 +607,35 @@ def main():
     args = parser.parse_args()
 
     input_dir = args.input_dir
-    logger.info(f"Scanning GOSA files in: {input_dir}")
+    # Also scan subdirectories (e.g., ConvertXLS/)
+    input_dirs = [input_dir] + sorted(glob.glob(os.path.join(input_dir, '*/')))
+    logger.info(f"Scanning GOSA files in: {input_dirs}")
+
+    def _find(*patterns):
+        """Find CSV files matching patterns across all input directories."""
+        results = []
+        for d in input_dirs:
+            for p in patterns:
+                results.extend(glob.glob(os.path.join(d, p)))
+        # Only include .csv files
+        return sorted(set(f for f in results if f.lower().endswith('.csv')))
 
     # Find files by pattern
-    ap_files = sorted(glob.glob(os.path.join(input_dir, 'AP_*')))
-    act_files = sorted(glob.glob(os.path.join(input_dir, 'ACT_*')))
-    grad_files = sorted(glob.glob(os.path.join(input_dir, 'Graduation*')) +
-                        glob.glob(os.path.join(input_dir, 'GRADUATION*')))
-    hope_files = sorted(glob.glob(os.path.join(input_dir, 'HOPE*')) +
-                        glob.glob(os.path.join(input_dir, 'Hope*')))
-    dropout_files = sorted(glob.glob(os.path.join(input_dir, '9-12*')) +
-                           glob.glob(os.path.join(input_dir, '9_12*')))
-    eoc_files = sorted(glob.glob(os.path.join(input_dir, 'EOC_*')))
-    expenditure_files = sorted(glob.glob(os.path.join(input_dir, 'Revenues*')) +
-                               glob.glob(os.path.join(input_dir, 'REVENUES*')))
-    educator_files = sorted(glob.glob(os.path.join(input_dir, 'Educator*')) +
-                            glob.glob(os.path.join(input_dir, 'EDUCATOR*')))
+    ap_files = _find('AP_*')
+    act_files = _find('ACT_*')
+    grad_files = _find('Graduation*', 'GRADUATION*')
+    hope_files = _find('HOPE*', 'Hope*')
+    dropout_files = _find('9-12*', '9_12*')
+    eoc_files = _find('EOC_*')
+    expenditure_files = _find('Revenues*', 'REVENUES*')
+    educator_files = _find('Educator*', 'EDUCATOR*')
+    fesr_files = _find('*FESR*', 'School_FESR*', 'School_PPE*')
+    direct_cert_files = _find('*directly_certified*', '*direct_cert*', '*direct_certification*')
 
     logger.info(f"Found: {len(ap_files)} AP, {len(act_files)} ACT, {len(grad_files)} Graduation, "
                 f"{len(hope_files)} HOPE, {len(dropout_files)} Dropout, {len(eoc_files)} EOC, "
-                f"{len(expenditure_files)} Expenditure, {len(educator_files)} Educator files")
+                f"{len(expenditure_files)} Expenditure, {len(educator_files)} Educator, "
+                f"{len(fesr_files)} FESR/PPE, {len(direct_cert_files)} DirectCert files")
 
     if not any([ap_files, act_files, grad_files, hope_files, dropout_files]):
         logger.error("No GOSA files found! Check --input-dir")
@@ -572,9 +673,18 @@ def main():
     educator_data = process_educator_files(educator_files)
     logger.info(f"  {len(educator_data)} schools with educator data")
 
+    logger.info("\n� Processing FESR / Per-Pupil Expenditure...")
+    fesr_data = process_fesr_files(fesr_files)
+    logger.info(f"  {len(fesr_data)} schools with FESR/PPE data")
+
+    logger.info("\n📊 Processing Direct Certification...")
+    direct_cert_data = process_direct_cert_files(direct_cert_files)
+    logger.info(f"  {len(direct_cert_data)} schools with direct cert data")
+
     logger.info("\n🔗 Merging all datasets...")
     merged = merge_all(ap_data, act_data, grad_data, hope_data, dropout_data,
-                       eoc_data, expenditure_data, educator_data)
+                       eoc_data, expenditure_data, educator_data,
+                       fesr_data, direct_cert_data)
     logger.info(f"  {len(merged)} total schools in merged dataset")
 
     # Write output
@@ -589,6 +699,7 @@ def main():
         'eoc_algebra_proficient_pct', 'eoc_biology_proficient_pct',
         'eoc_amlit_proficient_pct', 'eoc_ushistory_proficient_pct',
         'instruction_expenditure_per_fte', 'inexperienced_teacher_pct',
+        'school_ppe', 'fesr_star_rating', 'fesr_academic_score', 'direct_cert_pct',
     ]
     with open(args.output, 'w', newline='', encoding='utf-8') as f:
         writer = csv.DictWriter(f, fieldnames=fieldnames, extrasaction='ignore')
@@ -616,9 +727,12 @@ def main():
     has_eoc = sum(1 for r in merged if r.get('eoc_algebra_proficient_pct'))
     has_expend = sum(1 for r in merged if r.get('instruction_expenditure_per_fte'))
     has_educator = sum(1 for r in merged if r.get('inexperienced_teacher_pct'))
+    has_fesr = sum(1 for r in merged if r.get('fesr_star_rating'))
+    has_ppe = sum(1 for r in merged if r.get('school_ppe'))
+    has_dc = sum(1 for r in merged if r.get('direct_cert_pct'))
     logger.info(f"   AP: {has_ap} | ACT: {has_act} | Grad: {has_grad} | HOPE: {has_hope} | "
                 f"Dropout: {has_dropout} | EOC: {has_eoc} | Expenditure: {has_expend} | "
-                f"Educator: {has_educator}")
+                f"Educator: {has_educator} | FESR: {has_fesr} | PPE: {has_ppe} | DirectCert: {has_dc}")
 
 
 if __name__ == '__main__':

@@ -3546,6 +3546,9 @@ class Database:
             ('gosa_data_years', 'TEXT'),
             ('instruction_expenditure_per_fte', 'NUMERIC(10,2)'),
             ('inexperienced_teacher_pct', 'NUMERIC(5,2)'),
+            ('school_ppe', 'NUMERIC(10,2)'),
+            ('fesr_star_rating', 'NUMERIC(3,1)'),
+            ('fesr_academic_score', 'NUMERIC(5,1)'),
         ]
         for col_name, col_type in gosa_columns:
             if not self.has_applications_column_on_table('school_enriched_data', col_name):

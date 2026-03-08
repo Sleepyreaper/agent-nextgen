@@ -146,6 +146,12 @@ ALTER TABLE school_enriched_data ADD COLUMN IF NOT EXISTS
   instruction_expenditure_per_fte NUMERIC(10,2);  -- School-level instruction spending per FTE student
 ALTER TABLE school_enriched_data ADD COLUMN IF NOT EXISTS
   inexperienced_teacher_pct NUMERIC(5,2);  -- % of teachers who are inexperienced
+ALTER TABLE school_enriched_data ADD COLUMN IF NOT EXISTS
+  school_ppe NUMERIC(10,2);                -- Per-pupil expenditure (from FESR)
+ALTER TABLE school_enriched_data ADD COLUMN IF NOT EXISTS
+  fesr_star_rating NUMERIC(3,1);           -- Financial Efficiency Star Rating (0.5-5)
+ALTER TABLE school_enriched_data ADD COLUMN IF NOT EXISTS
+  fesr_academic_score NUMERIC(5,1);        -- FESR single academic score
 
 -- Web sources and links for each school
 CREATE TABLE IF NOT EXISTS school_web_sources (
