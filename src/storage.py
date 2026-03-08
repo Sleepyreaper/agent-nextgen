@@ -142,13 +142,22 @@ class StorageManager:
             blob_content_settings = ContentSettings(content_type=content_type)
             
             # Upload blob with content type
+            # For large files (>64MB), use chunked upload for better performance
             try:
-                blob_client = container_client.upload_blob(
-                    name=blob_path,
-                    data=file_content,
-                    overwrite=True,
-                    content_settings=blob_content_settings
-                )
+                file_size = len(file_content) if isinstance(file_content, (bytes, bytearray)) else None
+                upload_kwargs = {
+                    'name': blob_path,
+                    'data': file_content,
+                    'overwrite': True,
+                    'content_settings': blob_content_settings,
+                }
+                if file_size and file_size > 64 * 1024 * 1024:  # > 64MB
+                    # Use larger chunks for big files (4MB default → 8MB)
+                    # and increase concurrency for parallel chunk uploads
+                    upload_kwargs['max_concurrency'] = 4
+                    upload_kwargs['max_single_put_size'] = 8 * 1024 * 1024
+                    logger.info(f"Large file detected ({file_size / 1024 / 1024:.1f}MB), using chunked upload with concurrency=4")
+                blob_client = container_client.upload_blob(**upload_kwargs)
             except Exception as upload_err:
                 # capture authorization failures specifically
                 logger.error(f"Azure Storage upload failed: {upload_err}")
