@@ -24,6 +24,7 @@ from src.agents.base_agent import BaseAgent
 from src.config import config
 from src.telemetry import get_tracer
 from src.agents.telemetry_helpers import agent_run
+from src.agents.naveen_school_data_scientist import NaveenSchoolDataScientist
 from src.utils import safe_load_json
 
 logger = logging.getLogger(__name__)
@@ -680,6 +681,23 @@ class MiloDataScientist(BaseAgent):
                 except Exception:
                     pass
 
+            # Enrich with structured school features from Naveen
+            school_name = item.get("high_school")
+            state_code = item.get("state_code")
+            if school_name and self.db:
+                try:
+                    school_data = self.db.get_school_enriched_data(
+                        school_name=school_name, state_code=state_code
+                    )
+                    if not school_data and state_code:
+                        school_data = self.db.get_school_enriched_data_fuzzy(
+                            school_name, state_code=state_code, threshold=0.6
+                        )
+                    if school_data:
+                        item["school_features"] = NaveenSchoolDataScientist.generate_school_features(school_data)
+                except Exception:
+                    pass
+
             if item["was_selected"] is True:
                 selected.append(item)
             elif item["was_selected"] is False:
@@ -1261,7 +1279,26 @@ class MiloDataScientist(BaseAgent):
         for row in training_examples:
             application_id = row.get("application_id") or row.get("ApplicationID")
             agent_outputs = self._load_agent_outputs(application_id)
-            rows.append({
+            school_name = row.get("school_name") or row.get("schoolname") or row.get("high_school")
+            state_code = row.get("state_code")
+
+            # Look up structured school features
+            school_features = None
+            if school_name and self.db:
+                try:
+                    school_data = self.db.get_school_enriched_data(
+                        school_name=school_name, state_code=state_code
+                    )
+                    if not school_data and state_code:
+                        school_data = self.db.get_school_enriched_data_fuzzy(
+                            school_name, state_code=state_code, threshold=0.6
+                        )
+                    if school_data:
+                        school_features = NaveenSchoolDataScientist.generate_school_features(school_data)
+                except Exception:
+                    pass
+
+            entry = {
                 "application_id": application_id,
                 "applicant_name": row.get("applicant_name") or row.get("applicantname"),
                 "was_selected": row.get("was_selected"),
@@ -1269,9 +1306,12 @@ class MiloDataScientist(BaseAgent):
                 "application_text": row.get("application_text") or row.get("applicationtext"),
                 "transcript_text": row.get("transcript_text") or row.get("transcripttext"),
                 "recommendation_text": row.get("recommendation_text") or row.get("recommendationtext"),
-                "school_name": row.get("school_name") or row.get("schoolname"),
+                "school_name": school_name,
                 "agent_outputs": agent_outputs,
-            })
+            }
+            if school_features:
+                entry["school_features"] = school_features
+            rows.append(entry)
 
         return rows
 

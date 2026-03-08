@@ -577,3 +577,112 @@ class NaveenSchoolDataScientist(BaseAgent):
     async def process(self, message: str) -> str:
         """Process a message — not used for Naveen's school evaluation pipeline."""
         return "Naveen evaluates schools via analyze_school() method"
+
+    # ── ML Feature Generation ────────────────────────────────────────
+
+    @staticmethod
+    def generate_school_features(school_data: Dict[str, Any]) -> Dict[str, Any]:
+        """Extract a flat dict of ML-ready numeric features from a school enrichment record.
+
+        Used by Milo to join structured school context into the training
+        dataset — turning narrative color into quantitative signal.
+
+        Returns only non-None values so Milo can distinguish "unknown" from
+        "zero" (e.g., 0 AP courses is different from "AP data not available").
+        """
+        def _num(val, default=None):
+            if val is None or val == '':
+                return default
+            try:
+                return float(val)
+            except (ValueError, TypeError):
+                return default
+
+        def _bool_int(val):
+            if val is None:
+                return None
+            return 1 if val else 0
+
+        features: Dict[str, Any] = {}
+
+        # Identity / lookup
+        if school_data.get('school_name'):
+            features['school_name'] = school_data['school_name']
+        if school_data.get('state_code'):
+            features['state_code'] = school_data['state_code']
+        if school_data.get('nces_id'):
+            features['nces_id'] = school_data['nces_id']
+
+        # Naveen component scores (0-100)
+        for key in ('opportunity_score', 'data_confidence_score'):
+            v = _num(school_data.get(key))
+            if v is not None:
+                features[f'school_{key}'] = v
+
+        # Demographics & size
+        v = _num(school_data.get('total_students'))
+        if v is not None:
+            features['school_enrollment'] = v
+        v = _num(school_data.get('student_teacher_ratio'))
+        if v is not None:
+            features['school_student_teacher_ratio'] = v
+        v = _num(school_data.get('graduation_rate'))
+        if v is not None:
+            features['school_graduation_rate'] = v
+        v = _num(school_data.get('college_acceptance_rate'))
+        if v is not None:
+            features['school_college_acceptance_rate'] = v
+
+        # Socioeconomic
+        v = _num(school_data.get('free_lunch_percentage'))
+        if v is not None:
+            features['school_frpl_pct'] = v
+        features['school_is_title_i'] = _bool_int(school_data.get('is_title_i'))
+        features['school_is_charter'] = _bool_int(school_data.get('is_charter'))
+        features['school_is_magnet'] = _bool_int(school_data.get('is_magnet'))
+        v = _num(school_data.get('district_poverty_pct'))
+        if v is not None:
+            features['school_district_poverty_pct'] = v
+        v = _num(school_data.get('district_exp_per_pupil'))
+        if v is not None:
+            features['school_per_pupil_spending'] = v
+
+        # Academic programs
+        v = _num(school_data.get('ap_course_count'))
+        if v is not None:
+            features['school_ap_count'] = v
+        v = _num(school_data.get('ap_exam_pass_rate'))
+        if v is not None:
+            features['school_ap_pass_rate'] = v
+        v = _num(school_data.get('honors_course_count'))
+        if v is not None:
+            features['school_honors_count'] = v
+        features['school_has_stem'] = _bool_int(school_data.get('stem_program_available'))
+        features['school_has_ib'] = _bool_int(school_data.get('ib_program_available'))
+        features['school_has_dual_enrollment'] = _bool_int(school_data.get('dual_enrollment_available'))
+
+        # Derived features
+        frpl = _num(school_data.get('free_lunch_percentage'))
+        grad = _num(school_data.get('graduation_rate'))
+        if frpl is not None and grad is not None and frpl > 0:
+            # "Value-add" — grad rate relative to socioeconomic challenge
+            # Higher is better: a school with 70% FRPL and 90% grad rate
+            # has a higher value-add than one with 10% FRPL and 92% grad
+            features['school_value_add'] = round(grad - max(0, 85 - frpl * 0.15), 2)
+
+        ap = _num(school_data.get('ap_course_count'))
+        enrollment = _num(school_data.get('total_students'))
+        if ap is not None and enrollment and enrollment > 0:
+            features['school_ap_density'] = round(ap / (enrollment / 100), 4)
+
+        # Resource tier (categorical → numeric)
+        invest = (school_data.get('school_investment_level') or '').lower()
+        if invest == 'high':
+            features['school_investment_tier'] = 3
+        elif invest == 'medium':
+            features['school_investment_tier'] = 2
+        elif invest == 'low':
+            features['school_investment_tier'] = 1
+
+        # Remove None values
+        return {k: v for k, v in features.items() if v is not None}

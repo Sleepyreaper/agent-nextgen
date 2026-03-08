@@ -125,6 +125,34 @@
     </div>
     <div class="batch-result" id="batchResult"></div>
 
+    <!-- Pocahontas Cohort Analysis -->
+    <div class="batch-actions" style="margin-top: 1rem; background: linear-gradient(135deg, #f0fdf4, #ecfdf5); border: 1px solid #86efac;">
+        <div class="batch-actions-info">
+            <h3>🦅 Cohort Analysis <span style="font-size: 0.75rem; color: #6b7280; font-weight: normal;">(Pocahontas)</span></h3>
+            <p>Compare schools across the applicant pool. Assigns resource tiers, computes equity-adjusted context multipliers, and generates a committee-level narrative.</p>
+        </div>
+        <div style="display: flex; align-items: center; gap: 1rem;">
+            <button class="batch-btn" style="background: #16a34a;" id="cohortBtn" data-action="runCohortAnalysis">
+                🦅 Run Cohort Analysis
+            </button>
+        </div>
+    </div>
+    <div id="cohortResult" class="batch-result"></div>
+
+    <!-- Unmatched Schools -->
+    <div class="batch-actions" style="margin-top: 1rem; background: linear-gradient(135deg, #fffbeb, #fef3c7); border: 1px solid #fbbf24;">
+        <div class="batch-actions-info">
+            <h3>⚠️ Unmatched Schools</h3>
+            <p>Schools from student applications that don't match any enriched school record. Add an alias to link them.</p>
+        </div>
+        <div style="display: flex; align-items: center; gap: 1rem;">
+            <button class="batch-btn" style="background: #d97706;" id="unmatchedBtn" data-action="loadUnmatched">
+                🔍 Find Unmatched
+            </button>
+        </div>
+    </div>
+    <div id="unmatchedResult" class="batch-result"></div>
+
     <!-- Filters -->
     <div class="school-filters">
         <div class="filter-group">
@@ -774,5 +802,105 @@ document.getElementById('schoolDetailModal').addEventListener('click', function(
         closeSchoolDetail();
     }
 });
+
+// ── Pocahontas Cohort Analysis ──────────────────────────────────────
+async function runCohortAnalysis() {
+    const btn = document.getElementById('cohortBtn');
+    const resultDiv = document.getElementById('cohortResult');
+    btn.disabled = true;
+    btn.innerHTML = '⏳ Analyzing cohort...';
+    resultDiv.style.display = 'none';
+
+    try {
+        const resp = await fetch('/api/schools/cohort-analysis', {method: 'POST', headers: {'Content-Type': 'application/json'}});
+        const data = await resp.json();
+        if (data.status === 'success') {
+            const eq = data.equity_analysis || {};
+            const tier = eq.tier_distribution || {};
+            const stats = eq.opportunity_score_stats || {};
+            const frpl = eq.frpl_stats || {};
+            resultDiv.className = 'batch-result success';
+            resultDiv.innerHTML = `
+                <strong>🦅 Cohort Analysis Complete</strong> — ${data.scored_schools} schools analyzed
+                <div style="margin-top: 0.75rem; display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.5rem;">
+                    <div style="padding: 0.5rem; background: #dcfce7; border-radius: 6px; text-align: center;">
+                        <div style="font-size: 1.5rem; font-weight: 700; color: #166534;">${tier.high_resource_pct || 0}%</div>
+                        <div style="font-size: 0.75rem; color: #166534;">High Resource</div>
+                    </div>
+                    <div style="padding: 0.5rem; background: #fef3c7; border-radius: 6px; text-align: center;">
+                        <div style="font-size: 1.5rem; font-weight: 700; color: #92400e;">${tier.moderate_pct || 0}%</div>
+                        <div style="font-size: 0.75rem; color: #92400e;">Moderate</div>
+                    </div>
+                    <div style="padding: 0.5rem; background: #fee2e2; border-radius: 6px; text-align: center;">
+                        <div style="font-size: 1.5rem; font-weight: 700; color: #991b1b;">${tier.under_resourced_pct || 0}%</div>
+                        <div style="font-size: 0.75rem; color: #991b1b;">Under-Resourced</div>
+                    </div>
+                </div>
+                <div style="margin-top: 0.75rem; font-size: 0.85rem; color: #374151; line-height: 1.5;">
+                    <strong>Stats:</strong> Opportunity Score mean=${stats.mean || 'N/A'}, median=${stats.median || 'N/A'} | 
+                    FRPL mean=${frpl.mean || 'N/A'}%, ${frpl.high_need_count || 0} high-need schools (${frpl.high_need_pct || 0}%) |
+                    Title I: ${(eq.title_i || {}).count || 0} schools (${(eq.title_i || {}).pct || 0}%)
+                </div>
+                ${data.cohort_narrative ? `<div style="margin-top: 0.75rem; padding: 0.75rem; background: #f0fdf4; border-left: 3px solid #16a34a; border-radius: 4px; font-size: 0.85rem; line-height: 1.6; color: #1f2937;">${data.cohort_narrative}</div>` : ''}
+            `;
+        } else {
+            resultDiv.className = 'batch-result error';
+            resultDiv.innerHTML = '⚠️ ' + (data.message || data.error || 'No data');
+        }
+        resultDiv.style.display = 'block';
+    } catch (err) {
+        resultDiv.className = 'batch-result error';
+        resultDiv.innerHTML = '❌ Error: ' + err.message;
+        resultDiv.style.display = 'block';
+    }
+    btn.disabled = false;
+    btn.innerHTML = '🦅 Run Cohort Analysis';
+}
+
+// ── Unmatched Schools ───────────────────────────────────────────────
+async function loadUnmatched() {
+    const btn = document.getElementById('unmatchedBtn');
+    const resultDiv = document.getElementById('unmatchedResult');
+    btn.disabled = true;
+    btn.innerHTML = '⏳ Searching...';
+    resultDiv.style.display = 'none';
+
+    try {
+        const resp = await fetch('/api/schools/unmatched');
+        const data = await resp.json();
+        if (data.count === 0) {
+            resultDiv.className = 'batch-result success';
+            resultDiv.innerHTML = '✅ All student schools are matched to enriched records.';
+        } else {
+            resultDiv.className = 'batch-result';
+            resultDiv.style.background = '#fffbeb';
+            resultDiv.style.border = '1px solid #fbbf24';
+            resultDiv.innerHTML = `
+                <strong>⚠️ ${data.count} unmatched school names found</strong>
+                <div style="margin-top: 0.5rem; max-height: 300px; overflow-y: auto;">
+                    ${data.unmatched.map(s => `
+                        <div style="padding: 0.4rem 0; border-bottom: 1px solid #fde68a; display: flex; justify-content: space-between; align-items: center;">
+                            <div>
+                                <strong>${s.school_name}</strong>
+                                ${s.state_code ? `<span style="color: #6b7280; font-size: 0.8rem;">(${s.state_code})</span>` : ''}
+                                <span style="color: #9ca3af; font-size: 0.8rem;">— ${s.student_count} student(s)</span>
+                            </div>
+                        </div>
+                    `).join('')}
+                </div>
+                <div style="margin-top: 0.5rem; font-size: 0.8rem; color: #6b7280;">
+                    💡 Add aliases on the school detail page to link these names to existing enriched records.
+                </div>
+            `;
+        }
+        resultDiv.style.display = 'block';
+    } catch (err) {
+        resultDiv.className = 'batch-result error';
+        resultDiv.innerHTML = '❌ Error: ' + err.message;
+        resultDiv.style.display = 'block';
+    }
+    btn.disabled = false;
+    btn.innerHTML = '🔍 Find Unmatched';
+}
 </script>
 {% endblock %}

@@ -441,6 +441,15 @@ class SchoolDataWorkflow:
                 )
                 return school_data
 
+            # Try alias table before fuzzy matching
+            alias_result = self._lookup_school_alias(school_name, state_code)
+            if alias_result:
+                logger.info(
+                    f"School alias matched: '{school_name}' → '{alias_result.get('school_name', '?')}'",
+                    extra={'school': school_name, 'alias_target': alias_result.get('school_name')}
+                )
+                return alias_result
+
             # Exact match failed — try fuzzy matching
             fuzzy_result = self.db.get_school_enriched_data_fuzzy(
                 school_name=school_name,
@@ -468,6 +477,31 @@ class SchoolDataWorkflow:
             )
             return None
     
+    def _lookup_school_alias(
+        self,
+        alias_name: str,
+        state_code: Optional[str] = None,
+    ) -> Optional[Dict[str, Any]]:
+        """Look up a school alias and return the canonical school record."""
+        try:
+            if not self.db.has_table('school_aliases'):
+                return None
+            where = "LOWER(alias_name) = LOWER(%s)"
+            params: list = [alias_name]
+            if state_code:
+                where += " AND state_code = %s"
+                params.append(state_code.upper())
+            rows = self.db.execute_query(
+                f"SELECT school_enrichment_id FROM school_aliases WHERE {where} LIMIT 1",
+                tuple(params),
+            )
+            if rows:
+                sid = rows[0]['school_enrichment_id']
+                return self.db.get_school_enriched_data(school_id=sid)
+        except Exception as e:
+            logger.debug(f"Alias lookup error: {e}")
+        return None
+
     def _store_school_enrichment(
         self,
         school_data: Dict[str, Any],

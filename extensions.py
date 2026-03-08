@@ -102,6 +102,7 @@ from src.agents.belle_document_analyzer import BelleDocumentAnalyzer
 from src.agents.mirabel_video_analyzer import MirabelVideoAnalyzer
 from src.agents.milo_data_scientist import MiloDataScientist
 from src.agents.naveen_school_data_scientist import NaveenSchoolDataScientist
+from src.agents.pocahontas_cohort_analyst import PocahontasCohortAnalyst
 from src.agents.moana_school_context import MoanaSchoolContext
 from src.agents.fairy_godmother_document_generator import FairyGodmotherDocumentGenerator
 from src.agents.feedback_triage_agent import ScuttleFeedbackTriageAgent, FeedbackTriageAgent
@@ -280,6 +281,10 @@ def get_orchestrator():
         orchestrator_agent.register_agent(
             "naveen",
             NaveenSchoolDataScientist(name="Naveen School Data Scientist", client=client, model=model_workhorse)
+        )
+        orchestrator_agent.register_agent(
+            "pocahontas",
+            PocahontasCohortAnalyst(name="Pocahontas Cohort Analyst", client=client, model=model_workhorse)
         )
         orchestrator_agent.register_agent("aurora", AuroraAgent() if AuroraAgent else None)
         orchestrator_agent.register_agent(

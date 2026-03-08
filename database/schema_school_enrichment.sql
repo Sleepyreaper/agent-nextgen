@@ -261,3 +261,18 @@ CREATE TABLE IF NOT EXISTS school_data_versions (
 
 CREATE INDEX IF NOT EXISTS idx_version_school_id ON school_data_versions(school_enrichment_id);
 CREATE INDEX IF NOT EXISTS idx_version_is_current ON school_data_versions(is_current);
+
+-- =====================================================================
+-- School Aliases — maps common abbreviations / misspellings to canonical records
+-- =====================================================================
+CREATE TABLE IF NOT EXISTS school_aliases (
+    alias_id SERIAL PRIMARY KEY,
+    school_enrichment_id INTEGER NOT NULL REFERENCES school_enriched_data(school_enrichment_id) ON DELETE CASCADE,
+    alias_name VARCHAR(500) NOT NULL,
+    state_code VARCHAR(2),
+    alias_source VARCHAR(50) DEFAULT 'manual',  -- manual, fuzzy_match, application
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_alias_name ON school_aliases(LOWER(alias_name));
+CREATE INDEX IF NOT EXISTS idx_alias_school ON school_aliases(school_enrichment_id);

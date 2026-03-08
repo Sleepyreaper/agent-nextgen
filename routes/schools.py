@@ -13,6 +13,7 @@ from extensions import (
     csrf, limiter, run_async,
     get_ai_client, get_ai_client_mini, get_orchestrator,
 )
+from src.agents.pocahontas_cohort_analyst import PocahontasCohortAnalyst
 from src.config import config
 from src.database import db
 from src.storage import storage
@@ -817,6 +818,7 @@ def batch_naveen_moana():
                WHERE is_active = TRUE
                  AND (analysis_status IS NULL
                       OR analysis_status = 'pending'
+                      OR analysis_status = 'csv_imported'
                       OR analysis_status = 'error'
                       OR moana_requirements_met IS NULL)
                ORDER BY
@@ -1502,5 +1504,81 @@ def _compute_enrichment_completeness(school: dict) -> dict:
         'categories': category_scores,
         'missing_fields': missing,
     }
+
+
+# ── Pocahontas Cohort Analysis ──────────────────────────────────────
+
+@schools_bp.route('/api/schools/cohort-analysis', methods=['POST'])
+def run_cohort_analysis():
+    """Run Pocahontas cohort analysis across all schools.
+
+    Compares schools against each other, assigns tiers, computes context
+    multipliers, and generates an AI cohort narrative for the committee.
+    """
+    try:
+        orchestrator = get_orchestrator()
+        pocahontas = orchestrator.agents.get('pocahontas') if orchestrator else None
+        if not pocahontas:
+            pocahontas = PocahontasCohortAnalyst(
+                client=get_ai_client_mini(),
+                model=config.model_tier_workhorse,
+            )
+        result = pocahontas.analyze_cohort()
+        return jsonify(result)
+    except Exception as e:
+        logger.error(f"Cohort analysis failed: {e}", exc_info=True)
+        return jsonify({'status': 'error', 'error': str(e)}), 500
+
+
+@schools_bp.route('/api/schools/cohort-analysis', methods=['GET'])
+def get_cohort_analysis():
+    """Retrieve the latest cohort analysis report."""
+    report = PocahontasCohortAnalyst.get_latest_cohort_report()
+    if report:
+        return jsonify(report)
+    return jsonify({'status': 'empty', 'message': 'No cohort analysis has been run yet.'})
+
+
+# ── School Alias Management ──────────────────────────────────────────
+
+@schools_bp.route('/api/schools/unmatched', methods=['GET'])
+def get_unmatched_schools():
+    """Find school names from applications that don't match any enriched school."""
+    db.ensure_school_aliases_table()
+    unmatched = db.get_unmatched_school_names()
+    return jsonify({'unmatched': unmatched, 'count': len(unmatched)})
+
+
+@schools_bp.route('/api/school/<int:school_id>/aliases', methods=['GET'])
+def get_school_aliases(school_id):
+    """Get aliases for a school."""
+    aliases = db.get_school_aliases(school_id)
+    return jsonify({'aliases': aliases})
+
+
+@schools_bp.route('/api/school/<int:school_id>/aliases', methods=['POST'])
+def add_school_alias(school_id):
+    """Add an alias for a school.
+
+    Request body: {"alias_name": "DECA", "state_code": "GA"}
+    """
+    data = request.get_json() or {}
+    alias_name = (data.get('alias_name') or '').strip()
+    if not alias_name:
+        return jsonify({'error': 'alias_name is required'}), 400
+    state_code = data.get('state_code')
+    alias_id = db.add_school_alias(school_id, alias_name, state_code=state_code, source='manual')
+    if alias_id:
+        return jsonify({'status': 'success', 'alias_id': alias_id})
+    return jsonify({'error': 'Failed to add alias'}), 500
+
+
+@schools_bp.route('/api/school/<int:school_id>/context-multiplier', methods=['GET'])
+def get_school_context_multiplier(school_id):
+    """Get the Pocahontas context multiplier for a specific school."""
+    multiplier = PocahontasCohortAnalyst.get_school_context_multiplier(school_id)
+    if multiplier:
+        return jsonify(multiplier)
+    return jsonify({'multiplier': 1.0, 'reasons': [], 'message': 'No cohort analysis available'})
 
 

@@ -409,6 +409,14 @@ class MoanaSchoolContext(BaseAgent):
             except ValueError:
                 return 0
         return 0
+
+    def _rigor_utilization_pct(self, taken, available) -> int:
+        """Calculate what % of available advanced courses a student took."""
+        t = self._safe_count(taken)
+        a = self._safe_count(available)
+        if a <= 0:
+            return 0
+        return min(100, round(t / a * 100))
     
     def _calculate_opportunity_scores_from_enrichment(
         self,
@@ -629,27 +637,44 @@ STUDENT'S COURSEWORK:
 
 {"GRADES:" + chr(10) + chr(10).join(grade_facts) if grade_facts else "GRADES: Not yet available"}
 
+RIGOR UTILIZATION:
+  AP Utilization: {self._safe_count(program_participation.get('ap_courses_taken', 0))} taken / {self._safe_count(school_profile.get('ap_count', 0))} available ({self._rigor_utilization_pct(program_participation.get('ap_courses_taken', 0), school_profile.get('ap_count', 0))}%)
+  Honors Utilization: {self._safe_count(program_participation.get('honors_courses_taken', 0))} taken / {self._safe_count(school_profile.get('honors_programs', 0))} available
+  Total Advanced: {program_participation.get('total_advanced_courses', 0)} courses
+
 OPPORTUNITY SCORES:
 {chr(10).join(score_facts)}
 
-NCES BENCHMARKS:
+NCES BENCHMARKS (for comparison):
 - National graduation rate: 87% | GA: 84%
 - Free/reduced lunch national avg: 52%
 - AP participation national avg: ~35% take at least 1 AP
 - Student-teacher ratio national avg: ~16:1
 - Per-pupil spending national avg: ~$14,000
 
-Write a 6-10 sentence contextual assessment of {student_name}'s school environment and how their
-academic record should be interpreted. Address:
-1. What kind of school is this? (resources, demographics, opportunities available)
-2. How did the student use what was available? (Did they maximize opportunities?)
-3. How should their GPA/grades be interpreted given this school context?
-4. What does their course selection reveal about their motivation and initiative?
-5. Are there equity factors (high-need school, limited AP access, Title I) that make
-   their achievements more impressive?
+Write a 8-12 sentence contextual assessment of {student_name}'s achievements relative to their
+school environment. This is a STUDENT-SPECIFIC analysis, not a generic school description.
 
-Be specific and grounded in the data. Avoid generic praise. This assessment will be used by
-the final evaluator (Merlin) to make scholarship decisions."""
+Address these questions in order:
+1. SCHOOL ENVIRONMENT: What resources and opportunities does this school provide? How does it
+   compare to national benchmarks? (2 sentences max)
+2. RIGOR UTILIZATION: What percentage of available advanced courses did {student_name} take?
+   Did they pursue the hardest path their school offered? A student who takes 6 of 8 available
+   APs demonstrates more initiative than one who takes 6 of 25. Be specific about the ratio.
+3. EQUITY-ADJUSTED INTERPRETATION: If this is a high-need school (FRPL >50%, Title I, limited
+   AP access, low per-pupil spending), explicitly state how this student's achievements should
+   be weighted MORE heavily. A 3.8 GPA with 4 AP courses at a 70% FRPL school with 5 total APs
+   is categorically more impressive than the same record at a 15% FRPL school with 22 APs.
+   Name the specific disadvantages overcome.
+4. RELATIVE PERFORMANCE: Based on the school's graduation rate, college placement rate, and
+   AP participation norms, where does this student likely fall among their peers? Top 5%? Top 10%?
+   Top quarter? Use the data to estimate, don't hedge.
+5. EVALUATOR GUIDANCE: Give Merlin one concrete, actionable recommendation for how to factor
+   school context into the final score. Example: "Weight this student's academic record 15-20%
+   higher than face value due to limited school resources."
+
+Be specific and grounded in data. Cite numbers. Avoid generic praise. This assessment directly
+influences scholarship decisions."""
 
         try:
             response = self._create_chat_completion(
@@ -657,17 +682,20 @@ the final evaluator (Merlin) to make scholarship decisions."""
                 model=self.model,
                 messages=[
                     {"role": "system", "content": (
-                        "You are Moana, an education equity and school context expert. "
-                        "You produce concise, data-grounded contextual assessments that help "
-                        "scholarship evaluators understand what a student's achievements mean "
-                        "given their school environment. Be specific, cite the data, and avoid "
-                        "generic statements. A 4.0 GPA from a school with 2 AP courses and 75% "
-                        "free lunch is categorically different from the same GPA at a school "
-                        "with 20 APs and 15% free lunch. Context defines opportunity."
+                        "You are Moana, an education equity and school context expert for a "
+                        "STEM scholarship program. Your job is to produce student-specific, "
+                        "data-grounded contextual assessments that help evaluators understand "
+                        "what THIS student achieved relative to what their school offered. "
+                        "A 4.0 GPA from a school with 2 AP courses and 75% free lunch is "
+                        "categorically different from the same GPA at a school with 20 APs "
+                        "and 15% free lunch. Context defines opportunity. "
+                        "Always cite specific numbers. Always estimate the student's relative "
+                        "standing among their school peers. Always give Merlin a concrete "
+                        "recommendation for how to weight the school context in scoring."
                     )},
                     {"role": "user", "content": prompt},
                 ],
-                max_completion_tokens=800,
+                max_completion_tokens=1200,
                 temperature=0.5,
             )
 

@@ -3497,6 +3497,82 @@ class Database:
             logger.error(f"Error fetching school names for state {state_code}: {e}")
             return []
 
+    def ensure_school_aliases_table(self) -> None:
+        """Create the school_aliases table if it doesn't exist."""
+        if self.has_table('school_aliases'):
+            return
+        try:
+            self.execute_non_query("""
+                CREATE TABLE IF NOT EXISTS school_aliases (
+                    alias_id SERIAL PRIMARY KEY,
+                    school_enrichment_id INTEGER NOT NULL
+                        REFERENCES school_enriched_data(school_enrichment_id) ON DELETE CASCADE,
+                    alias_name VARCHAR(500) NOT NULL,
+                    state_code VARCHAR(2),
+                    alias_source VARCHAR(50) DEFAULT 'manual',
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+            self.execute_non_query(
+                "CREATE INDEX IF NOT EXISTS idx_alias_name ON school_aliases(LOWER(alias_name))"
+            )
+            logger.info("Created school_aliases table")
+        except Exception as e:
+            logger.warning(f"Could not create school_aliases table: {e}")
+
+    def add_school_alias(self, school_enrichment_id: int, alias_name: str,
+                         state_code: Optional[str] = None, source: str = 'manual') -> Optional[int]:
+        """Add an alias for a school. Returns alias_id or None."""
+        self.ensure_school_aliases_table()
+        try:
+            return self.execute_scalar(
+                """INSERT INTO school_aliases (school_enrichment_id, alias_name, state_code, alias_source)
+                   VALUES (%s, %s, %s, %s) RETURNING alias_id""",
+                (school_enrichment_id, alias_name, (state_code or '').upper() or None, source),
+            )
+        except Exception as e:
+            logger.warning(f"Could not add school alias: {e}")
+            return None
+
+    def get_school_aliases(self, school_enrichment_id: int) -> List[Dict[str, Any]]:
+        """Get all aliases for a given school."""
+        try:
+            return self.execute_query(
+                "SELECT * FROM school_aliases WHERE school_enrichment_id = %s ORDER BY alias_name",
+                (school_enrichment_id,),
+            ) or []
+        except Exception:
+            return []
+
+    def get_unmatched_school_names(self) -> List[Dict[str, Any]]:
+        """Find school names from applications that don't match any enriched school.
+        
+        Returns list of {school_name, state_code, count} for schools that
+        appear in applications but have no match in school_enriched_data.
+        """
+        try:
+            return self.execute_query("""
+                SELECT a.high_school AS school_name, a.state_code,
+                       COUNT(*) AS student_count
+                FROM applications a
+                WHERE a.high_school IS NOT NULL
+                  AND a.high_school != ''
+                  AND NOT EXISTS (
+                      SELECT 1 FROM school_enriched_data s
+                      WHERE LOWER(s.school_name) = LOWER(a.high_school)
+                        AND (a.state_code IS NULL OR s.state_code = a.state_code)
+                  )
+                  AND NOT EXISTS (
+                      SELECT 1 FROM school_aliases sa
+                      WHERE LOWER(sa.alias_name) = LOWER(a.high_school)
+                  )
+                GROUP BY a.high_school, a.state_code
+                ORDER BY COUNT(*) DESC
+            """) or []
+        except Exception as e:
+            logger.warning(f"Error finding unmatched schools: {e}")
+            return []
+
     def delete_all_school_enriched_data(self) -> int:
         """Delete ALL school enriched data records and cascade to child tables.
         

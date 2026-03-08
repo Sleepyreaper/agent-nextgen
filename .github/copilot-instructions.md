@@ -38,6 +38,7 @@ Production Flask application (~8100 lines in `app.py`) that evaluates high-schoo
 | Ariel | `ArielQAAgent` | Conversational Q&A over student data |
 | Mirabel | `MirabelVideoAnalyzer` | Video submission analysis (frame + audio) |
 | Naveen | `NaveenSchoolDataScientist` | NCES database school evaluation & component scoring |
+| Pocahontas | `PocahontasCohortAnalyst` | Cross-school cohort analysis, equity tiers, context multipliers |
 | Bashful | `BashfulAgent` | Agent output summarization |
 | FeedbackTriage | `FeedbackTriageAgent` | User feedback routing |
 | FairyGodmother | `FairyGodmotherDocumentGenerator` | Document generation |
