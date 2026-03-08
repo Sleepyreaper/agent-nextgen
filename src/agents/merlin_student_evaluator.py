@@ -279,12 +279,46 @@ class MerlinStudentEvaluator(BaseAgent):
             "  • Tiana    — Essay / video evaluation + STEM interest scoring",
             "  • Mulan    — Recommendation letter analysis",
             "  • Moana    — School context & opportunity assessment",
-            "  • Gaston   — Eligibility screening (age, grade, quick-pass)",
             "  • Milo     — Data scientist training insights & alignment",
             "",
             outputs_json,
             "",
+        ]
 
+        # ── Normalized scores (common 0-100 scale) ──
+        norm_scores = agent_outputs.get("_normalized_scores") or {}
+        if norm_scores:
+            prompt_parts.extend([
+                "═══════════════════════════════════════════════════════════════",
+                "NORMALIZED AGENT SCORES (all on 0-100 scale)",
+                "═══════════════════════════════════════════════════════════════",
+                json.dumps(norm_scores, ensure_ascii=True),
+                "",
+                "(These scores are mechanically normalized to 0-100 from each agent's native scale. "
+                "Use them as a cross-agent calibration reference alongside the raw outputs above.)",
+                "",
+            ])
+
+        # ── Pocahontas context multiplier ──
+        ctx_mult = agent_outputs.get("_context_multiplier") or {}
+        multiplier = ctx_mult.get("multiplier", 1.0) if isinstance(ctx_mult, dict) else 1.0
+        ctx_reasons = ctx_mult.get("reasons", []) if isinstance(ctx_mult, dict) else []
+        if multiplier > 1.0:
+            prompt_parts.extend([
+                "═══════════════════════════════════════════════════════════════",
+                "EQUITY CONTEXT MULTIPLIER (from Pocahontas Cohort Analysis)",
+                "═══════════════════════════════════════════════════════════════",
+                f"Multiplier: {multiplier}x",
+                f"Reasons: {', '.join(ctx_reasons) if ctx_reasons else 'N/A'}",
+                "",
+                f"This student's school is in the bottom tier of the applicant pool. "
+                f"Pocahontas recommends weighting their academic achievements {int((multiplier - 1) * 100)}% "
+                f"higher than face value. Apply this multiplier when interpreting GPA, "
+                f"course rigor, and AP access relative to other applicants from better-resourced schools.",
+                "",
+            ])
+
+        prompt_parts.extend([
             "═══════════════════════════════════════════════════════════════",
             "YOUR TASK",
             "═══════════════════════════════════════════════════════════════",
@@ -328,7 +362,7 @@ class MerlinStudentEvaluator(BaseAgent):
             'computational genetics environment?>",',
             '  "confidence": "High | Medium | Low"',
             "}",
-        ]
+        ])
 
         return "\n".join(prompt_parts)
 

@@ -14,7 +14,7 @@ from extensions import (
     get_ai_client, get_ai_client_mini,
     get_evaluator, get_belle, get_mirabel, get_orchestrator,
     _make_ocr_callback, refresh_foundry_dataset_async,
-    start_application_processing,
+    start_application_processing, start_incremental_processing,
     extract_student_name, extract_student_email,
     _split_name_parts, _build_identity_key,
     _aggregate_documents, _collect_documents_from_storage,
@@ -1740,6 +1740,24 @@ def reprocess_2026_applications():
         logger.error(f"Reprocess 2026 error: {e}", exc_info=True)
         return jsonify({'status': 'error', 'error': f'Reprocess failed: {str(e)}'}), 500
 
+
+@applications_bp.route('/api/applications/<int:application_id>/reprocess-incremental', methods=['POST'])
+def incremental_reprocess(application_id):
+    """Re-run only the agents that were previously skipped or failed.
+
+    Instead of re-running the full 8-step pipeline, checks which agents
+    produced 'skipped' or 'error' results and only re-runs those plus
+    Merlin + Aurora for a fresh synthesis. This is ideal after uploading
+    additional documents to a 'Needs Docs' student.
+    """
+    try:
+        result = start_incremental_processing(application_id)
+        if result.get('status') == 'error':
+            return jsonify(result), 404
+        return jsonify(result)
+    except Exception as e:
+        logger.error(f"Incremental reprocess error for {application_id}: {e}", exc_info=True)
+        return jsonify({'status': 'error', 'error': str(e)}), 500
 
 
 @applications_bp.route('/api/verify/applications', methods=['GET'])

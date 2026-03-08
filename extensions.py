@@ -192,7 +192,6 @@ def get_evaluator():
             name="GastonEvaluator",
             client=client,
             model=model_name,
-            training_examples=training_examples
         )
     return evaluator_agent
 
@@ -287,6 +286,10 @@ def get_orchestrator():
             PocahontasCohortAnalyst(name="Pocahontas Cohort Analyst", client=client, model=model_workhorse)
         )
         orchestrator_agent.register_agent("aurora", AuroraAgent() if AuroraAgent else None)
+        orchestrator_agent.register_agent(
+            "gaston",
+            GastonEvaluator(name="Gaston Evaluator", client=client, model=model_workhorse)
+        )
         orchestrator_agent.register_agent(
             "fairy_godmother",
             FairyGodmotherDocumentGenerator(db_connection=db, storage_manager=storage)
@@ -484,6 +487,64 @@ def start_training_processing(application_id: int) -> None:
             db.update_application_status(application_id, 'Uploaded')
     db.update_application_status(application_id, 'Processing')
     threading.Thread(target=run, daemon=True).start()
+
+
+def start_incremental_processing(application_id: int) -> Dict[str, Any]:
+    """Re-run only the agents that were previously skipped due to missing data.
+
+    Checks the application's agent_results for agents that returned 'skipped'
+    or 'error', then re-runs those plus Merlin + Aurora for fresh synthesis.
+    """
+    application = db.get_application(application_id)
+    if not application:
+        return {'status': 'error', 'error': 'Application not found'}
+
+    agent_results = application.get('agent_results') or {}
+    if isinstance(agent_results, str):
+        from src.utils import safe_load_json
+        agent_results = safe_load_json(agent_results)
+
+    step_map = {
+        'application_reader': 'application_reader', 'tiana': 'application_reader',
+        'grade_reader': 'grade_reader', 'rapunzel': 'grade_reader',
+        'recommendation_reader': 'recommendation_reader', 'mulan': 'recommendation_reader',
+        'school_context': 'school_context', 'moana': 'school_context',
+    }
+
+    rerun_steps = set()
+    for key, step_id in step_map.items():
+        result = agent_results.get(key)
+        if isinstance(result, dict) and (result.get('skipped') or result.get('status') == 'error'):
+            rerun_steps.add(step_id)
+        elif result is None:
+            rerun_steps.add(step_id)
+
+    rerun_steps.update(['student_evaluator', 'aurora'])
+    if 'grade_reader' in rerun_steps:
+        rerun_steps.add('school_context')
+
+    steps_list = list(rerun_steps)
+
+    def run():
+        try:
+            app = db.get_application(application_id)
+            if not app:
+                return
+            orchestrator = get_orchestrator()
+            result = run_async(orchestrator.coordinate_evaluation(
+                application=app, evaluation_steps=steps_list,
+            ))
+            if isinstance(result, dict) and result.get('status') == 'paused':
+                db.update_application_status(application_id, 'Needs Docs')
+                return
+            db.update_application_status(application_id, 'Completed')
+        except Exception as e:
+            logger.error(f"Incremental processing FAILED for {application_id}: {e}", exc_info=True)
+            db.update_application_status(application_id, 'Uploaded')
+
+    db.update_application_status(application_id, 'Processing')
+    threading.Thread(target=run, daemon=True).start()
+    return {'status': 'started', 'application_id': application_id, 'agents_to_rerun': steps_list}
 
 
 # ---------------------------------------------------------------------------

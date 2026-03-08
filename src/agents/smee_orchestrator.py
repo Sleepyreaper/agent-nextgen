@@ -681,7 +681,7 @@ class SmeeOrchestrator(BaseAgent):
                     if fallback and len(fallback.strip()) > 100:
                         recommendation = fallback
                         logger.info(f"[Mulan] Backfilled recommendation_text from _original_document_text ({len(recommendation)} chars)")
-                        print(f"[Mulan] Backfilled recommendation_text from _original_document_text ({len(recommendation)} chars)")
+                        logger.info(f"[Mulan] Backfilled recommendation_text from _original_document_text ({len(recommendation)} chars)")
                 result = await agent.parse_recommendation(
                     recommendation,
                     application.get('applicant_name', ''),
@@ -963,12 +963,8 @@ class SmeeOrchestrator(BaseAgent):
         }
         
         # ===== STEP 1: BELLE - Extract data from document =====
-        print(f"\n{'='*80}")
-        print(f"DEBUG: STARTING STEP 1 - BELLE extraction")
-        print(f"DEBUG: application keys: {list(application.keys())}")
-        print(f"DEBUG: application_id={application_id}, student_id={student_id}")
         logger.info("📋 STEP 1: Extracting data from document with BELLE...")
-        print("📋 STEP 1: Extracting data from document with BELLE...")
+        logger.info("📋 STEP 1: Extracting data from document with BELLE...")
         
         document_text = (application.get('application_text') or 
                         application.get('ApplicationText') or 
@@ -982,8 +978,6 @@ class SmeeOrchestrator(BaseAgent):
             _tv = application.get(_tf)
             if _tv and isinstance(_tv, str):
                 _text_field_report[_tf] = len(_tv)
-        print(f"DEBUG STEP1: text field lengths from DB: {_text_field_report}")
-        print(f"DEBUG STEP1: document_text length={len(document_text)}")
         logger.info(f"STEP1 text fields from DB: {_text_field_report}, document_text={len(document_text)}")
         
         # Preserve the ORIGINAL full document text so downstream agents
@@ -1000,7 +994,6 @@ class SmeeOrchestrator(BaseAgent):
         original_full_text = '\n\n'.join(all_text_parts) if all_text_parts else document_text
         # ALWAYS set _original_document_text, even if it's just document_text
         application['_original_document_text'] = original_full_text or document_text or ''
-        print(f"DEBUG STEP1: _original_document_text set to {len(application.get('_original_document_text', ''))} chars")
         
         document_name = application.get('file_name', 'application_document')
         # Check if this application was sourced from a video (Mirabel extraction)
@@ -1017,9 +1010,7 @@ class SmeeOrchestrator(BaseAgent):
         # matched student record) and cause agent results to be persisted to a
         # different application_id. Defer creating an application row until
         # after student matching so a single record is created/used.
-        print(f"DEBUG: document_name={document_name}, doc_length={len(document_text)}")
         belle_data = await self._extract_data_with_belle(document_text, document_name)
-        print(f"DEBUG: BELLE returned: {list(belle_data.keys()) if isinstance(belle_data, dict) else 'NOT A DICT'}")
         self.evaluation_results['results']['belle_extraction'] = belle_data
         
         # PHASE 5: Log STEP 1 extraction to audit trail
@@ -1046,14 +1037,14 @@ class SmeeOrchestrator(BaseAgent):
         section_map = belle_agent_fields.get('_section_map', {})
         if section_map:
             logger.info(f"📖 Belle section routing: {section_map}")
-            print(f"📖 Belle section routing: {section_map}")
+            logger.info(f"📖 Belle section routing: {section_map}")
             application['_belle_section_map'] = section_map
         
         for field in ('transcript_text', 'recommendation_text', 'application_text'):
             if belle_agent_fields.get(field):
                 field_len = len(belle_agent_fields[field])
                 logger.info(f"  📄 Routing {field}: {field_len} chars of section-specific content")
-                print(f"  📄 Routing {field}: {field_len} chars of section-specific content")
+                logger.info(f"  📄 Routing {field}: {field_len} chars of section-specific content")
                 application[field] = belle_agent_fields[field]
         
         first_name = (belle_student_info.get('first_name') or 
@@ -1078,10 +1069,9 @@ class SmeeOrchestrator(BaseAgent):
         # Smee now uses those fields to look up or create the student record.
         # Primary keys: first_name + last_name + high_school
         # Optional refinement: state_code (when Belle can extract it)
-        print(f"\nDEBUG: STEP 2 - Smee+Belle student verification")
-        print(f"DEBUG: first_name={first_name}, last_name={last_name}, school={high_school}, state={state_code}")
+        logger.info(f"\nDEBUG: STEP 2 - Smee+Belle student verification")
         logger.info("🎓 STEP 2: SMEE + BELLE verifying student record (name + high school)...")
-        print("🎓 STEP 2: SMEE + BELLE verifying student record (name + high school)...")
+        logger.info("🎓 STEP 2: SMEE + BELLE verifying student record (name + high school)...")
         
         if first_name and last_name and high_school:
             student_app_id = self._match_or_create_student_record(
@@ -1144,7 +1134,7 @@ class SmeeOrchestrator(BaseAgent):
         school_enrichment = {}
         if high_school and state_code:
             logger.info(f"🏫 STEP 2.5: Checking school enrichment for {high_school}, {state_code}")
-            print(f"🏫 STEP 2.5: Checking school enrichment for {high_school}, {state_code}")
+            logger.info(f"🏫 STEP 2.5: Checking school enrichment for {high_school}, {state_code}")
             self._report_progress({
                 'type': 'agent_progress',
                 'agent_id': 'naveen',
@@ -1161,7 +1151,7 @@ class SmeeOrchestrator(BaseAgent):
                 )
                 if school_enrichment and not school_enrichment.get('error'):
                     logger.info(f"✅ School enrichment ready for {high_school}")
-                    print(f"✅ School enrichment ready for {high_school}")
+                    logger.info(f"✅ School enrichment ready for {high_school}")
                     self._report_progress({
                         'type': 'agent_progress',
                         'agent_id': 'naveen',
@@ -1171,7 +1161,7 @@ class SmeeOrchestrator(BaseAgent):
                     })
                 else:
                     logger.warning(f"⚠️ School enrichment incomplete: {school_enrichment.get('error', 'unknown')}")
-                    print(f"⚠️ School enrichment incomplete for {high_school}")
+                    logger.info(f"⚠️ School enrichment incomplete for {high_school}")
                     self._report_progress({
                         'type': 'agent_progress',
                         'agent_id': 'naveen',
@@ -1182,7 +1172,7 @@ class SmeeOrchestrator(BaseAgent):
                     school_enrichment = {}
             except Exception as e:
                 logger.error(f"❌ School enrichment failed: {e}", exc_info=True)
-                print(f"❌ School enrichment failed: {e}")
+                logger.info(f"❌ School enrichment failed: {e}")
                 self._report_progress({
                     'type': 'agent_progress',
                     'agent_id': 'naveen',
@@ -1193,7 +1183,7 @@ class SmeeOrchestrator(BaseAgent):
                 school_enrichment = {}
         else:
             logger.warning(f"⚠️ No high school/state info available — skipping school enrichment")
-            print(f"⚠️ No high school/state — skipping enrichment")
+            logger.info(f"⚠️ No high school/state — skipping enrichment")
             self._report_progress({
                 'type': 'agent_progress',
                 'agent_id': 'naveen',
@@ -1205,15 +1195,10 @@ class SmeeOrchestrator(BaseAgent):
         self.evaluation_results['results']['school_enrichment'] = school_enrichment
         
         # ===== STEP 4: Core agents with per-agent validation =====
-        print(f"\n{'='*80}")
-        print(f"DEBUG: STEP 4 - Core agents (PARALLEL)")
-        print(f"DEBUG: evaluation_steps={evaluation_steps}")
-        print(f"DEBUG: Registered agents: {list(self.agents.keys())}")
         logger.info("🤖 STEP 4: Running core agents with PARALLEL execution...")
-        print("🤖 STEP 4: Running core agents with PARALLEL execution...")
+        logger.info("🤖 STEP 4: Running core agents with PARALLEL execution...")
         
         core_agents = ['application_reader', 'grade_reader', 'school_context', 'recommendation_reader']
-        print(f"DEBUG: core_agents list={core_agents}")
         prior_results = {}
 
         # --- Parallel Group 1: Independent document readers ---
@@ -1224,7 +1209,7 @@ class SmeeOrchestrator(BaseAgent):
         
         if parallel_group_1:
             logger.info(f"⚡ PARALLEL GROUP 1: Running {parallel_group_1} concurrently...")
-            print(f"⚡ PARALLEL GROUP 1: {[a.upper() for a in parallel_group_1]}")
+            logger.info(f"⚡ PARALLEL GROUP 1: {[a.upper() for a in parallel_group_1]}")
             
             async def _validate_and_run_core_agent(agent_id, shared_prior):
                 """Validate, run, and persist a single core agent. Thread-safe for parallel use."""
@@ -1246,7 +1231,7 @@ class SmeeOrchestrator(BaseAgent):
                 
                 if not readiness.get('ready'):
                     logger.warning(f"⚠️ Agent {agent_id} not ready: {readiness.get('missing')}")
-                    print(f"❌ {agent_id.upper()}: VALIDATION FAILED - Missing {readiness.get('missing', [])}")
+                    logger.info(f"❌ {agent_id.upper()}: VALIDATION FAILED - Missing {readiness.get('missing', [])}")
                     
                     self._log_interaction(
                         application_id=application_id,
@@ -1312,7 +1297,7 @@ class SmeeOrchestrator(BaseAgent):
                 
                 # Run the agent
                 logger.info(f"🚀 Running {agent_id}...")
-                print(f"▶️  RUNNING {agent_id.upper()}: {self.agents[agent_id].name}")
+                logger.info(f"▶️  RUNNING {agent_id.upper()}: {self.agents[agent_id].name}")
                 self._report_progress({
                     'type': 'agent_progress',
                     'agent_id': agent_id,
@@ -1328,7 +1313,7 @@ class SmeeOrchestrator(BaseAgent):
                     normalized_result = self._normalize_agent_result(agent_result)
                     
                     logger.info(f"✅ Agent {agent_id} completed")
-                    print(f"✅ {agent_id.upper()}: COMPLETED")
+                    logger.info(f"✅ {agent_id.upper()}: COMPLETED")
                     self._report_progress({
                         'type': 'agent_progress',
                         'agent_id': agent_id,
@@ -1340,7 +1325,7 @@ class SmeeOrchestrator(BaseAgent):
                     return agent_id, normalized_result, 'completed'
                 except Exception as agent_exec_error:
                     logger.error(f"❌ {agent_id} execution error: {agent_exec_error}")
-                    print(f"❌ {agent_id.upper()}: FAILED - {str(agent_exec_error)[:100]}")
+                    logger.info(f"❌ {agent_id.upper()}: FAILED - {str(agent_exec_error)[:100]}")
                     self._report_progress({
                         'type': 'agent_progress',
                         'agent_id': agent_id,
@@ -1365,12 +1350,12 @@ class SmeeOrchestrator(BaseAgent):
                     prior_results[aid] = result
             
             logger.info(f"✅ PARALLEL GROUP 1 complete: {[a.upper() for a in parallel_group_1]}")
-            print(f"✅ PARALLEL GROUP 1 DONE")
+            logger.info(f"✅ PARALLEL GROUP 1 DONE")
         
         # --- Sequential: Moana (school_context) - depends on Rapunzel grades ---
         if 'school_context' in self.agents:
             logger.info("🌊 Running Moana (depends on Rapunzel grades)...")
-            print("🌊 RUNNING MOANA (sequential — needs Rapunzel grades)")
+            logger.info("🌊 RUNNING MOANA (sequential — needs Rapunzel grades)")
             aid, result, status = await _validate_and_run_core_agent('school_context', prior_results)
             if result is not None:
                 self.evaluation_results['results'][aid] = result
@@ -1569,12 +1554,34 @@ class SmeeOrchestrator(BaseAgent):
             # when the step isn't requested or the agent is missing we mark as skipped
             self.evaluation_results['results']['data_scientist'] = {'skipped': True}
 
+        # ===== STEP 5.5: SCORE NORMALIZATION + CONTEXT MULTIPLIER =====
+        logger.info("📊 STEP 5.5: Normalizing agent scores and loading context multiplier...")
+        normalized_scores = self._normalize_all_scores(self.evaluation_results['results'])
+        self.evaluation_results['results']['_normalized_scores'] = normalized_scores
+
+        # Load Pocahontas context multiplier for the student's school
+        context_multiplier_data = None
+        if school_enrichment and school_enrichment.get('school_enrichment_id'):
+            try:
+                from src.agents.pocahontas_cohort_analyst import PocahontasCohortAnalyst
+                context_multiplier_data = PocahontasCohortAnalyst.get_school_context_multiplier(
+                    school_enrichment['school_enrichment_id']
+                )
+            except Exception as e:
+                logger.debug(f"Could not load context multiplier: {e}")
+        if context_multiplier_data:
+            self.evaluation_results['results']['_context_multiplier'] = context_multiplier_data
+            logger.info(
+                f"📊 Context multiplier: {context_multiplier_data.get('multiplier', 1.0)}x "
+                f"({', '.join(context_multiplier_data.get('reasons', []))})"
+            )
+        else:
+            self.evaluation_results['results']['_context_multiplier'] = {
+                'multiplier': 1.0, 'reasons': [], 'school_name': high_school
+            }
+
         # ===== STEP 6: MERLIN - Synthesis =====
-        print(f"DEBUG: About to start STEP 6. evaluation_steps={evaluation_steps}")
-        print(f"DEBUG: student_evaluator in evaluation_steps? {'student_evaluator' in evaluation_steps}")
-        print(f"DEBUG: student_evaluator in agents? {'student_evaluator' in self.agents}")
         logger.info("🧙 STEP 6: Synthesizing evaluation with MERLIN...")
-        print("🧙 STEP 6: Synthesizing evaluation with MERLIN...")
         
         if 'student_evaluator' in evaluation_steps and 'student_evaluator' in self.agents:
             merlin = self.agents['student_evaluator']
@@ -1677,12 +1684,67 @@ class SmeeOrchestrator(BaseAgent):
                     }
                 )
         
+        # ===== STEP 6.5: GASTON - Post-Merlin audit =====
+        logger.info("💪 STEP 6.5: Gaston auditing Merlin's evaluation...")
+        merlin_out = self.evaluation_results['results'].get('merlin') or self.evaluation_results['results'].get('student_evaluator') or {}
+        if isinstance(merlin_out, dict) and merlin_out.get('status') != 'error' and 'gaston' in self.agents:
+            gaston = self.agents['gaston']
+            self._report_progress({
+                'type': 'agent_progress',
+                'agent_id': 'gaston',
+                'agent': 'Gaston',
+                'status': 'starting',
+                'message': '💪 Gaston is auditing the evaluation for consistency...'
+            })
+            try:
+                gaston_result = await asyncio.to_thread(
+                    gaston.audit_evaluation,
+                    merlin_out,
+                    self.evaluation_results['results'],
+                    self.evaluation_results['results'].get('_normalized_scores', {}),
+                    self.evaluation_results['results'].get('_context_multiplier'),
+                )
+                self.evaluation_results['results']['gaston'] = gaston_result
+                # Persist to agent_results
+                if self.db and application_id:
+                    try:
+                        existing = {}
+                        try:
+                            rec = self.db.get_application(application_id) or {}
+                            existing = rec.get('agent_results') or {}
+                            if isinstance(existing, str):
+                                existing = safe_load_json(existing)
+                        except Exception:
+                            existing = {}
+                        existing['gaston'] = gaston_result
+                        self.db.update_application(application_id=application_id, agent_results=json.dumps(existing))
+                    except Exception:
+                        logger.debug('Could not persist gaston to agent_results')
+                self._log_interaction(
+                    application_id=application_id,
+                    agent_name='Gaston',
+                    interaction_type='step_6_5_gaston_audit',
+                    question_text='Audit Merlin evaluation for consistency and bias',
+                    extracted_data={
+                        'flags': gaston_result.get('flag_count', 0),
+                        'consistency': gaston_result.get('consistency_score'),
+                        'override': gaston_result.get('override_suggestion'),
+                    }
+                )
+                logger.info(f"✅ Gaston audit complete: {gaston_result.get('flag_count', 0)} flags")
+                self._report_progress({
+                    'type': 'agent_progress',
+                    'agent_id': 'gaston',
+                    'agent': 'Gaston',
+                    'status': 'completed',
+                    'message': f'💪 Gaston complete — {gaston_result.get("flag_count", 0)} review flags ✓'
+                })
+            except Exception as e:
+                logger.warning(f"Gaston audit failed (non-blocking): {e}")
+                self.evaluation_results['results']['gaston'] = {'status': 'error', 'error': str(e)}
+
         # ===== STEP 7: AURORA - Report generation =====
-        print(f"DEBUG: About to start STEP 7. evaluation_steps={evaluation_steps}")
-        print(f"DEBUG: aurora in evaluation_steps? {'aurora' in evaluation_steps}")
-        print(f"DEBUG: aurora in agents? {'aurora' in self.agents}")
         logger.info("📄 STEP 7: Generating report with AURORA...")
-        print("📄 STEP 7: Generating report with AURORA...")
         
         if 'aurora' in evaluation_steps and 'aurora' in self.agents:
             aurora = self.agents['aurora']
@@ -1822,7 +1884,79 @@ class SmeeOrchestrator(BaseAgent):
         except Exception:
             pass
         return self.evaluation_results
-    
+
+    # ── Score normalization ──────────────────────────────────────────
+
+    @staticmethod
+    def _normalize_all_scores(results: Dict[str, Any]) -> Dict[str, Any]:
+        """Normalize all agent scores to a common 0-100 scale.
+
+        This gives Merlin a consistent frame of reference across agents that
+        use different scales (0-3, 0-10, 0-100).
+
+        Returns a flat dict of normalized scores + metadata.
+        """
+        def _safe(val, default=None):
+            if val is None:
+                return default
+            try:
+                return float(val)
+            except (ValueError, TypeError):
+                return default
+
+        normalized: Dict[str, Any] = {}
+
+        # Tiana (application_reader) — readiness 0-10, stem_interest 0-3, essay 0-3
+        tiana = results.get('application_reader') or {}
+        if isinstance(tiana, dict) and tiana.get('status') != 'error':
+            v = _safe(tiana.get('readiness_score'))
+            if v is not None:
+                normalized['tiana_readiness'] = round(v * 10, 1)  # 0-10 → 0-100
+            v = _safe(tiana.get('stem_interest_score'))
+            if v is not None:
+                normalized['tiana_stem_interest'] = round(v / 3 * 100, 1)  # 0-3 → 0-100
+            v = _safe(tiana.get('essay_score'))
+            if v is not None:
+                normalized['tiana_essay'] = round(v / 3 * 100, 1)  # 0-3 → 0-100
+
+        # Rapunzel (grade_reader) — course_rigor_index already 0-100ish
+        rapunzel = results.get('grade_reader') or {}
+        if isinstance(rapunzel, dict) and rapunzel.get('status') != 'error':
+            v = _safe(rapunzel.get('course_rigor_index'))
+            if v is not None:
+                normalized['rapunzel_rigor'] = round(min(v, 100), 1)
+            v = _safe(rapunzel.get('contextual_rigor_index'))
+            if v is not None:
+                normalized['rapunzel_contextual_rigor'] = round(min(v, 100), 1)
+            v = _safe(rapunzel.get('gpa'))
+            if v is not None:
+                # Assume 4.0 scale; cap at 5.0 for weighted GPAs
+                normalized['rapunzel_gpa_normalized'] = round(min(v / 4.0 * 100, 100), 1)
+
+        # Mulan (recommendation_reader) — endorsement 0-10, specificity 0-10, rec 0-2
+        mulan = results.get('recommendation_reader') or {}
+        if isinstance(mulan, dict) and mulan.get('status') != 'error':
+            v = _safe(mulan.get('endorsement_strength'))
+            if v is not None:
+                normalized['mulan_endorsement'] = round(v * 10, 1)  # 0-10 → 0-100
+            v = _safe(mulan.get('specificity_score'))
+            if v is not None:
+                normalized['mulan_specificity'] = round(v * 10, 1)  # 0-10 → 0-100
+            v = _safe(mulan.get('recommendation_score'))
+            if v is not None:
+                normalized['mulan_recommendation'] = round(v / 2 * 100, 1)  # 0-2 → 0-100
+
+        # Moana (school_context) — opportunity scores already 0-100
+        moana = results.get('school_context') or {}
+        if isinstance(moana, dict):
+            opp = moana.get('opportunity_scores') or {}
+            if isinstance(opp, dict):
+                v = _safe(opp.get('overall_opportunity_score'))
+                if v is not None:
+                    normalized['moana_opportunity'] = round(v, 1)
+
+        return normalized
+
     async def _determine_missing_fields(
         self,
         application: Dict[str, Any],
@@ -2644,7 +2778,7 @@ Return only the request sentence."""
         try:
             self.db.save_agent_audit(application_id, agent_name, source_file_name)
         except Exception as e:
-            print(f"⚠ Smee audit write failed: {e}")
+            logger.info(f"⚠ Smee audit write failed: {e}")
     
     async def _synthesize_results(
         self,
@@ -2776,7 +2910,7 @@ Return only the request sentence."""
             
         except Exception as e:
             error_message = f"Smee encountered an error: {str(e)}"
-            print(error_message)
+            logger.info(error_message)
             return error_message
     
     def get_workflow_status(self) -> Dict[str, Any]:
@@ -2834,7 +2968,7 @@ Return only the request sentence."""
                 )
                 has_mulan_data = mulan_check[0]['count'] > 0 if mulan_check else False
             except Exception as e:
-                print(f"Warning: Could not check database for existing agent data: {e}")
+                logger.info(f"Warning: Could not check database for existing agent data: {e}")
         
         # Analyze text content
         text_lower = app_text.lower()
