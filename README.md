@@ -1,8 +1,72 @@
 # Next Gen Multi-Agent Student Evaluation System
 
-> **Version 1.0.83** · Production AI evaluation pipeline with 15+ specialized agents, 4-tier model architecture, and enterprise security via Azure Front Door + WAF.
+> **Version 1.9.0** · Production AI evaluation pipeline with 16+ specialized agents, 4-tier model architecture, and enterprise security via Azure Front Door + WAF.
+
+**Mission:** The purpose of this system is not to replicate human evaluation. It is to find the student the committee would miss — the Diamond in the Rough.
 
 An intelligent multi-agent system that evaluates high school internship applications using specialized AI agents coordinated in a 9-step workflow. Built on Azure AI Foundry with comprehensive audit trails, fairness-aware assessment, and school context enrichment.
+
+---
+
+## The Crew
+
+This project runs on three teams of agents working around the clock.
+
+### Runtime Agents — The Evaluation Pipeline
+These Disney-themed AI agents live in `src/agents/` and evaluate scholarship applicants through a 9-step pipeline. They run on Azure AI Foundry models.
+
+| Agent | Character | What They Do | Model |
+|-------|-----------|-------------|-------|
+| **Belle** | Document Analyzer | PDF/DOCX parsing, section detection, OCR | Workhorse |
+| **Tiana** | Application Reader | Essay analysis, STEM interest, SES signals | Workhorse |
+| **Rapunzel** | Grade Analyst | Transcript parsing, GPA, rigor index, trajectory | Premium |
+| **Mulan** | Recommendation Reader | Letter analysis, recommender credibility | Workhorse |
+| **Moana** | School Context | AI narratives from NCES data, fairness weighting | Workhorse |
+| **Naveen** | School Data Scientist | NCES scoring, AP availability, opportunity score | Workhorse |
+| **Pocahontas** | Cohort Analyst | Cross-school equity tiers, context multipliers | Workhorse |
+| **Merlin** | Student Evaluator | Final synthesis — the evaluation that goes to committee | Merlin (GPT-5-mini) |
+| **Gaston** | Counter-Evaluator | Bias check, critical assessment, risk flags | Workhorse |
+| **Aurora** | Results Formatter | Polished output, consistent structure | Local |
+| **Milo** | Data Scientist | ML training, validation, ranking from historical data | Premium |
+| **Ariel** | Q&A Assistant | Conversational questions about any student | Workhorse |
+| **Mirabel** | Video Analyzer | Video submissions — frame extraction + audio | Vision (GPT-4o) |
+| **Bashful** | Summarizer | Agent output condensation | Workhorse |
+| **FairyGodmother** | Document Generator | Template-based letter/report generation | Local |
+| **FeedbackTriage** | Feedback Router | User feedback classification | Lightweight |
+| **Smee** | Orchestrator | Coordinates the entire pipeline | Workhorse |
+
+### Development Agents — The VS Code Toolkit
+These agent modes live in `.github/agents/` and are invoked via `@agentname` in VS Code Copilot Chat.
+
+| Agent | Invoke | What They Do |
+|-------|--------|-------------|
+| **Ghostwriter** | `@ghostwriter` | Senior Staff Python Engineer. 20+ years experience. Deep code reviews, prompt surgery, security audits, architecture hardening. On-demand consultation or autonomous review. |
+| **Azure Architect** | `@azure-architect` | Azure Solutions Architect. ARM/Bicep/Terraform fluent. Complete reference architecture memorized. Can provision a new subscription from scratch. Cost optimization, Well-Architected reviews. |
+| **Jiminy** | `@jiminy` | Documentation Conscience. Named after Jiminy Cricket. Reviews docs for accuracy, completeness, mission alignment, and accessibility. Writes with warmth — this project matters. |
+| **Explore** | `@explore` | Fast read-only codebase research. Point at anything, get precise answers with file paths and line references. |
+
+### Operational Agents — The Graveyard Shift
+These agents run autonomously on GitHub Actions while you sleep. They also run locally via OpenClaw on the home setup.
+
+**GitHub Actions (nightly):**
+
+| Agent | Schedule | What They Do |
+|-------|----------|-------------|
+| **Ghostwriter** | 2:00 AM ET (3 files/night) | Reviews Python quality, prompts, security. Opens graded GitHub issues. Full codebase cycle every ~9 days. |
+| **Jiminy** | 3:00 AM ET (2 areas/night) | Reviews documentation accuracy, mission alignment, clarity. Opens issues. Full cycle every ~5 days. |
+
+**OpenClaw (home lab, Opus 4.6):**
+
+| Agent | What They Do |
+|-------|-------------|
+| **Willie** | Groundskeeper. Overnight sweep — finds issues, opens PRs with fixes. Builds on Blueprint architecture. |
+| **Bob** | Security chaos engineer (Sideshow Bob). Weekly security sweep — OWASP checks, CSP hardening, template security. |
+| **Smithers** | Ops reporter. Daily ops report — cost review, deployment health, infrastructure status. |
+
+### The One We're Building Next
+| Agent | Issue | What It Will Do |
+|-------|-------|----------------|
+| **Diamond in the Rough** | #125 | The reason this system exists. Contextual potential scoring that finds students whose resilience and potential exceed their raw metrics. Bias correction, not bias. |
 
 ---
 
