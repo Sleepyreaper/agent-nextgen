@@ -615,6 +615,310 @@ def re_evaluate_training_status():
         return jsonify({'status': 'unknown'})
 
 
+# ──────────────────────────────────────────────────────────────────────────────
+# Overnight full reprocess — reset + re-extract + re-evaluate ALL training data
+# ──────────────────────────────────────────────────────────────────────────────
+
+_OVERNIGHT_STATE_FILE = os.path.join(tempfile.gettempdir(), 'overnight_reprocess_state.json')
+
+
+def _write_overnight_state(state: dict):
+    try:
+        with open(_OVERNIGHT_STATE_FILE, 'w') as f:
+            json.dump(state, f, default=str)
+    except Exception:
+        pass
+
+
+@training_bp.route('/api/training/overnight-reprocess', methods=['POST'])
+def overnight_reprocess():
+    """Full overnight reprocess: reset agent outputs, re-extract documents,
+    then re-evaluate every training record through the complete agent pipeline.
+
+    This is designed for overnight / off-hours runs when you want every
+    training record freshly processed end-to-end.
+
+    Phases:
+      1. Reset AI outputs (agent_results, summaries, status → Pending)
+      2. Re-extract documents from blob storage (Belle + DocProcessor)
+      3. Re-evaluate every record through Smee orchestrator (all agents)
+
+    Optional JSON body:
+      skip_extraction: bool — skip phase 2 if documents are already current (default false)
+      delay_seconds: int  — seconds to sleep between evaluations (default 3, min 1, max 30)
+    """
+
+    # Prevent concurrent overnight jobs
+    if os.path.isfile(_OVERNIGHT_STATE_FILE):
+        try:
+            with open(_OVERNIGHT_STATE_FILE) as f:
+                existing = json.load(f)
+            if existing.get('status') == 'running':
+                return jsonify({
+                    'status': 'error',
+                    'error': 'An overnight reprocess is already running.',
+                    'progress': existing,
+                }), 409
+        except Exception:
+            pass
+
+    data = request.get_json(silent=True) or {}
+    skip_extraction = bool(data.get('skip_extraction', False))
+    delay_seconds = max(1, min(30, int(data.get('delay_seconds', 3))))
+
+    # Count training records
+    training_col = db.get_training_example_column() or 'is_training_example'
+    test_col = db.get_test_data_column() or 'is_test_data'
+    where = f"{training_col} = TRUE"
+    if db.has_applications_column(test_col):
+        where += f" AND ({test_col} = FALSE OR {test_col} IS NULL)"
+
+    rows = db.execute_query(
+        f"SELECT application_id, student_id, applicant_name FROM applications WHERE {where} ORDER BY application_id"
+    )
+    if not rows:
+        return jsonify({'status': 'success', 'message': 'No training records found', 'count': 0})
+
+    upload_folder = current_app.config.get('UPLOAD_FOLDER', '/tmp')
+
+    state = {
+        'status': 'running',
+        'phase': 'initializing',
+        'total': len(rows),
+        'started_at': datetime.now(timezone.utc).isoformat(),
+        'skip_extraction': skip_extraction,
+        'delay_seconds': delay_seconds,
+        # Phase 1 — reset
+        'reset_count': 0,
+        # Phase 2 — extraction
+        'extraction_processed': 0,
+        'extraction_updated': 0,
+        'extraction_errors': [],
+        # Phase 3 — evaluation
+        'eval_completed': 0,
+        'eval_succeeded': 0,
+        'eval_failed': 0,
+        'current_student': '',
+        'message': f'Starting overnight reprocess of {len(rows)} training records...',
+    }
+    _write_overnight_state(state)
+
+    def _run_overnight(records, upload_folder, skip_extraction, delay_seconds):
+        import time as _time
+        from extensions import run_async, get_orchestrator, _collect_documents_from_storage, _aggregate_documents
+
+        try:
+            # ── PHASE 1: Reset AI outputs ──────────────────────────────────
+            state['phase'] = 'reset'
+            state['message'] = 'Phase 1/3: Resetting agent outputs...'
+            _write_overnight_state(state)
+
+            app_ids_list = [r['application_id'] for r in records]
+
+            db.execute_non_query(f"""
+                UPDATE applications
+                SET agent_results = NULL,
+                    student_summary = NULL,
+                    nextgen_match = NULL,
+                    status = 'Pending',
+                    updated_date = CURRENT_TIMESTAMP
+                WHERE {where}
+            """)
+            state['reset_count'] = len(records)
+
+            # Clear dependent agent tables
+            for aid in app_ids_list:
+                for table in ('ai_evaluations', 'aurora_evaluations',
+                              'merlin_evaluations', 'agent_audit_logs'):
+                    try:
+                        db.execute_non_query(f"DELETE FROM {table} WHERE application_id = %s", (aid,))
+                    except Exception:
+                        pass
+
+            logger.info(f"Overnight: Phase 1 complete — reset {len(records)} records")
+
+            # ── PHASE 2: Re-extract documents ──────────────────────────────
+            if not skip_extraction:
+                state['phase'] = 'extraction'
+                state['message'] = 'Phase 2/3: Re-extracting documents from blob storage...'
+                _write_overnight_state(state)
+
+                belle = BelleDocumentAnalyzer(
+                    client=get_ai_client(),
+                    model=config.model_tier_lightweight or config.foundry_model_name,
+                    db_connection=db
+                )
+
+                for idx, rec in enumerate(records):
+                    app_id = rec['application_id']
+                    student_id = rec.get('student_id')
+                    name = rec.get('applicant_name', f'ID#{app_id}')
+                    state['extraction_processed'] = idx + 1
+                    state['current_student'] = name
+                    state['message'] = f'Phase 2/3: Extracting {name} ({idx+1}/{len(records)})'
+                    _write_overnight_state(state)
+
+                    try:
+                        if not student_id:
+                            state['extraction_errors'].append({
+                                'application_id': app_id, 'error': 'no student_id'
+                            })
+                            continue
+
+                        documents = _collect_documents_from_storage(
+                            student_id, 'training', belle, upload_folder=upload_folder
+                        )
+                        if not documents:
+                            documents = _collect_documents_from_storage(
+                                student_id, 'application', belle, upload_folder=upload_folder
+                            )
+                        if not documents:
+                            state['extraction_errors'].append({
+                                'application_id': app_id, 'error': 'no files in storage'
+                            })
+                            continue
+
+                        aggregated = _aggregate_documents(documents)
+                        updates = {}
+                        for field in ['application_text', 'transcript_text', 'recommendation_text']:
+                            val = aggregated.get(field)
+                            if val:
+                                updates[field] = val
+
+                        if updates:
+                            db.update_application_fields(app_id, updates)
+                            state['extraction_updated'] += 1
+
+                            missing_fields = []
+                            if not updates.get('transcript_text'):
+                                missing_fields.append('transcript')
+                            if not updates.get('recommendation_text'):
+                                missing_fields.append('letters_of_recommendation')
+                            db.set_missing_fields(app_id, missing_fields)
+
+                    except Exception as exc:
+                        logger.error(f"Overnight extraction error for {name}: {exc}", exc_info=True)
+                        state['extraction_errors'].append({
+                            'application_id': app_id, 'error': str(exc)
+                        })
+
+                logger.info(
+                    f"Overnight: Phase 2 complete — extracted {state['extraction_updated']}/{len(records)}, "
+                    f"{len(state['extraction_errors'])} errors"
+                )
+            else:
+                state['phase'] = 'extraction'
+                state['message'] = 'Phase 2/3: Skipped (skip_extraction=true)'
+                _write_overnight_state(state)
+                logger.info("Overnight: Phase 2 skipped (documents already current)")
+
+            # ── PHASE 3: Full agent evaluation ─────────────────────────────
+            state['phase'] = 'evaluation'
+            state['message'] = 'Phase 3/3: Running full agent pipeline...'
+            _write_overnight_state(state)
+
+            for idx, rec in enumerate(records):
+                app_id = rec['application_id']
+                name = rec.get('applicant_name', f'ID#{app_id}')
+                state['eval_completed'] = idx
+                state['current_student'] = name
+                state['message'] = (
+                    f'Phase 3/3: Evaluating {name} ({idx+1}/{len(records)}) — '
+                    f'{state["eval_succeeded"]} OK, {state["eval_failed"]} failed'
+                )
+                _write_overnight_state(state)
+
+                try:
+                    application = db.get_application(app_id)
+                    if not application:
+                        state['eval_failed'] += 1
+                        continue
+
+                    orchestrator = get_orchestrator()
+                    result = run_async(orchestrator.coordinate_evaluation(
+                        application=application,
+                        evaluation_steps=[
+                            'application_reader', 'grade_reader', 'recommendation_reader',
+                            'school_context', 'data_scientist', 'student_evaluator', 'aurora'
+                        ]
+                    ))
+
+                    if isinstance(result, dict) and result.get('status') != 'error':
+                        db.update_application_status(app_id, 'Completed')
+                        state['eval_succeeded'] += 1
+                    else:
+                        state['eval_failed'] += 1
+
+                    logger.info(
+                        f"Overnight eval [{idx+1}/{len(records)}] {name}: "
+                        f"{'OK' if isinstance(result, dict) and result.get('status') != 'error' else 'FAIL'}"
+                    )
+
+                except Exception as e:
+                    logger.error(f"Overnight eval failed for {name}: {e}", exc_info=True)
+                    state['eval_failed'] += 1
+
+                # Pacing — avoid hammering the AI endpoints
+                if idx < len(records) - 1:
+                    _time.sleep(delay_seconds)
+
+            # ── Done ───────────────────────────────────────────────────────
+            state['status'] = 'completed'
+            state['phase'] = 'done'
+            state['eval_completed'] = len(records)
+            state['completed_at'] = datetime.now(timezone.utc).isoformat()
+            state['message'] = (
+                f'Overnight reprocess complete: {state["eval_succeeded"]} succeeded, '
+                f'{state["eval_failed"]} failed out of {len(records)} records'
+            )
+
+        except Exception as exc:
+            state['status'] = 'error'
+            state['error'] = str(exc)
+            state['message'] = f'Overnight reprocess failed: {exc}'
+            logger.error(f"Overnight reprocess fatal error: {exc}", exc_info=True)
+
+        finally:
+            _write_overnight_state(state)
+
+    thread = threading.Thread(
+        target=_run_overnight,
+        args=(
+            [dict(r) for r in rows],
+            upload_folder,
+            skip_extraction,
+            delay_seconds,
+        ),
+        daemon=True,
+    )
+    thread.start()
+
+    return jsonify({
+        'status': 'started',
+        'message': (
+            f'Overnight reprocess launched for {len(rows)} training records. '
+            f'Phases: reset → {"extraction → " if not skip_extraction else ""}evaluation. '
+            f'GET /api/training/overnight-reprocess to monitor progress.'
+        ),
+        'total': len(rows),
+        'skip_extraction': skip_extraction,
+        'delay_seconds': delay_seconds,
+        'poll_url': '/api/training/overnight-reprocess',
+    })
+
+
+@training_bp.route('/api/training/overnight-reprocess', methods=['GET'])
+def overnight_reprocess_status():
+    """Poll overnight reprocess progress."""
+    if not os.path.isfile(_OVERNIGHT_STATE_FILE):
+        return jsonify({'status': 'idle', 'message': 'No overnight reprocess has been started.'})
+    try:
+        with open(_OVERNIGHT_STATE_FILE) as f:
+            return jsonify(json.load(f))
+    except Exception:
+        return jsonify({'status': 'unknown'})
+
+
 @training_bp.route('/api/training/reprocess', methods=['POST'])
 def api_reprocess_training():
     """Re-extract document fields for training records.

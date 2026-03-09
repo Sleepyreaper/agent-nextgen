@@ -33,6 +33,7 @@
         <div class="flex flex-wrap gap-2 items-center">
             <a id="trainingUploadLink" href="{{ url_for('upload.upload', app_type='training') }}" class="btn-emory btn-emory-primary btn-emory-sm">➕ Add Training</a>
             <button type="button" class="btn-emory btn-emory-sm btn-emory-secondary" data-action="openReprocessModal">🔄 Reprocess</button>
+            <button type="button" class="btn-emory btn-emory-sm btn-emory-secondary" data-action="openOvernightModal" title="Full reset + re-extract + re-evaluate all training records">🌙 Overnight</button>
             <button type="button" class="btn-emory btn-emory-sm btn-emory-secondary" data-action="fetchMiloInsights">📊 Insights</button>
             <button type="button" class="btn-emory btn-emory-sm btn-emory-secondary" data-action="openValidationModal">🧪 Validate</button>
             <button type="button" class="btn-emory btn-emory-sm btn-emory-secondary" data-action="openXlsxResolver">🔗 XLSX Match</button>
@@ -332,6 +333,51 @@
             <li>👸 <strong>Application review</strong> identifies essay qualities that correlate with success</li>
             <li>🗡️ <strong>Recommendation analysis</strong> weights recommendation attributes from past winners</li>
         </ul>
+    </div>
+</div>
+
+<!-- Overnight Full Reprocess Modal -->
+<div id="overnightModal" style="display:none; position:fixed; top:0; left:0; right:0; bottom:0; background:rgba(0,0,0,0.6); z-index:9999; justify-content:center; align-items:center;">
+    <div style="background:white; border-radius:12px; padding:2rem; max-width:700px; width:90%; max-height:85vh; overflow-y:auto;">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1rem;">
+            <h3 style="margin:0;">🌙 Overnight Full Reprocess</h3>
+            <button data-action="closeOvernightModal" style="background:none; border:none; font-size:1.5rem; cursor:pointer;">✕</button>
+        </div>
+        <div style="background:#eff6ff; border:1px solid #bfdbfe; border-radius:8px; padding:1rem; margin-bottom:1rem;">
+            <p style="margin:0 0 0.5rem 0; font-size:0.9rem; color:#1e40af; font-weight:600;">This runs a complete 3-phase pipeline on ALL training records:</p>
+            <ol style="margin:0; padding-left:1.5rem; font-size:0.85rem; color:#1e3a5f;">
+                <li><strong>Reset</strong> — clears all agent outputs (preserves documents)</li>
+                <li><strong>Re-extract</strong> — re-downloads files from storage, re-runs Belle + DocProcessor</li>
+                <li><strong>Re-evaluate</strong> — runs every record through all agents (Tiana → Rapunzel → Mulan → Moana → Merlin → Gaston → Aurora)</li>
+            </ol>
+        </div>
+        <div style="margin-bottom:1rem;">
+            <label style="display:flex; align-items:center; gap:0.5rem; font-size:0.9rem; cursor:pointer;">
+                <input type="checkbox" id="overnightSkipExtraction">
+                Skip document re-extraction (phase 2) — use if documents are already current
+            </label>
+        </div>
+        <div style="margin-bottom:1rem;">
+            <label style="font-size:0.85rem; color:#4b5563;">Delay between evaluations (seconds):</label>
+            <input type="number" id="overnightDelay" value="3" min="1" max="30" style="width:60px; margin-left:0.5rem; padding:0.25rem 0.5rem; border:1px solid #d1d5db; border-radius:4px;">
+        </div>
+        <div id="overnightStatus" style="display:none; margin-bottom:1rem;">
+            <div style="display:flex; justify-content:space-between; margin-bottom:0.25rem;">
+                <span id="overnightPhaseText" style="font-weight:600;">Initializing...</span>
+                <span id="overnightProgressText" style="font-size:0.85rem; color:#6b7280;"></span>
+            </div>
+            <div style="background:#e5e7eb; border-radius:4px; height:20px; overflow:hidden; margin-bottom:0.5rem;">
+                <div id="overnightProgressBar" style="background:linear-gradient(90deg,#312e81,#6366f1); height:100%; width:0%; transition:width 0.3s;"></div>
+            </div>
+            <div id="overnightMessage" style="font-size:0.85rem; color:#6b7280;"></div>
+            <div id="overnightStats" style="display:grid; grid-template-columns:repeat(3,1fr); gap:0.5rem; margin-top:0.75rem;"></div>
+        </div>
+        <div style="display:flex; gap:0.5rem;">
+            <button data-action="startOvernight" id="overnightStartBtn" class="btn" style="background:#4f46e5; color:white; padding:0.5rem 1.5rem; font-weight:600;">
+                🌙 Start Overnight Reprocess
+            </button>
+            <button data-action="closeOvernightModal" class="btn" style="background:#e5e7eb; color:#374151;">Cancel</button>
+        </div>
     </div>
 </div>
 
@@ -1535,6 +1581,120 @@ function filterAccuracyTable(filter) {
         else if (filter === 'wrong') { row.style.display = row.dataset.correct === 'wrong' ? '' : 'none'; }
         else if (filter === 'accepted') { row.style.display = row.dataset.actual === 'accepted' ? '' : 'none'; }
     });
+}
+
+// ── Overnight Full Reprocess ──
+function openOvernightModal() {
+    document.getElementById('overnightModal').style.display = 'flex';
+    // Check if there's already one running
+    pollOvernightStatus(true);
+}
+function closeOvernightModal() {
+    document.getElementById('overnightModal').style.display = 'none';
+}
+(function() {
+    const oModal = document.getElementById('overnightModal');
+    if (oModal) oModal.addEventListener('click', function(e) { if (e.target === this) closeOvernightModal(); });
+})();
+
+let overnightPollTimer = null;
+
+async function startOvernight() {
+    const btn = document.getElementById('overnightStartBtn');
+    const skipExtraction = document.getElementById('overnightSkipExtraction').checked;
+    const delay = parseInt(document.getElementById('overnightDelay').value) || 3;
+
+    if (!confirm('This will reset and fully re-evaluate ALL training records. This is designed for overnight runs. Continue?')) return;
+
+    btn.disabled = true;
+    btn.textContent = '⏳ Starting...';
+    document.getElementById('overnightStatus').style.display = 'block';
+    document.getElementById('overnightPhaseText').textContent = 'Starting...';
+
+    try {
+        const resp = await fetch('/api/training/overnight-reprocess', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ skip_extraction: skipExtraction, delay_seconds: delay })
+        });
+        const data = await resp.json();
+        if (data.status === 'started') {
+            document.getElementById('overnightPhaseText').textContent = 'Launched — ' + data.total + ' records';
+            document.getElementById('overnightMessage').textContent = data.message;
+            pollOvernightStatus();
+        } else {
+            document.getElementById('overnightPhaseText').textContent = 'Error: ' + (data.error || 'Unknown');
+            btn.disabled = false;
+            btn.textContent = '🌙 Start Overnight Reprocess';
+        }
+    } catch (err) {
+        document.getElementById('overnightPhaseText').textContent = 'Error: ' + err.message;
+        btn.disabled = false;
+        btn.textContent = '🌙 Start Overnight Reprocess';
+    }
+}
+
+function pollOvernightStatus(initialCheck) {
+    if (overnightPollTimer) clearInterval(overnightPollTimer);
+    const poll = async function() {
+        try {
+            const resp = await fetch('/api/training/overnight-reprocess');
+            const d = await resp.json();
+            if (d.status === 'idle') {
+                if (initialCheck) return;
+                clearInterval(overnightPollTimer);
+                return;
+            }
+
+            document.getElementById('overnightStatus').style.display = 'block';
+            const btn = document.getElementById('overnightStartBtn');
+
+            const phaseLabels = {reset: '🔄 Phase 1: Resetting', extraction: '📄 Phase 2: Extracting', evaluation: '🤖 Phase 3: Evaluating', done: '✅ Complete'};
+            document.getElementById('overnightPhaseText').textContent = phaseLabels[d.phase] || d.phase || d.status;
+            document.getElementById('overnightMessage').textContent = d.message || '';
+
+            // Progress bar
+            let pct = 0;
+            if (d.phase === 'reset') pct = 5;
+            else if (d.phase === 'extraction' && d.total > 0) pct = 5 + Math.round((d.extraction_processed / d.total) * 30);
+            else if (d.phase === 'evaluation' && d.total > 0) pct = 35 + Math.round((d.eval_completed / d.total) * 65);
+            else if (d.status === 'completed') pct = 100;
+            document.getElementById('overnightProgressBar').style.width = pct + '%';
+
+            // Progress text
+            if (d.phase === 'extraction') {
+                document.getElementById('overnightProgressText').textContent = d.extraction_processed + ' / ' + d.total + ' extracted';
+            } else if (d.phase === 'evaluation') {
+                document.getElementById('overnightProgressText').textContent = d.eval_completed + ' / ' + d.total + ' evaluated';
+            } else if (d.status === 'completed') {
+                document.getElementById('overnightProgressText').textContent = d.total + ' / ' + d.total;
+            }
+
+            // Stats cards
+            if (d.phase === 'evaluation' || d.status === 'completed') {
+                document.getElementById('overnightStats').innerHTML =
+                    '<div style="background:#d1fae5; padding:0.5rem; border-radius:6px; text-align:center;"><div style="font-size:1.1rem; font-weight:bold;">' + (d.eval_succeeded || 0) + '</div><div style="font-size:0.75rem;">Succeeded</div></div>' +
+                    '<div style="background:#fecaca; padding:0.5rem; border-radius:6px; text-align:center;"><div style="font-size:1.1rem; font-weight:bold;">' + (d.eval_failed || 0) + '</div><div style="font-size:0.75rem;">Failed</div></div>' +
+                    '<div style="background:#dbeafe; padding:0.5rem; border-radius:6px; text-align:center;"><div style="font-size:1.1rem; font-weight:bold;">' + (d.extraction_updated || 0) + '</div><div style="font-size:0.75rem;">Extracted</div></div>';
+            }
+
+            if (d.status === 'completed' || d.status === 'error') {
+                clearInterval(overnightPollTimer);
+                btn.disabled = false;
+                btn.textContent = '🌙 Start Overnight Reprocess';
+                if (d.status === 'completed') {
+                    document.getElementById('overnightProgressBar').style.background = 'linear-gradient(90deg,#059669,#10b981)';
+                } else {
+                    document.getElementById('overnightProgressBar').style.background = '#ef4444';
+                }
+            } else {
+                btn.disabled = true;
+                btn.textContent = '⏳ Running...';
+            }
+        } catch (err) { /* network glitch, keep polling */ }
+    };
+    poll();
+    overnightPollTimer = setInterval(poll, 5000);
 }
 </script>
 {% endblock %}
