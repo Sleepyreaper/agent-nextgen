@@ -176,6 +176,13 @@ def process_student(application_id):
 
 
 
+# Serialise background processing — the Smee orchestrator is a singleton
+# whose instance attributes (evaluation_results, workflow_state, etc.) are
+# not thread-safe.  A threading.Semaphore(1) ensures only one student is
+# evaluated at a time; additional submissions queue up in FIFO order.
+_process_semaphore = threading.Semaphore(1)
+
+
 @applications_bp.route('/api/process/<int:application_id>', methods=['POST'])
 @csrf.exempt
 def api_process_student(application_id):
@@ -222,8 +229,36 @@ def api_process_student(application_id):
             json.dump(state, fp)
 
         def _background_process(app_id, app_data, st_path):
-            """Run the full agent pipeline off the request thread."""
+            """Run the full agent pipeline off the request thread.
+
+            Acquires ``_process_semaphore`` so only one evaluation runs at a
+            time — the Smee orchestrator singleton is not safe for concurrent
+            use.  Queued jobs update their state file to ``queued`` while
+            waiting for the lock.
+            """
+            # Mark as queued while waiting for the lock
             try:
+                with open(st_path) as f:
+                    s = json.load(f)
+                s['status'] = 'queued'
+                with open(st_path, 'w') as f:
+                    json.dump(s, f)
+            except Exception:
+                pass
+
+            _process_semaphore.acquire()
+            try:
+                # Update status to running now that we hold the lock
+                try:
+                    with open(st_path) as f:
+                        s = json.load(f)
+                    s['status'] = 'running'
+                    s['started_processing_at'] = time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())
+                    with open(st_path, 'w') as f:
+                        json.dump(s, f)
+                except Exception:
+                    pass
+
                 orchestrator = get_orchestrator()
                 evaluation_steps = [
                     'application_reader', 'grade_reader',
@@ -286,6 +321,8 @@ def api_process_student(application_id):
                 s['completed_at'] = time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())
                 with open(st_path, 'w') as f:
                     json.dump(s, f, default=str)
+            finally:
+                _process_semaphore.release()
 
         thread = threading.Thread(
             target=_background_process,
