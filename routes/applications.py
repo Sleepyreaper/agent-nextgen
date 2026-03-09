@@ -178,46 +178,147 @@ def process_student(application_id):
 
 @applications_bp.route('/api/process/<int:application_id>', methods=['POST'])
 def api_process_student(application_id):
-    """API endpoint to process student with Smee orchestrator."""
+    """API endpoint to process student with Smee orchestrator.
+
+    Launches agent pipeline in a background thread and returns immediately
+    with 202 Accepted.  Frontend polls ``GET /api/process/<id>/status``
+    for progress.  File-based state (``process_state_<id>.json``) ensures
+    multi-worker gunicorn compatibility.
+    """
     try:
         application = db.get_application(application_id)
         if not application:
             return jsonify({'error': 'Student not found'}), 404
-        
-        # Get orchestrator
-        orchestrator = get_orchestrator()
-        
-        # Run full agent pipeline
-        result = run_async(
-            orchestrator.coordinate_evaluation(
-                application=application,
-                evaluation_steps=['application_reader', 'grade_reader', 'recommendation_reader', 'school_context', 'data_scientist', 'student_evaluator', 'aurora']
-            )
+
+        upload_folder = current_app.config.get('UPLOAD_FOLDER', '/tmp')
+        state_path = os.path.join(upload_folder, f'process_state_{application_id}.json')
+
+        # Prevent duplicate launches — if already running, return current state
+        if os.path.exists(state_path):
+            try:
+                with open(state_path) as f:
+                    existing = json.load(f)
+                if existing.get('status') == 'running':
+                    return jsonify(existing), 202
+            except (json.JSONDecodeError, OSError):
+                pass  # stale file — overwrite below
+
+        state = {
+            'status': 'running',
+            'application_id': application_id,
+            'applicant_name': application.get('applicant_name', ''),
+            'started_at': time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime()),
+            'current_agent': None,
+            'agents_completed': [],
+            'result': None,
+            'error': None,
+        }
+        with open(state_path, 'w') as fp:
+            json.dump(state, fp)
+
+        def _background_process(app_id, app_data, st_path):
+            """Run the full agent pipeline off the request thread."""
+            try:
+                orchestrator = get_orchestrator()
+                evaluation_steps = [
+                    'application_reader', 'grade_reader',
+                    'recommendation_reader', 'school_context',
+                    'data_scientist', 'student_evaluator', 'aurora',
+                ]
+
+                def _progress(update):
+                    """Write incremental progress to state file."""
+                    try:
+                        with open(st_path) as f:
+                            s = json.load(f)
+                        agent = update.get('agent')
+                        utype = update.get('type', '')
+                        if agent:
+                            s['current_agent'] = agent
+                        if utype == 'agent_complete' and agent:
+                            done = s.get('agents_completed', [])
+                            if agent not in done:
+                                done.append(agent)
+                            s['agents_completed'] = done
+                        with open(st_path, 'w') as f:
+                            json.dump(s, f)
+                    except Exception:
+                        pass  # progress tracking is best-effort
+
+                result = run_async(
+                    orchestrator.coordinate_evaluation(
+                        application=app_data,
+                        evaluation_steps=evaluation_steps,
+                        progress_callback=_progress,
+                    )
+                )
+
+                with open(st_path) as f:
+                    s = json.load(f)
+
+                if result.get('status') == 'paused':
+                    s['status'] = 'paused'
+                    s['missing_fields'] = result.get('missing_fields')
+                    s['message'] = result.get('message')
+                else:
+                    db.update_application_status(app_id, 'Completed')
+                    s['status'] = 'complete'
+
+                s['result'] = result
+                s['completed_at'] = time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())
+                with open(st_path, 'w') as f:
+                    json.dump(s, f, default=str)
+
+            except Exception as exc:
+                logger.error("Background process failed for %s: %s", app_id, exc, exc_info=True)
+                try:
+                    with open(st_path) as f:
+                        s = json.load(f)
+                except Exception:
+                    s = {'application_id': app_id}
+                s['status'] = 'error'
+                s['error'] = str(exc)
+                s['completed_at'] = time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())
+                with open(st_path, 'w') as f:
+                    json.dump(s, f, default=str)
+
+        thread = threading.Thread(
+            target=_background_process,
+            args=(application_id, application, state_path),
+            daemon=True,
         )
-        
-        # If result indicates missing fields, return that status
-        if result.get('status') == 'paused':
-            return jsonify({
-                'success': True,
-                'status': 'paused',
-                'application_id': application_id,
-                'missing_fields': result.get('missing_fields'),
-                'message': result.get('message')
-            }), 202  # 202 Accepted - processing paused waiting for more info
-        
-        # Update status to Evaluated
-        db.update_application_status(application_id, 'Completed')
-        
+        thread.start()
+
         return jsonify({
             'success': True,
-            'status': 'complete',
+            'status': 'running',
             'application_id': application_id,
-            'result': result
-        })
-        
+            'message': 'Processing started. Poll GET /api/process/{}/status for progress.'.format(application_id),
+        }), 202
+
     except Exception as e:
         logger.error("API process failed for application %s: %s", application_id, e, exc_info=True)
         return jsonify({'error': 'An internal error occurred'}), 500
+
+
+@applications_bp.route('/api/process/<int:application_id>/status', methods=['GET'])
+def api_process_student_status(application_id):
+    """Poll processing progress for a background job launched by POST /api/process/<id>."""
+    upload_folder = current_app.config.get('UPLOAD_FOLDER', '/tmp')
+    state_path = os.path.join(upload_folder, f'process_state_{application_id}.json')
+
+    if not os.path.exists(state_path):
+        return jsonify({'status': 'idle', 'application_id': application_id,
+                        'message': 'No processing job found for this application.'}), 404
+
+    try:
+        with open(state_path) as f:
+            state = json.load(f)
+        status_code = 200 if state.get('status') in ('complete', 'error', 'paused') else 202
+        return jsonify(state), status_code
+    except (json.JSONDecodeError, OSError) as exc:
+        logger.warning("Could not read process state for %s: %s", application_id, exc)
+        return jsonify({'status': 'error', 'error': 'Could not read processing state'}), 500
 
 
 

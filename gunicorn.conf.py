@@ -6,7 +6,7 @@ scale via replicas).
 
   GUNICORN_WORKERS  — number of worker processes  (default: 2)
   GUNICORN_THREADS  — threads per worker           (default: 4)
-  GUNICORN_TIMEOUT  — request timeout in seconds   (default: 120)
+  GUNICORN_TIMEOUT  — request timeout in seconds   (default: 300)
   PORT              — bind port                    (default: 8000)
 """
 import os
@@ -21,7 +21,10 @@ worker_class = "gthread"
 
 # ── Networking ─────────────────────────────────────────────────────
 bind = f"0.0.0.0:{os.environ.get('PORT', '8000')}"
-timeout = int(os.environ.get("GUNICORN_TIMEOUT", "120"))
+# Must exceed Azure Front Door origin timeout (240s) so the worker stays
+# alive long enough for Front Door to receive a response or its own timeout.
+# Agent pipelines (Rapunzel, Belle, Merlin) can take 2-5 min per student.
+timeout = int(os.environ.get("GUNICORN_TIMEOUT", "300"))
 
 # ── Logging ────────────────────────────────────────────────────────
 accesslog = "-"
