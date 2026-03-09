@@ -194,6 +194,22 @@
             </div>
         </div>
 
+        <!-- ═══ DATABASE OFFLINE BANNER ═══ -->
+        <div id="db-banner" class="hidden px-6 pt-3">
+            <div class="bg-red-50 border border-red-300 rounded-xl px-4 py-3">
+                <div class="flex items-center gap-3">
+                    <span class="text-xl flex-shrink-0">🔴</span>
+                    <div class="flex-1 min-w-0">
+                        <div id="db-banner-text" class="text-sm font-medium text-red-800">Database is offline — the server stops nightly to save costs.</div>
+                        <div id="db-banner-detail" class="text-xs text-red-600 mt-0.5"></div>
+                    </div>
+                    <button id="db-start-btn" onclick="startDatabase()" class="bg-emory-medium-blue hover:bg-emory-dark-blue text-white text-sm font-medium px-4 py-1.5 rounded-lg transition-colors flex-shrink-0">
+                        Start Database
+                    </button>
+                </div>
+            </div>
+        </div>
+
         <!-- Page Content -->
         <main class="flex-1 px-6 py-6 fade-in">
             {% block content %}{% endblock %}
@@ -393,6 +409,75 @@
 
         // Check on page load
         checkTasks();
+    })();
+
+    /* ── Database offline detection + start button ──────────────── */
+    (function() {
+        var dbBanner = document.getElementById('db-banner');
+        var dbDetail = document.getElementById('db-banner-detail');
+        var dbBtn = document.getElementById('db-start-btn');
+        if (!dbBanner) return;
+
+        fetch('/api/admin/db-status').then(function(r) { return r.json(); }).then(function(data) {
+            if (data.status !== 'online') {
+                dbBanner.classList.remove('hidden');
+            }
+        }).catch(function() {
+            dbBanner.classList.remove('hidden');
+            if (dbDetail) dbDetail.textContent = 'Could not reach the application server.';
+        });
+
+        window.startDatabase = function() {
+            dbBtn.disabled = true;
+            dbBtn.textContent = 'Starting...';
+            dbBtn.classList.add('opacity-60');
+            if (dbDetail) dbDetail.textContent = 'Sending start command to Azure...';
+
+            fetch('/api/admin/start-database', { method: 'POST' })
+                .then(function(r) { return r.json(); })
+                .then(function(data) {
+                    if (data.status === 'success') {
+                        dbBtn.textContent = 'Started!';
+                        if (dbDetail) dbDetail.textContent = data.message || 'Server is starting. Refresh in 1-2 minutes.';
+                        setTimeout(function() {
+                            if (dbDetail) dbDetail.textContent = 'Checking if database is ready...';
+                            pollDbReady(0);
+                        }, 30000);
+                    } else {
+                        dbBtn.textContent = 'Retry';
+                        dbBtn.disabled = false;
+                        dbBtn.classList.remove('opacity-60');
+                        if (dbDetail) dbDetail.textContent = data.error || 'Start failed. Try again.';
+                    }
+                })
+                .catch(function() {
+                    dbBtn.textContent = 'Retry';
+                    dbBtn.disabled = false;
+                    dbBtn.classList.remove('opacity-60');
+                    if (dbDetail) dbDetail.textContent = 'Request failed. Try again.';
+                });
+        };
+
+        function pollDbReady(attempt) {
+            if (attempt > 10) {
+                if (dbDetail) dbDetail.textContent = 'Still starting — try refreshing the page.';
+                dbBtn.textContent = 'Refresh Page';
+                dbBtn.disabled = false;
+                dbBtn.classList.remove('opacity-60');
+                dbBtn.onclick = function() { location.reload(); };
+                return;
+            }
+            fetch('/api/admin/db-status').then(function(r) { return r.json(); }).then(function(data) {
+                if (data.status === 'online') {
+                    dbBanner.classList.add('hidden');
+                    location.reload();
+                } else {
+                    setTimeout(function() { pollDbReady(attempt + 1); }, 15000);
+                }
+            }).catch(function() {
+                setTimeout(function() { pollDbReady(attempt + 1); }, 15000);
+            });
+        }
     })();
     </script>
 

@@ -72,34 +72,9 @@ _AUTH_WHITELIST = {
 }
 
 # ---------------------------------------------------------------------------
-# Role-based authorization
-# ---------------------------------------------------------------------------
-# Currently single-user (admin only).  When multi-user auth is added, assign
-# roles during login and protect sensitive routes with @require_role().
-VALID_ROLES = {'admin', 'reviewer', 'readonly'}
-
-
-def require_role(*roles):
-    """Decorator: restrict a route to users whose session role is in *roles*.
-
-    Usage:
-        @app.route('/admin/settings')
-        @require_role('admin')
-        def admin_settings(): ...
-    """
-    from functools import wraps
-
-    def decorator(fn):
-        @wraps(fn)
-        def wrapper(*args, **kwargs):
-            user_role = session.get('role', 'readonly')
-            if user_role not in roles:
-                if request.path.startswith('/api/'):
-                    return jsonify({'error': 'Insufficient permissions'}), 403
-                return '<h1>403 — Forbidden</h1>', 403
-            return fn(*args, **kwargs)
-        return wrapper
-    return decorator
+# Role-based authorization — defined in extensions.py, imported here for
+# backward compatibility with any code that references app.require_role.
+from extensions import require_role, VALID_ROLES  # noqa: F401
 
 
 @app.before_request

@@ -29,8 +29,6 @@ logger = logging.getLogger(__name__)
 
 testing_bp = Blueprint('testing', __name__)
 
-csrf.exempt(testing_bp)
-
 
 @testing_bp.route('/test')
 def test():
@@ -244,6 +242,7 @@ def cleanup_test_endpoint():
 
 
 @testing_bp.route('/api/test/upload-files', methods=['POST'])
+@csrf.exempt
 def upload_test_files():
     """
     Upload real files from the test page for agent evaluation.

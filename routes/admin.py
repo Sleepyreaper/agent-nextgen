@@ -10,7 +10,7 @@ import time
 from flask import Blueprint, flash, jsonify, render_template, request
 
 from extensions import (
-    ArielQAAgent, limiter, run_async,
+    ArielQAAgent, limiter, require_role, run_async,
     refresh_foundry_dataset_async,
 )
 from src.config import config
@@ -112,9 +112,10 @@ def background_task_status():
 
 
 @admin_bp.route('/debug/dataset')
+@require_role('admin')
 def debug_dataset():
     """Debug view: show raw student_summary and agent_results for recent applications."""
-    if os.getenv('WEBSITE_SITE_NAME'):
+    if os.getenv('WEBSITE_SITE_NAME') and not os.getenv('DEBUG_MODE'):
         return '<h1>404 — Page Not Found</h1>', 404
     try:
         applications_table = db.get_table_name("applications")
@@ -164,6 +165,7 @@ def debug_dataset():
 
 
 @admin_bp.route('/api/admin/reset', methods=['POST'])
+@require_role('admin')
 @limiter.limit("3 per minute")
 def admin_reset():
     """One-click database reset."""
@@ -226,6 +228,7 @@ def student_counts():
 
 
 @admin_bp.route('/admin/cleanup-test-data', methods=['POST'])
+@require_role('admin')
 def admin_cleanup_test_data():
     """Clean up contaminated test data records."""
     try:
@@ -294,6 +297,7 @@ def admin_cleanup_test_data():
 
 
 @admin_bp.route('/api/admin/retention-cleanup', methods=['POST'])
+@require_role('admin')
 def admin_retention_cleanup():
     """Purge old telemetry, audit logs, and test records beyond retention window."""
     try:
@@ -340,25 +344,54 @@ def ask_question(application_id):
 # ---------------------------------------------------------------------------
 # Daily retention cleanup scheduler
 # ---------------------------------------------------------------------------
+# Uses a PostgreSQL advisory lock to prevent duplicate runs across gunicorn
+# workers. The lock is session-level (released when the connection returns to
+# the pool), so only one worker runs cleanup per day.
+_RETENTION_ADVISORY_LOCK_ID = 8675309  # arbitrary unique int
+
 def _daily_retention_cleanup():
-    """Run retention cleanup if it hasn't been run today."""
-    lock_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'logs', '.retention_last_run')
-    today = time.strftime('%Y-%m-%d')
+    """Run retention cleanup if it hasn't been run today.
+
+    Uses pg_try_advisory_lock to ensure only one worker runs cleanup,
+    even with multiple gunicorn workers.
+    """
     try:
-        if os.path.exists(lock_path):
-            with open(lock_path) as f:
-                if f.read().strip() == today:
-                    return
-    except OSError:
-        pass
-    try:
+        # Try to acquire advisory lock — returns immediately, no blocking
+        rows = db.execute_query(
+            "SELECT pg_try_advisory_lock(%s) AS acquired",
+            (_RETENTION_ADVISORY_LOCK_ID,)
+        )
+        if not rows or not rows[0].get('acquired'):
+            return  # Another worker has the lock
+
+        # Check if we already ran today (using DB time, not filesystem)
+        today_check = db.execute_query(
+            "SELECT EXISTS(SELECT 1 FROM telemetry_events "
+            "WHERE event_name = 'retention_cleanup' "
+            "AND created_at >= CURRENT_DATE) AS ran_today"
+        )
+        if today_check and today_check[0].get('ran_today'):
+            # Release lock and skip
+            db.execute_query("SELECT pg_advisory_unlock(%s)", (_RETENTION_ADVISORY_LOCK_ID,))
+            return
+
         retention_days = int(os.getenv('RETENTION_DAYS', '730'))
         retention_days = max(90, min(retention_days, 3650))
         result = db.cleanup_old_records(retention_days=retention_days)
         logger.info(f"Daily retention cleanup completed: {result}")
-        os.makedirs(os.path.dirname(lock_path), exist_ok=True)
-        with open(lock_path, 'w') as f:
-            f.write(today)
+
+        # Record that we ran (so other workers/restarts skip today)
+        try:
+            db.execute_non_query(
+                "INSERT INTO telemetry_events (event_name, event_data, created_at) "
+                "VALUES ('retention_cleanup', %s, NOW())",
+                (json.dumps(result, default=str),)
+            )
+        except Exception:
+            pass  # telemetry_events table may not exist yet
+
+        # Release advisory lock
+        db.execute_query("SELECT pg_advisory_unlock(%s)", (_RETENTION_ADVISORY_LOCK_ID,))
     except Exception as e:
         logger.debug(f"Daily retention cleanup skipped: {e}")
 
@@ -377,3 +410,72 @@ def start_retention_scheduler():
         _retention_timer = threading.Timer(60, _schedule_retention)
         _retention_timer.daemon = True
         _retention_timer.start()
+
+
+# ---------------------------------------------------------------------------
+# Database Server Management — Start stopped PostgreSQL Flexible Server
+# ---------------------------------------------------------------------------
+@admin_bp.route('/api/admin/db-status', methods=['GET'])
+def db_status():
+    """Check if the database is reachable."""
+    try:
+        db.execute_query("SELECT 1")
+        return jsonify({'status': 'online'})
+    except Exception as e:
+        return jsonify({'status': 'offline', 'error': str(e)}), 503
+
+
+@admin_bp.route('/api/admin/start-database', methods=['POST'])
+@require_role('admin')
+@limiter.limit("3 per hour")
+def start_database():
+    """Start the Azure PostgreSQL Flexible Server if it was stopped (nightly policy).
+
+    Uses Azure REST API with managed identity to issue the start command.
+    """
+    import requests as _requests
+
+    server_name = os.getenv('POSTGRES_SERVER_NAME', 'nextgenagentpostgres')
+    resource_group = os.getenv('AZURE_RESOURCE_GROUP', 'NextGen_Agents')
+    subscription_id = os.getenv('AZURE_SUBSCRIPTION_ID', '')
+
+    if not subscription_id:
+        # Try to get from config
+        subscription_id = getattr(config, 'azure_subscription_id', '')
+    if not subscription_id:
+        return jsonify({'status': 'error', 'error': 'AZURE_SUBSCRIPTION_ID not configured'}), 500
+
+    try:
+        # Get managed identity token for ARM
+        from azure.identity import DefaultAzureCredential
+        credential = DefaultAzureCredential()
+        token = credential.get_token("https://management.azure.com/.default")
+
+        # Call Azure REST API to start the server
+        url = (
+            f"https://management.azure.com/subscriptions/{subscription_id}"
+            f"/resourceGroups/{resource_group}"
+            f"/providers/Microsoft.DBforPostgreSQL/flexibleServers/{server_name}"
+            f"/start?api-version=2022-12-01"
+        )
+        resp = _requests.post(url, headers={
+            'Authorization': f'Bearer {token.token}',
+            'Content-Type': 'application/json',
+        }, timeout=30)
+
+        if resp.status_code in (200, 202):
+            logger.info(f"Database start initiated: {server_name} (HTTP {resp.status_code})")
+            return jsonify({
+                'status': 'success',
+                'message': f'Database server {server_name} is starting. It may take 1-2 minutes to become available.',
+            })
+        else:
+            logger.error(f"Database start failed: HTTP {resp.status_code} — {resp.text[:200]}")
+            return jsonify({
+                'status': 'error',
+                'error': f'Azure returned HTTP {resp.status_code}',
+            }), resp.status_code
+
+    except Exception as e:
+        logger.error(f"Database start error: {e}", exc_info=True)
+        return jsonify({'status': 'error', 'error': 'Failed to start database server'}), 500

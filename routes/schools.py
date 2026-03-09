@@ -24,10 +24,6 @@ logger = logging.getLogger(__name__)
 
 schools_bp = Blueprint('schools', __name__)
 
-# Exempt schools blueprint from CSRF — file uploads via FormData
-# don't reliably carry the X-CSRFToken header through the fetch interceptor
-csrf.exempt(schools_bp)
-
 
 @schools_bp.route('/schools', methods=['GET'])
 def schools_dashboard():
@@ -1288,12 +1284,13 @@ def bulk_seed_schools():
 
 
 @schools_bp.route('/api/schools/import-csv', methods=['POST'])
+@csrf.exempt
 def import_schools_csv():
     """Import schools from a CSV file (GA high-school SES data).
 
     Accepts either:
       - A file upload (multipart/form-data, field name 'file')
-      - A JSON body with {"csv_path": "/path/to/file.csv"}
+      - A JSON body with {"file_data": "base64-encoded-csv-content"}
 
     Query params:
       - purge=true  (default true) — delete all existing school data first
@@ -1339,18 +1336,16 @@ def import_schools_csv():
                     logger.info(f"Base64 CSV decoded and saved to {csv_path} ({len(raw)} bytes)")
                 except Exception as e:
                     return jsonify({'status': 'error', 'error': f'Failed to decode base64 file_data: {e}'}), 400
-            else:
-                csv_path = data.get('csv_path')
 
         if not csv_path:
             return jsonify({
                 'status': 'error',
-                'error': 'Provide a CSV file upload (field "file"), JSON {"file_data": "base64..."}, or {"csv_path": "..."}'
+                'error': 'Provide a CSV file upload (field "file") or JSON {"file_data": "base64..."}'
             }), 400
 
         # Validate file exists
         if not os.path.isfile(csv_path):
-            return jsonify({'status': 'error', 'error': f'File not found: {csv_path}'}), 404
+            return jsonify({'status': 'error', 'error': 'Uploaded file could not be processed'}), 404
 
         # For dry runs, run synchronously (fast)
         if dry_run:
@@ -1362,7 +1357,6 @@ def import_schools_csv():
         state = {
             'status': 'running',
             'started_at': datetime.now(timezone.utc).isoformat(),
-            'csv_path': csv_path,
             'purge': purge,
             'processed': 0,
             'total': 0,
@@ -1469,6 +1463,7 @@ def import_schools_csv_progress():
 
 
 @schools_bp.route('/api/schools/import-supplemental', methods=['POST'])
+@csrf.exempt
 def import_supplemental_school_csv():
     """Import supplemental academic data (AP, honors, graduation, etc.) and merge
     onto existing schools by NCES ID.

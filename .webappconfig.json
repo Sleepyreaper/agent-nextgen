@@ -9,10 +9,10 @@
   "startup": {
     "type": "wsgi",
     "wsgi_app": "wsgi:app",
-    "workers": 2,
-    "worker_class": "gthread",
-    "threads": 4,
-    "timeout": 600,
+    "note": "Actual values are in gunicorn.conf.py (single source of truth), overridable via env vars",
+    "workers": "env GUNICORN_WORKERS (default: 4)",
+    "threads": "env GUNICORN_THREADS (default: 4)",
+    "timeout": "env GUNICORN_TIMEOUT (default: 120)",
     "access_log": true,
     "error_log": true
   },

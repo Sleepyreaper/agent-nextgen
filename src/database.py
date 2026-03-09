@@ -766,12 +766,11 @@ class Database:
                 schema_name = schema_row[0] if schema_row else 'public'
                 logger.info(f"Found rapunzel_grades in schema: {schema_name}")
                 
-                cursor.execute(f"""
-                    SELECT column_name
-                    FROM information_schema.columns
-                    WHERE table_name = 'rapunzel_grades'
-                    AND table_schema = '{schema_name}'
-                """)
+                cursor.execute(
+                    "SELECT column_name FROM information_schema.columns "
+                    "WHERE table_name = %s AND table_schema = %s",
+                    ('rapunzel_grades', schema_name)
+                )
                 rapunzel_columns = set(row[0] for row in cursor.fetchall())
                 logger.info(f"Rapunzel columns found: {rapunzel_columns}")
                 
@@ -781,15 +780,31 @@ class Database:
                     'school_context_used': 'BOOLEAN DEFAULT FALSE'
                 }
                 
+                # Allowlist for valid column type expressions
+                _VALID_COL_TYPES = {'NUMERIC(5,2)', 'BOOLEAN DEFAULT FALSE'}
+                
                 for col_name, col_type in rapunzel_required.items():
                     if col_name not in rapunzel_columns:
+                        if col_type not in _VALID_COL_TYPES:
+                            logger.error(f"Skipping unknown column type: {col_type}")
+                            continue
                         try:
-                            # Use schema-qualified name to be explicit
-                            cursor.execute(f"ALTER TABLE \"{schema_name}\".\"rapunzel_grades\" ADD COLUMN \"{col_name}\" {col_type}")
+                            from psycopg import sql as psql
+                            # Use sql.Identifier for safe DDL composition
+                            stmt = psql.SQL("ALTER TABLE {}.{} ADD COLUMN {} " + col_type).format(
+                                psql.Identifier(schema_name),
+                                psql.Identifier('rapunzel_grades'),
+                                psql.Identifier(col_name),
+                            )
+                            cursor.execute(stmt)
                             conn.commit()
                             logger.info(f"✓ Added {col_name} column to rapunzel_grades")
                             # Re-check immediately after adding
-                            cursor.execute(f"SELECT column_name FROM information_schema.columns WHERE table_name = 'rapunzel_grades' AND table_schema = '{schema_name}' AND column_name = '{col_name}'")
+                            cursor.execute(
+                                "SELECT column_name FROM information_schema.columns "
+                                "WHERE table_name = %s AND table_schema = %s AND column_name = %s",
+                                ('rapunzel_grades', schema_name, col_name)
+                            )
                             if cursor.fetchone():
                                 logger.info(f"✓ VERIFIED: {col_name} now exists in rapunzel_grades")
                             else:
@@ -802,7 +817,13 @@ class Database:
                 
                 # Create index on contextual_rigor_index for query performance
                 try:
-                    cursor.execute(f"CREATE INDEX IF NOT EXISTS idx_rapunzel_rigor ON \"{schema_name}\".\"rapunzel_grades\"(\"contextual_rigor_index\")")
+                    from psycopg import sql as psql
+                    idx_stmt = psql.SQL("CREATE INDEX IF NOT EXISTS idx_rapunzel_rigor ON {}.{}({})").format(
+                        psql.Identifier(schema_name),
+                        psql.Identifier('rapunzel_grades'),
+                        psql.Identifier('contextual_rigor_index'),
+                    )
+                    cursor.execute(idx_stmt)
                     logger.info("✓ Created index on rapunzel_grades.contextual_rigor_index")
                 except Exception as idx_err:
                     logger.warning(f"Could not create rapunzel rigor index: {idx_err}")
@@ -1240,15 +1261,22 @@ class Database:
                         conn.rollback()
 
                     # Widen narrow VARCHAR columns that overflow with real-world data
-                    for col_name, new_type in [('status', 'TEXT'), ('preliminary_score', 'TEXT')]:
+                    _WIDEN_ALLOWED = {'status': 'TEXT', 'preliminary_score': 'TEXT'}
+                    for col_name, new_type in _WIDEN_ALLOWED.items():
                         try:
-                            cursor.execute(f"""
-                                SELECT data_type FROM information_schema.columns
-                                WHERE table_name = 'historical_scores' AND column_name = '{col_name}'
-                            """)
+                            cursor.execute(
+                                "SELECT data_type FROM information_schema.columns "
+                                "WHERE table_name = %s AND column_name = %s",
+                                ('historical_scores', col_name)
+                            )
                             row_info = cursor.fetchone()
                             if row_info and row_info[0] == 'character varying':
-                                cursor.execute(f"ALTER TABLE historical_scores ALTER COLUMN {col_name} TYPE {new_type}")
+                                from psycopg import sql as psql
+                                stmt = psql.SQL("ALTER TABLE historical_scores ALTER COLUMN {} TYPE {}").format(
+                                    psql.Identifier(col_name),
+                                    psql.SQL(new_type),
+                                )
+                                cursor.execute(stmt)
                                 conn.commit()
                                 logger.info(f"✓ Widened historical_scores.{col_name} to {new_type}")
                         except Exception as widen_err:
@@ -2014,6 +2042,7 @@ class Database:
         targets = [
             ("telemetry_events", "created_at"),
             ("agent_audit_logs", "created_at"),
+            ("agent_evaluation_results", "created_at"),
             ("agent_interactions", "timestamp"),
             ("file_upload_audit", "upload_date"),
             ("training_feedback", "created_at"),

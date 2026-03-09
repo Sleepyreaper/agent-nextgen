@@ -44,7 +44,7 @@ class DocumentProcessor:
         try:
             import fitz  # PyMuPDF
         except ImportError:
-            # Fallback to PyPDF2 if PyMuPDF is not installed
+            # Fallback to pypdf if PyMuPDF is not installed
             return DocumentProcessor._extract_text_from_pdf_legacy(file_path)
         
         try:
@@ -157,17 +157,17 @@ class DocumentProcessor:
             return "\n\n".join(text_parts)
         except Exception as e:
             logger.error(f"Error extracting text from PDF with PyMuPDF: {e}")
-            # Fallback to legacy PyPDF2
+            # Fallback to legacy pypdf
             return DocumentProcessor._extract_text_from_pdf_legacy(file_path)
     
     @staticmethod
     def _extract_text_from_pdf_legacy(file_path: str) -> str:
-        """Legacy PDF extraction using PyPDF2 (fallback)."""
-        import PyPDF2
+        """Legacy PDF extraction using pypdf (fallback)."""
+        import pypdf
         try:
             text = []
             with open(file_path, 'rb') as file:
-                pdf_reader = PyPDF2.PdfReader(file)
+                pdf_reader = pypdf.PdfReader(file)
                 total_pages = len(pdf_reader.pages)
                 for i, page in enumerate(pdf_reader.pages, start=1):
                     page_text = page.extract_text()

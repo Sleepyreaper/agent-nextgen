@@ -235,12 +235,6 @@ class Config:
         self.postgres_username: str = self._get_secret("postgres-username", "POSTGRES_USER")
         self.postgres_password: str = self._get_secret("postgres-password", "POSTGRES_PASSWORD")
         
-        # Legacy: Azure SQL Database configuration (deprecated - no longer used)
-        self.sql_server: str = self._get_secret("sql-server", "SQL_SERVER")
-        self.sql_database: str = self._get_secret("sql-database", "SQL_DATABASE")
-        self.sql_username: str = self._get_secret("sql-username", "SQL_USERNAME")
-        self.sql_password: str = self._get_secret("sql-password", "SQL_PASSWORD")
-        
         # Azure Storage configuration
         # NOTE: Only account name is needed — runtime auth uses Entra ID (DefaultAzureCredential).
         # Key-based access is disabled on the storage account.
