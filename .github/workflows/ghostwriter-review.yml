@@ -1,0 +1,250 @@
+name: "🌙 Ghostwriter Graveyard Shift"
+
+# Runs nightly at 2:00 AM Eastern (07:00 UTC)
+# Reviews one agent file per night, cycling through all agents
+on:
+  schedule:
+    - cron: '0 7 * * *'
+  workflow_dispatch:
+    inputs:
+      target_file:
+        description: 'Specific file to review (leave blank for auto-cycle)'
+        required: false
+        type: string
+      review_scope:
+        description: 'Review scope'
+        required: false
+        default: 'full'
+        type: choice
+        options:
+          - full
+          - prompts-only
+          - python-only
+          - security-only
+
+permissions:
+  id-token: write
+  contents: read
+  issues: write
+
+env:
+  REVIEW_LABEL: ghostwriter-review
+  KEY_VAULT_NAME: ${{ secrets.AZURE_KEY_VAULT_NAME }}
+
+jobs:
+  ghostwriter-review:
+    runs-on: ubuntu-latest
+    environment: staging
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.11'
+
+    - name: Install dependencies
+      run: pip install openai tiktoken
+
+    - name: Azure Login
+      uses: azure/login@v2
+      with:
+        client-id: ${{ secrets.AZURE_CLIENT_ID }}
+        tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+        subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+    - name: Fetch secrets from Key Vault
+      id: secrets
+      run: |
+        ENDPOINT=$(az keyvault secret show --vault-name "$KEY_VAULT_NAME" --name azure-openai-endpoint --query value -o tsv)
+        API_KEY=$(az keyvault secret show --vault-name "$KEY_VAULT_NAME" --name azure-openai-api-key --query value -o tsv)
+        MODEL=$(az keyvault secret show --vault-name "$KEY_VAULT_NAME" --name model-tier-premium --query value -o tsv 2>/dev/null || echo "gpt-4.1")
+        echo "::add-mask::$API_KEY"
+        echo "AZURE_OPENAI_ENDPOINT=$ENDPOINT" >> "$GITHUB_ENV"
+        echo "AZURE_OPENAI_API_KEY=$API_KEY" >> "$GITHUB_ENV"
+        echo "REVIEW_MODEL=$MODEL" >> "$GITHUB_ENV"
+
+    - name: Select target file
+      id: target
+      run: |
+        if [ -n "${{ inputs.target_file }}" ]; then
+          echo "file=${{ inputs.target_file }}" >> "$GITHUB_OUTPUT"
+          echo "Selected manual target: ${{ inputs.target_file }}"
+        else
+          # Auto-cycle: pick file based on day-of-year modulo file count
+          AGENT_FILES=(
+            src/agents/rapunzel_grade_reader.py
+            src/agents/tiana_application_reader.py
+            src/agents/mulan_recommendation_reader.py
+            src/agents/moana_school_context.py
+            src/agents/merlin_student_evaluator.py
+            src/agents/gaston_evaluator.py
+            src/agents/belle_document_analyzer.py
+            src/agents/milo_data_scientist.py
+            src/agents/naveen_school_data_scientist.py
+            src/agents/ariel_qa_agent.py
+            src/agents/mirabel_video_analyzer.py
+            src/agents/smee_orchestrator.py
+            src/agents/aurora_agent.py
+            src/agents/pocahontas_cohort_analyst.py
+            src/agents/bashful_agent.py
+            src/agents/base_agent.py
+            src/database.py
+            extensions.py
+            routes/schools.py
+            routes/admin.py
+            routes/testing.py
+            routes/training.py
+            routes/upload.py
+            src/config.py
+            src/document_processor.py
+          )
+          DAY=$(date +%j)
+          IDX=$(( DAY % ${#AGENT_FILES[@]} ))
+          TARGET="${AGENT_FILES[$IDX]}"
+          echo "file=$TARGET" >> "$GITHUB_OUTPUT"
+          echo "Auto-selected (day $DAY, index $IDX): $TARGET"
+        fi
+
+    - name: Run Ghostwriter review
+      id: review
+      run: |
+        python3 << 'GHOSTWRITER_EOF'
+        import os, json, sys
+        from openai import AzureOpenAI
+
+        target_file = "${{ steps.target.outputs.file }}"
+        scope = "${{ inputs.review_scope || 'full' }}"
+
+        # Read the target file
+        with open(target_file, "r") as f:
+            code = f.read()
+
+        line_count = len(code.splitlines())
+        print(f"📄 Reviewing {target_file} ({line_count} lines)")
+
+        # Scope-specific instructions
+        scope_instructions = {
+            "full": "Perform a FULL review: Python quality, prompt engineering, security, architecture, error handling, testability, and observability.",
+            "prompts-only": "Focus ONLY on AI prompt engineering: system prompts, user prompts, output format enforcement, guardrails, token efficiency, bias prevention, and failure handling.",
+            "python-only": "Focus ONLY on Python code quality: PEP 8, type hints, error handling, async patterns, performance, idioms, and maintainability.",
+            "security-only": "Focus ONLY on security: injection vectors, input validation, secrets handling, CSRF, auth checks, SQL safety, and OWASP top 10.",
+        }
+
+        system_prompt = f"""You are Ghostwriter — a senior staff Python engineer with 20+ years experience, working graveyard shift on the Agent NextGen project. You are performing your nightly autonomous code review.
+
+PROJECT CONTEXT:
+- Flask + Blueprint architecture for an AI scholarship evaluation platform
+- 16 Disney-themed AI agents backed by Azure AI Foundry (GPT-4.1, GPT-5-mini, GPT-4o)
+- Agents extend BaseAgent, implement async process(), use _create_chat_completion() and two_step_query_format()
+- Model tiers: Premium (gpt-4.1), Workhorse (4.1-mini), Merlin (GPT-5-mini), Lightweight (nano), Vision (4o)
+- PostgreSQL via psycopg3, Azure Blob Storage via Entra ID, Key Vault for secrets
+- OpenTelemetry instrumentation, Application Insights telemetry
+
+REVIEW SCOPE: {scope_instructions[scope]}
+
+REVIEW FORMAT — produce EXACTLY this structure:
+
+# 🌙 Ghostwriter Review: [filename]
+
+## Summary
+2-3 sentence overview of overall quality and most critical finding.
+
+## 🔴 Critical (must fix)
+Numbered list. Each item: specific line/function, what's wrong, exact fix. If none, say "None found."
+
+## 🟡 Important (should fix)
+Numbered list. Same format. If none, say "None found."
+
+## 🔵 Suggestions (nice to have)
+Numbered list. Same format. If none, say "None found."
+
+## 📊 Metrics
+- Lines of code: [count]
+- Estimated complexity: [Low/Medium/High/Very High]
+- Test coverage assessment: [None/Low/Medium/Good]
+- Prompt token efficiency: [if applicable — Lean/Moderate/Bloated]
+
+## Grade: [A/B/C/D/F]
+One sentence justification.
+
+RULES:
+- Be specific. Reference exact function names and line numbers.
+- Provide the actual fix, not just "consider improving."
+- Maximum 15 findings total across all categories.
+- If the code is genuinely good, say so — don't manufacture issues.
+- Don't suggest adding docstrings to code you didn't write unless they're actively misleading.
+"""
+
+        client = AzureOpenAI(
+            azure_endpoint=os.environ["AZURE_OPENAI_ENDPOINT"],
+            api_key=os.environ["AZURE_OPENAI_API_KEY"],
+            api_version="2025-04-14",
+        )
+
+        print(f"🤖 Sending to {os.environ.get('REVIEW_MODEL', 'gpt-4.1')}...")
+        response = client.chat.completions.create(
+            model=os.environ.get("REVIEW_MODEL", "gpt-4.1"),
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": f"Review this file: `{target_file}`\n\n```python\n{code}\n```"},
+            ],
+            max_tokens=4000,
+            temperature=0.1,
+        )
+
+        review_text = response.choices[0].message.content
+        print(f"✅ Review complete ({response.usage.total_tokens} tokens)")
+
+        # Write review to file for the issue creation step
+        with open("ghostwriter_review.md", "w") as f:
+            f.write(review_text)
+
+        # Extract grade for the issue title
+        import re
+        grade_match = re.search(r"## Grade:\s*([A-F][+-]?)", review_text)
+        grade = grade_match.group(1) if grade_match else "?"
+        with open("review_grade.txt", "w") as f:
+            f.write(grade)
+
+        print(f"\n{'='*60}")
+        print(review_text)
+        print(f"{'='*60}")
+        GHOSTWRITER_EOF
+
+    - name: Create GitHub Issue with review
+      if: success()
+      env:
+        GH_TOKEN: ${{ github.token }}
+      run: |
+        TARGET="${{ steps.target.outputs.file }}"
+        FILENAME=$(basename "$TARGET")
+        GRADE=$(cat review_grade.txt 2>/dev/null || echo "?")
+        DATE=$(date +%Y-%m-%d)
+
+        # Check if an open review issue already exists for this file
+        EXISTING=$(gh issue list --label "$REVIEW_LABEL" --state open --json title -q ".[].title" | grep -c "$FILENAME" || true)
+        if [ "$EXISTING" -gt "0" ]; then
+          echo "⚠️ Open review issue already exists for $FILENAME — skipping creation"
+          exit 0
+        fi
+
+        TITLE="🌙 Ghostwriter Review: ${FILENAME} — Grade: ${GRADE} ($DATE)"
+        BODY=$(cat ghostwriter_review.md)
+
+        # Append metadata footer
+        BODY="${BODY}
+
+---
+<sub>🤖 Automated review by Ghostwriter (graveyard shift) | File: \`${TARGET}\` | Model: \`${REVIEW_MODEL}\` | $(date -u '+%Y-%m-%d %H:%M UTC')</sub>"
+
+        gh issue create \
+          --title "$TITLE" \
+          --body "$BODY" \
+          --label "$REVIEW_LABEL"
+
+        echo "✅ Issue created: $TITLE"
