@@ -1,14 +1,14 @@
 name: "🌙 Ghostwriter Graveyard Shift"
 
 # Runs nightly at 2:00 AM Eastern (07:00 UTC)
-# Reviews one agent file per night, cycling through all agents
+# Reviews 3 files per night — full cycle every ~9 days (25 files / 3 per night)
 on:
   schedule:
     - cron: '0 7 * * *'
   workflow_dispatch:
     inputs:
       target_file:
-        description: 'Specific file to review (leave blank for auto-cycle)'
+        description: 'Specific file to review (leave blank for auto-cycle of 3)'
         required: false
         type: string
       review_scope:
@@ -31,16 +31,84 @@ env:
   REVIEW_LABEL: ghostwriter-review
   KEY_VAULT_NAME: ${{ secrets.AZURE_KEY_VAULT_NAME }}
 
+  # ── Master file list (25 files, ~9-night full cycle at 3/night) ──
+  # Edit this list to add/remove files from the rotation.
+  GHOSTWRITER_FILES: >-
+    src/agents/rapunzel_grade_reader.py
+    src/agents/tiana_application_reader.py
+    src/agents/mulan_recommendation_reader.py
+    src/agents/moana_school_context.py
+    src/agents/merlin_student_evaluator.py
+    src/agents/gaston_evaluator.py
+    src/agents/belle_document_analyzer.py
+    src/agents/milo_data_scientist.py
+    src/agents/naveen_school_data_scientist.py
+    src/agents/ariel_qa_agent.py
+    src/agents/mirabel_video_analyzer.py
+    src/agents/smee_orchestrator.py
+    src/agents/aurora_agent.py
+    src/agents/pocahontas_cohort_analyst.py
+    src/agents/bashful_agent.py
+    src/agents/base_agent.py
+    src/database.py
+    extensions.py
+    routes/schools.py
+    routes/admin.py
+    routes/testing.py
+    routes/training.py
+    routes/upload.py
+    src/config.py
+    src/document_processor.py
+
+  FILES_PER_NIGHT: '3'
+
+# ── Build the nightly batch, then fan out via matrix ──────────────
 jobs:
+  plan:
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.pick.outputs.matrix }}
+    steps:
+    - name: Pick tonight's files
+      id: pick
+      run: |
+        if [ -n "${{ inputs.target_file }}" ]; then
+          # Manual override — single file
+          echo 'matrix={"file":["${{ inputs.target_file }}"]}' >> "$GITHUB_OUTPUT"
+          echo "Manual target: ${{ inputs.target_file }}"
+        else
+          FILES=($GHOSTWRITER_FILES)
+          TOTAL=${#FILES[@]}
+          PER_NIGHT=$FILES_PER_NIGHT
+          DAY=$(date +%j)
+          # Starting index cycles through the full list
+          START=$(( (DAY * PER_NIGHT) % TOTAL ))
+
+          BATCH="["
+          for i in $(seq 0 $((PER_NIGHT - 1))); do
+            IDX=$(( (START + i) % TOTAL ))
+            [ $i -gt 0 ] && BATCH+=","
+            BATCH+="\"${FILES[$IDX]}\""
+            echo "  File $((i+1)): ${FILES[$IDX]}"
+          done
+          BATCH+="]"
+
+          echo "matrix={\"file\":$BATCH}" >> "$GITHUB_OUTPUT"
+          echo "Tonight's batch ($PER_NIGHT files starting at index $START of $TOTAL):"
+        fi
+
   ghostwriter-review:
+    needs: plan
     runs-on: ubuntu-latest
     environment: staging
+    strategy:
+      matrix: ${{ fromJson(needs.plan.outputs.matrix) }}
+      max-parallel: 1   # Sequential to avoid OpenAI rate limits
+      fail-fast: false   # Review remaining files even if one fails
 
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
-      with:
-        fetch-depth: 0
 
     - name: Set up Python
       uses: actions/setup-python@v5
@@ -48,7 +116,7 @@ jobs:
         python-version: '3.11'
 
     - name: Install dependencies
-      run: pip install openai tiktoken
+      run: pip install openai
 
     - name: Azure Login
       uses: azure/login@v2
@@ -58,7 +126,6 @@ jobs:
         subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
     - name: Fetch secrets from Key Vault
-      id: secrets
       run: |
         ENDPOINT=$(az keyvault secret show --vault-name "$KEY_VAULT_NAME" --name azure-openai-endpoint --query value -o tsv)
         API_KEY=$(az keyvault secret show --vault-name "$KEY_VAULT_NAME" --name azure-openai-api-key --query value -o tsv)
@@ -68,56 +135,13 @@ jobs:
         echo "AZURE_OPENAI_API_KEY=$API_KEY" >> "$GITHUB_ENV"
         echo "REVIEW_MODEL=$MODEL" >> "$GITHUB_ENV"
 
-    - name: Select target file
-      id: target
-      run: |
-        if [ -n "${{ inputs.target_file }}" ]; then
-          echo "file=${{ inputs.target_file }}" >> "$GITHUB_OUTPUT"
-          echo "Selected manual target: ${{ inputs.target_file }}"
-        else
-          # Auto-cycle: pick file based on day-of-year modulo file count
-          AGENT_FILES=(
-            src/agents/rapunzel_grade_reader.py
-            src/agents/tiana_application_reader.py
-            src/agents/mulan_recommendation_reader.py
-            src/agents/moana_school_context.py
-            src/agents/merlin_student_evaluator.py
-            src/agents/gaston_evaluator.py
-            src/agents/belle_document_analyzer.py
-            src/agents/milo_data_scientist.py
-            src/agents/naveen_school_data_scientist.py
-            src/agents/ariel_qa_agent.py
-            src/agents/mirabel_video_analyzer.py
-            src/agents/smee_orchestrator.py
-            src/agents/aurora_agent.py
-            src/agents/pocahontas_cohort_analyst.py
-            src/agents/bashful_agent.py
-            src/agents/base_agent.py
-            src/database.py
-            extensions.py
-            routes/schools.py
-            routes/admin.py
-            routes/testing.py
-            routes/training.py
-            routes/upload.py
-            src/config.py
-            src/document_processor.py
-          )
-          DAY=$(date +%j)
-          IDX=$(( DAY % ${#AGENT_FILES[@]} ))
-          TARGET="${AGENT_FILES[$IDX]}"
-          echo "file=$TARGET" >> "$GITHUB_OUTPUT"
-          echo "Auto-selected (day $DAY, index $IDX): $TARGET"
-        fi
-
     - name: Run Ghostwriter review
-      id: review
       run: |
         python3 << 'GHOSTWRITER_EOF'
         import os, json, sys
         from openai import AzureOpenAI
 
-        target_file = "${{ steps.target.outputs.file }}"
+        target_file = "${{ matrix.file }}"
         scope = "${{ inputs.review_scope || 'full' }}"
 
         # Read the target file
@@ -221,7 +245,7 @@ RULES:
       env:
         GH_TOKEN: ${{ github.token }}
       run: |
-        TARGET="${{ steps.target.outputs.file }}"
+        TARGET="${{ matrix.file }}"
         FILENAME=$(basename "$TARGET")
         GRADE=$(cat review_grade.txt 2>/dev/null || echo "?")
         DATE=$(date +%Y-%m-%d)
