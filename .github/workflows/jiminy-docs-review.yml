@@ -1,0 +1,231 @@
+name: "🦗 Jiminy Documentation Review"
+
+# Runs nightly at 3:00 AM Eastern (08:00 UTC), one hour after Ghostwriter
+# Reviews 2 documentation areas per night — full cycle every ~5 days
+on:
+  schedule:
+    - cron: '0 8 * * *'
+  workflow_dispatch:
+    inputs:
+      target_area:
+        description: 'Specific area to review (leave blank for auto-cycle)'
+        required: false
+        type: string
+
+permissions:
+  id-token: write
+  contents: read
+  issues: write
+
+env:
+  REVIEW_LABEL: jiminy-docs
+  KEY_VAULT_NAME: ${{ secrets.AZURE_KEY_VAULT_NAME }}
+
+  # Documentation areas to review (10 areas, 2/night = ~5-day cycle)
+  JIMINY_AREAS: >-
+    copilot-instructions
+    readme
+    agent-roster
+    architecture
+    deployment
+    security
+    api-reference
+    school-data
+    mission-alignment
+    onboarding
+
+  AREAS_PER_NIGHT: '2'
+
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.pick.outputs.matrix }}
+    steps:
+    - name: Pick tonight's areas
+      id: pick
+      run: |
+        if [ -n "${{ inputs.target_area }}" ]; then
+          echo 'matrix={"area":["${{ inputs.target_area }}"]}' >> "$GITHUB_OUTPUT"
+        else
+          AREAS=($JIMINY_AREAS)
+          TOTAL=${#AREAS[@]}
+          PER_NIGHT=$AREAS_PER_NIGHT
+          DAY=$(date +%j)
+          START=$(( (DAY * PER_NIGHT) % TOTAL ))
+          BATCH="["
+          for i in $(seq 0 $((PER_NIGHT - 1))); do
+            IDX=$(( (START + i) % TOTAL ))
+            [ $i -gt 0 ] && BATCH+=","
+            BATCH+="\"${AREAS[$IDX]}\""
+          done
+          BATCH+="]"
+          echo "matrix={\"area\":$BATCH}" >> "$GITHUB_OUTPUT"
+        fi
+
+  jiminy-review:
+    needs: plan
+    runs-on: ubuntu-latest
+    environment: staging
+    strategy:
+      matrix: ${{ fromJson(needs.plan.outputs.matrix) }}
+      max-parallel: 1
+      fail-fast: false
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.11'
+
+    - name: Install dependencies
+      run: pip install openai
+
+    - name: Azure Login
+      uses: azure/login@v2
+      with:
+        client-id: ${{ secrets.AZURE_CLIENT_ID }}
+        tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+        subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+    - name: Fetch secrets from Key Vault
+      run: |
+        ENDPOINT=$(az keyvault secret show --vault-name "$KEY_VAULT_NAME" --name azure-openai-endpoint --query value -o tsv)
+        API_KEY=$(az keyvault secret show --vault-name "$KEY_VAULT_NAME" --name azure-openai-api-key --query value -o tsv)
+        MODEL=$(az keyvault secret show --vault-name "$KEY_VAULT_NAME" --name model-tier-workhorse --query value -o tsv 2>/dev/null || echo "gpt-4.1-mini")
+        echo "::add-mask::$API_KEY"
+        echo "AZURE_OPENAI_ENDPOINT=$ENDPOINT" >> "$GITHUB_ENV"
+        echo "AZURE_OPENAI_API_KEY=$API_KEY" >> "$GITHUB_ENV"
+        echo "REVIEW_MODEL=$MODEL" >> "$GITHUB_ENV"
+
+    - name: Run Jiminy review
+      run: |
+        python3 << 'JIMINY_EOF'
+        import os, json, glob
+        from openai import AzureOpenAI
+
+        area = "${{ matrix.area }}"
+
+        # Map area to files to review
+        area_files = {
+            "copilot-instructions": [".github/copilot-instructions.md"],
+            "readme": ["README.md"],
+            "agent-roster": sorted(glob.glob(".github/agents/*.agent.md")),
+            "architecture": sorted(glob.glob("documents/architecture/*.md"))[:3],
+            "deployment": sorted(glob.glob("documents/deployment/*.md"))[:3],
+            "security": sorted(glob.glob("documents/security/*.md"))[:3],
+            "api-reference": ["routes/admin.py", "routes/schools.py", "routes/training.py"],
+            "school-data": ["documents/SCHOOL_ENRICHMENT_ARCHITECTURE.md", "src/csv_school_importer.py"],
+            "mission-alignment": [".github/copilot-instructions.md", ".github/agents/ghostwriter.agent.md", ".github/agents/jiminy.agent.md"],
+            "onboarding": ["README.md", ".github/copilot-instructions.md", "startup.sh", "gunicorn.conf.py"],
+        }
+
+        files = area_files.get(area, [])
+        context = ""
+        for f in files:
+            if os.path.isfile(f):
+                with open(f) as fh:
+                    content = fh.read()[:8000]
+                context += f"\n\n--- FILE: {f} ---\n{content}"
+
+        if not context.strip():
+            context = f"No files found for area: {area}"
+
+        print(f"📝 Reviewing documentation area: {area} ({len(files)} files)")
+
+        system_prompt = """You are Jiminy — the documentation conscience of Agent NextGen, an AI scholarship evaluation platform that exists to find the student the committee would miss.
+
+Your job: review documentation for accuracy, completeness, mission alignment, and accessibility.
+
+THE MISSION: This system finds "Diamonds in the Rough" — students whose contextual potential exceeds their raw metrics. Every doc should help someone understand this.
+
+REVIEW FORMAT — produce EXACTLY this structure:
+
+# 🦗 Jiminy Documentation Review: [area]
+
+## Mission Check
+Does this documentation convey WHY the system exists? (1 sentence assessment)
+
+## 🔴 Stale or Incorrect
+Numbered list. Specific file, what's wrong, suggested fix. If none: "All accurate."
+
+## 🟡 Missing Documentation
+What should be documented that isn't? Specific gaps. If none: "Coverage is good."
+
+## 🔵 Clarity Improvements
+Where could docs be clearer for a new developer or non-technical stakeholder? If none: "Docs are clear."
+
+## 💎 Mission Alignment
+Does the documentation reflect the Diamond in the Rough mission? Specific suggestions to strengthen the connection.
+
+## Grade: [A/B/C/D/F]
+One sentence justification.
+
+RULES:
+- Be specific. Reference file names and sections.
+- Maximum 10 findings total.
+- If docs are genuinely good, say so.
+- Write with warmth. This project matters."""
+
+        client = AzureOpenAI(
+            azure_endpoint=os.environ["AZURE_OPENAI_ENDPOINT"],
+            api_key=os.environ["AZURE_OPENAI_API_KEY"],
+            api_version="2025-04-14",
+        )
+
+        response = client.chat.completions.create(
+            model=os.environ.get("REVIEW_MODEL", "gpt-4.1-mini"),
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": f"Review documentation area: {area}\n\n{context}"},
+            ],
+            max_tokens=3000,
+            temperature=0.2,
+        )
+
+        review_text = response.choices[0].message.content
+        print(f"✅ Review complete ({response.usage.total_tokens} tokens)")
+
+        with open("jiminy_review.md", "w") as f:
+            f.write(review_text)
+
+        import re
+        grade_match = re.search(r"## Grade:\s*([A-F][+-]?)", review_text)
+        grade = grade_match.group(1) if grade_match else "?"
+        with open("review_grade.txt", "w") as f:
+            f.write(grade)
+
+        print(review_text)
+        JIMINY_EOF
+
+    - name: Create GitHub Issue with review
+      if: success()
+      env:
+        GH_TOKEN: ${{ github.token }}
+      run: |
+        AREA="${{ matrix.area }}"
+        GRADE=$(cat review_grade.txt 2>/dev/null || echo "?")
+        DATE=$(date +%Y-%m-%d)
+
+        EXISTING=$(gh issue list --label "$REVIEW_LABEL" --state open --json title -q ".[].title" | grep -c "$AREA" || true)
+        if [ "$EXISTING" -gt "0" ]; then
+          echo "Open review issue already exists for $AREA — skipping"
+          exit 0
+        fi
+
+        TITLE="🦗 Jiminy Docs: ${AREA} — Grade: ${GRADE} ($DATE)"
+        BODY=$(cat jiminy_review.md)
+        BODY="${BODY}
+
+---
+<sub>🦗 Jiminy Documentation Review | Area: ${AREA} | Model: ${REVIEW_MODEL} | $(date -u '+%Y-%m-%d %H:%M UTC')</sub>"
+
+        gh issue create \
+          --title "$TITLE" \
+          --body "$BODY" \
+          --label "$REVIEW_LABEL"
+
+        echo "✅ Issue created: $TITLE"
