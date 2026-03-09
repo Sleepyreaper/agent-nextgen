@@ -80,7 +80,7 @@ _bg_thread = threading.Thread(target=_start_bg_loop, args=(_bg_loop,), daemon=Tr
 _bg_thread.start()
 
 
-def run_async(coro, timeout: float = 600.0):
+def run_async(coro, timeout: float = 1800.0):
     """Submit a coroutine to the shared event loop and block until done."""
     future = asyncio.run_coroutine_threadsafe(coro, _bg_loop)
     return future.result(timeout=timeout)
