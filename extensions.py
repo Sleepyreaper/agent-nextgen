@@ -19,7 +19,7 @@ import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, Optional
 
-from flask import current_app, jsonify
+from flask import current_app, jsonify, request, session
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
 from flask_wtf.csrf import CSRFProtect
@@ -41,6 +41,29 @@ limiter = Limiter(
     default_limits=["200 per minute"],
     storage_uri="memory://",
 )
+
+
+# ---------------------------------------------------------------------------
+# Role-based access control
+# ---------------------------------------------------------------------------
+VALID_ROLES = {'admin', 'reviewer', 'readonly'}
+
+
+def require_role(*roles):
+    """Decorator: restrict a route to users whose session role is in *roles*."""
+    from functools import wraps
+
+    def decorator(fn):
+        @wraps(fn)
+        def wrapper(*args, **kwargs):
+            user_role = session.get('role', 'readonly')
+            if user_role not in roles:
+                if request.path.startswith('/api/'):
+                    return jsonify({'error': 'Insufficient permissions'}), 403
+                return '<h1>403 — Forbidden</h1>', 403
+            return fn(*args, **kwargs)
+        return wrapper
+    return decorator
 
 # ---------------------------------------------------------------------------
 # Shared background event loop (Issue #52)

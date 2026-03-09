@@ -10,7 +10,7 @@ import time
 from flask import Blueprint, flash, jsonify, render_template, request
 
 from extensions import (
-    ArielQAAgent, limiter, run_async,
+    ArielQAAgent, limiter, require_role, run_async,
     refresh_foundry_dataset_async,
 )
 from src.config import config
@@ -112,9 +112,10 @@ def background_task_status():
 
 
 @admin_bp.route('/debug/dataset')
+@require_role('admin')
 def debug_dataset():
     """Debug view: show raw student_summary and agent_results for recent applications."""
-    if os.getenv('WEBSITE_SITE_NAME'):
+    if os.getenv('WEBSITE_SITE_NAME') and not os.getenv('DEBUG_MODE'):
         return '<h1>404 — Page Not Found</h1>', 404
     try:
         applications_table = db.get_table_name("applications")
@@ -164,6 +165,7 @@ def debug_dataset():
 
 
 @admin_bp.route('/api/admin/reset', methods=['POST'])
+@require_role('admin')
 @limiter.limit("3 per minute")
 def admin_reset():
     """One-click database reset."""
@@ -226,6 +228,7 @@ def student_counts():
 
 
 @admin_bp.route('/admin/cleanup-test-data', methods=['POST'])
+@require_role('admin')
 def admin_cleanup_test_data():
     """Clean up contaminated test data records."""
     try:
@@ -294,6 +297,7 @@ def admin_cleanup_test_data():
 
 
 @admin_bp.route('/api/admin/retention-cleanup', methods=['POST'])
+@require_role('admin')
 def admin_retention_cleanup():
     """Purge old telemetry, audit logs, and test records beyond retention window."""
     try:

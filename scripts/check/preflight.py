@@ -16,7 +16,7 @@ REQUIRED_MODULES = [
     "flask",
     "werkzeug",
     "psycopg",
-    "PyPDF2",
+    "pypdf",
     "docx",
     "requests",
     "aiohttp",
