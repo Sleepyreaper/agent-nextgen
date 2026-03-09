@@ -177,6 +177,7 @@ def process_student(application_id):
 
 
 @applications_bp.route('/api/process/<int:application_id>', methods=['POST'])
+@csrf.exempt
 def api_process_student(application_id):
     """API endpoint to process student with Smee orchestrator.
 
@@ -184,6 +185,10 @@ def api_process_student(application_id):
     with 202 Accepted.  Frontend polls ``GET /api/process/<id>/status``
     for progress.  File-based state (``process_state_<id>.json``) ensures
     multi-worker gunicorn compatibility.
+
+    CSRF exempt: called via JS fetch from authenticated sessions during
+    batch runs that can outlast the CSRF token lifetime.  Session cookie
+    with SameSite=Lax provides equivalent protection for same-origin POST.
     """
     try:
         application = db.get_application(application_id)
