@@ -381,3 +381,72 @@ def start_retention_scheduler():
         _retention_timer = threading.Timer(60, _schedule_retention)
         _retention_timer.daemon = True
         _retention_timer.start()
+
+
+# ---------------------------------------------------------------------------
+# Database Server Management — Start stopped PostgreSQL Flexible Server
+# ---------------------------------------------------------------------------
+@admin_bp.route('/api/admin/db-status', methods=['GET'])
+def db_status():
+    """Check if the database is reachable."""
+    try:
+        db.execute_query("SELECT 1")
+        return jsonify({'status': 'online'})
+    except Exception as e:
+        return jsonify({'status': 'offline', 'error': str(e)}), 503
+
+
+@admin_bp.route('/api/admin/start-database', methods=['POST'])
+@require_role('admin')
+@limiter.limit("3 per hour")
+def start_database():
+    """Start the Azure PostgreSQL Flexible Server if it was stopped (nightly policy).
+
+    Uses Azure REST API with managed identity to issue the start command.
+    """
+    import requests as _requests
+
+    server_name = os.getenv('POSTGRES_SERVER_NAME', 'nextgenagentpostgres')
+    resource_group = os.getenv('AZURE_RESOURCE_GROUP', 'NextGen_Agents')
+    subscription_id = os.getenv('AZURE_SUBSCRIPTION_ID', '')
+
+    if not subscription_id:
+        # Try to get from config
+        subscription_id = getattr(config, 'azure_subscription_id', '')
+    if not subscription_id:
+        return jsonify({'status': 'error', 'error': 'AZURE_SUBSCRIPTION_ID not configured'}), 500
+
+    try:
+        # Get managed identity token for ARM
+        from azure.identity import DefaultAzureCredential
+        credential = DefaultAzureCredential()
+        token = credential.get_token("https://management.azure.com/.default")
+
+        # Call Azure REST API to start the server
+        url = (
+            f"https://management.azure.com/subscriptions/{subscription_id}"
+            f"/resourceGroups/{resource_group}"
+            f"/providers/Microsoft.DBforPostgreSQL/flexibleServers/{server_name}"
+            f"/start?api-version=2022-12-01"
+        )
+        resp = _requests.post(url, headers={
+            'Authorization': f'Bearer {token.token}',
+            'Content-Type': 'application/json',
+        }, timeout=30)
+
+        if resp.status_code in (200, 202):
+            logger.info(f"Database start initiated: {server_name} (HTTP {resp.status_code})")
+            return jsonify({
+                'status': 'success',
+                'message': f'Database server {server_name} is starting. It may take 1-2 minutes to become available.',
+            })
+        else:
+            logger.error(f"Database start failed: HTTP {resp.status_code} — {resp.text[:200]}")
+            return jsonify({
+                'status': 'error',
+                'error': f'Azure returned HTTP {resp.status_code}',
+            }), resp.status_code
+
+    except Exception as e:
+        logger.error(f"Database start error: {e}", exc_info=True)
+        return jsonify({'status': 'error', 'error': 'Failed to start database server'}), 500
