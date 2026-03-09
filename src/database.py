@@ -2042,6 +2042,7 @@ class Database:
         targets = [
             ("telemetry_events", "created_at"),
             ("agent_audit_logs", "created_at"),
+            ("agent_evaluation_results", "created_at"),
             ("agent_interactions", "timestamp"),
             ("file_upload_audit", "upload_date"),
             ("training_feedback", "created_at"),
