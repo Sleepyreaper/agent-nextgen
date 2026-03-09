@@ -344,25 +344,54 @@ def ask_question(application_id):
 # ---------------------------------------------------------------------------
 # Daily retention cleanup scheduler
 # ---------------------------------------------------------------------------
+# Uses a PostgreSQL advisory lock to prevent duplicate runs across gunicorn
+# workers. The lock is session-level (released when the connection returns to
+# the pool), so only one worker runs cleanup per day.
+_RETENTION_ADVISORY_LOCK_ID = 8675309  # arbitrary unique int
+
 def _daily_retention_cleanup():
-    """Run retention cleanup if it hasn't been run today."""
-    lock_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'logs', '.retention_last_run')
-    today = time.strftime('%Y-%m-%d')
+    """Run retention cleanup if it hasn't been run today.
+
+    Uses pg_try_advisory_lock to ensure only one worker runs cleanup,
+    even with multiple gunicorn workers.
+    """
     try:
-        if os.path.exists(lock_path):
-            with open(lock_path) as f:
-                if f.read().strip() == today:
-                    return
-    except OSError:
-        pass
-    try:
+        # Try to acquire advisory lock — returns immediately, no blocking
+        rows = db.execute_query(
+            "SELECT pg_try_advisory_lock(%s) AS acquired",
+            (_RETENTION_ADVISORY_LOCK_ID,)
+        )
+        if not rows or not rows[0].get('acquired'):
+            return  # Another worker has the lock
+
+        # Check if we already ran today (using DB time, not filesystem)
+        today_check = db.execute_query(
+            "SELECT EXISTS(SELECT 1 FROM telemetry_events "
+            "WHERE event_name = 'retention_cleanup' "
+            "AND created_at >= CURRENT_DATE) AS ran_today"
+        )
+        if today_check and today_check[0].get('ran_today'):
+            # Release lock and skip
+            db.execute_query("SELECT pg_advisory_unlock(%s)", (_RETENTION_ADVISORY_LOCK_ID,))
+            return
+
         retention_days = int(os.getenv('RETENTION_DAYS', '730'))
         retention_days = max(90, min(retention_days, 3650))
         result = db.cleanup_old_records(retention_days=retention_days)
         logger.info(f"Daily retention cleanup completed: {result}")
-        os.makedirs(os.path.dirname(lock_path), exist_ok=True)
-        with open(lock_path, 'w') as f:
-            f.write(today)
+
+        # Record that we ran (so other workers/restarts skip today)
+        try:
+            db.execute_non_query(
+                "INSERT INTO telemetry_events (event_name, event_data, created_at) "
+                "VALUES ('retention_cleanup', %s, NOW())",
+                (json.dumps(result, default=str),)
+            )
+        except Exception:
+            pass  # telemetry_events table may not exist yet
+
+        # Release advisory lock
+        db.execute_query("SELECT pg_advisory_unlock(%s)", (_RETENTION_ADVISORY_LOCK_ID,))
     except Exception as e:
         logger.debug(f"Daily retention cleanup skipped: {e}")
 
