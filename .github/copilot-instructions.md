@@ -2,6 +2,9 @@
 
 ## Next Gen Agents — AI Scholarship Evaluation Platform
 
+### Mission
+The purpose of this system is not to replicate human evaluation. It is to find the student the committee would miss. A "Diamond in the Rough" — the applicant whose contextual potential exceeds their raw metrics. The kid at the under-resourced school who maxed out every opportunity available to them, whose recommendation letter says what the transcript can't show. Traditional rubrics reward access and polish. This system exists to also reward resilience and potential. Every architectural decision, every agent prompt, every scoring algorithm should be evaluated against this mission: **does it help surface students who deserve a second look?**
+
 Production Flask application (~8100 lines in `app.py`) that evaluates high-school scholarship applicants using 15+ Disney-themed AI agents backed by Azure AI Foundry. Deployed on Azure App Service behind Front Door + WAF with session-based authentication.
 
 ### Architecture
