@@ -3481,7 +3481,10 @@ class Database:
                     best_score = score
                     best_raw = raw
             if best_score >= threshold and best_raw:
-                return self.get_school_enriched_data(school_name=best_raw, state_code=state_code)
+                result = self.get_school_enriched_data(school_name=best_raw, state_code=state_code)
+                if result:
+                    self._auto_create_alias(school_name, result, state_code)
+                    return result
 
             # 3) difflib close match
             norm_list = list(name_map.values())
@@ -3489,9 +3492,34 @@ class Database:
             matches = difflib.get_close_matches(cand_norm, norm_list, n=1, cutoff=0.72)
             if matches:
                 idx = norm_list.index(matches[0])
-                return self.get_school_enriched_data(school_name=raw_list[idx], state_code=state_code)
+                result = self.get_school_enriched_data(school_name=raw_list[idx], state_code=state_code)
+                if result:
+                    self._auto_create_alias(school_name, result, state_code)
+                    return result
 
-            # 4) Substring match
+            # 4) Bigram similarity (catches single-char typos like Gwineet/Gwinnett)
+            def _bigrams(s: str) -> set:
+                return {s[i:i+2] for i in range(len(s) - 1)} if len(s) >= 2 else {s}
+
+            cand_bi = _bigrams(cand_norm)
+            best_bi_score = 0.0
+            best_bi_raw = None
+            for raw, n in name_map.items():
+                n_bi = _bigrams(n)
+                union = len(cand_bi | n_bi)
+                if union == 0:
+                    continue
+                score = len(cand_bi & n_bi) / union
+                if score > best_bi_score:
+                    best_bi_score = score
+                    best_bi_raw = raw
+            if best_bi_score >= 0.45 and best_bi_raw:
+                result = self.get_school_enriched_data(school_name=best_bi_raw, state_code=state_code)
+                if result:
+                    self._auto_create_alias(school_name, result, state_code)
+                    return result
+
+            # 5) Substring match
             for raw, n in name_map.items():
                 if cand_norm in n or n in cand_norm:
                     return self.get_school_enriched_data(school_name=raw, state_code=state_code)
@@ -3500,6 +3528,41 @@ class Database:
         except Exception as e:
             logger.error(f"Error in fuzzy school lookup: {e}")
             return None
+
+    def _auto_create_alias(self, alias_name: str, school_record: Dict[str, Any],
+                           state_code: Optional[str] = None) -> None:
+        """Auto-create a school alias when fuzzy matching finds a match.
+
+        This makes subsequent lookups instant — no more fuzzy matching needed
+        for the same misspelling.
+        """
+        try:
+            if not self.has_table('school_aliases'):
+                self.execute_non_query("""
+                    CREATE TABLE IF NOT EXISTS school_aliases (
+                        alias_id SERIAL PRIMARY KEY,
+                        alias_name VARCHAR(500) NOT NULL,
+                        school_enrichment_id INTEGER NOT NULL,
+                        state_code VARCHAR(10),
+                        auto_created BOOLEAN DEFAULT TRUE,
+                        created_at TIMESTAMPTZ DEFAULT NOW(),
+                        UNIQUE(alias_name, state_code)
+                    )
+                """)
+            sid = school_record.get('school_enrichment_id')
+            if not sid:
+                return
+            canonical = school_record.get('school_name', '')
+            if alias_name.strip().lower() == canonical.strip().lower():
+                return  # don't alias to itself
+            self.execute_non_query(
+                "INSERT INTO school_aliases (alias_name, school_enrichment_id, state_code, auto_created) "
+                "VALUES (%s, %s, %s, TRUE) ON CONFLICT (alias_name, state_code) DO NOTHING",
+                (alias_name, sid, (state_code or '').upper() or None)
+            )
+            logger.info(f"Auto-created school alias: '{alias_name}' → '{canonical}' (id={sid})")
+        except Exception as e:
+            logger.debug(f"Auto-alias creation skipped: {e}")
 
     def state_has_csv_school_data(self, state_code: str) -> bool:
         """Return True if the given state has CSV-imported school records.
