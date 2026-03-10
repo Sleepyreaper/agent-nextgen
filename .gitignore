@@ -73,3 +73,6 @@ htmlcov/
 # Docker build artifacts
 *.tar
 src/agents/milo_data_scientist.py.bak
+
+# Data files — should not be in version control
+data/
