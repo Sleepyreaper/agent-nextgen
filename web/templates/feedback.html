@@ -197,8 +197,13 @@ if (feedbackForm) {
             feedbackForm.reset();
             // Poll a few times so the user sees status transitions
             // (received → triaged → submitted)
-            for (const delay of [500, 2000, 5000]) {
+            for (const delay of [500, 2000, 5000, 10000]) {
                 setTimeout(refreshFeedbackList, delay);
+            }
+            // Auto-enable refresh after first submission so user sees updates
+            if (!autoRefreshToggle.checked) {
+                autoRefreshToggle.checked = true;
+                autoRefreshToggle.dispatchEvent(new Event('change'));
             }
         } catch (error) {
             feedbackStatus.textContent = error.message;
