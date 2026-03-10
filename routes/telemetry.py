@@ -103,6 +103,8 @@ def telemetry_overview():
             'agents': agent_summary,
             'token_usage': token_usage.get('totals', {}),
             'token_usage_by_model': token_usage.get('by_model', {}),
+            'token_usage_by_agent': token_usage.get('by_agent', {}),
+            'token_usage_by_agent_model': token_usage.get('by_agent_model', {}),
             'school_enrichment': {
                 'by_status': school_stats,
                 'moana_validation': moana_stats,

@@ -224,7 +224,6 @@ def feedback_recent_api():
                         row[k] = json.loads(v)
                     except (json.JSONDecodeError, TypeError):
                         row[k] = {}
-                    continue
                 else:
                     row[k] = v
             serialized.append(row)
