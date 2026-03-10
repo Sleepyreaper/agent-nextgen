@@ -65,6 +65,8 @@ def get_schools_list():
                 pass
         if request.args.get('search'):
             filters['search_text'] = request.args.get('search')
+        if request.args.get('enriched'):
+            filters['enrichment_filter'] = request.args.get('enriched')  # 'yes', 'no', or 'all'
         
         schools = db.get_all_schools_enriched(filters=filters, limit=5000)
 
@@ -73,6 +75,20 @@ def get_schools_list():
             score_info = _compute_enrichment_completeness(s)
             s['enrichment_score'] = score_info['overall_percentage']
             s['is_enriched'] = score_info['is_enriched']
+            s['enrichment_level'] = (
+                'fully_enriched' if score_info['overall_percentage'] >= 85
+                else 'enriched' if score_info['overall_percentage'] >= 60
+                else 'partial' if score_info['overall_percentage'] >= 30
+                else 'minimal'
+            )
+            s['missing_fields'] = score_info.get('missing_fields', [])
+
+        # Post-filter by enrichment status (computed, not in DB)
+        enrichment_filter = filters.get('enrichment_filter')
+        if enrichment_filter == 'yes':
+            schools = [s for s in schools if s.get('is_enriched')]
+        elif enrichment_filter == 'no':
+            schools = [s for s in schools if not s.get('is_enriched')]
 
         return jsonify({
             'status': 'success',

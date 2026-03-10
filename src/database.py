@@ -3564,6 +3564,78 @@ class Database:
         except Exception as e:
             logger.debug(f"Auto-alias creation skipped: {e}")
 
+    @staticmethod
+    def compute_enrichment_score(school_record: Dict[str, Any]) -> Dict[str, Any]:
+        """Compute an enrichment completeness score for a school record.
+
+        Returns a dict with ``score`` (0.0-1.0), ``level`` (one of
+        'minimal', 'partial', 'enriched', 'fully_enriched'), and
+        ``missing_fields`` listing what's still empty.
+
+        This lets the UI show which schools need more data and what's left.
+        """
+        # Fields that contribute to enrichment, weighted by importance
+        scored_fields = {
+            'school_url': 1.5,
+            'enrollment_size': 1.0,
+            'graduation_rate': 1.0,
+            'college_placement_rate': 1.0,
+            'ap_classes_count': 0.8,
+            'diversity_index': 0.7,
+            'socioeconomic_level': 0.7,
+            'opportunity_score': 1.2,
+            'stem_programs': 0.5,
+            'ib_offerings': 0.5,
+            'school_district': 0.5,
+            'narrative_summary': 0.8,
+        }
+        total_weight = sum(scored_fields.values())
+        earned = 0.0
+        missing = []
+        for field, weight in scored_fields.items():
+            val = school_record.get(field)
+            if val is not None and val != '' and val != 0:
+                earned += weight
+            else:
+                missing.append(field)
+        score = round(earned / total_weight, 3) if total_weight > 0 else 0.0
+        if score >= 0.85:
+            level = 'fully_enriched'
+        elif score >= 0.6:
+            level = 'enriched'
+        elif score >= 0.3:
+            level = 'partial'
+        else:
+            level = 'minimal'
+        return {'score': score, 'level': level, 'missing_fields': missing}
+
+    def update_school_url(self, school_enrichment_id: int, url: str,
+                          verified: bool = False) -> bool:
+        """Set or update the website URL for a school.
+
+        Args:
+            school_enrichment_id: DB primary key of the school record
+            url: The website URL to store
+            verified: Whether the URL has been confirmed accessible
+
+        Returns:
+            True on success
+        """
+        try:
+            cols = "school_url = %s"
+            params: list = [url]
+            if verified:
+                cols += ", school_url_verified = TRUE, school_url_verified_date = NOW()"
+            cols += " WHERE school_enrichment_id = %s"
+            params.append(school_enrichment_id)
+            self.execute_non_query(
+                f"UPDATE school_enriched_data SET {cols}", tuple(params)
+            )
+            return True
+        except Exception as e:
+            logger.error(f"Failed to update school URL: {e}")
+            return False
+
     def state_has_csv_school_data(self, state_code: str) -> bool:
         """Return True if the given state has CSV-imported school records.
 
