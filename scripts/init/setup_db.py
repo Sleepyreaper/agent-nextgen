@@ -40,11 +40,12 @@ try:
         print(f'  ℹ️  Database exists: {DB_NAME}')
     
     print("Creating application user...")
+    from psycopg import sql
     try:
-        cur.execute(f"CREATE USER {APP_USER} WITH PASSWORD '{pwd}'")
+        cur.execute(sql.SQL("CREATE USER {} WITH PASSWORD %s").format(sql.Identifier(APP_USER)), (pwd,))
         print(f'  ✅ User created: {APP_USER}')
     except psycopg.errors.DuplicateObject:
-        cur.execute(f"ALTER USER {APP_USER} WITH PASSWORD '{pwd}'")
+        cur.execute(sql.SQL("ALTER USER {} WITH PASSWORD %s").format(sql.Identifier(APP_USER)), (pwd,))
         print(f'  ✅ User updated: {APP_USER}')
     
     print("Granting privileges...")
