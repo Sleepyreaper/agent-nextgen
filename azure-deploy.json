@@ -48,8 +48,8 @@
       },
       "properties": {
         "customSubDomainName": "[toLower(parameters('accountName'))]",
-        "disableLocalAuth": false,
-        "publicNetworkAccess": "Enabled"
+        "disableLocalAuth": true,
+        "publicNetworkAccess": "Disabled"
       }
     },
     {
