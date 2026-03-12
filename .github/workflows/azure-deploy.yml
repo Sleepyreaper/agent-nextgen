@@ -15,9 +15,6 @@ on:
       - '*.md'
       - 'scripts/**'
       - '.github/workflows/cleanup-sweep-branches.yml'
-  pull_request:
-    branches:
-      - main
   workflow_dispatch:
     inputs:
       deploy_target:
@@ -34,11 +31,10 @@ permissions:
   contents: read
 
 jobs:
-  # ── Deploy to STAGING (branches + PRs) ──────────────────────────
+  # ── Deploy to STAGING (branches + workflow dispatch) ──────────────────────────
   deploy-staging:
     if: >
       (github.event_name == 'push' && github.ref != 'refs/heads/main') ||
-      (github.event_name == 'pull_request') ||
       (github.event_name == 'workflow_dispatch' && github.event.inputs.deploy_target == 'staging')
     runs-on: ubuntu-latest
     environment:
@@ -194,6 +190,7 @@ jobs:
         az webapp deploy \
           --name ${{ secrets.AZURE_WEBAPP_NAME }} \
           --resource-group ${{ secrets.AZURE_RESOURCE_GROUP }} \
+          --slot production \
           --src-path /tmp/deploy.zip \
           --type zip \
           --async true
@@ -204,8 +201,45 @@ jobs:
           --use-same-restrictions-for-scm-site true \
           --output none
 
+    - name: Verify RBAC roles for production slot
+      run: |
+        set -euo pipefail
+        SLOT_PRINCIPAL=$(az webapp identity show \
+          --resource-group ${{ secrets.AZURE_RESOURCE_GROUP }} \
+          --name ${{ secrets.AZURE_WEBAPP_NAME }} \
+          --slot production \
+          --query "principalId" -o tsv)
+
+        STORAGE_ID=$(az storage account show \
+          --resource-group ${{ secrets.AZURE_RESOURCE_GROUP }} \
+          --name ${{ secrets.AZURE_STORAGE_ACCOUNT }} \
+          --query "id" -o tsv)
+
+        ROLE=$(az role assignment list \
+          --assignee "$SLOT_PRINCIPAL" \
+          --scope "$STORAGE_ID" \
+          --query "[?roleDefinitionName=='Storage Blob Data Contributor'].roleDefinitionName" \
+          -o tsv)
+
+        if [ -z "$ROLE" ]; then
+          echo "⚠️ Missing Storage Blob Data Contributor — assigning now..."
+          az role assignment create \
+            --assignee-object-id "$SLOT_PRINCIPAL" \
+            --assignee-principal-type ServicePrincipal \
+            --role "Storage Blob Data Contributor" \
+            --scope "$STORAGE_ID" \
+            --output none
+          echo "✅ Role assigned to production identity ($SLOT_PRINCIPAL)"
+        else
+          echo "✅ Storage Blob Data Contributor already assigned to $SLOT_PRINCIPAL"
+        fi
+
+        echo "## 🔐 RBAC Verification" >> $GITHUB_STEP_SUMMARY
+        echo "- Production identity: \`$SLOT_PRINCIPAL\`" >> $GITHUB_STEP_SUMMARY
+        echo "- Storage Blob Data Contributor: ✅" >> $GITHUB_STEP_SUMMARY
+
     - name: Post deployment URL
       run: |
-        echo "## ✅ Deployed to Production" >> $GITHUB_STEP_SUMMARY
+        echo "## 🚀 Deployed to Production" >> $GITHUB_STEP_SUMMARY
         echo "**URL:** ${{ vars.PRODUCTION_URL }}" >> $GITHUB_STEP_SUMMARY
         echo "**Commit:** \`${GITHUB_SHA::7}\`" >> $GITHUB_STEP_SUMMARY
