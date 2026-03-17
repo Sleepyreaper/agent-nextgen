@@ -84,18 +84,9 @@ def require_login():
     g.csp_nonce = secrets.token_urlsafe(16)
 
     # ---------------------------------------------------------------
-    # Front Door validation — reject requests that bypass the WAF.
-    # The X-Azure-FDID header is set by Azure Front Door and cannot
-    # be spoofed when App Service IP restrictions limit traffic to
-    # the AzureFrontDoor.Backend service tag.
+    # Front Door validation — DISABLED (migrated off Front Door)
+    # The app no longer sits behind Azure Front Door.
     # ---------------------------------------------------------------
-    if config.azure_front_door_id:
-        request_fdid = request.headers.get('X-Azure-FDID', '')
-        if request_fdid != config.azure_front_door_id:
-            # Allow Azure health probes (they use the same header but
-            # we also accept requests to the healthz endpoint)
-            if request.endpoint not in ('health_check', 'healthz'):
-                return '<h1>403 — Forbidden</h1>', 403
 
     # Skip auth check if credentials are not configured
     if not config.auth_username or not config.auth_password_hash:
@@ -373,6 +364,40 @@ def health():
         'app': 'Next Gen Agent System',
         'version': config.app_version
     }), 200
+
+
+@app.route('/api/test/foundry')
+def test_foundry():
+    """Diagnostic: test Foundry connectivity."""
+    try:
+        from src.services.foundry_client import FoundryClient
+        client = FoundryClient(config)
+        return jsonify({'status': 'ok', 'endpoint': config.foundry_project_endpoint or config.azure_openai_endpoint, 'model': config.foundry_model_name or config.deployment_name}), 200
+    except Exception as e:
+        return jsonify({'status': 'error', 'error': str(e)}), 500
+
+
+@app.route('/api/test/postgres')
+def test_postgres():
+    """Diagnostic: test Postgres connectivity."""
+    try:
+        from src.database import db
+        result = db.execute_query('SELECT 1 as ok')
+        return jsonify({'status': 'ok', 'host': config.postgres_host, 'db': config.postgres_db}), 200
+    except Exception as e:
+        return jsonify({'status': 'error', 'error': str(e)}), 500
+
+
+@app.route('/api/test/storage')
+def test_storage():
+    """Diagnostic: test Azure Blob Storage connectivity."""
+    try:
+        from src.storage import StorageManager
+        sm = StorageManager()
+        containers = sm.list_containers() if hasattr(sm, 'list_containers') else ['connected']
+        return jsonify({'status': 'ok', 'containers': containers[:5]}), 200
+    except Exception as e:
+        return jsonify({'status': 'error', 'error': str(e)}), 500
 
 
 # Feedback routes moved to routes/feedback.py (Issue #23)

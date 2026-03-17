@@ -164,7 +164,7 @@ class BaseAgent(ABC):
                         except Exception:
                             pass
 
-                    refinements = int(kwargs.pop("refinements", 2))
+                    refinements = int(kwargs.pop("refinements", 1))
                     refinement_instruction = kwargs.pop("refinement_instruction", None)
 
                     def _single_call(msgs, call_kwargs):
