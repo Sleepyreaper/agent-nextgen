@@ -42,7 +42,7 @@ def storage():
         from src.config import config
         from azure.storage.blob import BlobServiceClient
         from azure.identity import DefaultAzureCredential
-        account = config.azure_storage_account_name
+        account = config.storage_account_name
         client = BlobServiceClient(
             account_url=f"https://{account}.blob.core.windows.net",
             credential=DefaultAzureCredential()
@@ -60,10 +60,10 @@ def keyvault():
         from src.config import config
         from azure.keyvault.secrets import SecretClient
         from azure.identity import DefaultAzureCredential
-        vault_url = f"https://{config.azure_key_vault_name}.vault.azure.net"
+        vault_url = f"https://{config.key_vault_name}.vault.azure.net"
         client = SecretClient(vault_url=vault_url, credential=DefaultAzureCredential())
         # Just list secrets (don't read values)
         names = [s.name for s in client.list_properties_of_secrets(max_page_size=5)]
-        return jsonify({'status': 'ok', 'vault': config.azure_key_vault_name, 'secrets': names[:5]}), 200
+        return jsonify({'status': 'ok', 'vault': config.key_vault_name, 'secrets': names[:5]}), 200
     except Exception as e:
         return jsonify({'status': 'error', 'error': str(e)}), 500
