@@ -21,6 +21,88 @@ logger = logging.getLogger(__name__)
 admin_bp = Blueprint('admin', __name__)
 
 
+# ── Agent Team Registry (for team page) ─────────────────────────────
+# Portraits that exist in web/static/images/agents/
+_PORTRAIT_FILES = {'ariel', 'aurora', 'gaston', 'merlin', 'moana', 'rapunzel', 'smee'}
+
+AGENT_TEAM = [
+    {"name": "Smee", "slug": "smee", "emoji": "🎩", "title": "Chief Orchestrator", "tier": "orchestrator",
+     "model": "o3", "color": "#F2A900", "step": 0, "foundry_slug": "nextgen-smee",
+     "output_summary": "Pipeline coordination",
+     "bio": "Captain Hook's loyal first mate keeps the entire crew running smoothly. Smee coordinates 12 agents, manages checkpoints, handles cancellations, and ensures every student gets a fair, thorough evaluation.",
+     "mission_role": "Routes documents to the right agents, ensures school context is built before academic evaluation, and manages the quality gate so nothing falls through the cracks."},
+    {"name": "Belle", "slug": "belle", "emoji": "📖", "title": "Document Intelligence Specialist", "tier": "workhorse",
+     "model": "gpt-5.4", "color": "#5b21b6", "step": 1, "foundry_slug": "nextgen-belle",
+     "output_summary": "Section detection, text extraction",
+     "bio": "The bookworm who reads everything. Belle analyzes uploaded PDFs and documents, detects sections (transcript, essay, recommendation), and extracts complete text for every downstream agent.",
+     "mission_role": "Extracts FULL text — never truncates. Downstream agents need every word to find the Diamond signals that summaries would miss."},
+    {"name": "Tiana", "slug": "tiana", "emoji": "📝", "title": "Application Content Specialist", "tier": "workhorse",
+     "model": "gpt-5.4", "color": "#0d9488", "step": 2, "foundry_slug": "nextgen-tiana",
+     "output_summary": "Essay analysis, diamond indicators",
+     "bio": "Hardworking and determined, Tiana reads every application looking for genuine passion — not polished prose. She scores essays, activities, leadership, and identifies the Diamond in the Rough indicators that metrics can't capture.",
+     "mission_role": "Finds authentic voice and resilience signals. Asks: does the essay lack polish because of limited access to editing help, or limited capability?"},
+    {"name": "Rapunzel", "slug": "rapunzel", "emoji": "👑", "title": "Academic Record Specialist", "tier": "premium",
+     "model": "gpt-5.4-pro", "color": "#7c3aed", "step": 3, "foundry_slug": "nextgen-rapunzel",
+     "output_summary": "GPA, courses, rigor, trends",
+     "bio": "Curious and analytical, Rapunzel doesn't just read grades — she reads the story behind them. A 3.95 GPA at a school with 3 AP courses means something very different than a 3.95 at a school with 25.",
+     "mission_role": "Contextualizes grades within school resources. Identifies students performing at the ceiling of what their school offers — the strongest Diamond signal in academics."},
+    {"name": "Mulan", "slug": "mulan", "emoji": "💌", "title": "Recommendation Letter Specialist", "tier": "workhorse",
+     "model": "gpt-5.4", "color": "#991b1b", "step": 4, "foundry_slug": "nextgen-mulan",
+     "output_summary": "Endorsement strength, authenticity",
+     "bio": "Mulan looks beyond the words to understand what recommenders REALLY think. A specific anecdote from a teacher who clearly knows the student is worth more than ten generic superlatives.",
+     "mission_role": "Detects whether generic recommendations reflect an unremarkable student or an overloaded teacher with 180 students. The difference changes the evaluation."},
+    {"name": "Naveen", "slug": "naveen", "emoji": "🏫", "title": "School Data Scientist", "tier": "workhorse",
+     "model": "gpt-5.4", "color": "#1e40af", "step": 5, "foundry_slug": None,
+     "output_summary": "School component scores, opportunity score",
+     "bio": "Naveen evaluates school context using public NCES data — AP availability, per-pupil funding, student-teacher ratios, graduation rates, and free lunch percentages. Every school gets a data-driven opportunity score.",
+     "mission_role": "Quantifies the resources available to each student's school so the committee can understand what opportunities existed — and what didn't."},
+    {"name": "Moana", "slug": "moana", "emoji": "🌊", "title": "School Context Narrator", "tier": "workhorse",
+     "model": "gpt-5.4", "color": "#115e59", "step": 6, "foundry_slug": None,
+     "output_summary": "School narrative, equity context",
+     "bio": "Moana builds the story of each student's school environment — weaving Naveen's data with Rapunzel's grades to create a narrative the committee can feel. Not just numbers, but what it's LIKE to learn there.",
+     "mission_role": "Answers: 'What was this student's world like?' A school with no AP STEM courses and 70% free lunch tells a different story than a magnet school in the suburbs."},
+    {"name": "Pocahontas", "slug": "pocahontas", "emoji": "🪶", "title": "Cohort Equity Analyst", "tier": "workhorse",
+     "model": "gpt-5.4", "color": "#854d0e", "step": 7, "foundry_slug": None,
+     "output_summary": "Equity tier, context multiplier",
+     "bio": "Pocahontas looks across the entire applicant pool to ensure fairness. She assigns equity tiers based on school resources and calculates context multipliers that adjust scores for students from under-resourced schools.",
+     "mission_role": "The equity engine. A student from a Tier 5 (severely under-resourced) school gets a context multiplier up to 1.25x — because their B means more than others' A."},
+    {"name": "Mirabel", "slug": "mirabel", "emoji": "🔮", "title": "Video Intelligence Specialist", "tier": "vision",
+     "model": "gpt-4o", "color": "#0891b2", "step": 8, "foundry_slug": "nextgen-mirabel",
+     "output_summary": "Video transcription, presentation quality",
+     "bio": "Like her Encanto namesake who sees the extraordinary in what others overlook, Mirabel analyzes video submissions — extracting spoken content, assessing communication skills, and finding what documents can't capture.",
+     "mission_role": "Videos reveal authenticity, confidence, and passion that paper applications can't. Mirabel finds the Diamond signals that only show when a student speaks in their own voice."},
+    {"name": "Merlin", "slug": "merlin", "emoji": "🧙", "title": "Synthesis Evaluator", "tier": "premium",
+     "model": "gpt-5.4-pro", "color": "#6d28d9", "step": 9, "foundry_slug": "nextgen-merlin",
+     "output_summary": "Final score, recommendation, rationale",
+     "bio": "The wise synthesizer who brings everything together. Merlin integrates all agent outputs into a final evaluation, answering: would I fight for this student? Before scoring, he answers five fairness questions to ensure equity.",
+     "mission_role": "Asks: Is this student at the ceiling of their opportunities? Would they thrive with MORE access? Is this the student the committee would miss? If yes — ADMIT."},
+    {"name": "Gaston", "slug": "gaston", "emoji": "💪", "title": "Quality & Bias Auditor", "tier": "reasoning",
+     "model": "o3", "color": "#dc2626", "step": 10, "foundry_slug": "nextgen-gaston",
+     "output_summary": "Review flags, consistency, bias check",
+     "bio": "No one audits like Gaston. He's learned humility and now uses his keen eye to catch bias, inconsistency, and unfairness in evaluations. He reviews every core agent's output AND audits Merlin's final evaluation.",
+     "mission_role": "The fairness guardian. Catches when evaluations penalize students for things beyond their control — fewer AP courses, generic recommendations from overloaded teachers, unpolished essays from students without editing access."},
+    {"name": "Milo", "slug": "milo", "emoji": "📊", "title": "Data Scientist", "tier": "premium",
+     "model": "gpt-5.4-pro", "color": "#065f46", "step": 11, "foundry_slug": None,
+     "output_summary": "ML prediction, training insights",
+     "bio": "Milo brings machine learning to scholarship evaluation — training models on historical data to identify patterns the committee has rewarded before, and flagging where the current applicant differs from past selections.",
+     "mission_role": "Spots students who don't fit the traditional mold but show the same patterns as past Diamonds in the Rough who were ultimately selected."},
+    {"name": "Aurora", "slug": "aurora", "emoji": "✨", "title": "Report Formatter", "tier": "workhorse",
+     "model": "gpt-5.4", "color": "#db2777", "step": 12, "foundry_slug": "nextgen-aurora",
+     "output_summary": "Executive summary, formatted report",
+     "bio": "Aurora brings clarity to complexity. She formats all agent outputs into a compelling, committee-ready report that tells the student's story — not a data dump, but a narrative that helps the committee make confident decisions.",
+     "mission_role": "Formats the 'What the Committee Might Miss' callout and the Diamond in the Rough assessment into the language that gets students a second look."},
+    {"name": "Ariel", "slug": "ariel", "emoji": "🧜", "title": "Conversational Q&A", "tier": "workhorse",
+     "model": "gpt-5.4", "color": "#2563eb", "step": "-", "foundry_slug": None,
+     "output_summary": "Interactive Q&A over applicant data",
+     "bio": "Curious about the human world above, Ariel answers the committee's questions in natural language. Ask her anything about a student's evaluation and she'll dive into the data to find the answer.",
+     "mission_role": "Lets committee members explore any student's data conversationally — 'Why was this student waitlisted?' or 'What did the recommender say about their STEM interest?'"},
+]
+
+# Add has_portrait flag
+for _a in AGENT_TEAM:
+    _a['has_portrait'] = _a['slug'] in _PORTRAIT_FILES
+
+
 # ── Background Task Registry ────────────────────────────────────────
 # Centralised list of all background tasks and their state files/poll endpoints.
 _BACKGROUND_TASKS = [
@@ -296,6 +378,12 @@ def admin_reset():
 def data_management():
     """Central hub for database and data operations."""
     return render_template('data_management.html')
+
+
+@admin_bp.route('/team')
+def team_page():
+    """Meet the evaluation team — agent profiles and pipeline visualization."""
+    return render_template('team.html', agents=AGENT_TEAM)
 
 
 @admin_bp.route('/api/students/count', methods=['GET'])

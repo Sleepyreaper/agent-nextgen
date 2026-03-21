@@ -1,0 +1,154 @@
+{% extends "base.html" %}
+
+{% block title %}Meet the Team — Diamond in the Rough{% endblock %}
+
+{% block content %}
+<div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+
+    {# ══════════════════  HERO  ══════════════════ #}
+    <div class="text-center mb-12">
+        <h1 class="font-heading text-4xl md:text-5xl font-bold text-emory-dark-blue mb-3">Meet the Evaluation Team</h1>
+        <p class="text-lg text-emory-gray-500 max-w-2xl mx-auto leading-relaxed">
+            12 AI agents work together to evaluate every applicant — not just on metrics,
+            but on <strong class="text-emory-dark">contextual potential</strong>. Each agent brings a unique perspective
+            to find the <span class="text-emory-gold font-semibold">Diamond in the Rough</span>.
+        </p>
+        <div class="mt-6 flex items-center justify-center gap-6 text-sm text-emory-gray-500">
+            <div class="flex items-center gap-2">
+                <span class="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                <span>{{ agents|length }} Agents Active</span>
+            </div>
+            <div class="flex items-center gap-2">
+                <span class="w-2.5 h-2.5 rounded-full bg-emory-medium-blue"></span>
+                <span>Powered by Azure AI Foundry</span>
+            </div>
+        </div>
+    </div>
+
+    {# ══════════════════  PIPELINE VISUALIZATION  ══════════════════ #}
+    <div class="bg-white rounded-2xl border border-emory-gray-200 p-6 mb-12 shadow-sm overflow-x-auto">
+        <h2 class="font-heading text-lg font-semibold text-emory-dark-blue mb-4">Evaluation Pipeline</h2>
+        <div class="flex items-center gap-2 min-w-[800px]">
+            {% for agent in agents %}
+            <div class="flex items-center gap-2">
+                <div class="flex flex-col items-center group">
+                    <div class="w-10 h-10 rounded-full border-2 flex items-center justify-center text-lg transition-all
+                        {% if agent.tier == 'orchestrator' %}border-emory-gold bg-emory-gold/10
+                        {% elif agent.tier == 'premium' %}border-purple-400 bg-purple-50
+                        {% elif agent.tier == 'reasoning' %}border-red-400 bg-red-50
+                        {% elif agent.tier == 'vision' %}border-cyan-400 bg-cyan-50
+                        {% else %}border-emory-medium-blue bg-blue-50{% endif %}
+                        group-hover:scale-110 group-hover:shadow-md cursor-pointer"
+                        title="{{ agent.name }} — {{ agent.role }}">
+                        {{ agent.emoji }}
+                    </div>
+                    <span class="text-[0.6rem] text-emory-gray-500 mt-1 font-medium">{{ agent.name }}</span>
+                </div>
+                {% if not loop.last %}
+                <svg class="w-4 h-4 text-emory-gray-300 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
+                </svg>
+                {% endif %}
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+
+    {# ══════════════════  AGENT CARDS GRID  ══════════════════ #}
+    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        {% for agent in agents %}
+        <div class="group bg-white rounded-2xl border border-emory-gray-200 overflow-hidden shadow-sm hover:shadow-lg hover:border-emory-medium-blue/30 transition-all duration-300">
+
+            {# Agent Header with Color Bar #}
+            <div class="h-1.5 w-full" style="background: {{ agent.color }};"></div>
+
+            <div class="p-6">
+                {# Top row: Portrait + Name + Role #}
+                <div class="flex items-start gap-4 mb-4">
+                    {# Portrait or Emoji Fallback #}
+                    <div class="flex-shrink-0">
+                        {% if agent.has_portrait %}
+                        <img src="{{ url_for('static', filename='images/agents/' ~ agent.slug ~ '.png') }}"
+                             alt="{{ agent.name }}"
+                             class="w-16 h-16 rounded-xl object-cover shadow-sm border border-emory-gray-200 group-hover:scale-105 transition-transform">
+                        {% else %}
+                        <div class="w-16 h-16 rounded-xl flex items-center justify-center text-2xl shadow-sm border border-emory-gray-200"
+                             style="background: {{ agent.color }}20;">
+                            {{ agent.emoji }}
+                        </div>
+                        {% endif %}
+                    </div>
+
+                    <div class="flex-1 min-w-0">
+                        <h3 class="font-heading text-xl font-bold text-emory-dark group-hover:text-emory-dark-blue transition-colors">
+                            {{ agent.name }}
+                        </h3>
+                        <p class="text-sm font-medium" style="color: {{ agent.color }};">{{ agent.title }}</p>
+                        <div class="flex items-center gap-2 mt-1">
+                            <span class="inline-flex items-center px-2 py-0.5 rounded-full text-[0.65rem] font-bold tracking-wide uppercase
+                                {% if agent.tier == 'orchestrator' %}bg-emory-gold/20 text-emory-gold
+                                {% elif agent.tier == 'premium' %}bg-purple-100 text-purple-700
+                                {% elif agent.tier == 'reasoning' %}bg-red-100 text-red-700
+                                {% elif agent.tier == 'vision' %}bg-cyan-100 text-cyan-700
+                                {% else %}bg-blue-100 text-emory-medium-blue{% endif %}">
+                                {{ agent.tier }}
+                            </span>
+                            <span class="text-[0.65rem] text-emory-gray-500">{{ agent.model }}</span>
+                        </div>
+                    </div>
+                </div>
+
+                {# Bio #}
+                <p class="text-sm text-emory-gray-500 leading-relaxed mb-4">{{ agent.bio }}</p>
+
+                {# What they do — mission contribution #}
+                <div class="bg-emory-gray-100 rounded-lg p-3 mb-4">
+                    <div class="flex items-center gap-1.5 mb-1">
+                        <span class="text-xs font-bold text-emory-dark-blue uppercase tracking-widest">Mission Role</span>
+                    </div>
+                    <p class="text-xs text-emory-gray-700 leading-relaxed">{{ agent.mission_role }}</p>
+                </div>
+
+                {# Pipeline position + Output fields #}
+                <div class="flex items-center justify-between text-xs text-emory-gray-500">
+                    <div class="flex items-center gap-1.5">
+                        <span class="font-semibold">Step {{ agent.step }}</span>
+                        <span class="text-emory-gray-300">·</span>
+                        <span>{{ agent.output_summary }}</span>
+                    </div>
+                    {% if agent.foundry_slug %}
+                    <span class="inline-flex items-center gap-1 text-emerald-600">
+                        <span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+                        Foundry
+                    </span>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+
+    {# ══════════════════  FOOTER STATS  ══════════════════ #}
+    <div class="mt-12 bg-white rounded-2xl border border-emory-gray-200 p-6 shadow-sm">
+        <div class="grid grid-cols-2 md:grid-cols-4 gap-6 text-center">
+            <div>
+                <div class="text-3xl font-heading font-bold text-emory-dark-blue">{{ agents|length }}</div>
+                <div class="text-sm text-emory-gray-500">AI Agents</div>
+            </div>
+            <div>
+                <div class="text-3xl font-heading font-bold text-emory-dark-blue">5</div>
+                <div class="text-sm text-emory-gray-500">Model Tiers</div>
+            </div>
+            <div>
+                <div class="text-3xl font-heading font-bold text-emory-dark-blue">12</div>
+                <div class="text-sm text-emory-gray-500">Pipeline Steps</div>
+            </div>
+            <div>
+                <div class="text-3xl font-heading font-bold text-emory-gold">💎</div>
+                <div class="text-sm text-emory-gray-500">Diamond in the Rough</div>
+            </div>
+        </div>
+    </div>
+
+</div>
+{% endblock %}
