@@ -670,7 +670,6 @@ class SmeeOrchestrator(BaseAgent):
             'elapsed_seconds': round(elapsed, 1),
             'model': getattr(self.agents.get(agent_id), '_model', 'unknown') if agent_id in self.agents else 'unknown',
         }
-            logger.debug("Checkpoint save failed (non-fatal): %s", e)
 
     def _step_already_done(self, step_name: str) -> bool:
         """Sprint 1: Check if a step was already completed in a previous run."""
