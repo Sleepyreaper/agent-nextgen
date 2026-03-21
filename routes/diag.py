@@ -76,7 +76,7 @@ def recent_apps():
         from src.database import db
         rows = db.execute_query(
             "SELECT application_id, applicant_name, status, is_test_data, is_training_example, "
-            "uploaded_date, file_name "
+            "file_name "
             "FROM applications ORDER BY application_id DESC LIMIT 5"
         )
         return jsonify({'status': 'ok', 'apps': rows or []}), 200
