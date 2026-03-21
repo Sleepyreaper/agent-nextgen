@@ -75,10 +75,13 @@ def recent_apps():
     try:
         from src.database import db
         rows = db.execute_query(
-            "SELECT application_id, applicant_name, status, is_test_data, is_training_example, "
-            "file_name "
-            "FROM applications ORDER BY application_id DESC LIMIT 5"
+            "SELECT * FROM applications ORDER BY application_id DESC LIMIT 3"
         )
+        # Return just the key fields, safely
+        apps = []
+        for r in (rows or []):
+            apps.append({k: str(v)[:100] if v is not None else None for k, v in r.items() if k in ('application_id', 'applicant_name', 'status', 'is_test_data', 'is_training_example', 'file_name', 'email')})
+        return jsonify({'status': 'ok', 'apps': apps, 'columns': list((rows[0] or {}).keys()) if rows else []}), 200
         return jsonify({'status': 'ok', 'apps': rows or []}), 200
     except Exception as e:
         return jsonify({'status': 'error', 'error': str(e)}), 500
