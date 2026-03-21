@@ -17,70 +17,85 @@ Requires:
 """
 
 import argparse
+import importlib.util
 import os
 import sys
 from pathlib import Path
 
-# Ensure src is importable
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+# Ensure repo root is importable
+REPO_ROOT = str(Path(__file__).resolve().parents[1])
+sys.path.insert(0, REPO_ROOT)
 
-from src.config import config
-from src.agents.system_prompts import (
-    SMEE_ORCHESTRATOR_PROMPT,
-    BELLE_ANALYZER_PROMPT,
-    GASTON_EVALUATOR_PROMPT,
-    RAPHUNZEL_GRADES_PROMPT,
-    TIANA_APPLICATION_PROMPT,
-    MULAN_RECOMMENDATION_PROMPT,
-    MERLIN_EVAL_PROMPT,
-    MIRABEL_VIDEO_PROMPT,
-    PRESENTER_PROMPT,
+# Import system_prompts directly to avoid __init__.py pulling in heavy deps
+_sp_spec = importlib.util.spec_from_file_location(
+    "system_prompts",
+    os.path.join(REPO_ROOT, "src", "agents", "system_prompts.py"),
 )
+_sp = importlib.util.module_from_spec(_sp_spec)
+_sp_spec.loader.exec_module(_sp)
 
-# Agent registry: name → (model_tier, system_prompt, description)
+SMEE_ORCHESTRATOR_PROMPT = _sp.SMEE_ORCHESTRATOR_PROMPT
+BELLE_ANALYZER_PROMPT = _sp.BELLE_ANALYZER_PROMPT
+GASTON_EVALUATOR_PROMPT = _sp.GASTON_EVALUATOR_PROMPT
+RAPHUNZEL_GRADES_PROMPT = _sp.RAPHUNZEL_GRADES_PROMPT
+TIANA_APPLICATION_PROMPT = _sp.TIANA_APPLICATION_PROMPT
+MULAN_RECOMMENDATION_PROMPT = _sp.MULAN_RECOMMENDATION_PROMPT
+MERLIN_EVAL_PROMPT = _sp.MERLIN_EVAL_PROMPT
+MIRABEL_VIDEO_PROMPT = _sp.MIRABEL_VIDEO_PROMPT
+PRESENTER_PROMPT = _sp.PRESENTER_PROMPT
+
+# Model tier defaults — can be overridden via env vars
+_ORCHESTRATOR = os.getenv("MODEL_TIER_ORCHESTRATOR", "o3")
+_REASONING = os.getenv("MODEL_TIER_REASONING", "o3")
+_PREMIUM = os.getenv("MODEL_TIER_PREMIUM", "gpt-5.4-pro")
+_MERLIN = os.getenv("MODEL_TIER_MERLIN", "gpt-5.4-pro")
+_WORKHORSE = os.getenv("MODEL_TIER_WORKHORSE", "gpt-5.4")
+_VISION = os.getenv("FOUNDRY_VISION_MODEL_NAME", "gpt-4o")
+
+# Agent registry: name → (model, system_prompt, description)
 AGENT_REGISTRY = {
     "smee": {
-        "model": config.model_tier_orchestrator,
+        "model": _ORCHESTRATOR,
         "prompt": SMEE_ORCHESTRATOR_PROMPT,
         "description": "Pipeline Orchestrator — coordinates all agents in the evaluation workflow",
     },
     "belle": {
-        "model": config.model_tier_workhorse,
+        "model": _WORKHORSE,
         "prompt": BELLE_ANALYZER_PROMPT,
         "description": "Document Intelligence — PDF/DOCX parsing, section detection, OCR",
     },
     "tiana": {
-        "model": config.model_tier_workhorse,
+        "model": _WORKHORSE,
         "prompt": TIANA_APPLICATION_PROMPT,
         "description": "Application Reader — essay and application text analysis",
     },
     "rapunzel": {
-        "model": config.model_tier_premium,
+        "model": _PREMIUM,
         "prompt": RAPHUNZEL_GRADES_PROMPT,
         "description": "Grade Analyst — transcript parsing and academic record analysis",
     },
     "mulan": {
-        "model": config.model_tier_workhorse,
+        "model": _WORKHORSE,
         "prompt": MULAN_RECOMMENDATION_PROMPT,
         "description": "Recommendation Analyst — recommendation letter analysis",
     },
     "merlin": {
-        "model": config.model_tier_merlin,
+        "model": _MERLIN,
         "prompt": MERLIN_EVAL_PROMPT,
         "description": "Synthesis Evaluator — final comprehensive evaluation",
     },
     "gaston": {
-        "model": config.model_tier_reasoning,
+        "model": _REASONING,
         "prompt": GASTON_EVALUATOR_PROMPT,
         "description": "Counter-Evaluator — consistency audit, bias check, quality gate",
     },
     "aurora": {
-        "model": config.model_tier_workhorse,
+        "model": _WORKHORSE,
         "prompt": PRESENTER_PROMPT,
         "description": "Report Formatter — executive summary and presentation",
     },
     "mirabel": {
-        "model": config.foundry_vision_model_name or "gpt-4o",
+        "model": _VISION,
         "prompt": MIRABEL_VIDEO_PROMPT,
         "description": "Video Analyst — video submission frame and audio analysis",
     },
@@ -93,8 +108,7 @@ def get_project_client():
     from azure.identity import DefaultAzureCredential
 
     endpoint = (
-        config.foundry_project_endpoint
-        or os.getenv("PROJECT_ENDPOINT")
+        os.getenv("PROJECT_ENDPOINT")
         or os.getenv("FOUNDRY_PROJECT_ENDPOINT")
     )
     if not endpoint:
@@ -149,7 +163,7 @@ def verify_agents(project):
         slug = f"nextgen-{name}"
         try:
             # Try to get the agent by listing and matching
-            agents = project.agents.list_agents()
+            agents = list(project.agents.list())
             found = False
             for a in agents:
                 if getattr(a, 'name', '') == slug:

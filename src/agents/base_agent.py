@@ -2,6 +2,7 @@
 
 import json
 import logging
+import os
 import time
 import signal
 import threading
@@ -21,6 +22,28 @@ from src.observability import get_tracer, should_capture_sensitive_data
 from opentelemetry.trace import SpanKind
 
 logger = logging.getLogger(__name__)
+
+# Foundry agent slug mapping — agents registered via install_foundry_agents.py
+# When an agent name matches, calls route through the Responses API with agent_reference
+# instead of raw chat.completions. Set NEXTGEN_USE_FOUNDRY_AGENTS=1 to enable.
+FOUNDRY_AGENT_SLUGS = {
+    "Belle": "nextgen-belle",
+    "Belle Document Analyzer": "nextgen-belle",
+    "Tiana": "nextgen-tiana",
+    "Tiana Application Reader": "nextgen-tiana",
+    "Rapunzel": "nextgen-rapunzel",
+    "Rapunzel Grade Reader": "nextgen-rapunzel",
+    "Mulan": "nextgen-mulan",
+    "Mulan Recommendation Reader": "nextgen-mulan",
+    "Merlin": "nextgen-merlin",
+    "Merlin Student Evaluator": "nextgen-merlin",
+    "Gaston": "nextgen-gaston",
+    "Gaston Evaluator": "nextgen-gaston",
+    "Aurora": "nextgen-aurora",
+    "Mirabel": "nextgen-mirabel",
+    "Mirabel Video Analyzer": "nextgen-mirabel",
+    "Smee": "nextgen-smee",
+}
 
 
 class BaseAgent(ABC):
@@ -167,11 +190,40 @@ class BaseAgent(ABC):
     def _create_chat_completion(self, operation: str, model: Optional[str] = None, messages: Optional[list] = None, **kwargs):
         """Create a chat completion with OpenTelemetry tracking and multi-pass refinements.
 
-        This function is provider-agnostic and will try common client shapes (Azure/OpenAI style,
-        top-level `generate`, or our Foundry adapter). It prefers an explicit `model` argument,
-        else falls back to `config.foundry_model_name` when `config.model_provider=='foundry'`,
-        otherwise `config.deployment_name` for Azure.
+        If NEXTGEN_USE_FOUNDRY_AGENTS=1 and this agent has a Foundry slug,
+        routes through the Responses API with agent_reference instead of
+        raw chat.completions. This gives agents their registered system
+        prompts and model assignments from Foundry.
         """
+        # ── Foundry Agent Routing ──────────────────────────────────
+        # When enabled, route through Responses API for registered agents
+        if os.environ.get("NEXTGEN_USE_FOUNDRY_AGENTS", "").strip() in ("1", "true", "yes"):
+            slug = FOUNDRY_AGENT_SLUGS.get(self.name)
+            if slug and hasattr(self.client, 'responses_create'):
+                try:
+                    # Serialize messages to a single input string for the Responses API
+                    input_text = ""
+                    if messages:
+                        parts = []
+                        for m in messages:
+                            if isinstance(m, dict):
+                                role = m.get("role", "user")
+                                content = m.get("content", "")
+                                if role != "system":  # system prompt is in the Foundry agent definition
+                                    parts.append(str(content))
+                        input_text = "\n\n".join(parts)
+                    
+                    if input_text:
+                        logger.info("Routing %s → Foundry agent %s via Responses API", self.name, slug)
+                        return self.client.responses_create(
+                            agent_name=slug,
+                            input_text=input_text,
+                            model=model,
+                        )
+                except Exception as e:
+                    logger.warning("Foundry agent routing failed for %s, falling back to chat.completions: %s", self.name, e)
+        # ── End Foundry Agent Routing ──────────────────────────────
+
         tracer = get_tracer()
         start_time = time.time()
         response = None
