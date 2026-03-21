@@ -282,9 +282,6 @@ class Config:
         self.auth_password_hash: Optional[str] = self._get_secret("app-auth-password-hash", "APP_AUTH_PASSWORD_HASH")
         self.auth_session_hours: int = int(os.getenv("AUTH_SESSION_HOURS", "8"))
 
-        # Azure Front Door ID — enforce that requests arrive via Front Door
-        self.azure_front_door_id: Optional[str] = os.getenv("AZURE_FRONT_DOOR_ID")
-
         # App metadata
         self.app_version: str = self._read_version_file() or self._read_env_version() or "0.1"
 

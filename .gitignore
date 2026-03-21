@@ -73,3 +73,4 @@ htmlcov/
 # Docker build artifacts
 *.tar
 src/agents/milo_data_scientist.py.bak
+nohup.out

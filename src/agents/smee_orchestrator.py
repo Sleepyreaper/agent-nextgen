@@ -675,6 +675,107 @@ class SmeeOrchestrator(BaseAgent):
         """Sprint 1: Check if a step was already completed in a previous run."""
         return step_name in self.evaluation_results.get('completed_steps', [])
 
+    # =====================================================================
+    # Sprint 2: Output Validation + Interleaved Gaston Quality Gate
+    # =====================================================================
+
+    def _validate_agent_output(self, agent_id: str, result: Any) -> Dict[str, Any]:
+        """
+        Validate an agent's output for completeness and sanity.
+
+        Returns:
+            {'valid': True/False, 'issues': [...]} 
+        """
+        issues = []
+
+        if result is None:
+            return {'valid': False, 'issues': ['Output is None']}
+        if isinstance(result, dict) and result.get('status') == 'error':
+            return {'valid': False, 'issues': [f"Agent returned error: {result.get('error', 'unknown')}"]}
+        if isinstance(result, str) and len(result.strip()) < 20:
+            issues.append(f'Output suspiciously short ({len(result)} chars)')
+        if isinstance(result, dict):
+            # Check for expected score fields where applicable
+            score_agents = {'grade_reader', 'application_reader', 'recommendation_reader', 'student_evaluator'}
+            if agent_id in score_agents:
+                score_keys = [k for k in result if 'score' in k.lower() or 'rating' in k.lower() or 'gpa' in k.lower()]
+                for sk in score_keys:
+                    val = result[sk]
+                    if isinstance(val, (int, float)):
+                        if val < 0 or val > 200:
+                            issues.append(f'Score out of range: {sk}={val}')
+            # Flag excessively large output (agent may be rambling)
+            result_str_len = len(json.dumps(result, default=str))
+            if result_str_len > 30_000:
+                issues.append(f'Output very large ({result_str_len} chars) — may be verbose')
+
+        return {'valid': len(issues) == 0, 'issues': issues}
+
+    async def _gaston_interleaved_check(
+        self, agent_id: str, agent_result: Any, application_id: Optional[int] = None
+    ) -> Dict[str, Any]:
+        """
+        Sprint 2: Run a lightweight Gaston quality check after a core agent.
+
+        If Gaston grades the output below C (score < 60), the caller should
+        re-run the agent with Gaston's feedback injected.
+
+        Returns:
+            {'grade': 'A'-'F', 'score': 0-100, 'feedback': str, 'pass': bool}
+        """
+        gaston = self.agents.get('gaston')
+        if not gaston:
+            return {'grade': 'N/A', 'score': 100, 'feedback': '', 'pass': True}
+
+        try:
+            # Build a compact review payload
+            result_text = json.dumps(agent_result, default=str)[:4000] if not isinstance(agent_result, str) else agent_result[:4000]
+
+            prompt = [
+                {"role": "system", "content": (
+                    "You are Gaston, quality reviewer. Grade the following agent output "
+                    "from A (excellent) to F (unacceptable). Return JSON with: "
+                    "grade (single letter A-F), score (0-100), feedback (1-2 sentences "
+                    "on what to improve, empty if grade is A or B)."
+                )},
+                {"role": "user", "content": (
+                    f"Agent: {agent_id}\n\nOutput:\n{result_text}"
+                )},
+            ]
+
+            response = await asyncio.to_thread(
+                gaston._create_chat_completion,
+                operation=f"gaston.interleaved_check.{agent_id}",
+                model=gaston.model,
+                messages=prompt,
+                max_completion_tokens=200,
+                temperature=0,
+                response_format={"type": "json_object"},
+            )
+
+            content = None
+            if response and hasattr(response, 'choices') and response.choices:
+                content = getattr(response.choices[0].message, 'content', None)
+
+            if content:
+                review = safe_load_json(content)
+                if isinstance(review, dict):
+                    grade = review.get('grade', 'B').upper()[:1]
+                    score = int(review.get('score', 75))
+                    feedback = review.get('feedback', '')
+                    passed = grade in ('A', 'B', 'C')
+                    logger.info(
+                        "Gaston interleaved check for %s: grade=%s score=%d pass=%s",
+                        agent_id, grade, score, passed
+                    )
+                    return {'grade': grade, 'score': score, 'feedback': feedback, 'pass': passed}
+
+        except Exception as e:
+            logger.warning("Gaston interleaved check failed for %s (non-blocking): %s", agent_id, e)
+
+        # Default pass if Gaston can't run
+        return {'grade': 'N/A', 'score': 100, 'feedback': '', 'pass': True}
+
     async def _run_agent(
         self, 
         agent_id: str, 
@@ -1484,6 +1585,37 @@ class SmeeOrchestrator(BaseAgent):
                         agent_id, application, school_enrichment, shared_prior
                     )
                     normalized_result = self._normalize_agent_result(agent_result)
+
+                    # Sprint 2: Output validation
+                    validation = self._validate_agent_output(agent_id, normalized_result)
+                    if not validation['valid']:
+                        logger.warning("Output validation issues for %s: %s", agent_id, validation['issues'])
+
+                    # Sprint 2: Interleaved Gaston quality check
+                    quality_reviewable = {'application_reader', 'grade_reader', 'recommendation_reader'}
+                    if agent_id in quality_reviewable and isinstance(normalized_result, dict) and normalized_result.get('status') != 'error':
+                        gaston_check = await self._gaston_interleaved_check(agent_id, normalized_result, application_id)
+                        if not gaston_check['pass']:
+                            logger.info("🔄 Gaston grade %s for %s — re-running with feedback", gaston_check['grade'], agent_id)
+                            self._report_progress({
+                                'type': 'agent_progress',
+                                'agent_id': agent_id,
+                                'agent': self.agents[agent_id].name,
+                                'status': 'revision',
+                                'message': f'🔄 Quality check: grade {gaston_check["grade"]} — revising...'
+                            })
+                            # Inject Gaston feedback and re-run once
+                            application['_gaston_feedback'] = gaston_check['feedback']
+                            try:
+                                retry_result = await self._run_agent(
+                                    agent_id, application, school_enrichment, shared_prior
+                                )
+                                normalized_result = self._normalize_agent_result(retry_result)
+                                logger.info("✅ %s revision complete after Gaston feedback", agent_id)
+                            except Exception as _retry_err:
+                                logger.warning("Agent %s revision failed: %s", agent_id, _retry_err)
+                            finally:
+                                application.pop('_gaston_feedback', None)
                     
                     logger.info(f"✅ Agent {agent_id} completed")
                     logger.info(f"✅ {agent_id.upper()}: COMPLETED")

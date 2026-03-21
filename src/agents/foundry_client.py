@@ -511,3 +511,90 @@ class FoundryClient:
         except Exception as e:
             logger.exception("Foundry model call failed: %s", e)
             raise
+
+    # =====================================================================
+    # Responses API — Foundry-native agent calls (Springfield pattern)
+    # =====================================================================
+
+    def responses_create(
+        self,
+        agent_name: str,
+        input_text: str,
+        previous_response_id: Optional[str] = None,
+        model: Optional[str] = None,
+        **kwargs,
+    ):
+        """Call a Foundry-installed agent via the Responses API.
+
+        This is the Springfield pattern: agents are installed in Foundry via
+        ``scripts/install_foundry_agents.py`` and called by name using
+        ``agent_reference``.  Falls back to ``chat.completions`` if the
+        Responses API is unavailable.
+
+        Args:
+            agent_name: Slug name of the agent (e.g. "nextgen-belle")
+            input_text: User message to send
+            previous_response_id: Optional response ID for conversation chaining
+            model: Optional model override (normally comes from the agent definition)
+
+        Returns:
+            _SimpleResponse with .choices[0].message.content and .raw
+        """
+        if self._openai_client is None:
+            logger.warning("No OpenAI SDK client — falling back to chat.completions for %s", agent_name)
+            return self._fallback_chat_call(agent_name, input_text, model, **kwargs)
+
+        try:
+            extra_body = {
+                "agent_reference": {
+                    "name": agent_name,
+                    "type": "agent_reference",
+                }
+            }
+            if previous_response_id:
+                extra_body["previous_response_id"] = previous_response_id
+
+            response = self._openai_client.responses.create(
+                extra_body=extra_body,
+                input=input_text,
+                **kwargs,
+            )
+
+            # Extract text from Responses API response
+            text = ""
+            response_id = None
+            if hasattr(response, "output_text"):
+                text = response.output_text
+            elif hasattr(response, "output"):
+                text = str(response.output)
+            if hasattr(response, "id"):
+                response_id = response.id
+
+            raw = {"response_id": response_id, "agent": agent_name}
+            try:
+                raw["full"] = response.to_dict() if hasattr(response, "to_dict") else response
+            except Exception:
+                pass
+
+            result = _SimpleResponse(text=text, raw=raw)
+            # Attach response_id for conversation chaining
+            result.response_id = response_id
+            logger.info(
+                "[Foundry] Responses API call to %s succeeded (response_id=%s, %d chars)",
+                agent_name, response_id, len(text),
+            )
+            return result
+
+        except Exception as e:
+            logger.warning(
+                "Responses API call to %s failed: %s — falling back to chat.completions",
+                agent_name, e,
+            )
+            return self._fallback_chat_call(agent_name, input_text, model, **kwargs)
+
+    def _fallback_chat_call(
+        self, agent_name: str, input_text: str, model: Optional[str] = None, **kwargs
+    ):
+        """Fallback: call via chat.completions when Responses API is unavailable."""
+        messages = [{"role": "user", "content": input_text}]
+        return self._create_completion_request(model=model, messages=messages, **kwargs)

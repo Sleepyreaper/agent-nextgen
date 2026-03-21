@@ -88,11 +88,6 @@ def require_login():
     # Generate a CSP nonce for this request
     g.csp_nonce = secrets.token_urlsafe(16)
 
-    # ---------------------------------------------------------------
-    # Front Door validation — DISABLED (migrated off Front Door)
-    # The app no longer sits behind Azure Front Door.
-    # ---------------------------------------------------------------
-
     # Skip auth check if credentials are not configured
     if not config.auth_username or not config.auth_password_hash:
         if os.getenv('FLASK_ENV') == 'production':
