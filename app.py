@@ -69,6 +69,10 @@ _AUTH_WHITELIST = {
     'static',                # CSS / JS / images
     'health_check',          # optional health probe endpoint
     'healthz',               # Azure Front Door health probe
+    'diag.foundry',          # diagnostic: Foundry connectivity
+    'diag.postgres',         # diagnostic: Postgres connectivity
+    'diag.storage',          # diagnostic: Blob Storage connectivity
+    'diag.keyvault',         # diagnostic: Key Vault connectivity
 }
 
 # ---------------------------------------------------------------------------
@@ -239,6 +243,7 @@ from routes.testing import testing_bp
 from routes.schools import schools_bp
 from routes.governance import governance_bp
 from routes.calibration import calibration_bp
+from routes.diag import diag_bp
 
 app.register_blueprint(auth_bp)
 app.register_blueprint(feedback_bp)
@@ -251,6 +256,7 @@ app.register_blueprint(testing_bp)
 app.register_blueprint(schools_bp)
 app.register_blueprint(governance_bp)
 app.register_blueprint(calibration_bp)
+app.register_blueprint(diag_bp)
 
 # Start retention scheduler (moved from module-level to explicit call)
 from routes.admin import start_retention_scheduler
@@ -366,41 +372,9 @@ def health():
     }), 200
 
 
-@app.route('/api/test/foundry')
-def test_foundry():
-    """Diagnostic: test Foundry connectivity."""
-    try:
-        from src.services.foundry_client import FoundryClient
-        client = FoundryClient(config)
-        return jsonify({'status': 'ok', 'endpoint': config.foundry_project_endpoint or config.azure_openai_endpoint, 'model': config.foundry_model_name or config.deployment_name}), 200
-    except Exception as e:
-        return jsonify({'status': 'error', 'error': str(e)}), 500
-
-
-@app.route('/api/test/postgres')
-def test_postgres():
-    """Diagnostic: test Postgres connectivity."""
-    try:
-        from src.database import db
-        result = db.execute_query('SELECT 1 as ok')
-        return jsonify({'status': 'ok', 'host': config.postgres_host, 'db': config.postgres_db}), 200
-    except Exception as e:
-        return jsonify({'status': 'error', 'error': str(e)}), 500
-
-
-@app.route('/api/test/storage')
-def test_storage():
-    """Diagnostic: test Azure Blob Storage connectivity."""
-    try:
-        from src.storage import StorageManager
-        sm = StorageManager()
-        containers = sm.list_containers() if hasattr(sm, 'list_containers') else ['connected']
-        return jsonify({'status': 'ok', 'containers': containers[:5]}), 200
-    except Exception as e:
-        return jsonify({'status': 'error', 'error': str(e)}), 500
-
 
 # Feedback routes moved to routes/feedback.py (Issue #23)
+# Diagnostic routes moved to routes/diag.py (Migration March 2026)
 
 
 if __name__ == '__main__':
