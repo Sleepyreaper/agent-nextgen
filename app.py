@@ -69,9 +69,9 @@ _AUTH_WHITELIST = {
     'static',                # CSS / JS / images
     'health_check',          # optional health probe endpoint
     'healthz',               # Azure Front Door health probe
-    'test_foundry',          # diagnostic: Foundry/OpenAI connectivity
-    'test_postgres',         # diagnostic: Postgres connectivity
-    'test_storage',          # diagnostic: Blob Storage connectivity
+    'diag_foundry',          # diagnostic: Foundry/OpenAI connectivity
+    'diag_postgres',         # diagnostic: Postgres connectivity
+    'diag_storage',          # diagnostic: Blob Storage connectivity
     'diag_foundry',          # diagnostic: Foundry/OpenAI connectivity
     'diag_postgres',         # diagnostic: Postgres connectivity
     'diag_storage',          # diagnostic: Blob Storage connectivity
@@ -417,19 +417,17 @@ def health():
     }), 200
 
 
-@app.route('/api/test/foundry')
-def test_foundry():
+@app.route('/api/diag/foundry')
+def diag_foundry():
     """Diagnostic: test Foundry connectivity."""
     try:
-        from src.services.foundry_client import FoundryClient
-        client = FoundryClient(config)
         return jsonify({'status': 'ok', 'endpoint': config.foundry_project_endpoint or config.azure_openai_endpoint, 'model': config.foundry_model_name or config.deployment_name}), 200
     except Exception as e:
         return jsonify({'status': 'error', 'error': str(e)}), 500
 
 
-@app.route('/api/test/postgres')
-def test_postgres():
+@app.route('/api/diag/postgres')
+def diag_postgres():
     """Diagnostic: test Postgres connectivity."""
     try:
         from src.database import db
@@ -439,8 +437,8 @@ def test_postgres():
         return jsonify({'status': 'error', 'error': str(e)}), 500
 
 
-@app.route('/api/test/storage')
-def test_storage():
+@app.route('/api/diag/storage')
+def diag_storage():
     """Diagnostic: test Azure Blob Storage connectivity."""
     try:
         from src.storage import StorageManager
