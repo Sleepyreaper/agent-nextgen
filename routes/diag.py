@@ -67,3 +67,18 @@ def keyvault():
         return jsonify({'status': 'ok', 'vault': config.key_vault_name, 'secrets': names[:5]}), 200
     except Exception as e:
         return jsonify({'status': 'error', 'error': str(e)}), 500
+
+
+@diag_bp.route('/recent-apps')
+def recent_apps():
+    """Show the 5 most recently uploaded applications."""
+    try:
+        from src.database import db
+        rows = db.execute_query(
+            "SELECT application_id, applicant_name, status, is_test_data, is_training_example, "
+            "uploaded_date, file_name "
+            "FROM applications ORDER BY application_id DESC LIMIT 5"
+        )
+        return jsonify({'status': 'ok', 'apps': rows or []}), 200
+    except Exception as e:
+        return jsonify({'status': 'error', 'error': str(e)}), 500

@@ -73,6 +73,7 @@ _AUTH_WHITELIST = {
     'diag.postgres',         # diagnostic: Postgres connectivity
     'diag.storage',          # diagnostic: Blob Storage connectivity
     'diag.keyvault',         # diagnostic: Key Vault connectivity
+    'diag.recent_apps',      # diagnostic: recent applications
 }
 
 # ---------------------------------------------------------------------------
