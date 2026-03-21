@@ -245,7 +245,7 @@ class FoundryClient:
         # for the HTTP fallback path which requires plain-string content.
         if self._openai_client is not None:
             try:
-                client_resp = self._openai_client.chat.completions.create(model=deployment, messages=messages or [], **kwargs)
+                client_resp = self._openai_client.chat.completions.create(model=deployment, messages=messages or [], timeout=90, **kwargs)
                 # The SDK returns an object with .choices where each choice
                 # contains a `message` with `content` (OpenAI-compatible).
                 text = ''

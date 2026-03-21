@@ -613,6 +613,26 @@ class SmeeOrchestrator(BaseAgent):
         logger.info(f"✅ Agent {agent_id} validation passed")
         return {'ready': True}
     
+    def _checkpoint_step(self, step_name: str, application_id: int = None):
+        """Sprint 1: Save checkpoint after a step completes successfully."""
+        if step_name not in self.evaluation_results.get('completed_steps', []):
+            self.evaluation_results.setdefault('completed_steps', []).append(step_name)
+        try:
+            if self.db and application_id:
+                existing = self.db.get_application(application_id) or {}
+                stored = existing.get('agent_results') or {}
+                if isinstance(stored, str):
+                    stored = safe_load_json(stored)
+                stored['_completed_steps'] = self.evaluation_results.get('completed_steps', [])
+                self.db.update_application(application_id=application_id, agent_results=json.dumps(stored))
+                logger.debug("Checkpoint saved: step=%s, total=%d", step_name, len(stored['_completed_steps']))
+        except Exception as e:
+            logger.debug("Checkpoint save failed (non-fatal): %s", e)
+
+    def _step_already_done(self, step_name: str) -> bool:
+        """Sprint 1: Check if a step was already completed in a previous run."""
+        return step_name in self.evaluation_results.get('completed_steps', [])
+
     async def _run_agent(
         self, 
         agent_id: str, 
@@ -959,8 +979,24 @@ class SmeeOrchestrator(BaseAgent):
             'application_id': application_id,
             'student_id': student_id,
             'agents_used': evaluation_steps,
-            'results': {}
+            'results': {},
+            'completed_steps': [],  # Sprint 1: checkpoint tracking
         }
+        
+        # Sprint 1: Resume support — load previous checkpoint if exists
+        _prior_results = {}
+        try:
+            if self.db and application_id:
+                _prior_app = self.db.get_application(application_id) or {}
+                _prior_raw = _prior_app.get('agent_results')
+                if _prior_raw:
+                    _prior_results = safe_load_json(_prior_raw) if isinstance(_prior_raw, str) else (_prior_raw or {})
+                    _completed = _prior_results.get('_completed_steps', [])
+                    if _completed:
+                        self.evaluation_results['completed_steps'] = _completed
+                        logger.info("Resuming from checkpoint: %d steps already completed: %s", len(_completed), _completed)
+        except Exception as _ckpt_err:
+            logger.debug("Checkpoint load skipped: %s", _ckpt_err)
         
         # ===== STEP 1: BELLE - Extract data from document =====
         logger.info("📋 STEP 1: Extracting data from document with BELLE...")

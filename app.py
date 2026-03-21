@@ -262,6 +262,19 @@ app.register_blueprint(diag_bp)
 from routes.admin import start_retention_scheduler
 start_retention_scheduler()
 
+# Sprint 1: Ghost Cleanup — mark stale "Processing" apps as failed on restart
+# If the server restarted while apps were being processed, those daemon threads are dead.
+try:
+    from src.database import db as _db
+    stale = _db.execute_query(
+        "UPDATE applications SET status = 'Uploaded' WHERE status = 'Processing' RETURNING application_id"
+    )
+    if stale:
+        stale_ids = [r.get('application_id', r) for r in stale] if isinstance(stale, list) else []
+        logger.warning("Ghost cleanup: reset %d stale 'Processing' applications back to 'Uploaded': %s", len(stale_ids), stale_ids)
+except Exception as _gc_err:
+    logger.warning("Ghost cleanup failed (non-fatal): %s", _gc_err)
+
 # Ensure upload folder exists
 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 logger.info("Flask app initialized", extra={'upload_folder': app.config['UPLOAD_FOLDER']})

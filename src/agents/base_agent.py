@@ -3,11 +3,19 @@
 import json
 import logging
 import time
+import signal
+import threading
+from contextlib import contextmanager
 from urllib.parse import urlparse
 from abc import ABC, abstractmethod
 from typing import Any, Optional
 
 from src.telemetry import telemetry
+
+# Default timeout for individual model calls (seconds)
+MODEL_CALL_TIMEOUT = 90  # 90s default, override per model tier
+MODEL_CALL_TIMEOUT_PREMIUM = 240  # gpt-5.4-pro, deep analysis
+MODEL_CALL_TIMEOUT_REASONING = 300  # o3, o3-pro
 from src.config import config
 from src.observability import get_tracer, should_capture_sensitive_data
 from opentelemetry.trace import SpanKind
@@ -328,7 +336,22 @@ class BaseAgent(ABC):
                     except Exception:
                         logger.exception("Failed to introspect model client before call")
 
-                    response = _single_call(messages or [], kwargs)
+                    # Sprint 1: Timeout wrapper — prevent hung model calls
+                    call_timeout = MODEL_CALL_TIMEOUT
+                    if resolved_model and ('pro' in resolved_model or 'premium' in str(resolved_model)):
+                        call_timeout = MODEL_CALL_TIMEOUT_PREMIUM
+                    elif resolved_model and ('o3' in str(resolved_model) or 'o4' in str(resolved_model)):
+                        call_timeout = MODEL_CALL_TIMEOUT_REASONING
+
+                    import concurrent.futures
+                    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+                        future = executor.submit(_single_call, messages or [], kwargs)
+                        try:
+                            response = future.result(timeout=call_timeout)
+                        except concurrent.futures.TimeoutError:
+                            logger.error("Model call TIMED OUT after %ds for agent %s (model=%s)", call_timeout, self.name, resolved_model)
+                            span.set_attribute("gen_ai.timeout", True)
+                            raise TimeoutError(f"Model call timed out after {call_timeout}s for {self.name}")
 
                     # Refinement passes
                     for _ in range(1, refinements):
