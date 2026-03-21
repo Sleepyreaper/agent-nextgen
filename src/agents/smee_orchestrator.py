@@ -1775,6 +1775,45 @@ class SmeeOrchestrator(BaseAgent):
                     'status': 'completed',
                     'message': f'💪 Gaston complete — {gaston_result.get("flag_count", 0)} review flags ✓'
                 })
+
+                # Sprint 2: Quality Gate — if Gaston flags ≥3 issues or consistency < 50,
+                # re-run Merlin with Gaston's feedback (up to 1 revision cycle)
+                _gaston_flags = gaston_result.get('flag_count', 0)
+                _gaston_consistency = gaston_result.get('consistency_score', 100)
+                if (_gaston_flags >= 3 or (_gaston_consistency is not None and _gaston_consistency < 50)) and 'student_evaluator' in self.agents:
+                    logger.info("🔄 Quality gate triggered: %d flags, consistency=%s — re-running Merlin with feedback", _gaston_flags, _gaston_consistency)
+                    self._report_progress({
+                        'type': 'agent_progress',
+                        'agent_id': 'merlin',
+                        'agent': 'Merlin',
+                        'status': 'revision',
+                        'message': f'🔄 Gaston flagged {_gaston_flags} issues — Merlin revising evaluation...'
+                    })
+                    try:
+                        _feedback_msg = f"QUALITY REVIEW FEEDBACK from Gaston:\nFlags: {gaston_result.get('review_flags', [])}\nConsistency score: {_gaston_consistency}/100\nPlease revise your evaluation addressing these concerns."
+                        merlin_agent = self.agents['student_evaluator']
+                        _revision = await asyncio.to_thread(
+                            merlin_agent.process,
+                            _feedback_msg
+                        )
+                        if _revision:
+                            self.evaluation_results['results']['merlin_revision'] = _revision
+                            logger.info("✅ Merlin revision complete")
+                            # Re-run Gaston on revision
+                            try:
+                                _gaston_r2 = await asyncio.to_thread(
+                                    gaston.audit_evaluation,
+                                    _revision if isinstance(_revision, dict) else {'raw': _revision},
+                                    self.evaluation_results['results'],
+                                    self.evaluation_results['results'].get('_normalized_scores', {}),
+                                    self.evaluation_results['results'].get('_context_multiplier'),
+                                )
+                                self.evaluation_results['results']['gaston_revision'] = _gaston_r2
+                                logger.info("✅ Gaston re-audit: %d flags (was %d)", _gaston_r2.get('flag_count', 0), _gaston_flags)
+                            except Exception:
+                                pass
+                    except Exception as _rev_err:
+                        logger.warning("Merlin revision failed (non-blocking): %s", _rev_err)
             except Exception as e:
                 logger.warning(f"Gaston audit failed (non-blocking): {e}")
                 self.evaluation_results['results']['gaston'] = {'status': 'error', 'error': str(e)}

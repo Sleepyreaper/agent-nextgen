@@ -38,6 +38,59 @@ class BaseAgent(ABC):
         self.client = client
         self.conversation_history = []
         self._trace_context = {}
+        self._conversation_key = None  # Sprint 4: for persistence
+
+    def set_conversation_key(self, key: str):
+        """Sprint 4: Set a key for conversation persistence (e.g., application_id + agent_name)."""
+        self._conversation_key = key
+
+    def save_conversation(self):
+        """Sprint 4: Save conversation history to blob storage for continuity across restarts."""
+        if not self._conversation_key or not self.conversation_history:
+            return
+        try:
+            from azure.storage.blob import BlobServiceClient
+            from azure.identity import DefaultAzureCredential
+            from src.config import config
+            account = config.storage_account_name
+            if not account:
+                return
+            client = BlobServiceClient(
+                account_url=f"https://{account}.blob.core.windows.net",
+                credential=DefaultAzureCredential()
+            )
+            container = client.get_container_client("agent-conversations")
+            try:
+                container.create_container()
+            except Exception:
+                pass
+            blob = container.get_blob_client(f"{self._conversation_key}.json")
+            blob.upload_blob(json.dumps(self.conversation_history[-20:]), overwrite=True)  # Keep last 20 messages
+        except Exception as e:
+            logger.debug("Conversation save failed (non-fatal): %s", e)
+
+    def load_conversation(self):
+        """Sprint 4: Load conversation history from blob storage."""
+        if not self._conversation_key:
+            return
+        try:
+            from azure.storage.blob import BlobServiceClient
+            from azure.identity import DefaultAzureCredential
+            from src.config import config
+            account = config.storage_account_name
+            if not account:
+                return
+            client = BlobServiceClient(
+                account_url=f"https://{account}.blob.core.windows.net",
+                credential=DefaultAzureCredential()
+            )
+            blob = client.get_container_client("agent-conversations").get_blob_client(f"{self._conversation_key}.json")
+            data = json.loads(blob.download_blob().readall())
+            if isinstance(data, list):
+                self.conversation_history = data
+                logger.debug("Loaded %d conversation messages for %s", len(data), self._conversation_key)
+        except Exception:
+            pass  # No prior conversation — start fresh
     
     @abstractmethod
     async def process(self, message: str) -> str:
