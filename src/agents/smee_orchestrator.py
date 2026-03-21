@@ -2,11 +2,22 @@
 
 import asyncio
 import json
+import time as _time
 from src.utils import safe_load_json
 import logging
 import os
 from typing import Dict, List, Any, Optional, Tuple
 from src.config import config
+
+# Model-aware pacing (from Marge's playbook) — seconds between agent calls
+MODEL_COOLDOWN = {
+    "o3-pro": 8,
+    "o3": 5,
+    "gpt-5.4-pro": 4,
+    "gpt-5.4": 2,
+    "gpt-4o": 2,
+}
+STEP_DELAY = 3  # default between steps
 # Do not import `openai` at module import time. Accept the AI client as a runtime
 # object (Any) to avoid ModuleNotFoundError during application startup when the
 # `openai` package is not installed in the environment.
@@ -629,6 +640,38 @@ class SmeeOrchestrator(BaseAgent):
         except Exception as e:
             logger.debug("Checkpoint save failed (non-fatal): %s", e)
 
+    def _pace(self, agent_id: str = None):
+        """Model-aware pacing between agent calls (from Marge's playbook)."""
+        delay = STEP_DELAY
+        if agent_id and agent_id in self.agents:
+            model = getattr(self.agents[agent_id], '_model', '') or ''
+            for model_prefix, cooldown in MODEL_COOLDOWN.items():
+                if model_prefix.lower() in str(model).lower():
+                    delay = cooldown
+                    break
+        _time.sleep(delay)
+
+    def _is_cancelled(self) -> bool:
+        """Check if the current job has been cancelled."""
+        app_id = self.evaluation_results.get('application_id')
+        if not app_id or not self.db:
+            return False
+        try:
+            app = self.db.get_application(app_id)
+            return app and app.get('status') == 'Cancelled'
+        except Exception:
+            return False
+
+    def _record_usage(self, agent_id: str, start_time: float, end_time: float):
+        """Track per-agent timing for cost/performance analysis."""
+        elapsed = end_time - start_time
+        usage = self.evaluation_results.setdefault('_usage', {})
+        usage[agent_id] = {
+            'elapsed_seconds': round(elapsed, 1),
+            'model': getattr(self.agents.get(agent_id), '_model', 'unknown') if agent_id in self.agents else 'unknown',
+        }
+            logger.debug("Checkpoint save failed (non-fatal): %s", e)
+
     def _step_already_done(self, step_name: str) -> bool:
         """Sprint 1: Check if a step was already completed in a previous run."""
         return step_name in self.evaluation_results.get('completed_steps', [])
@@ -1100,6 +1143,90 @@ class SmeeOrchestrator(BaseAgent):
                      application.get('state_code') or 
                      application.get('StateCode', '')).strip()
         
+        # ===== PHASE 0: ADAPTIVE PLANNING (Marge Pattern) =====
+        # Smee reads Belle's extraction and DECIDES which agents to run.
+        # This is the key difference from a fixed pipeline — the orchestrator THINKS.
+        logger.info("🎩 PHASE 0: Smee adaptive planning — analyzing Belle's extraction...")
+        
+        has_transcript = bool(application.get('transcript_text') or belle_agent_fields.get('transcript_text'))
+        has_recommendation = bool(application.get('recommendation_text') or belle_agent_fields.get('recommendation_text'))
+        has_essay = bool(application.get('application_text') or belle_agent_fields.get('application_text'))
+        has_video = application.get('file_type', '').startswith('video/')
+        has_school = bool(high_school)
+        
+        # Build adaptive plan
+        _active_agents = set()
+        _skip_reasons = {}
+        
+        # Always run: Belle (already ran), Merlin (synthesis), Aurora (report), Gaston (audit)
+        _active_agents.update({'student_evaluator', 'aurora', 'gaston'})
+        
+        # Conditional agents based on document content
+        if has_transcript:
+            _active_agents.add('grade_reader')
+            logger.info("  📊 Transcript found → Rapunzel will read grades")
+        else:
+            _skip_reasons['grade_reader'] = 'No transcript detected in document'
+            logger.info("  ⏭️ No transcript → skipping Rapunzel")
+        
+        if has_recommendation:
+            _active_agents.add('recommendation_reader')
+            logger.info("  📝 Recommendation found → Mulan will analyze")
+        else:
+            _skip_reasons['recommendation_reader'] = 'No recommendation letter detected'
+            logger.info("  ⏭️ No recommendation → skipping Mulan")
+        
+        if has_essay:
+            _active_agents.add('application_reader')
+            logger.info("  📖 Essay/application found → Tiana will read")
+        else:
+            _skip_reasons['application_reader'] = 'No essay content detected'
+            logger.info("  ⏭️ No essay → skipping Tiana")
+        
+        if has_school:
+            _active_agents.update({'school_context', 'naveen'})
+            logger.info("  🏫 School identified (%s) → Moana + Naveen will enrich", high_school)
+        else:
+            _skip_reasons['school_context'] = 'No school identified'
+            _skip_reasons['naveen'] = 'No school to enrich'
+            logger.info("  ⏭️ No school identified → skipping Moana + Naveen")
+        
+        # Milo only if we have enough training data
+        _active_agents.add('data_scientist')
+        
+        # Filter evaluation_steps to only active agents
+        _original_steps = list(evaluation_steps)
+        evaluation_steps = [s for s in evaluation_steps if s in _active_agents or s not in _skip_reasons]
+        
+        _skipped = set(_original_steps) - set(evaluation_steps)
+        if _skipped:
+            logger.info("🎩 Phase 0 result: Running %d of %d agents (skipping: %s)", 
+                       len(evaluation_steps), len(_original_steps), 
+                       {k: v for k, v in _skip_reasons.items()})
+            for sk, reason in _skip_reasons.items():
+                self.evaluation_results['results'][sk] = {'status': 'skipped', 'reason': reason}
+        else:
+            logger.info("🎩 Phase 0 result: Full pipeline — all %d agents active", len(evaluation_steps))
+        
+        self.evaluation_results['adaptive_plan'] = {
+            'active_agents': list(_active_agents),
+            'skipped': _skip_reasons,
+            'has_transcript': has_transcript,
+            'has_recommendation': has_recommendation,
+            'has_essay': has_essay,
+            'has_video': has_video,
+            'has_school': has_school,
+        }
+        self._checkpoint_step('phase_0_planning', application_id)
+        
+        self._report_progress({
+            'type': 'agent_progress',
+            'agent': 'Smee',
+            'agent_id': 'smee',
+            'status': 'plan_complete',
+            'message': f'🎩 Plan: {len(_active_agents)} agents active, {len(_skip_reasons)} skipped'
+        })
+
         # ===== STEP 2: SMEE + BELLE verify student record =====
         # Belle extracted name and high school from the document.
         # Smee now uses those fields to look up or create the student record.
@@ -1167,6 +1294,11 @@ class SmeeOrchestrator(BaseAgent):
                 logger.warning(f"Could not create application record after matching: {e}")
 
         # ===== STEP 2.5/3/3.5: School enrichment via NAVEEN + MOANA =====
+        # Gate check: cancellation + pacing
+        if self._is_cancelled():
+            logger.info("🛑 Pipeline cancelled after Step 2")
+            return {'status': 'cancelled', 'completed_steps': self.evaluation_results.get('completed_steps', [])}
+        self._pace()
         school_enrichment = {}
         if high_school and state_code:
             logger.info(f"🏫 STEP 2.5: Checking school enrichment for {high_school}, {state_code}")
@@ -1229,6 +1361,12 @@ class SmeeOrchestrator(BaseAgent):
             })
 
         self.evaluation_results['results']['school_enrichment'] = school_enrichment
+        
+        # Gate check: cancellation + pacing
+        if self._is_cancelled():
+            logger.info("🛑 Pipeline cancelled after Step 3")
+            return {'status': 'cancelled', 'completed_steps': self.evaluation_results.get('completed_steps', [])}
+        self._pace()
         
         # ===== STEP 4: Core agents with per-agent validation =====
         logger.info("🤖 STEP 4: Running core agents with PARALLEL execution...")
@@ -1485,6 +1623,12 @@ class SmeeOrchestrator(BaseAgent):
                 logger.debug(f"Skipping DB persistence for {agent_id}")
 
         
+        # Gate check before Step 5
+        if self._is_cancelled():
+            logger.info("🛑 Pipeline cancelled after Step 4")
+            return {'status': 'cancelled', 'completed_steps': self.evaluation_results.get('completed_steps', [])}
+        self._pace('data_scientist')
+        
         # ===== STEP 5: MILO - training analysis =====
         logger.info("📊 STEP 5: Running Milo training analysis...")
         if 'data_scientist' in evaluation_steps and 'data_scientist' in self.agents:
@@ -1616,6 +1760,12 @@ class SmeeOrchestrator(BaseAgent):
                 'multiplier': 1.0, 'reasons': [], 'school_name': high_school
             }
 
+        # Gate check before Step 6
+        if self._is_cancelled():
+            logger.info("🛑 Pipeline cancelled after Step 5")
+            return {'status': 'cancelled', 'completed_steps': self.evaluation_results.get('completed_steps', [])}
+        self._pace('student_evaluator')
+        
         # ===== STEP 6: MERLIN - Synthesis =====
         logger.info("🧙 STEP 6: Synthesizing evaluation with MERLIN...")
         
@@ -1737,6 +1887,12 @@ class SmeeOrchestrator(BaseAgent):
                     }
                 )
         
+        # Gate check before Gaston
+        if self._is_cancelled():
+            logger.info("🛑 Pipeline cancelled after Step 6")
+            return {'status': 'cancelled', 'completed_steps': self.evaluation_results.get('completed_steps', [])}
+        self._pace('gaston')
+        
         # ===== STEP 6.5: GASTON - Post-Merlin audit =====
         logger.info("💪 STEP 6.5: Gaston auditing Merlin's evaluation...")
         merlin_out = self.evaluation_results['results'].get('merlin') or self.evaluation_results['results'].get('student_evaluator') or {}
@@ -1835,6 +1991,12 @@ class SmeeOrchestrator(BaseAgent):
                 logger.warning(f"Gaston audit failed (non-blocking): {e}")
                 self.evaluation_results['results']['gaston'] = {'status': 'error', 'error': str(e)}
 
+        # Gate check before Aurora
+        if self._is_cancelled():
+            logger.info("🛑 Pipeline cancelled after Gaston")
+            return {'status': 'cancelled', 'completed_steps': self.evaluation_results.get('completed_steps', [])}
+        self._pace('aurora')
+        
         # ===== STEP 7: AURORA - Report generation =====
         logger.info("📄 STEP 7: Generating report with AURORA...")
         
