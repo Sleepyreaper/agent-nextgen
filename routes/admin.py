@@ -164,6 +164,92 @@ def debug_dataset():
         return render_template('debug_dataset.html', rows=[])
 
 
+@admin_bp.route('/api/admin/reset-2026', methods=['POST'])
+@require_role('admin')
+@limiter.limit("2 per minute")
+def admin_reset_2026():
+    """v2.0 Fresh Start — Reset all 2026 application data and student evaluations.
+    PRESERVES: schools, school_enriched_data, historical_scores.
+    DELETES: applications, agent results, training examples, test data, blob PDFs."""
+    data = request.get_json(silent=True) or {}
+    if data.get('confirm') != 'RESET-2026-FRESH-START':
+        return jsonify({'error': 'Send {"confirm": "RESET-2026-FRESH-START"}'}), 400
+    results = {'tables': {}, 'blobs': {}, 'errors': []}
+    for tbl in ['aurora_communications', 'merlin_evaluations', 'mulan_recommendations',
+                'rapunzel_grades', 'tiana_applications', 'student_school_context',
+                'ai_evaluations', 'aurora_evaluations', 'agent_audit_logs',
+                'agent_evaluation_results', 'agent_evaluation_runs', 'test_submissions',
+                'grade_records', 'user_feedback', 'selection_decisions', 'training_feedback']:
+        try:
+            results['tables'][tbl] = db.execute_non_query(f"DELETE FROM {tbl}") or 0
+        except Exception as e:
+            results['errors'].append(f"{tbl}: {str(e)[:80]}")
+    try:
+        results['tables']['applications'] = db.execute_non_query("DELETE FROM applications") or 0
+    except Exception as e:
+        results['errors'].append(f"applications: {str(e)[:80]}")
+    try:
+        from azure.storage.blob import BlobServiceClient
+        from azure.identity import DefaultAzureCredential
+        if config.storage_account_name:
+            bc = BlobServiceClient(account_url=f"https://{config.storage_account_name}.blob.core.windows.net", credential=DefaultAzureCredential())
+            for cn in ['applications-2026', 'applications-test']:
+                try:
+                    c = bc.get_container_client(cn)
+                    blobs = list(c.list_blobs())
+                    for b in blobs: c.delete_blob(b.name)
+                    results['blobs'][cn] = len(blobs)
+                except Exception as e:
+                    results['errors'].append(f"blob {cn}: {str(e)[:80]}")
+    except Exception as e:
+        results['errors'].append(f"blob init: {str(e)[:80]}")
+    total = sum(results['tables'].values()) + sum(results['blobs'].values())
+    logger.warning("v2.0 RESET: %d deleted, errors=%s", total, results['errors'])
+    return jsonify({'status': 'success' if not results['errors'] else 'partial', 'total_deleted': total, **results})
+
+
+@admin_bp.route('/api/admin/reset-training', methods=['POST'])
+@require_role('admin')
+@limiter.limit("3 per minute")
+def admin_reset_training():
+    """Reset training data only. Milo rebuilds from scratch. historical_scores preserved."""
+    data = request.get_json(silent=True) or {}
+    if data.get('confirm') != 'RESET-TRAINING':
+        return jsonify({'error': 'Send {"confirm": "RESET-TRAINING"}'}), 400
+    try:
+        apps = db.execute_query("SELECT application_id FROM applications WHERE is_training_example = TRUE")
+        ids = [r.get('application_id', r) for r in (apps or [])]
+        deleted = 0
+        if ids:
+            id_list = ','.join(str(a) for a in ids)
+            for tbl in ['merlin_evaluations', 'tiana_applications', 'rapunzel_grades', 'mulan_recommendations', 'student_school_context', 'aurora_evaluations', 'ai_evaluations', 'agent_audit_logs']:
+                try: db.execute_non_query(f"DELETE FROM {tbl} WHERE application_id IN ({id_list})")
+                except: pass
+            deleted = db.execute_non_query("DELETE FROM applications WHERE is_training_example = TRUE") or 0
+        return jsonify({'status': 'success', 'training_deleted': deleted, 'historical_scores': 'preserved'})
+    except Exception as e:
+        return jsonify({'status': 'error', 'error': str(e)[:200]}), 500
+
+
+@admin_bp.route('/api/admin/data-inventory', methods=['GET'])
+def admin_data_inventory():
+    """Quick inventory of all data — check before reset."""
+    try:
+        counts = {}
+        for tbl in ['applications', 'merlin_evaluations', 'schools', 'school_enriched_data', 'historical_scores']:
+            try:
+                r = db.execute_query(f"SELECT COUNT(*) as cnt FROM {tbl}")
+                counts[tbl] = r[0].get('cnt', 0) if r else 0
+            except: counts[tbl] = 'n/a'
+        try:
+            bd = db.execute_query("SELECT COUNT(*) as total, SUM(CASE WHEN is_training_example=TRUE THEN 1 ELSE 0 END) as training, SUM(CASE WHEN is_test_data=TRUE THEN 1 ELSE 0 END) as test FROM applications")
+            counts['breakdown'] = bd[0] if bd else {}
+        except: pass
+        return jsonify({'status': 'ok', 'counts': counts})
+    except Exception as e:
+        return jsonify({'status': 'error', 'error': str(e)}), 500
+
+
 @admin_bp.route('/api/admin/reset', methods=['POST'])
 @require_role('admin')
 @limiter.limit("3 per minute")
