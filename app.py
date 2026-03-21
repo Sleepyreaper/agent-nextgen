@@ -69,12 +69,6 @@ _AUTH_WHITELIST = {
     'static',                # CSS / JS / images
     'health_check',          # optional health probe endpoint
     'healthz',               # Azure Front Door health probe
-    'diag_foundry',          # diagnostic: Foundry/OpenAI connectivity
-    'diag_postgres',         # diagnostic: Postgres connectivity
-    'diag_storage',          # diagnostic: Blob Storage connectivity
-    'diag_foundry',          # diagnostic: Foundry/OpenAI connectivity
-    'diag_postgres',         # diagnostic: Postgres connectivity
-    'diag_storage',          # diagnostic: Blob Storage connectivity
 }
 
 # ---------------------------------------------------------------------------
@@ -284,51 +278,6 @@ def healthz():
     return jsonify({"status": "ok", "version": version}), 200
 
 
-@app.route('/api/diag/foundry')
-def diag_foundry():
-    """Diagnostic: Test Foundry/OpenAI connectivity."""
-    try:
-        from src.config import config
-        from azure.identity import DefaultAzureCredential
-        import urllib.request, json as _json
-        cred = DefaultAzureCredential()
-        token = cred.get_token("https://cognitiveservices.azure.com/.default").token
-        endpoint = config.foundry_project_endpoint or config.azure_openai_endpoint
-        model = config.foundry_model_name or config.azure_deployment_name
-        url = f"{endpoint.rstrip('/')}/openai/deployments/{model}/chat/completions?api-version=2024-10-21"
-        body = _json.dumps({"messages": [{"role": "user", "content": "Say hello in 3 words"}], "max_tokens": 20}).encode()
-        req = urllib.request.Request(url, data=body, headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"})
-        resp = urllib.request.urlopen(req, timeout=15)
-        data = _json.loads(resp.read())
-        reply = data.get("choices", [{}])[0].get("message", {}).get("content", "")
-        return jsonify({"status": "ok", "model": model, "endpoint": endpoint, "reply": reply}), 200
-    except Exception as e:
-        return jsonify({"status": "error", "error": str(e)}), 500
-
-
-@app.route('/api/diag/postgres')
-def diag_postgres():
-    """Diagnostic: Test Postgres connectivity."""
-    try:
-        from src.database import db
-        result = db.execute_query("SELECT NOW() as ts, current_database() as db")
-        row = result[0] if result else {}
-        return jsonify({"status": "ok", "timestamp": str(row.get("ts", "")), "database": row.get("db", "")}), 200
-    except Exception as e:
-        return jsonify({"status": "error", "error": str(e)}), 500
-
-
-@app.route('/api/diag/storage')
-def diag_storage():
-    """Diagnostic: Test Azure Blob Storage connectivity."""
-    try:
-        from src.storage import storage
-        containers = storage.list_containers()
-        return jsonify({"status": "ok", "containers": containers[:10]}), 200
-    except Exception as e:
-        return jsonify({"status": "error", "error": str(e)}), 500
-
-
 @app.route('/')
 def index():
     """Home page - Dashboard."""
@@ -417,17 +366,19 @@ def health():
     }), 200
 
 
-@app.route('/api/diag/foundry')
-def diag_foundry():
+@app.route('/api/test/foundry')
+def test_foundry():
     """Diagnostic: test Foundry connectivity."""
     try:
+        from src.services.foundry_client import FoundryClient
+        client = FoundryClient(config)
         return jsonify({'status': 'ok', 'endpoint': config.foundry_project_endpoint or config.azure_openai_endpoint, 'model': config.foundry_model_name or config.deployment_name}), 200
     except Exception as e:
         return jsonify({'status': 'error', 'error': str(e)}), 500
 
 
-@app.route('/api/diag/postgres')
-def diag_postgres():
+@app.route('/api/test/postgres')
+def test_postgres():
     """Diagnostic: test Postgres connectivity."""
     try:
         from src.database import db
@@ -437,8 +388,8 @@ def diag_postgres():
         return jsonify({'status': 'error', 'error': str(e)}), 500
 
 
-@app.route('/api/diag/storage')
-def diag_storage():
+@app.route('/api/test/storage')
+def test_storage():
     """Diagnostic: test Azure Blob Storage connectivity."""
     try:
         from src.storage import StorageManager
