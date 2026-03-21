@@ -102,6 +102,14 @@ class Config:
         self.deployment_name_mini: str = self._get_secret("azure-deployment-name-mini", "AZURE_DEPLOYMENT_NAME_MINI") or "gpt-5.4"
 
         # Tiered model deployments — see MODEL_AGENT_CONFIGURATION.md for rationale
+        # Tier 0 (Orchestrator): reasoning for planning — Smee orchestrator
+        self.model_tier_orchestrator: str = self._get_secret(
+            "model-tier-orchestrator", "MODEL_TIER_ORCHESTRATOR"
+        ) or os.getenv("MODEL_TIER_ORCHESTRATOR") or "o3"
+        # Tier 0+ (Reasoning): deep analysis — Gaston counter-eval, bias detection
+        self.model_tier_reasoning: str = self._get_secret(
+            "model-tier-reasoning", "MODEL_TIER_REASONING"
+        ) or os.getenv("MODEL_TIER_REASONING") or "o3"
         # Tier 1 (Premium): complex reasoning — Merlin, Rapunzel, Milo
         self.model_tier_premium: str = self._get_secret(
             "model-tier-premium", "MODEL_TIER_PREMIUM"

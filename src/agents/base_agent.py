@@ -401,10 +401,32 @@ class BaseAgent(ABC):
                         future = executor.submit(_single_call, messages or [], kwargs)
                         try:
                             response = future.result(timeout=call_timeout)
-                        except concurrent.futures.TimeoutError:
+                        except (concurrent.futures.TimeoutError, TimeoutError):
                             logger.error("Model call TIMED OUT after %ds for agent %s (model=%s)", call_timeout, self.name, resolved_model)
                             span.set_attribute("gen_ai.timeout", True)
-                            raise TimeoutError(f"Model call timed out after {call_timeout}s for {self.name}")
+                            # Model fallback: try cheaper model if premium/reasoning timed out
+                            fallback_model = None
+                            if resolved_model and ('pro' in str(resolved_model) or 'o3' in str(resolved_model)):
+                                from src.config import config as _cfg
+                                fallback_model = _cfg.model_tier_workhorse  # gpt-5.4
+                            if fallback_model and fallback_model != resolved_model:
+                                logger.warning("Attempting fallback: %s → %s for agent %s", resolved_model, fallback_model, self.name)
+                                span.set_attribute("gen_ai.fallback_model", fallback_model)
+                                # Inject a "be more careful" system message for the fallback
+                                fallback_msgs = list(messages or [])
+                                if fallback_msgs and fallback_msgs[0].get("role") == "system":
+                                    fallback_msgs[0] = {**fallback_msgs[0], "content": fallback_msgs[0].get("content", "") + "\n\nIMPORTANT: You are running as a fallback for a more powerful model. Be thorough and careful."}
+                                fallback_kwargs = dict(kwargs)
+                                fallback_kwargs['model'] = fallback_model
+                                try:
+                                    future2 = executor.submit(_single_call, fallback_msgs, fallback_kwargs)
+                                    response = future2.result(timeout=MODEL_CALL_TIMEOUT)
+                                    logger.info("Fallback succeeded for agent %s using %s", self.name, fallback_model)
+                                except Exception as fb_err:
+                                    logger.error("Fallback also failed for %s: %s", self.name, fb_err)
+                                    raise TimeoutError(f"Model call timed out after {call_timeout}s for {self.name} (fallback also failed)")
+                            else:
+                                raise TimeoutError(f"Model call timed out after {call_timeout}s for {self.name}")
 
                     # Refinement passes
                     for _ in range(1, refinements):

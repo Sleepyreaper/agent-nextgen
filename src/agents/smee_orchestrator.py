@@ -1629,8 +1629,25 @@ class SmeeOrchestrator(BaseAgent):
                 'message': '🧙 Merlin is synthesizing all agent evaluations...'
             })
             try:
+                # Context routing: Merlin only gets relevant agent outputs (not raw Belle/Naveen data)
+                _merlin_context = {}
+                _MERLIN_NEEDS = {'application_reader', 'grade_reader', 'recommendation_reader', 'school_context', 'data_scientist', 'milo'}
+                for _k, _v in self.evaluation_results['results'].items():
+                    if _k in _MERLIN_NEEDS or _k in ('_normalized_scores', '_context_multiplier'):
+                        # Cap per-agent context to 15K chars to prevent token overload
+                        if isinstance(_v, str) and len(_v) > 15000:
+                            _merlin_context[_k] = _v[:15000] + '\n[TRUNCATED]'
+                        elif isinstance(_v, dict):
+                            _serialized = json.dumps(_v)
+                            if len(_serialized) > 15000:
+                                _merlin_context[_k] = json.loads(_serialized[:15000] + '"}')  # rough truncate
+                            else:
+                                _merlin_context[_k] = _v
+                        else:
+                            _merlin_context[_k] = _v
+                logger.info("Merlin context routing: %d agents (of %d total), keys=%s", len(_merlin_context), len(self.evaluation_results['results']), list(_merlin_context.keys()))
                 merlin_result = await merlin.evaluate_student(
-                    application, self.evaluation_results['results']
+                    application, _merlin_context
                 )
                 merlin_result = self._normalize_agent_result(merlin_result)
                 # store under both internal and canonical keys

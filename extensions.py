@@ -269,10 +269,12 @@ def get_orchestrator():
         model_merlin = config.model_tier_merlin
         model_workhorse = config.model_tier_workhorse
         model_lightweight = config.model_tier_lightweight
+        model_orchestrator = config.model_tier_orchestrator
+        model_reasoning = config.model_tier_reasoning
         orchestrator_agent = SmeeOrchestrator(
             name="Smee",
             client=client,
-            model=model_workhorse,
+            model=model_orchestrator,
             db_connection=db
         )
 
@@ -311,7 +313,7 @@ def get_orchestrator():
         orchestrator_agent.register_agent("aurora", AuroraAgent() if AuroraAgent else None)
         orchestrator_agent.register_agent(
             "gaston",
-            GastonEvaluator(name="Gaston Evaluator", client=client, model=model_workhorse)
+            GastonEvaluator(name="Gaston Evaluator", client=client, model=model_reasoning)
         )
         orchestrator_agent.register_agent(
             "fairy_godmother",
