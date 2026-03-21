@@ -72,6 +72,9 @@ _AUTH_WHITELIST = {
     'test_foundry',          # diagnostic: Foundry/OpenAI connectivity
     'test_postgres',         # diagnostic: Postgres connectivity
     'test_storage',          # diagnostic: Blob Storage connectivity
+    'diag_foundry',          # diagnostic: Foundry/OpenAI connectivity
+    'diag_postgres',         # diagnostic: Postgres connectivity
+    'diag_storage',          # diagnostic: Blob Storage connectivity
 }
 
 # ---------------------------------------------------------------------------
@@ -281,8 +284,8 @@ def healthz():
     return jsonify({"status": "ok", "version": version}), 200
 
 
-@app.route('/api/test/foundry')
-def test_foundry():
+@app.route('/api/diag/foundry')
+def diag_foundry():
     """Diagnostic: Test Foundry/OpenAI connectivity."""
     try:
         from src.config import config
@@ -303,8 +306,8 @@ def test_foundry():
         return jsonify({"status": "error", "error": str(e)}), 500
 
 
-@app.route('/api/test/postgres')
-def test_postgres():
+@app.route('/api/diag/postgres')
+def diag_postgres():
     """Diagnostic: Test Postgres connectivity."""
     try:
         from src.database import db
@@ -315,8 +318,8 @@ def test_postgres():
         return jsonify({"status": "error", "error": str(e)}), 500
 
 
-@app.route('/api/test/storage')
-def test_storage():
+@app.route('/api/diag/storage')
+def diag_storage():
     """Diagnostic: Test Azure Blob Storage connectivity."""
     try:
         from src.storage import storage
