@@ -354,7 +354,7 @@ def _make_ocr_callback():
     try:
         client = get_ai_client()
         if config.model_provider and config.model_provider.lower() == "foundry":
-            vision_model = getattr(config, 'foundry_vision_model_name', None) or 'gpt-4o'
+            vision_model = getattr(config, 'foundry_vision_model_name', None) or 'gpt-5.4'
         else:
             vision_model = config.deployment_name
         logger.info("OCR callback initialized: client=%s, vision_model=%s", type(client).__name__, vision_model)

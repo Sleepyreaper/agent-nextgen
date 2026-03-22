@@ -1179,6 +1179,7 @@ class SmeeOrchestrator(BaseAgent):
         # ── Re-extract from blob with OCR if text looks thin ──
         # Upload now skips OCR for speed; pipeline re-extracts with OCR
         # so scanned pages (transcripts, etc.) get captured.
+        # Timeout: 90s max — if OCR takes longer, continue with existing text.
         try:
             student_id = application.get('student_id')
             app_type = '2026'
@@ -1190,17 +1191,31 @@ class SmeeOrchestrator(BaseAgent):
             if student_id and document_name and not document_name.lower().endswith('.mp4'):
                 from src.storage import storage
                 from src.document_processor import DocumentProcessor
-                from extensions import _make_ocr_callback
                 import tempfile
+                import concurrent.futures
 
-                file_content = storage.download_file(student_id, document_name, app_type)
-                if file_content and len(file_content) > 100:
+                def _ocr_reextract():
+                    file_content = storage.download_file(student_id, document_name, app_type)
+                    if not file_content or len(file_content) < 100:
+                        return None
                     with tempfile.NamedTemporaryFile(suffix=f'_{document_name}', delete=False) as tmp:
                         tmp.write(file_content)
                         tmp_path = tmp.name
                     try:
+                        from extensions import _make_ocr_callback
                         ocr_cb = _make_ocr_callback()
                         ocr_text, _ = DocumentProcessor.process_document(tmp_path, ocr_callback=ocr_cb)
+                        return ocr_text
+                    finally:
+                        try:
+                            os.remove(tmp_path)
+                        except Exception:
+                            pass
+
+                with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+                    future = executor.submit(_ocr_reextract)
+                    try:
+                        ocr_text = future.result(timeout=90)
                         if ocr_text and len(ocr_text) > len(document_text) + 100:
                             logger.info(
                                 "📖 STEP 1: OCR re-extraction boosted text from %d to %d chars",
@@ -1209,7 +1224,6 @@ class SmeeOrchestrator(BaseAgent):
                             document_text = ocr_text
                             application['application_text'] = ocr_text
                             application['_original_document_text'] = ocr_text
-                            # Persist the OCR-enhanced text back to DB
                             if self.db and application_id:
                                 try:
                                     self.db.update_application_fields(
@@ -1218,15 +1232,10 @@ class SmeeOrchestrator(BaseAgent):
                                 except Exception:
                                     pass
                         else:
-                            logger.info("📖 STEP 1: OCR re-extraction did not improve text (%d vs %d)",
+                            logger.info("📖 STEP 1: OCR did not improve text (%d vs %d)",
                                        len(ocr_text or ''), len(document_text))
-                    finally:
-                        try:
-                            os.remove(tmp_path)
-                        except Exception:
-                            pass
-                else:
-                    logger.info("📖 STEP 1: Could not download file from blob for OCR re-extraction")
+                    except concurrent.futures.TimeoutError:
+                        logger.warning("📖 STEP 1: OCR re-extraction timed out (90s) — continuing with existing text")
         except Exception as _ocr_err:
             logger.warning("📖 STEP 1: OCR re-extraction failed (non-blocking): %s", _ocr_err)
 
