@@ -43,7 +43,7 @@ def pipeline_dashboard():
 # ---------------------------------------------------------------------------
 # Concurrent pipeline pool — each slot has its own Smee instance
 # ---------------------------------------------------------------------------
-MAX_CONCURRENT = int(os.getenv("PIPELINE_MAX_CONCURRENT", "4"))
+MAX_CONCURRENT = int(os.getenv("PIPELINE_MAX_CONCURRENT", "2"))
 _pool_semaphore = threading.Semaphore(MAX_CONCURRENT)
 
 # Track active/completed evaluations for the observatory
