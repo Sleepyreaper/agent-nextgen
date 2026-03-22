@@ -6,15 +6,25 @@
 {% block extra_css %}
 <style>
     /* ── Animated Score Ring ── */
-    .score-ring { position: relative; width: 140px; height: 140px; }
+    .score-ring { position: relative; width: 120px; height: 120px; flex-shrink: 0; }
     .score-ring svg { transform: rotate(-90deg); }
     .score-ring-bg { fill: none; stroke: #e5e7eb; stroke-width: 8; }
     .score-ring-fill { fill: none; stroke-width: 8; stroke-linecap: round;
-        stroke-dasharray: 408; stroke-dashoffset: 408;
+        stroke-dasharray: 339; stroke-dashoffset: 339;
         animation: ringFill 1.5s ease-out forwards; }
     .score-ring-text { position: absolute; inset: 0; display: flex; flex-direction: column;
         align-items: center; justify-content: center; }
     @keyframes ringFill { to { stroke-dashoffset: var(--ring-offset); } }
+
+    /* ── Mini ring (rubric scores) ── */
+    .mini-ring { position: relative; width: 56px; height: 56px; flex-shrink: 0; }
+    .mini-ring svg { transform: rotate(-90deg); }
+    .mini-ring-bg { fill: none; stroke: #e5e7eb; stroke-width: 4; }
+    .mini-ring-fill { fill: none; stroke-width: 4; stroke-linecap: round;
+        stroke-dasharray: 138; stroke-dashoffset: 138;
+        animation: miniRingFill 1.2s ease-out forwards; }
+    .mini-ring-text { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; }
+    @keyframes miniRingFill { to { stroke-dashoffset: var(--ring-offset); } }
 
     /* ── Verdict Glow ── */
     .verdict-strong { --glow: rgba(16, 185, 129, 0.15); }
@@ -24,10 +34,9 @@
     /* ── Accordion ── */
     .accordion-trigger { cursor: pointer; user-select: none; }
     .accordion-trigger:hover { background: rgba(0,0,0,0.02); }
-    .accordion-body { max-height: 0; overflow: hidden; transition: max-height 0.4s ease, padding 0.3s ease; padding: 0; }
-    .accordion-body.open { max-height: 2000px; padding: 1.25rem; }
+    .accordion-body { max-height: 0; overflow: hidden; transition: max-height 0.5s ease, padding 0.3s ease; padding: 0 1.25rem; }
+    .accordion-body.open { max-height: 4000px; padding: 1.25rem; }
     .accordion-chevron { transition: transform 0.3s ease; }
-    .accordion-body.open ~ .accordion-trigger .accordion-chevron,
     .accordion-trigger.active .accordion-chevron { transform: rotate(180deg); }
 
     /* ── Agent stripe ── */
@@ -37,6 +46,28 @@
     .grade-table-wrapper { max-height: 500px; overflow-y: auto; }
     .grade-table-wrapper::-webkit-scrollbar { width: 6px; }
     .grade-table-wrapper::-webkit-scrollbar-thumb { background: #d0d0ce; border-radius: 3px; }
+
+    /* ── Diamond shimmer ── */
+    .diamond-card { background: linear-gradient(135deg, #fffbeb 0%, #fef3c7 50%, #fde68a 100%); }
+    @keyframes shimmer { 0% { background-position: -200% 0; } 100% { background-position: 200% 0; } }
+    .diamond-shimmer { background: linear-gradient(90deg, transparent, rgba(255,255,255,0.4), transparent);
+        background-size: 200% 100%; animation: shimmer 3s infinite; }
+
+    /* ── Stagger animation ── */
+    .stagger-in > * { opacity: 0; transform: translateY(12px); animation: fadeUp 0.4s ease forwards; }
+    .stagger-in > *:nth-child(1) { animation-delay: 0s; }
+    .stagger-in > *:nth-child(2) { animation-delay: 0.06s; }
+    .stagger-in > *:nth-child(3) { animation-delay: 0.12s; }
+    .stagger-in > *:nth-child(4) { animation-delay: 0.18s; }
+    .stagger-in > *:nth-child(5) { animation-delay: 0.24s; }
+    .stagger-in > *:nth-child(6) { animation-delay: 0.30s; }
+    .stagger-in > *:nth-child(7) { animation-delay: 0.36s; }
+    .stagger-in > *:nth-child(8) { animation-delay: 0.42s; }
+    @keyframes fadeUp { to { opacity: 1; transform: translateY(0); } }
+
+    /* ── Pill tag ── */
+    .pill { display: inline-flex; align-items: center; gap: 0.25rem; padding: 0.2rem 0.6rem;
+        border-radius: 9999px; font-size: 0.7rem; font-weight: 600; }
 </style>
 {% endblock %}
 
@@ -48,6 +79,15 @@
 {% set mulan    = agent_results.get('mulan')    if agent_results else None %}
 {% set moana    = agent_results.get('moana')    if agent_results else None %}
 
+{# ── Extract deep Merlin data ── #}
+{% set merlin_pd = merlin.parsed_data if (merlin and merlin.parsed_data is mapping) else {} %}
+{% set diamond = merlin_pd.get('diamond_assessment', {}) if merlin_pd else {} %}
+{% set rubric = merlin_pd.get('rubric_scores', {}) if merlin_pd else {} %}
+{% set committee = merlin_pd.get('committee_decision_card', {}) if merlin_pd else {} %}
+{% set eligibility = merlin_pd.get('eligibility_check', {}) if merlin_pd else {} %}
+{% set strengths = merlin.key_strengths or merlin_pd.get('key_strengths', []) if merlin else [] %}
+{% set risks = merlin.key_risks or merlin_pd.get('key_risks', []) if merlin else [] %}
+
 {# ── Compute verdict class ── #}
 {% set verdict_class = 'verdict-weak' %}
 {% if nextgen_match is defined and nextgen_match is not none %}
@@ -57,128 +97,259 @@
 {% endif %}
 
 {% block content %}
-<div class="max-w-5xl mx-auto">
+<div class="max-w-6xl mx-auto stagger-in">
 
-    {# ══════════════  BACK NAV  ══════════════ #}
+    {# ══════════ BACK NAV ══════════ #}
     <a href="{{ url_for('applications.students') }}" class="inline-flex items-center gap-1.5 text-sm text-emory-gray-500 hover:text-emory-dark-blue transition mb-5 group">
         <svg class="w-4 h-4 transition group-hover:-translate-x-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/></svg>
         All Students
     </a>
 
     {# ══════════════════════════════════════════════════════════════
-       THE VERDICT — The first thing a reviewer sees
+       1. THE VERDICT HERO
        ══════════════════════════════════════════════════════════════ #}
-    <div class="bg-white rounded-2xl shadow-lg border border-emory-gray-200 overflow-hidden mb-8 {{ verdict_class }}" style="box-shadow: 0 0 0 1px rgba(0,0,0,0.04), 0 8px 40px var(--glow, rgba(0,0,0,0.06));">
-        {# Top: student identity bar #}
-        <div class="relative overflow-hidden" style="background: linear-gradient(135deg, var(--emory-dark-blue) 0%, #1a3a6b 50%, var(--emory-medium-blue) 100%);">
+    <div class="bg-white rounded-2xl shadow-lg border border-emory-gray-200 overflow-hidden mb-6 {{ verdict_class }}" style="box-shadow: 0 0 0 1px rgba(0,0,0,0.04), 0 8px 40px var(--glow, rgba(0,0,0,0.06));">
+        {# Top bar: student identity #}
+        <div class="relative overflow-hidden" style="background: linear-gradient(135deg, #012169 0%, #1a3a6b 50%, #007DBA 100%);">
             <img src="{{ url_for('static', filename='img/dna-abstract.jpg') }}" class="absolute inset-0 w-full h-full object-cover opacity-[0.07]" alt="">
             <div class="relative z-10 px-8 py-5 flex items-center justify-between">
                 <div>
-                    <div class="text-white/40 text-xs font-semibold uppercase tracking-widest mb-1">Next Gen Scholarship Candidate</div>
+                    <div class="text-white/40 text-xs font-semibold uppercase tracking-widest mb-1">Next Gen Intern Candidate</div>
                     <h1 class="font-heading text-3xl font-bold text-white tracking-tight">{{ summary.applicant_name or summary.name or "Unknown" }}</h1>
                     <div class="flex items-center gap-4 mt-1.5 text-white/50 text-sm">
-                        <span>{{ summary.email }}</span>
-                        <span>{{ summary.uploaded_date.strftime('%B %d, %Y') if summary.uploaded_date else '' }}</span>
+                        {% if summary.high_school or (school_context and school_context.school_name) %}<span>🏫 {{ summary.high_school or school_context.school_name }}</span>{% endif %}
+                        {% if summary.state_code %}<span>{{ summary.state_code }}</span>{% endif %}
+                        {% if summary.email %}<span>{{ summary.email }}</span>{% endif %}
                     </div>
                 </div>
-                <div class="flex flex-col items-end gap-1.5">
-                    {% if summary.is_training_example or summary.is_training %}<span class="text-xs px-3 py-1 rounded-full bg-white/10 text-white/70 border border-white/20">Training Data</span>{% endif %}
-                    {% if summary.was_selected %}<span class="text-xs px-3 py-1 rounded-full bg-emerald-500/20 text-emerald-200 border border-emerald-400/30">✓ Was Selected</span>{% endif %}
+                <div class="flex flex-col items-end gap-2">
+                    {% if summary.is_training_example or summary.is_training %}<span class="pill bg-white/10 text-white/70 border border-white/20">Training</span>{% endif %}
+                    {% if summary.was_selected %}<span class="pill bg-emerald-500/20 text-emerald-200 border border-emerald-400/30">✓ Selected</span>{% endif %}
+                    {# Process button #}
+                    <button id="processBtn" data-action="processStudent" class="px-4 py-2 rounded-lg bg-emory-gold hover:bg-emory-gold-light text-emory-dark text-sm font-semibold transition shadow-lg shadow-emory-gold/20">
+                        ▶ Run Evaluation
+                    </button>
                 </div>
             </div>
         </div>
 
-        {# Middle: the big verdict #}
-        <div class="px-8 py-8 flex items-center gap-10 flex-wrap">
-            {# Animated score ring #}
-            <div class="score-ring flex-shrink-0">
-                {% set score_val = nextgen_match if (nextgen_match is defined and nextgen_match is not none) else 0 %}
-                {% set ring_offset = 408 - (408 * score_val / 100) %}
-                {% if score_val >= 60 %}{% set ring_color = '#10b981' %}
-                {% elif score_val >= 30 %}{% set ring_color = '#f59e0b' %}
-                {% else %}{% set ring_color = '#ef4444' %}{% endif %}
-                <svg viewBox="0 0 140 140" style="--ring-offset: {{ ring_offset }};">
-                    <circle class="score-ring-bg" cx="70" cy="70" r="65"/>
-                    <circle class="score-ring-fill" cx="70" cy="70" r="65" stroke="{{ ring_color }}"/>
-                </svg>
-                <div class="score-ring-text">
-                    <span class="font-heading text-4xl font-bold text-emory-dark">{% if nextgen_match is defined and nextgen_match is not none %}{{ nextgen_match }}{% else %}—{% endif %}</span>
-                    <span class="text-xs text-emory-gray-500 font-semibold uppercase tracking-wider mt-0.5">Match %</span>
+        {# Verdict body #}
+        <div class="px-8 py-6">
+            {% if committee.headline %}
+            <div class="text-xs font-bold text-emory-medium-blue uppercase tracking-widest mb-2">{{ committee.three_word_description or '' }}</div>
+            <div class="font-heading text-xl font-bold text-emory-dark mb-3">{{ committee.headline }}</div>
+            {% endif %}
+
+            <div class="flex items-start gap-8 flex-wrap">
+                {# Score ring #}
+                <div class="score-ring">
+                    {% set score_val = nextgen_match if (nextgen_match is defined and nextgen_match is not none) else 0 %}
+                    {% set ring_offset = 339 - (339 * score_val / 100) %}
+                    {% if score_val >= 60 %}{% set ring_color = '#10b981' %}
+                    {% elif score_val >= 30 %}{% set ring_color = '#f59e0b' %}
+                    {% else %}{% set ring_color = '#ef4444' %}{% endif %}
+                    <svg viewBox="0 0 120 120" style="--ring-offset: {{ ring_offset }};">
+                        <circle class="score-ring-bg" cx="60" cy="60" r="54"/>
+                        <circle class="score-ring-fill" cx="60" cy="60" r="54" stroke="{{ ring_color }}"/>
+                    </svg>
+                    <div class="score-ring-text">
+                        <span class="font-heading text-3xl font-bold text-emory-dark">{% if nextgen_match is defined and nextgen_match is not none %}{{ nextgen_match }}{% else %}—{% endif %}</span>
+                        <span class="text-[0.6rem] text-emory-gray-500 font-semibold uppercase tracking-wider">Match</span>
+                    </div>
                 </div>
-            </div>
 
-            {# Verdict text #}
-            <div class="flex-1 min-w-0">
-                {% if merlin and merlin.recommendation %}
-                <div class="font-heading text-2xl font-bold text-emory-dark mb-2">{{ merlin.recommendation }}</div>
-                {% endif %}
+                {# Verdict text #}
+                <div class="flex-1 min-w-0">
+                    {% if merlin and merlin.recommendation %}
+                    <div class="inline-block px-3 py-1 rounded-lg text-sm font-bold mb-2
+                        {% if 'STRONG' in (merlin.recommendation|upper) %}bg-emerald-100 text-emerald-800
+                        {% elif 'ADMIT' in (merlin.recommendation|upper) %}bg-green-100 text-green-800
+                        {% elif 'WAITLIST' in (merlin.recommendation|upper) %}bg-amber-100 text-amber-800
+                        {% else %}bg-red-100 text-red-800{% endif %}">{{ merlin.recommendation }}</div>
+                    {% endif %}
 
-                {% set merlin_text = None %}
-                {% if merlin %}
-                    {% if merlin.human_summary %}{% set merlin_text = merlin.human_summary %}
-                    {% elif merlin.executive_summary %}{% set merlin_text = merlin.executive_summary %}
-                    {% elif merlin.rationale %}{% set merlin_text = merlin.rationale %}
-                    {% elif merlin.summary %}{% set merlin_text = merlin.summary %}{% endif %}
-                {% endif %}
-                {% if merlin_text %}
-                <p class="text-sm text-emory-gray-700 leading-relaxed line-clamp-4">{{ merlin_text }}</p>
-                {% else %}
-                <p class="text-sm text-emory-gray-500 italic">Evaluation pending — run the agent pipeline to generate a verdict.</p>
-                {% endif %}
+                    {% set merlin_text = None %}
+                    {% if merlin %}
+                        {% if merlin.human_summary %}{% set merlin_text = merlin.human_summary %}
+                        {% elif merlin.executive_summary %}{% set merlin_text = merlin.executive_summary %}
+                        {% elif merlin.rationale %}{% set merlin_text = merlin.rationale %}{% endif %}
+                    {% endif %}
+                    {% if merlin_text %}
+                    <p class="text-sm text-emory-gray-700 leading-relaxed">{{ merlin_text }}</p>
+                    {% else %}
+                    <p class="text-sm text-emory-gray-500 italic">Evaluation pending — click <b>Run Evaluation</b> to start the agent pipeline.</p>
+                    {% endif %}
 
-                {# Quick metrics row #}
-                <div class="flex flex-wrap gap-3 mt-4">
-                    {% if merlin and merlin.overall_score %}
-                    <div class="px-3 py-1.5 rounded-lg bg-emory-dark-blue/5 border border-emory-dark-blue/10">
-                        <span class="text-xs text-emory-gray-500">Score</span>
-                        <span class="ml-1.5 font-heading text-lg font-bold text-emory-dark-blue">{{ merlin.overall_score }}</span>
+                    {# Quick metrics #}
+                    <div class="flex flex-wrap gap-2 mt-4">
+                        {% if merlin and merlin.overall_score %}
+                        <span class="pill bg-emory-dark-blue/10 text-emory-dark-blue">Score {{ merlin.overall_score }}</span>
+                        {% endif %}
+                        {% if rapunzel and rapunzel.gpa %}
+                        <span class="pill bg-amber-100 text-amber-700">GPA {{ rapunzel.gpa }}</span>
+                        {% endif %}
+                        {% if rapunzel and rapunzel.course_rigor_index %}
+                        <span class="pill bg-purple-100 text-purple-700">Rigor {{ rapunzel.course_rigor_index }}/5</span>
+                        {% endif %}
+                        {% if merlin and merlin.confidence %}
+                        <span class="pill bg-blue-100 text-blue-700">{{ merlin.confidence }} confidence</span>
+                        {% endif %}
+                        {% if eligibility.quick_pass is defined %}
+                        <span class="pill {% if eligibility.quick_pass %}bg-emerald-100 text-emerald-700{% else %}bg-red-100 text-red-700{% endif %}">
+                            {% if eligibility.quick_pass %}✓ Eligible{% else %}⚠ Eligibility concern{% endif %}
+                        </span>
+                        {% endif %}
                     </div>
-                    {% endif %}
-                    {% if rapunzel and rapunzel.gpa %}
-                    <div class="px-3 py-1.5 rounded-lg bg-amber-50 border border-amber-200">
-                        <span class="text-xs text-amber-600">GPA</span>
-                        <span class="ml-1.5 font-heading text-lg font-bold text-amber-700">{{ rapunzel.gpa }}</span>
-                    </div>
-                    {% endif %}
-                    {% if rapunzel and rapunzel.course_rigor_index %}
-                    <div class="px-3 py-1.5 rounded-lg bg-purple-50 border border-purple-200">
-                        <span class="text-xs text-purple-600">Rigor</span>
-                        <span class="ml-1.5 font-heading text-lg font-bold text-purple-700">{{ rapunzel.course_rigor_index }}/5</span>
-                    </div>
-                    {% endif %}
-                    {% if merlin and merlin.confidence %}
-                    <div class="px-3 py-1.5 rounded-lg bg-blue-50 border border-blue-200">
-                        <span class="text-xs text-blue-600">Confidence</span>
-                        <span class="ml-1.5 text-sm font-semibold text-blue-700">{{ merlin.confidence }}</span>
-                    </div>
-                    {% endif %}
                 </div>
             </div>
         </div>
     </div>
 
     {# ══════════════════════════════════════════════════════════════
-       AGENT DEEP DIVES — Expandable accordion cards
+       2. DIAMOND IN THE ROUGH CARD
        ══════════════════════════════════════════════════════════════ #}
-    <div class="space-y-3 mb-8">
-        <h2 class="font-heading text-lg font-semibold text-emory-dark mb-1">Agent Analysis</h2>
-        <div class="stagger-in space-y-3">
+    {% if diamond or (merlin_pd and merlin_pd.get('diamond_assessment')) %}
+    <div class="diamond-card rounded-2xl border border-amber-300 overflow-hidden mb-6 shadow-sm relative">
+        <div class="diamond-shimmer absolute inset-0 pointer-events-none"></div>
+        <div class="relative px-6 py-5">
+            <div class="flex items-center gap-3 mb-3">
+                <span class="text-2xl">💎</span>
+                <div>
+                    <div class="text-xs font-bold text-amber-700 uppercase tracking-widest">Diamond in the Rough</div>
+                    {% if diamond.diamond_label %}<div class="font-heading text-lg font-bold text-amber-900">{{ diamond.diamond_label }}</div>{% endif %}
+                </div>
+                {% if diamond.diamond_score is defined and diamond.diamond_score is not none %}
+                <div class="ml-auto text-center">
+                    <div class="font-heading text-3xl font-bold text-amber-800">{{ diamond.diamond_score }}</div>
+                    <div class="text-[0.6rem] text-amber-600 font-semibold uppercase">/ 10</div>
+                </div>
+                {% endif %}
+            </div>
+
+            {% if diamond.contextual_potential_summary %}
+            <p class="text-sm text-amber-900 leading-relaxed mb-3">{{ diamond.contextual_potential_summary }}</p>
+            {% endif %}
+
+            {% if diamond.what_committee_might_miss %}
+            <div class="bg-white/60 rounded-lg px-4 py-3 border border-amber-200 mb-3">
+                <div class="text-[0.65rem] font-bold text-amber-700 uppercase tracking-wide mb-1">What the Committee Might Miss</div>
+                <p class="text-sm text-amber-900 font-medium">{{ diamond.what_committee_might_miss }}</p>
+            </div>
+            {% endif %}
+
+            {% if diamond.upside_signals %}
+            <div class="flex flex-wrap gap-2 mt-2">
+                {% for signal in diamond.upside_signals %}
+                <span class="pill bg-amber-200/60 text-amber-800">{{ signal }}</span>
+                {% endfor %}
+            </div>
+            {% endif %}
+
+            {% if diamond.ceiling_assessment %}
+            <p class="text-xs text-amber-700 mt-3 italic">{{ diamond.ceiling_assessment }}</p>
+            {% endif %}
+        </div>
+    </div>
+    {% endif %}
+
+    {# ══════════════════════════════════════════════════════════════
+       3. RUBRIC SCORES + STRENGTHS / RISKS (two-column)
+       ══════════════════════════════════════════════════════════════ #}
+    {% if rubric or strengths or risks %}
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+        {# Rubric scores #}
+        {% if rubric %}
+        <div class="bg-white rounded-xl border border-emory-gray-200 p-5 shadow-sm">
+            <h3 class="text-xs font-bold text-emory-gray-500 uppercase tracking-widest mb-4">Rubric Scores</h3>
+            <div class="grid grid-cols-5 gap-3">
+                {% for key, label, color in [
+                    ('technical_foundation', 'Technical', '#012169'),
+                    ('communication', 'Commun.', '#007DBA'),
+                    ('intellectual_curiosity', 'Curiosity', '#348338'),
+                    ('growth_potential', 'Growth', '#F2A900'),
+                    ('team_contribution', 'Team', '#9d174d')
+                ] %}
+                {% set val = rubric.get(key, 0) %}
+                <div class="text-center">
+                    <div class="mini-ring mx-auto mb-1">
+                        {% set mini_offset = 138 - (138 * (val|int) / 100) %}
+                        <svg viewBox="0 0 56 56" style="--ring-offset: {{ mini_offset }};">
+                            <circle class="mini-ring-bg" cx="28" cy="28" r="22"/>
+                            <circle class="mini-ring-fill" cx="28" cy="28" r="22" stroke="{{ color }}"/>
+                        </svg>
+                        <div class="mini-ring-text">
+                            <span class="font-heading text-sm font-bold text-emory-dark">{{ val }}</span>
+                        </div>
+                    </div>
+                    <div class="text-[0.6rem] text-emory-gray-500 font-semibold">{{ label }}</div>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+        {% endif %}
+
+        {# Strengths & Risks #}
+        {% if strengths or risks %}
+        <div class="bg-white rounded-xl border border-emory-gray-200 p-5 shadow-sm">
+            <div class="grid grid-cols-2 gap-4">
+                <div>
+                    <h3 class="text-xs font-bold text-emerald-600 uppercase tracking-widest mb-2">Strengths</h3>
+                    <ul class="space-y-1.5">
+                        {% for s in strengths[:5] %}
+                        <li class="text-xs text-emory-dark leading-snug flex gap-1.5"><span class="text-emerald-500 flex-shrink-0">+</span> {{ s }}</li>
+                        {% endfor %}
+                    </ul>
+                </div>
+                <div>
+                    <h3 class="text-xs font-bold text-red-500 uppercase tracking-widest mb-2">Risks / Questions</h3>
+                    <ul class="space-y-1.5">
+                        {% for r in risks[:5] %}
+                        <li class="text-xs text-emory-dark leading-snug flex gap-1.5"><span class="text-red-400 flex-shrink-0">−</span> {{ r }}</li>
+                        {% endfor %}
+                    </ul>
+                </div>
+            </div>
+            {% if committee.biggest_question %}
+            <div class="mt-3 pt-3 border-t border-emory-gray-100">
+                <span class="text-[0.65rem] font-bold text-emory-gray-500 uppercase">Discuss:</span>
+                <span class="text-xs text-emory-dark ml-1">{{ committee.biggest_question }}</span>
+            </div>
+            {% endif %}
+        </div>
+        {% endif %}
+    </div>
+    {% endif %}
+
+    {# ══════════════════════════════════════════════════════════════
+       4. AGENT DEEP DIVES — Expandable cards
+       ══════════════════════════════════════════════════════════════ #}
+    <h2 class="font-heading text-lg font-semibold text-emory-dark mb-3">Agent Analysis</h2>
+    <div class="space-y-3 mb-6">
 
         {# ── Tiana: Application Reader ── #}
         {% if tiana and (tiana.human_summary or tiana.essay_summary or tiana.essaysummary) %}
         <div class="bg-white rounded-xl border border-emory-gray-200 overflow-hidden shadow-sm">
             <div class="accordion-trigger flex items-center gap-3 px-5 py-4" data-action="toggleAccordion">
                 <div class="agent-stripe h-10" style="background: #F2A900;"></div>
-                <span class="agent-avatar agent-avatar-tiana">📝</span>
+                <img src="{{ url_for('static', filename='portraits/ariel.png') }}" class="w-8 h-8 rounded-full object-cover" alt="" onerror="this.outerHTML='<span class=\'text-lg\'>📝</span>'">
                 <div class="flex-1 min-w-0">
                     <div class="font-semibold text-sm text-emory-dark">Tiana · Application Reader</div>
-                    <div class="text-xs text-emory-gray-500 truncate">{{ (tiana.human_summary or tiana.essay_summary or tiana.essaysummary)[:80] }}...</div>
+                    <div class="text-xs text-emory-gray-500 truncate">{{ (tiana.human_summary or tiana.essay_summary or tiana.essaysummary or '')[:90] }}...</div>
                 </div>
-                {% if tiana.readiness_score or tiana.readinessscore %}<span class="badge-nextgen bg-amber-100 text-amber-700 text-xs">{{ tiana.readiness_score or tiana.readinessscore }}/100</span>{% endif %}
+                {% if tiana.readiness_score or tiana.readinessscore %}<span class="pill bg-amber-100 text-amber-700">{{ tiana.readiness_score or tiana.readinessscore }}/100</span>{% endif %}
                 <svg class="accordion-chevron w-5 h-5 text-emory-gray-300 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
             </div>
             <div class="accordion-body border-t border-emory-gray-100">
                 <p class="text-sm text-emory-dark leading-relaxed">{{ tiana.human_summary or tiana.essay_summary or tiana.essaysummary }}</p>
+                {% if tiana.parsed_data is mapping %}
+                    {% set tp = tiana.parsed_data %}
+                    {% if tp.diamond_indicators is mapping and tp.diamond_indicators.resilience_signals %}
+                    <div class="mt-3 bg-amber-50 rounded-lg p-3 border border-amber-200">
+                        <div class="text-[0.65rem] font-bold text-amber-700 uppercase mb-1">Diamond Indicators</div>
+                        <ul class="text-xs text-amber-900 space-y-1">{% for sig in tp.diamond_indicators.resilience_signals %}<li>• {{ sig }}</li>{% endfor %}</ul>
+                    </div>
+                    {% endif %}
+                {% endif %}
             </div>
         </div>
         {% endif %}
@@ -188,26 +359,25 @@
         <div class="bg-white rounded-xl border border-emory-gray-200 overflow-hidden shadow-sm">
             <div class="accordion-trigger active flex items-center gap-3 px-5 py-4" data-action="toggleAccordion">
                 <div class="agent-stripe h-10" style="background: #9d174d;"></div>
-                <span class="agent-avatar agent-avatar-rapunzel">🎓</span>
+                <img src="{{ url_for('static', filename='portraits/rapunzel.png') }}" class="w-8 h-8 rounded-full object-cover" alt="" onerror="this.outerHTML='<span class=\'text-lg\'>🎓</span>'">
                 <div class="flex-1 min-w-0">
                     <div class="font-semibold text-sm text-emory-dark">Rapunzel · Grade Analyzer</div>
                     <div class="text-xs text-emory-gray-500">{{ rapunzel.transcript_quality or '' }} · {{ rapunzel.detected_format or 'Transcript analysis' }}</div>
                 </div>
                 <div class="flex gap-1.5">
-                    {% if rapunzel.gpa %}<span class="badge-nextgen bg-amber-100 text-amber-700 text-xs font-bold">{{ rapunzel.gpa }}</span>{% endif %}
-                    {% if rapunzel.course_rigor_index %}<span class="badge-nextgen bg-purple-100 text-purple-700 text-xs">R{{ rapunzel.course_rigor_index }}</span>{% endif %}
+                    {% if rapunzel.gpa %}<span class="pill bg-amber-100 text-amber-700 font-bold">{{ rapunzel.gpa }}</span>{% endif %}
+                    {% if rapunzel.course_rigor_index %}<span class="pill bg-purple-100 text-purple-700">R{{ rapunzel.course_rigor_index }}</span>{% endif %}
                 </div>
                 <svg class="accordion-chevron w-5 h-5 text-emory-gray-300 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
             </div>
             <div class="accordion-body open border-t border-emory-gray-100">
-                {# Perspective callout #}
                 {% if rapunzel.rapunzel_perspective %}
                 <div class="bg-gradient-to-r from-amber-50 to-orange-50 border border-amber-200 rounded-lg p-4 mb-4">
                     <div class="flex items-center gap-2 mb-2">
                         <span class="text-lg">👑</span>
                         <span class="text-xs font-bold text-amber-700 uppercase tracking-widest">Rapunzel's Perspective</span>
                     </div>
-                    <div class="text-sm text-emory-dark leading-relaxed">{{ rapunzel.rapunzel_perspective | nl2br }}</div>
+                    <div class="text-sm text-emory-dark leading-relaxed whitespace-pre-line">{{ rapunzel.rapunzel_perspective }}</div>
                 </div>
                 {% elif rapunzel.human_summary or rapunzel.summary %}
                 <p class="text-sm text-emory-dark leading-relaxed mb-4">{{ rapunzel.human_summary or rapunzel.summary }}</p>
@@ -221,12 +391,12 @@
                         <tbody>
                         {% for row in rapunzel.standardized_transcript_rows %}
                         <tr>
-                            <td class="text-emory-gray-500">{{ row.year or row.Year or '' }}</td>
-                            <td class="font-medium">{{ row.course or row.Course or '' }}</td>
-                            <td>{% set lvl = (row.level or row.Level or '')|upper %}{% if 'AP' in lvl %}<span class="inline-block px-2 py-0.5 rounded text-[0.7rem] font-bold bg-purple-100 text-purple-700">AP</span>{% elif 'HONOR' in lvl %}<span class="inline-block px-2 py-0.5 rounded text-[0.7rem] font-bold bg-blue-100 text-blue-700">HON</span>{% elif 'DE' in lvl or 'DUAL' in lvl %}<span class="inline-block px-2 py-0.5 rounded text-[0.7rem] font-bold bg-emerald-100 text-emerald-700">DE</span>{% else %}<span class="text-emory-gray-400 text-xs">{{ row.level or row.Level or '—' }}</span>{% endif %}</td>
-                            <td class="font-bold">{{ row.grade or row.Grade or '' }}</td>
-                            <td class="text-emory-gray-500">{{ row.numeric or row.Numeric or '' }}</td>
-                            <td class="text-emory-gray-400">{{ row.credits or row.Credits or '' }}</td>
+                            <td class="text-emory-gray-500 text-xs">{{ row.year or row.Year or '' }}</td>
+                            <td class="font-medium text-xs">{{ row.course or row.Course or '' }}</td>
+                            <td>{% set lvl = (row.level or row.Level or '')|upper %}{% if 'AP' in lvl %}<span class="pill bg-purple-100 text-purple-700">AP</span>{% elif 'HONOR' in lvl %}<span class="pill bg-blue-100 text-blue-700">HON</span>{% elif 'DE' in lvl or 'DUAL' in lvl %}<span class="pill bg-emerald-100 text-emerald-700">DE</span>{% else %}<span class="text-emory-gray-400 text-xs">{{ row.level or row.Level or '—' }}</span>{% endif %}</td>
+                            <td class="font-bold text-xs">{{ row.grade or row.Grade or '' }}</td>
+                            <td class="text-emory-gray-500 text-xs">{{ row.numeric or row.Numeric or '' }}</td>
+                            <td class="text-emory-gray-400 text-xs">{{ row.credits or row.Credits or '' }}</td>
                         </tr>
                         {% endfor %}
                         </tbody>
@@ -237,10 +407,10 @@
                 {% endif %}
 
                 {% if rapunzel.notable_patterns %}
-                <div class="mt-4 flex flex-wrap gap-2">
+                <div class="mt-3 flex flex-wrap gap-2">
                     <span class="text-xs font-semibold text-emory-gray-500 mr-1">Patterns:</span>
-                    {% if rapunzel.notable_patterns is string %}<span class="badge-nextgen bg-emory-gray-100 text-emory-dark text-xs">{{ rapunzel.notable_patterns }}</span>
-                    {% elif rapunzel.notable_patterns is iterable %}{% for p in rapunzel.notable_patterns %}<span class="badge-nextgen bg-emory-gray-100 text-emory-dark text-xs">{{ p }}</span>{% endfor %}{% endif %}
+                    {% if rapunzel.notable_patterns is string %}<span class="pill bg-emory-gray-100 text-emory-dark">{{ rapunzel.notable_patterns }}</span>
+                    {% elif rapunzel.notable_patterns is iterable %}{% for p in rapunzel.notable_patterns %}<span class="pill bg-emory-gray-100 text-emory-dark">{{ p }}</span>{% endfor %}{% endif %}
                 </div>
                 {% endif %}
             </div>
@@ -252,10 +422,10 @@
         <div class="bg-white rounded-xl border border-emory-gray-200 overflow-hidden shadow-sm">
             <div class="accordion-trigger flex items-center gap-3 px-5 py-4" data-action="toggleAccordion">
                 <div class="agent-stripe h-10" style="background: #991b1b;"></div>
-                <span class="agent-avatar agent-avatar-mulan">💌</span>
+                <span class="text-lg">💌</span>
                 <div class="flex-1 min-w-0">
                     <div class="font-semibold text-sm text-emory-dark">Mulan · Recommendation Reader</div>
-                    <div class="text-xs text-emory-gray-500">{% if mulan is sequence %}{{ mulan | length }} recommendation letter{{ 's' if mulan|length > 1 }}{% else %}Analysis complete{% endif %}</div>
+                    <div class="text-xs text-emory-gray-500">{% if mulan is sequence %}{{ mulan|length }} letter{{ 's' if mulan|length > 1 }}{% else %}Analysis complete{% endif %}</div>
                 </div>
                 <svg class="accordion-chevron w-5 h-5 text-emory-gray-300 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
             </div>
@@ -265,12 +435,12 @@
                 {% elif mulan is sequence %}
                 {% for rec in mulan %}
                 <div class="{% if not loop.last %}border-b border-emory-gray-100 pb-3 mb-3{% endif %}">
-                    <div class="flex items-center gap-2">
+                    <div class="flex items-center gap-2 flex-wrap">
                         <span class="font-semibold text-sm text-emory-dark">{{ rec.recommender_name or rec.recommendername or 'Recommender' }}</span>
-                        {% if rec.recommender_role or rec.recommenderrole %}<span class="text-xs text-emory-gray-500">{{ rec.recommender_role or rec.recommenderrole }}</span>{% endif %}
-                        {% if rec.endorsement_strength or rec.endorsementstrength %}<span class="ml-auto badge-nextgen bg-red-50 text-red-700 text-xs">{{ rec.endorsement_strength or rec.endorsementstrength }}/100</span>{% endif %}
+                        {% if rec.recommender_role or rec.recommenderrole %}<span class="text-xs text-emory-gray-500">· {{ rec.recommender_role or rec.recommenderrole }}</span>{% endif %}
+                        {% if rec.endorsement_strength or rec.endorsementstrength %}<span class="ml-auto pill bg-red-50 text-red-700">{{ rec.endorsement_strength or rec.endorsementstrength }}/100</span>{% endif %}
                     </div>
-                    {% if rec.summary %}<p class="text-sm text-emory-dark mt-1.5 leading-relaxed">{{ rec.summary }}</p>{% endif %}
+                    {% if rec.human_summary or rec.summary %}<p class="text-sm text-emory-dark mt-1.5 leading-relaxed">{{ rec.human_summary or rec.summary }}</p>{% endif %}
                 </div>
                 {% endfor %}
                 {% endif %}
@@ -283,88 +453,173 @@
         <div class="bg-white rounded-xl border border-emory-gray-200 overflow-hidden shadow-sm">
             <div class="accordion-trigger flex items-center gap-3 px-5 py-4" data-action="toggleAccordion">
                 <div class="agent-stripe h-10" style="background: #115e59;"></div>
-                <span class="agent-avatar agent-avatar-moana">🌊</span>
+                <img src="{{ url_for('static', filename='portraits/moana.png') }}" class="w-8 h-8 rounded-full object-cover" alt="" onerror="this.outerHTML='<span class=\'text-lg\'>🌊</span>'">
                 <div class="flex-1 min-w-0">
                     <div class="font-semibold text-sm text-emory-dark">Moana · School Context</div>
-                    <div class="text-xs text-emory-gray-500">{% if school_context and school_context.school_name %}{{ school_context.school_name }}{% else %}Environmental analysis{% endif %}</div>
+                    <div class="text-xs text-emory-gray-500">{% if school_context and school_context.school_name %}{{ school_context.school_name }}{% elif summary.high_school %}{{ summary.high_school }}{% endif %}</div>
                 </div>
+                {% if school_context and school_context.opportunity_score %}
+                <span class="pill bg-teal-100 text-teal-700">Opp. {{ school_context.opportunity_score }}</span>
+                {% endif %}
                 <svg class="accordion-chevron w-5 h-5 text-emory-gray-300 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
             </div>
             <div class="accordion-body border-t border-emory-gray-100">
                 <p class="text-sm text-emory-dark leading-relaxed">{{ moana.human_summary or moana.comparison_notes or moana.comparisonnotes or moana.context }}</p>
+                {% if school_context %}
+                <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-4">
+                    {% if school_context.enrollment_size %}<div class="text-center p-2 bg-emory-gray-100 rounded-lg"><div class="text-lg font-bold text-emory-dark">{{ school_context.enrollment_size }}</div><div class="text-[0.6rem] text-emory-gray-500 uppercase">Enrollment</div></div>{% endif %}
+                    {% if school_context.graduation_rate %}<div class="text-center p-2 bg-emory-gray-100 rounded-lg"><div class="text-lg font-bold text-emory-dark">{{ school_context.graduation_rate }}%</div><div class="text-[0.6rem] text-emory-gray-500 uppercase">Grad Rate</div></div>{% endif %}
+                    {% if school_context.college_placement_rate %}<div class="text-center p-2 bg-emory-gray-100 rounded-lg"><div class="text-lg font-bold text-emory-dark">{{ school_context.college_placement_rate }}%</div><div class="text-[0.6rem] text-emory-gray-500 uppercase">College Pl.</div></div>{% endif %}
+                    {% if school_context.opportunity_score %}<div class="text-center p-2 bg-emory-gray-100 rounded-lg"><div class="text-lg font-bold text-emory-dark">{{ school_context.opportunity_score }}</div><div class="text-[0.6rem] text-emory-gray-500 uppercase">Opportunity</div></div>{% endif %}
+                </div>
+                {% endif %}
             </div>
         </div>
         {% endif %}
 
-        {# ── Milo: Training Insights ── #}
+        {# ── Milo: Data Scientist ── #}
         {% if milo_insights and milo_insights.status == 'success' %}
         <div class="bg-white rounded-xl border border-emory-gray-200 overflow-hidden shadow-sm">
             <div class="accordion-trigger flex items-center gap-3 px-5 py-4" data-action="toggleAccordion">
                 <div class="agent-stripe h-10" style="background: #065f46;"></div>
-                <span class="agent-avatar agent-avatar-milo">📊</span>
+                <span class="text-lg">📊</span>
                 <div class="flex-1 min-w-0">
                     <div class="font-semibold text-sm text-emory-dark">Milo · Data Scientist</div>
                     <div class="text-xs text-emory-gray-500">Pattern analysis vs. training set</div>
                 </div>
+                {% if alignment_score is defined and alignment_score is not none %}<span class="pill bg-emerald-100 text-emerald-700">{{ alignment_score }} vs avg</span>{% endif %}
                 <svg class="accordion-chevron w-5 h-5 text-emory-gray-300 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
             </div>
             <div class="accordion-body border-t border-emory-gray-100">
                 {% if milo_insights.summary %}<p class="text-sm text-emory-dark mb-3">{{ milo_insights.summary }}</p>{% endif %}
                 {% if milo_insights.differentiators %}
-                <div class="flex flex-wrap gap-2 mb-2">{% for d in milo_insights.differentiators %}<span class="badge-nextgen bg-emerald-50 text-emerald-700 text-xs">{{ d }}</span>{% endfor %}</div>
+                <div class="flex flex-wrap gap-2">{% for d in milo_insights.differentiators %}<span class="pill bg-emerald-50 text-emerald-700">{{ d }}</span>{% endfor %}</div>
                 {% endif %}
-                {% if milo_insights.average_merlin_score is defined %}<p class="text-xs text-emory-gray-500">Training avg: {{ milo_insights.average_merlin_score }}</p>{% endif %}
             </div>
         </div>
         {% endif %}
-    </div>{# close stagger-in #}
-    </div>{# close agent analysis section #}
 
-    {# ══════════════  APPLICATION ESSAY  ══════════════ #}
-    {% if summary.application_text or summary.text_preview or "" %}
-    <div class="bg-white rounded-xl border border-emory-gray-200 overflow-hidden shadow-sm mb-8">
+    </div>{# /agent cards #}
+
+    {# ══════════════════════════════════════════════════════════════
+       5. APPLICATION ESSAY
+       ══════════════════════════════════════════════════════════════ #}
+    {% if summary.application_text or summary.text_preview %}
+    <div class="bg-white rounded-xl border border-emory-gray-200 overflow-hidden shadow-sm mb-6">
         <div class="accordion-trigger flex items-center gap-3 px-5 py-4" data-action="toggleAccordion">
             <div class="agent-stripe h-10" style="background: #5b21b6;"></div>
-            <span class="agent-avatar agent-avatar-belle">📖</span>
-            <div class="flex-1"><div class="font-semibold text-sm text-emory-dark">Application Essay</div></div>
+            <span class="text-lg">📖</span>
+            <div class="flex-1"><div class="font-semibold text-sm text-emory-dark">Original Application Text</div></div>
             <svg class="accordion-chevron w-5 h-5 text-emory-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
         </div>
         <div class="accordion-body border-t border-emory-gray-100">
-            <p class="text-sm text-emory-dark whitespace-pre-wrap leading-relaxed">{{ summary.application_text or summary.text_preview or "" }}</p>
+            <div class="text-sm text-emory-dark whitespace-pre-wrap leading-relaxed max-h-96 overflow-y-auto">{{ summary.application_text or summary.text_preview or "" }}</div>
         </div>
     </div>
     {% endif %}
 
-    {# ══════════════  FOOTER ACTIONS  ══════════════ #}
+    {# ══════════════════════════════════════════════════════════════
+       6. FOOTER ACTIONS
+       ══════════════════════════════════════════════════════════════ #}
     <div class="flex items-center justify-between pb-8">
-        <a href="{{ url_for('applications.students') }}" class="btn-emory btn-emory-secondary">← All Students</a>
-        <button data-action="openModal" data-modal="detailDeleteModal" class="text-sm text-red-400 hover:text-red-600 transition">Delete this student...</button>
+        <a href="{{ url_for('applications.students') }}" class="px-4 py-2 rounded-lg border border-emory-gray-200 text-sm text-emory-gray-500 hover:text-emory-dark hover:bg-white transition">← All Students</a>
+        <div class="flex items-center gap-3">
+            <button id="processBtn2" data-action="processStudent" class="px-4 py-2 rounded-lg bg-emory-medium-blue hover:bg-emory-dark-blue text-white text-sm font-semibold transition">▶ Re-run Evaluation</button>
+            <button data-action="openModal" data-modal="detailDeleteModal" class="text-sm text-red-400 hover:text-red-600 transition">Delete</button>
+        </div>
+    </div>
+
+    {# ── Processing status bar (hidden until process starts) ── #}
+    <div id="processStatus" class="hidden fixed bottom-6 left-1/2 -translate-x-1/2 z-40 bg-emory-dark-blue text-white px-6 py-3 rounded-xl shadow-2xl flex items-center gap-3 min-w-[300px]">
+        <svg class="animate-spin h-5 w-5 text-emory-gold flex-shrink-0" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" fill="none"/><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>
+        <div class="flex-1">
+            <div id="processAgent" class="text-sm font-semibold">Starting pipeline...</div>
+            <div id="processDetail" class="text-xs text-white/60"></div>
+        </div>
     </div>
 
     {# Delete Modal #}
-    <div id="detailDeleteModal" class="fixed inset-0 z-50 hidden items-center justify-center bg-black/50 backdrop-blur-sm" data-action="closeModal" >
-        <div class="bg-white rounded-2xl shadow-2xl max-w-sm w-[90%] p-8 text-center">
+    <div id="detailDeleteModal" class="fixed inset-0 z-50 hidden items-center justify-center bg-black/50 backdrop-blur-sm" data-action="closeModal">
+        <div class="bg-white rounded-2xl shadow-2xl max-w-sm w-[90%] p-8 text-center" onclick="event.stopPropagation()">
             <div class="w-14 h-14 rounded-full bg-red-100 flex items-center justify-center mx-auto mb-4"><span class="text-2xl">⚠️</span></div>
             <h3 class="font-heading text-xl font-bold text-emory-dark mb-2">Delete Student</h3>
-            <p class="text-sm text-emory-gray-500 mb-6">This will permanently delete <strong>{{ summary.applicant_name or summary.name or "Unknown" }}</strong> and all agent evaluations. This cannot be undone.</p>
+            <p class="text-sm text-emory-gray-500 mb-6">Permanently delete <strong>{{ summary.applicant_name or summary.name or "Unknown" }}</strong> and all evaluations. Cannot be undone.</p>
             <div class="flex gap-3 justify-center">
-                <button data-action="closeModal" data-modal="detailDeleteModal" class="btn-emory btn-emory-secondary px-6">Cancel</button>
-                <button data-action="deleteThisStudent" id="detailDeleteBtn" class="btn-emory px-6" style="background:#ef4444; color:#fff;">Delete</button>
+                <button data-action="closeModal" data-modal="detailDeleteModal" class="px-6 py-2 rounded-lg border border-emory-gray-200 text-sm text-emory-gray-500 hover:bg-emory-gray-100 transition">Cancel</button>
+                <button data-action="deleteThisStudent" id="detailDeleteBtn" class="px-6 py-2 rounded-lg bg-red-500 hover:bg-red-600 text-white text-sm font-semibold transition">Delete</button>
             </div>
         </div>
     </div>
-    <script nonce="{{ csp_nonce }}">
-    function deleteThisStudent() {
-        var btn = document.getElementById('detailDeleteBtn');
-        btn.textContent = 'Deleting...'; btn.disabled = true;
-        fetch('/api/student/{{ summary.application_id }}/delete', { method: 'DELETE' })
-            .then(function(r) { return r.json(); })
-            .then(function(d) {
-                if (d.status === 'success') window.location.href = '{{ url_for("applications.students") }}';
-                else { alert(d.error || 'Error'); btn.textContent = 'Delete'; btn.disabled = false; }
-            }).catch(function() { btn.textContent = 'Delete'; btn.disabled = false; });
-    }
-    document.addEventListener('keydown', function(e) { if (e.key==='Escape') { var m=document.getElementById('detailDeleteModal'); m.classList.add('hidden'); m.classList.remove('flex'); }});
-    </script>
 </div>
+{% endblock %}
+
+{% block extra_js %}
+<script nonce="{{ csp_nonce }}">
+/* ── Process Student ── */
+window.processStudent = function() {
+    var status = document.getElementById('processStatus');
+    var agentEl = document.getElementById('processAgent');
+    var detailEl = document.getElementById('processDetail');
+    status.classList.remove('hidden');
+    agentEl.textContent = 'Starting pipeline...';
+
+    fetch('/api/process/{{ summary.application_id }}', { method: 'POST' })
+        .then(function(r) { return r.json(); })
+        .then(function(d) {
+            if (d.success || d.status === 'running') {
+                agentEl.textContent = 'Pipeline running...';
+                pollProcess();
+            } else {
+                agentEl.textContent = 'Failed to start';
+                detailEl.textContent = d.error || 'Unknown error';
+            }
+        }).catch(function(e) {
+            agentEl.textContent = 'Error';
+            detailEl.textContent = e.message;
+        });
+};
+
+function pollProcess() {
+    var agentEl = document.getElementById('processAgent');
+    var detailEl = document.getElementById('processDetail');
+    var status = document.getElementById('processStatus');
+
+    fetch('/api/process/{{ summary.application_id }}/status')
+        .then(function(r) { return r.json(); })
+        .then(function(d) {
+            if (d.status === 'running' || d.status === 'queued') {
+                agentEl.textContent = d.current_agent ? ('Running: ' + d.current_agent) : 'Pipeline running...';
+                var done = (d.agents_completed || []).length;
+                detailEl.textContent = done + ' agents completed';
+                setTimeout(pollProcess, 3000);
+            } else if (d.status === 'complete') {
+                agentEl.textContent = '✅ Evaluation complete!';
+                detailEl.textContent = 'Reloading...';
+                setTimeout(function() { location.reload(); }, 1500);
+            } else if (d.status === 'error') {
+                agentEl.textContent = '❌ Pipeline error';
+                detailEl.textContent = d.error || '';
+                setTimeout(function() { status.classList.add('hidden'); }, 8000);
+            } else {
+                agentEl.textContent = d.status || 'Unknown';
+                setTimeout(function() { status.classList.add('hidden'); }, 5000);
+            }
+        }).catch(function() {
+            setTimeout(pollProcess, 5000);
+        });
+}
+
+/* ── Delete Student ── */
+window.deleteThisStudent = function() {
+    var btn = document.getElementById('detailDeleteBtn');
+    btn.textContent = 'Deleting...'; btn.disabled = true;
+    fetch('/api/student/{{ summary.application_id }}/delete', { method: 'DELETE' })
+        .then(function(r) { return r.json(); })
+        .then(function(d) {
+            if (d.status === 'success') window.location.href = '{{ url_for("applications.students") }}';
+            else { alert(d.error || 'Error'); btn.textContent = 'Delete'; btn.disabled = false; }
+        }).catch(function() { btn.textContent = 'Delete'; btn.disabled = false; });
+};
+document.addEventListener('keydown', function(e) { if (e.key==='Escape') { var m=document.getElementById('detailDeleteModal'); if(m){m.classList.add('hidden'); m.classList.remove('flex');} }});
+</script>
 {% endblock %}
