@@ -182,14 +182,21 @@ def _screen_one(application_id: int, client, model: str) -> Dict[str, Any]:
         result['model'] = model
         result['text_length'] = len(full_text)
 
-        # Persist screening result to DB
+        # Persist screening result to DB (in agent_results.screening)
         try:
-            screening_data = {
-                'screening_score': result.get('overall_score'),
-                'screening_recommendation': result.get('recommendation'),
-                'screening_result': json.dumps(result),
-            }
-            db.update_application_fields(application_id, screening_data)
+            existing_ar = {}
+            try:
+                rec = db.get_application(application_id)
+                existing_ar = rec.get('agent_results') or {}
+                if isinstance(existing_ar, str):
+                    existing_ar = json.loads(existing_ar)
+            except Exception:
+                existing_ar = {}
+            existing_ar['screening'] = result
+            db.update_application_fields(application_id, {
+                'agent_results': json.dumps(existing_ar),
+                'status': 'Screened',
+            })
         except Exception:
             pass
 
@@ -337,15 +344,29 @@ def screening_status():
             aid = a.get('application_id') or a.get('applicationid')
             name = a.get('applicant_name') or a.get('applicantname') or ''
             status = a.get('status') or ''
-            has_text = bool((a.get('application_text') or a.get('applicationtext') or '').strip())
-            # Show all apps that could be screened
-            if has_text and not a.get('screening_score'):
-                pending.append({'id': aid, 'name': name, 'status': status})
+            # Check for text in any field 
+            text_len = max(
+                len((a.get('application_text') or a.get('applicationtext') or '').strip()),
+                len((a.get('transcript_text') or a.get('transcripttext') or '').strip()),
+                len((a.get('recommendation_text') or a.get('recommendationtext') or '').strip()),
+            )
+            has_text = text_len > 50
+            # Check if already screened (screening result stored in agent_results)
+            ar = a.get('agent_results') or {}
+            if isinstance(ar, str):
+                try:
+                    ar = json.loads(ar)
+                except Exception:
+                    ar = {}
+            already_screened = bool(ar.get('screening'))
+            if has_text and not already_screened:
+                pending.append({'id': aid, 'name': name, 'status': status, 'text_chars': text_len})
         state['pending_count'] = len(pending)
-        state['pending'] = pending[:20]  # Show first 20
-    except Exception:
+        state['pending'] = pending[:50]  # Show first 50
+    except Exception as e:
         state['pending_count'] = 0
         state['pending'] = []
+        state['pending_error'] = str(e)[:200]
 
     return jsonify(state)
 

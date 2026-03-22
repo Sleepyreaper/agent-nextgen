@@ -344,7 +344,8 @@ def upload():
                 aggregated = _aggregate_documents(group['files'])
                 # For test uploads, always create a new record — don't match against
                 # existing students (training, 2026, or previous test data)
-                if is_test:
+                # Same for screening uploads — always create fresh
+                if is_test or is_screening:
                     match = None
                 else:
                     match = find_high_probability_match(
@@ -416,7 +417,8 @@ def upload():
                     except Exception:
                         pass
 
-                    start_application_processing(application_id)
+                    if not is_screening:
+                        start_application_processing(application_id)
 
                     if is_training:
                         # Ensure was_selected is set on matched training records
