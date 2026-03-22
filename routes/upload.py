@@ -68,6 +68,7 @@ def upload():
             app_type = request.form.get('app_type', '2026')  # Default to 2026
             is_training = (app_type == 'training')
             is_test = (app_type == 'test')
+            is_screening = (app_type == 'screening')
             
             # Get selection status for training data
             was_selected = None
@@ -508,7 +509,7 @@ def upload():
                     db.set_missing_fields(application_id, missing_fields)
 
                 # Auto-start processing for 2026 applicants
-                if not is_training and not is_test:
+                if not is_training and not is_test and not is_screening:
                     start_application_processing(application_id)
 
                 if is_training:
@@ -583,6 +584,14 @@ def upload():
                 )
                 refresh_foundry_dataset_async("training_upload")
                 return redirect(url_for('training.training'))
+
+            if is_screening:
+                flash(
+                    f"✅ Uploaded {len(results)} application(s) for screening. "
+                    f"Go to Merlin Screening to evaluate them.",
+                    'success'
+                )
+                return redirect(url_for('screening.screening_dashboard'))
 
             if is_test:
                 flash(

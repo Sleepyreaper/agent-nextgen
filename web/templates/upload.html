@@ -42,11 +42,16 @@
             <!-- Application Type -->
             <div class="mb-6">
                 <label class="block text-sm font-semibold text-emory-dark mb-3">📋 Application Type</label>
-                <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div class="grid grid-cols-1 sm:grid-cols-4 gap-3">
                     <label class="flex flex-col p-4 bg-emerald-50 border-2 border-emerald-400 rounded-xl cursor-pointer transition hover:shadow-md">
                         <input type="radio" name="app_type" value="2026" id="type2026" checked data-onchange="updateApplicationType" class="mb-2">
                         <span class="font-semibold text-emerald-800 text-sm">🆕 2026 Applicant</span>
-                        <span class="text-emerald-700 text-xs mt-1">Real application for current cycle</span>
+                        <span class="text-emerald-700 text-xs mt-1">Full pipeline evaluation</span>
+                    </label>
+                    <label class="flex flex-col p-4 bg-purple-50 border-2 border-purple-400 rounded-xl cursor-pointer transition hover:shadow-md">
+                        <input type="radio" name="app_type" value="screening" id="typeScreening" data-onchange="updateApplicationType" class="mb-2">
+                        <span class="font-semibold text-purple-800 text-sm">🧙 Bulk Screening</span>
+                        <span class="text-purple-700 text-xs mt-1">Upload only — screen with Merlin later</span>
                     </label>
                     <label class="flex flex-col p-4 bg-blue-50 border-2 border-blue-300 rounded-xl cursor-pointer transition hover:shadow-md">
                         <input type="radio" name="app_type" value="test" id="typeTest" data-onchange="updateApplicationType" class="mb-2">
@@ -118,12 +123,17 @@ function updateApplicationType() {
     const type2026 = document.getElementById('type2026').checked;
     const typeTest = document.getElementById('typeTest').checked;
     const typeTraining = document.getElementById('typeTraining').checked;
+    const typeScreening = document.getElementById('typeScreening').checked;
     const typeInfoDisplay = document.getElementById('typeInfoDisplay');
     const selectionStatus = document.getElementById('selectionStatus');
     
     if (type2026) {
         typeInfoDisplay.className = 'p-4 bg-emerald-50 border-l-4 border-emerald-400 rounded-lg mb-6';
         typeInfoDisplay.innerHTML = '<h3 class="text-sm font-semibold text-emerald-800">🆕 2026 Applicant</h3><p class="text-xs text-emerald-700 mt-1">Will be processed through the full agent pipeline for evaluation.</p>';
+        selectionStatus.classList.add('hidden');
+    } else if (typeScreening) {
+        typeInfoDisplay.className = 'p-4 bg-purple-50 border-l-4 border-purple-400 rounded-lg mb-6';
+        typeInfoDisplay.innerHTML = '<h3 class="text-sm font-semibold text-purple-800">🧙 Bulk Screening</h3><p class="text-xs text-purple-700 mt-1">File will be uploaded and text extracted. No pipeline runs. Go to Merlin Screening to evaluate all uploaded applications at once.</p>';
         selectionStatus.classList.add('hidden');
     } else if (typeTest) {
         typeInfoDisplay.className = 'p-4 bg-blue-50 border-l-4 border-blue-400 rounded-lg mb-6';
