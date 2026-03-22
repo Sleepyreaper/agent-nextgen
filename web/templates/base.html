@@ -78,6 +78,9 @@
             <a href="{{ url_for('upload.upload') }}" class="sidebar-link {% if request.endpoint == 'upload.upload' %}active{% endif %}">
                 <span class="nav-icon">📤</span><span class="nav-label">Upload Application</span>
             </a>
+            <a href="{{ url_for('screening.screening_dashboard') }}" class="sidebar-link {% if request.endpoint and 'screening.' in request.endpoint %}active{% endif %}">
+                <span class="nav-icon">🧙</span><span class="nav-label">Merlin Screening</span>
+            </a>
 
             <!-- Training & Testing (admin only) -->
             {% if session.get('role') == 'admin' %}

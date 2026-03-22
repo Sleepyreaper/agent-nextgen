@@ -1,0 +1,174 @@
+{% extends "base.html" %}
+{% block title %}Screening — Next Gen{% endblock %}
+{% block page_title %}Merlin Screening{% endblock %}
+
+{% block content %}
+<div class="space-y-5">
+    <div class="rounded-xl p-6 text-white" style="background: linear-gradient(135deg, #1a0a2e 0%, #4a1a7a 50%, #2d1b69 100%);">
+        <div class="flex justify-between items-center">
+            <div>
+                <h1 class="font-heading text-2xl font-bold">🧙 Merlin Screening</h1>
+                <p class="text-white/70 mt-1">One-pass evaluation: o3 reads everything, makes the call</p>
+            </div>
+            <div class="flex gap-3">
+                <button onclick="startScreening()" id="btn-start" class="px-4 py-2 bg-white/20 hover:bg-white/30 rounded-lg text-sm font-semibold transition">
+                    ⚡ Screen All Uploaded
+                </button>
+                <button onclick="refreshStatus()" class="px-4 py-2 bg-white/10 hover:bg-white/20 rounded-lg text-sm transition">
+                    🔄 Refresh
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Progress -->
+    <div class="card-nextgen p-5" id="progress-card" style="display:none;">
+        <div class="flex justify-between items-center mb-2">
+            <span class="font-semibold text-emory-dark" id="progress-label">Screening...</span>
+            <span class="text-sm text-emory-gray-500" id="progress-count">0/0</span>
+        </div>
+        <div class="bg-emory-gray-200 rounded-full h-4 overflow-hidden">
+            <div id="progress-bar" class="h-full rounded-full transition-all" style="width:0%; background:linear-gradient(90deg, #4a1a7a, #7c3aed);">
+            </div>
+        </div>
+        <div class="flex justify-between text-xs text-emory-gray-500 mt-2">
+            <span id="progress-errors">0 errors</span>
+            <span id="progress-time"></span>
+        </div>
+    </div>
+
+    <!-- Results Table -->
+    <div class="card-nextgen">
+        <div class="px-5 py-4 border-b border-emory-gray-200 flex justify-between items-center">
+            <h2 class="font-heading text-lg font-semibold text-emory-dark">Results</h2>
+            <span class="text-xs text-emory-gray-500" id="result-count">-</span>
+        </div>
+        <div class="overflow-x-auto">
+            <table class="w-full text-sm">
+                <thead>
+                    <tr class="text-left text-xs text-emory-gray-500 uppercase tracking-wider border-b">
+                        <th class="px-5 py-3">Score</th>
+                        <th class="px-5 py-3">Student</th>
+                        <th class="px-5 py-3">Decision</th>
+                        <th class="px-5 py-3">Diamond</th>
+                        <th class="px-5 py-3">Headline</th>
+                        <th class="px-5 py-3">Confidence</th>
+                        <th class="px-5 py-3">Time</th>
+                    </tr>
+                </thead>
+                <tbody id="results-body">
+                    <tr><td colspan="7" class="px-5 py-8 text-center text-emory-gray-400">Click "Screen All Uploaded" to begin</td></tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script nonce="{{ csp_nonce }}">
+let refreshTimer = null;
+
+async function refreshStatus() {
+    try {
+        const resp = await fetch('/api/screening/status');
+        const data = await resp.json();
+
+        const prog = document.getElementById('progress-card');
+        if (data.status === 'running' || data.status === 'completed') {
+            prog.style.display = 'block';
+            const pct = data.total > 0 ? Math.round((data.processed / data.total) * 100) : 0;
+            document.getElementById('progress-bar').style.width = pct + '%';
+            document.getElementById('progress-count').textContent = `${data.processed}/${data.total}`;
+            document.getElementById('progress-label').textContent = data.status === 'running' ? 'Screening...' : 'Complete!';
+            document.getElementById('progress-errors').textContent = `${(data.errors || []).length} errors`;
+            document.getElementById('btn-start').disabled = data.status === 'running';
+        }
+
+        const results = data.results || [];
+        document.getElementById('result-count').textContent = `${results.length} screened`;
+        const tbody = document.getElementById('results-body');
+
+        if (results.length === 0 && (data.errors || []).length === 0) {
+            if (data.status !== 'running') {
+                tbody.innerHTML = '<tr><td colspan="7" class="px-5 py-8 text-center text-emory-gray-400">No results yet</td></tr>';
+            }
+            return;
+        }
+
+        const decisionColors = {
+            'STRONG ADMIT': 'bg-emerald-100 text-emerald-800',
+            'ADMIT': 'bg-green-100 text-green-700',
+            'WAITLIST': 'bg-amber-100 text-amber-700',
+            'DECLINE': 'bg-red-100 text-red-700',
+        };
+
+        tbody.innerHTML = results.map(r => {
+            const score = r.overall_score || 0;
+            const dec = r.recommendation || '-';
+            const decClass = decisionColors[dec] || 'bg-gray-100 text-gray-700';
+            const diamond = r.diamond_assessment || {};
+            const card = r.committee_card || {};
+            const scoreColor = score >= 80 ? 'text-emerald-600' : score >= 70 ? 'text-amber-600' : score >= 60 ? 'text-orange-600' : 'text-red-600';
+
+            return `<tr class="border-b border-emory-gray-100 hover:bg-emory-gray-50 cursor-pointer" onclick="window.open('/application/${r.application_id}','_blank')">
+                <td class="px-5 py-3 font-bold text-lg ${scoreColor}">${score}</td>
+                <td class="px-5 py-3">
+                    <div class="font-semibold">${r.applicant_name || r.student_name || '-'}</div>
+                    <div class="text-xs text-emory-gray-500">${r.school || '-'}</div>
+                </td>
+                <td class="px-5 py-3"><span class="px-2 py-1 rounded-full text-xs font-bold ${decClass}">${dec}</span></td>
+                <td class="px-5 py-3">
+                    <div class="text-xs font-semibold">${diamond.diamond_label || '-'}</div>
+                    <div class="text-xs text-emory-gray-500">${(diamond.diamond_score || 0)}/10</div>
+                </td>
+                <td class="px-5 py-3 text-xs max-w-xs truncate">${card.headline || r.rationale?.substring(0, 80) || '-'}</td>
+                <td class="px-5 py-3 text-xs">${r.confidence || '-'}</td>
+                <td class="px-5 py-3 text-xs font-mono">${r.elapsed_seconds || '-'}s</td>
+            </tr>`;
+        }).join('');
+
+        // Add errors at bottom
+        (data.errors || []).forEach(e => {
+            tbody.innerHTML += `<tr class="border-b border-red-100 bg-red-50">
+                <td class="px-5 py-3 text-red-600">ERR</td>
+                <td class="px-5 py-3 font-semibold">${e.applicant_name || 'App #' + e.application_id}</td>
+                <td colspan="5" class="px-5 py-3 text-xs text-red-600">${e.error || 'Unknown error'}</td>
+            </tr>`;
+        });
+
+        if (data.status === 'running' && !refreshTimer) {
+            refreshTimer = setInterval(refreshStatus, 3000);
+        } else if (data.status !== 'running' && refreshTimer) {
+            clearInterval(refreshTimer);
+            refreshTimer = null;
+        }
+    } catch (err) {
+        console.error('Screening status error:', err);
+    }
+}
+
+async function startScreening() {
+    if (!confirm('Start Merlin screening on all uploaded applications?')) return;
+    try {
+        const resp = await fetch('/api/screening/start', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({})
+        });
+        const data = await resp.json();
+        if (resp.ok) {
+            document.getElementById('btn-start').disabled = true;
+            refreshTimer = setInterval(refreshStatus, 3000);
+            refreshStatus();
+        } else {
+            alert(data.error || 'Failed to start screening');
+        }
+    } catch (err) {
+        alert('Error: ' + err.message);
+    }
+}
+
+refreshStatus();
+</script>
+{% endblock %}
