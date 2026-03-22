@@ -130,11 +130,12 @@ function updateApplicationType() {
     if (type2026) {
         typeInfoDisplay.className = 'p-4 bg-emerald-50 border-l-4 border-emerald-400 rounded-lg mb-6';
         typeInfoDisplay.innerHTML = '<h3 class="text-sm font-semibold text-emerald-800">🆕 2026 Applicant</h3><p class="text-xs text-emerald-700 mt-1">Will be processed through the full agent pipeline for evaluation.</p>';
-        selectionStatus.classList.add('hidden');
-    } else if (typeScreening) {
+        selectionStatus.classList.add('hidden');        document.getElementById('fileInput').setAttribute('multiple', '');    } else if (typeScreening) {
         typeInfoDisplay.className = 'p-4 bg-purple-50 border-l-4 border-purple-400 rounded-lg mb-6';
-        typeInfoDisplay.innerHTML = '<h3 class="text-sm font-semibold text-purple-800">🧙 Bulk Screening</h3><p class="text-xs text-purple-700 mt-1">File will be uploaded and text extracted. No pipeline runs. Go to Merlin Screening to evaluate all uploaded applications at once.</p>';
+        typeInfoDisplay.innerHTML = '<h3 class=\"text-sm font-semibold text-purple-800\">🧙 Bulk Screening</h3><p class=\"text-xs text-purple-700 mt-1\">Upload one file at a time (fast — no OCR). Go to Merlin Screening to evaluate all at once.</p>';
         selectionStatus.classList.add('hidden');
+        // Limit to single file for screening to avoid timeout
+        document.getElementById('fileInput').removeAttribute('multiple');
     } else if (typeTest) {
         typeInfoDisplay.className = 'p-4 bg-blue-50 border-l-4 border-blue-400 rounded-lg mb-6';
         typeInfoDisplay.innerHTML = '<h3 class="text-sm font-semibold text-blue-800">🧪 Test Upload</h3><p class="text-xs text-blue-700 mt-1">Will be processed as test data to evaluate agent performance.</p>';
