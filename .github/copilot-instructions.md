@@ -5,7 +5,7 @@
 ### Mission
 The purpose of this system is not to replicate human evaluation. It is to find the student the committee would miss. A "Diamond in the Rough" — the applicant whose contextual potential exceeds their raw metrics. The kid at the under-resourced school who maxed out every opportunity available to them, whose recommendation letter says what the transcript can't show. Traditional rubrics reward access and polish. This system exists to also reward resilience and potential. Every architectural decision, every agent prompt, every scoring algorithm should be evaluated against this mission: **does it help surface students who deserve a second look?**
 
-Production Flask application (~8100 lines in `app.py`) that evaluates high-school scholarship applicants using 15+ Disney-themed AI agents backed by Azure AI Foundry. Deployed on Azure App Service behind Front Door + WAF with session-based authentication.
+Production Flask application (~8100 lines in `app.py`) that evaluates high-school scholarship applicants using 15+ Disney-themed AI agents backed by Azure AI Foundry. Deployed on Azure App Service with VNet + private endpoints and session-based authentication.
 
 ### Architecture
 
@@ -75,7 +75,7 @@ School data is built entirely from **publicly available U.S. government datasets
 
 ### Deployment
 
-- **Production**: App Service (West US 2), Front Door origin timeout 240s
+- **Production**: App Service (West US 2), gunicorn timeout 600s, platform LB timeout ~230s
 - **Staging**: App Service staging slot
 - **SCM**: Locked by default; unlock with `az webapp config access-restriction set ... --use-same-restrictions-for-scm-site false`, deploy via `az webapp deploy --type zip`, then re-lock
 - **Git**: Branch `main`, pushed to GitHub

@@ -68,7 +68,7 @@ _AUTH_WHITELIST = {
     'login',                 # login page itself (legacy endpoint)
     'static',                # CSS / JS / images
     'health_check',          # optional health probe endpoint
-    'healthz',               # Azure Front Door health probe
+    'healthz',               # Azure App Service health probe
     'diag.foundry',          # diagnostic: Foundry connectivity
     'diag.postgres',         # diagnostic: Postgres connectivity
     'diag.storage',          # diagnostic: Blob Storage connectivity

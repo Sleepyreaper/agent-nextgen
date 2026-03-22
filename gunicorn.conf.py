@@ -21,10 +21,10 @@ worker_class = "gthread"
 
 # ── Networking ─────────────────────────────────────────────────────
 bind = f"0.0.0.0:{os.environ.get('PORT', '8000')}"
-# Must exceed Azure Front Door origin timeout (240s) so the worker stays
-# alive long enough for Front Door to receive a response or its own timeout.
+# Azure App Service Linux has a ~230s load balancer timeout.
+# Gunicorn timeout should exceed that so workers stay alive.
 # Agent pipelines (Rapunzel, Belle, Merlin) can take 2-5 min per student.
-timeout = int(os.environ.get("GUNICORN_TIMEOUT", "300"))
+timeout = int(os.environ.get("GUNICORN_TIMEOUT", "600"))
 
 # ── Logging ────────────────────────────────────────────────────────
 accesslog = "-"

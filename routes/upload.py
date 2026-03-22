@@ -98,36 +98,28 @@ def upload():
                 is_video = DocumentProcessor.is_video_file(filename)
 
                 if is_video:
-                    # Video file: use Mirabel Video Analyzer
+                    # Video file: defer analysis to pipeline (Mirabel)
                     with open(temp_path, 'rb') as handle:
                         file_content = handle.read()
 
+                    application_text = ""
+                    file_type = 'mp4'
+                    doc_analysis = {
+                        "document_type": "video_submission",
+                        "confidence": 0,
+                        "student_info": {},
+                        "extracted_data": {},
+                        "agent_fields": {}
+                    }
                     try:
-                        mirabel = get_mirabel()
-                        doc_analysis = mirabel.analyze_video(temp_path, filename)
-                        application_text = doc_analysis.get('agent_fields', {}).get('application_text', '')
-                        file_type = 'mp4'
-                    except Exception as e:
-                        logger.warning(f"Mirabel video analysis failed: {e}")
-                        doc_analysis = {
-                            "document_type": "video_submission",
-                            "confidence": 0,
-                            "student_info": {},
-                            "extracted_data": {},
-                            "agent_fields": {}
-                        }
-                        application_text = ""
-                        file_type = 'mp4'
-                    finally:
-                        try:
-                            os.remove(temp_path)
-                        except Exception:
-                            pass
+                        os.remove(temp_path)
+                    except Exception:
+                        pass
                 else:
-                    # Document file: use Belle Document Analyzer
-                    ocr_callback = _make_ocr_callback()
+                    # Document file: fast text extraction only (no OCR, no AI)
+                    # Belle's AI analysis runs in the Smee pipeline background
                     application_text, file_type = DocumentProcessor.process_document(
-                        temp_path, ocr_callback=ocr_callback
+                        temp_path, ocr_callback=None
                     )
 
                     with open(temp_path, 'rb') as handle:
@@ -138,17 +130,14 @@ def upload():
                     except Exception:
                         pass
 
-                    try:
-                        doc_analysis = belle.analyze_document(application_text, filename)
-                    except Exception as e:
-                        logger.warning(f"Belle analysis failed: {e}")
-                        doc_analysis = {
-                            "document_type": "unknown",
-                            "confidence": 0,
-                            "student_info": {},
-                            "extracted_data": {},
-                            "agent_fields": {}
-                        }
+                    # Lightweight metadata only — no AI call
+                    doc_analysis = {
+                        "document_type": "unknown",
+                        "confidence": 0,
+                        "student_info": {},
+                        "extracted_data": {},
+                        "agent_fields": {}
+                    }
 
                 belle_student_info = doc_analysis.get('student_info', {})
                 extracted_name = belle_student_info.get('name') or extract_student_name(application_text)
@@ -251,39 +240,28 @@ def upload():
                         is_video = DocumentProcessor.is_video_file(cfilename)
 
                         if is_video:
-                            # Video → Mirabel
-                            try:
-                                mirabel = get_mirabel()
-                                doc_analysis = mirabel.analyze_video(temp_path, cfilename)
-                                application_text = doc_analysis.get('agent_fields', {}).get('application_text', '')
-                                file_type = 'mp4'
-                            except Exception as e:
-                                logger.warning("Mirabel video analysis (blob) failed: %s", e)
-                                doc_analysis = {
-                                    "document_type": "video_submission",
-                                    "confidence": 0,
-                                    "student_info": {},
-                                    "extracted_data": {},
-                                    "agent_fields": {}
-                                }
-                                application_text = ""
-                                file_type = 'mp4'
+                            # Video: defer to pipeline (Mirabel)
+                            application_text = ""
+                            file_type = 'mp4'
+                            doc_analysis = {
+                                "document_type": "video_submission",
+                                "confidence": 0,
+                                "student_info": {},
+                                "extracted_data": {},
+                                "agent_fields": {}
+                            }
                         else:
-                            # Document → Belle
-                            ocr_callback = _make_ocr_callback()
+                            # Document: fast text extraction only (no OCR, no AI)
                             application_text, file_type = DocumentProcessor.process_document(
-                                temp_path, ocr_callback=ocr_callback
+                                temp_path, ocr_callback=None
                             )
-                            try:
-                                doc_analysis = belle.analyze_document(application_text, cfilename)
-                            except Exception as e:
-                                logger.warning("Belle analysis failed for chunked blob %s: %s", cfilename, e)
-                                doc_analysis = {
-                                    "document_type": "unknown",
-                                    "confidence": 0,
-                                    "student_info": {},
-                                    "extracted_data": {}
-                                }
+                            doc_analysis = {
+                                "document_type": "unknown",
+                                "confidence": 0,
+                                "student_info": {},
+                                "extracted_data": {},
+                                "agent_fields": {}
+                            }
                     finally:
                         try:
                             os.remove(temp_path)

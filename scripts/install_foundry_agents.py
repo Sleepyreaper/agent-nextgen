@@ -150,7 +150,7 @@ _REASONING = os.getenv("MODEL_TIER_REASONING", "o3")
 _PREMIUM = os.getenv("MODEL_TIER_PREMIUM", "gpt-5.4-pro")
 _MERLIN = os.getenv("MODEL_TIER_MERLIN", "gpt-5.4-pro")
 _WORKHORSE = os.getenv("MODEL_TIER_WORKHORSE", "gpt-5.4")
-_VISION = os.getenv("FOUNDRY_VISION_MODEL_NAME", "gpt-4o")
+_VISION = os.getenv("FOUNDRY_VISION_MODEL_NAME", "gpt-5.4")
 
 # Agent registry: name → (model, system_prompt, description)
 AGENT_REGISTRY = {

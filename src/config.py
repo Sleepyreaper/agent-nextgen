@@ -192,11 +192,11 @@ class Config:
             "foundry-api-key",
             "FOUNDRY_API_KEY"
         ) or os.getenv("FOUNDRY_API_KEY")
-        # Vision model deployment name (dedicated GPT-4o for OCR/image tasks)
+        # Vision model deployment name (gpt-5.4 supports native vision)
         self.foundry_vision_model_name: Optional[str] = self._get_secret(
             "foundry-vision-model-name",
             "FOUNDRY_VISION_MODEL_NAME"
-        ) or os.getenv("FOUNDRY_VISION_MODEL_NAME") or "gpt-4o"
+        ) or os.getenv("FOUNDRY_VISION_MODEL_NAME") or "gpt-5.4"
         # Whisper model deployment name (for audio transcription in video analysis)
         self.foundry_whisper_model_name: Optional[str] = self._get_secret(
             "foundry-whisper-model-name",

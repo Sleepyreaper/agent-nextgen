@@ -83,8 +83,8 @@ class MirabelVideoAnalyzer(BaseAgent):
             db_connection: Database connection (optional)
         """
         super().__init__(name=name, client=client)
-        # Use vision model for frame analysis (GPT-4o)
-        self.vision_model = model or config.foundry_vision_model_name or "gpt-4o"
+        # Use vision model for frame analysis (gpt-5.4 has native vision)
+        self.vision_model = model or config.foundry_vision_model_name or "gpt-5.4"
         # Use whisper model for audio transcription if available
         self.whisper_model = getattr(config, 'foundry_whisper_model_name', None)
         # Whisper may live on a separate Azure OpenAI endpoint (different region)
