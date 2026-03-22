@@ -101,31 +101,35 @@ class Config:
         self.deployment_name: str = self._get_secret("azure-deployment-name", "AZURE_DEPLOYMENT_NAME")
         self.deployment_name_mini: str = self._get_secret("azure-deployment-name-mini", "AZURE_DEPLOYMENT_NAME_MINI") or "gpt-5.4"
 
-        # Tiered model deployments — see MODEL_AGENT_CONFIGURATION.md for rationale
-        # Tier 0 (Orchestrator): reasoning for planning — Smee orchestrator
+        # Tiered model deployments — optimized March 22 2026 for throughput
+        # Tier 0 (Orchestrator): routing/planning — does NOT need deep reasoning
         self.model_tier_orchestrator: str = self._get_secret(
             "model-tier-orchestrator", "MODEL_TIER_ORCHESTRATOR"
-        ) or os.getenv("MODEL_TIER_ORCHESTRATOR") or "o3"
-        # Tier 0+ (Reasoning): deep analysis — Gaston counter-eval, bias detection
+        ) or os.getenv("MODEL_TIER_ORCHESTRATOR") or "gpt-5.4"
+        # Tier 0+ (Reasoning): fast reasoning for quality checks — Gaston interleaved
         self.model_tier_reasoning: str = self._get_secret(
             "model-tier-reasoning", "MODEL_TIER_REASONING"
-        ) or os.getenv("MODEL_TIER_REASONING") or "o3"
-        # Tier 1 (Premium): complex reasoning — Merlin, Rapunzel, Milo
+        ) or os.getenv("MODEL_TIER_REASONING") or "o4-mini"
+        # Tier 1 (Premium): complex analysis — Rapunzel transcripts, Milo data science
         self.model_tier_premium: str = self._get_secret(
             "model-tier-premium", "MODEL_TIER_PREMIUM"
         ) or os.getenv("MODEL_TIER_PREMIUM") or "gpt-5.4-pro"
-        # Tier 1+ (Experimental): GPT-5.4-pro for Merlin final evaluator
+        # Tier 1+ (Merlin): THE judgment call — deserves the best reasoning model
         self.model_tier_merlin: str = self._get_secret(
             "model-tier-merlin", "MODEL_TIER_MERLIN"
-        ) or os.getenv("MODEL_TIER_MERLIN") or "gpt-5.4-pro"
-        # Tier 2 (Workhorse): structured extraction — Belle, Tiana, Mulan, Moana, Gaston, Smee, Naveen, Ariel
+        ) or os.getenv("MODEL_TIER_MERLIN") or "o3"
+        # Tier 2 (Workhorse): quality text analysis — Tiana essays, Mulan recs, Pocahontas equity
         self.model_tier_workhorse: str = self._get_secret(
             "model-tier-workhorse", "MODEL_TIER_WORKHORSE"
         ) or os.getenv("MODEL_TIER_WORKHORSE") or "gpt-5.4"
-        # Tier 3 (Lightweight): classification/triage — Scuttle, inline classifiers
+        # Tier 2.5 (Fast): page classification, narratives — Belle sections, Moana context, Gaston grading
+        self.model_tier_fast: str = self._get_secret(
+            "model-tier-fast", "MODEL_TIER_FAST"
+        ) or os.getenv("MODEL_TIER_FAST") or "gpt-5.4-mini"
+        # Tier 3 (Lightweight): simple formatting/scoring — Naveen, Aurora, Bashful, classifiers
         self.model_tier_lightweight: str = self._get_secret(
             "model-tier-lightweight", "MODEL_TIER_LIGHTWEIGHT"
-        ) or os.getenv("MODEL_TIER_LIGHTWEIGHT") or "gpt-5.4"
+        ) or os.getenv("MODEL_TIER_LIGHTWEIGHT") or "gpt-5.4-nano"
         self.api_version: str = self._get_secret("azure-api-version", "AZURE_API_VERSION") or "2025-04-14"
         self.api_version_mini: str = self._get_secret("azure-api-version-mini", "AZURE_API_VERSION_MINI") or "2025-04-16"
         self.azure_openai_api_key: Optional[str] = self._get_secret("azure-openai-api-key", "AZURE_OPENAI_API_KEY")

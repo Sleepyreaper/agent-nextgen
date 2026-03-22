@@ -265,12 +265,13 @@ def get_orchestrator():
     if not orchestrator_agent:
         client = get_ai_client()
         client_mini = get_ai_client_mini()
-        model_premium = config.model_tier_premium
-        model_merlin = config.model_tier_merlin
-        model_workhorse = config.model_tier_workhorse
-        model_lightweight = config.model_tier_lightweight
-        model_orchestrator = config.model_tier_orchestrator
-        model_reasoning = config.model_tier_reasoning
+        model_premium = config.model_tier_premium        # gpt-5.4-pro (160 RPM)
+        model_merlin = config.model_tier_merlin          # o3 (100 RPM)
+        model_workhorse = config.model_tier_workhorse    # gpt-5.4 (500 RPM)
+        model_fast = config.model_tier_fast              # gpt-5.4-mini (200 RPM)
+        model_lightweight = config.model_tier_lightweight # gpt-5.4-nano (200 RPM)
+        model_orchestrator = config.model_tier_orchestrator # gpt-5.4 (500 RPM)
+        model_reasoning = config.model_tier_reasoning    # o4-mini (100 RPM)
         orchestrator_agent = SmeeOrchestrator(
             name="Smee",
             client=client,
@@ -288,7 +289,7 @@ def get_orchestrator():
         )
         orchestrator_agent.register_agent(
             "school_context",
-            MoanaSchoolContext(name="Moana School Context Analyzer", client=client, model=model_workhorse, db_connection=db)
+            MoanaSchoolContext(name="Moana School Context Analyzer", client=client, model=model_fast, db_connection=db)
         )
         orchestrator_agent.register_agent(
             "recommendation_reader",
@@ -304,7 +305,7 @@ def get_orchestrator():
         )
         orchestrator_agent.register_agent(
             "naveen",
-            NaveenSchoolDataScientist(name="Naveen School Data Scientist", client=client, model=model_workhorse)
+            NaveenSchoolDataScientist(name="Naveen School Data Scientist", client=client, model=model_lightweight)
         )
         orchestrator_agent.register_agent(
             "pocahontas",
@@ -321,11 +322,11 @@ def get_orchestrator():
         )
         orchestrator_agent.register_agent(
             "bashful",
-            BashfulAgent(name="Bashful Agent", client=client, model=model_workhorse, system_prompt="You are Bashful, a helpful assistant in the evaluation system.")
+            BashfulAgent(name="Bashful Agent", client=client, model=model_lightweight, system_prompt="You are Bashful, a helpful assistant in the evaluation system.")
         )
         orchestrator_agent.register_agent(
             "belle",
-            BelleDocumentAnalyzer(name="Belle Document Analyzer", client=client, model=model_lightweight, db_connection=db)
+            BelleDocumentAnalyzer(name="Belle Document Analyzer", client=client, model=model_fast, db_connection=db)
         )
         orchestrator_agent.register_agent(
             "scuttle",

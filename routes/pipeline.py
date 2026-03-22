@@ -43,7 +43,7 @@ def pipeline_dashboard():
 # ---------------------------------------------------------------------------
 # Concurrent pipeline pool — each slot has its own Smee instance
 # ---------------------------------------------------------------------------
-MAX_CONCURRENT = int(os.getenv("PIPELINE_MAX_CONCURRENT", "2"))
+MAX_CONCURRENT = int(os.getenv("PIPELINE_MAX_CONCURRENT", "4"))
 _pool_semaphore = threading.Semaphore(MAX_CONCURRENT)
 
 # Track active/completed evaluations for the observatory
@@ -52,12 +52,20 @@ _pipeline_lock = threading.Lock()
 
 
 def _create_orchestrator() -> SmeeOrchestrator:
-    """Create a fresh Smee orchestrator instance (thread-safe, not shared)."""
+    """Create a fresh Smee orchestrator instance (thread-safe, not shared).\n    
+    Model tier assignments (optimized March 22 2026):
+      gpt-5.4 (500 RPM): Smee, Tiana, Mulan, Pocahontas
+      gpt-5.4-mini (200 RPM): Belle, Moana
+      gpt-5.4-nano (200 RPM): Naveen, Aurora, Bashful
+      gpt-5.4-pro (160 RPM): Rapunzel, Milo
+      o3 (100 RPM): Merlin (the judgment call)
+      o4-mini (100 RPM): Gaston interleaved quality checks
+    """
     client = get_ai_client()
     orchestrator = SmeeOrchestrator(
         name="Smee",
         client=client,
-        model=config.model_tier_orchestrator,
+        model=config.model_tier_orchestrator,  # gpt-5.4
         db_connection=db
     )
     orchestrator.register_agent("application_reader",
@@ -65,7 +73,7 @@ def _create_orchestrator() -> SmeeOrchestrator:
     orchestrator.register_agent("grade_reader",
         RapunzelGradeReader(name="Rapunzel", client=client, model=config.model_tier_premium, db_connection=db))
     orchestrator.register_agent("school_context",
-        MoanaSchoolContext(name="Moana", client=client, model=config.model_tier_workhorse, db_connection=db))
+        MoanaSchoolContext(name="Moana", client=client, model=config.model_tier_fast, db_connection=db))
     orchestrator.register_agent("recommendation_reader",
         MulanRecommendationReader(name="Mulan", client=client, model=config.model_tier_workhorse, db_connection=db))
     orchestrator.register_agent("student_evaluator",
@@ -73,16 +81,16 @@ def _create_orchestrator() -> SmeeOrchestrator:
     orchestrator.register_agent("data_scientist",
         MiloDataScientist(name="Milo", client=client, model=config.model_tier_premium, db_connection=db))
     orchestrator.register_agent("naveen",
-        NaveenSchoolDataScientist(name="Naveen", client=client, model=config.model_tier_workhorse))
+        NaveenSchoolDataScientist(name="Naveen", client=client, model=config.model_tier_lightweight))
     orchestrator.register_agent("pocahontas",
         PocahontasCohortAnalyst(name="Pocahontas", client=client, model=config.model_tier_workhorse))
     orchestrator.register_agent("aurora", AuroraAgent())
     orchestrator.register_agent("gaston",
         GastonEvaluator(name="Gaston", client=client, model=config.model_tier_reasoning))
     orchestrator.register_agent("belle",
-        BelleDocumentAnalyzer(name="Belle", client=client, model=config.model_tier_lightweight, db_connection=db))
+        BelleDocumentAnalyzer(name="Belle", client=client, model=config.model_tier_fast, db_connection=db))
     orchestrator.register_agent("bashful",
-        BashfulAgent(name="Bashful", client=client, model=config.model_tier_workhorse,
+        BashfulAgent(name="Bashful", client=client, model=config.model_tier_lightweight,
                      system_prompt="You are Bashful, a helpful summarizer."))
     return orchestrator
 

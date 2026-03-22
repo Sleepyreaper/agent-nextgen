@@ -144,12 +144,14 @@ Rules:
 
 Output a structured summary with key findings from each agent."""
 
-# Model tier defaults — can be overridden via env vars
-_ORCHESTRATOR = os.getenv("MODEL_TIER_ORCHESTRATOR", "o3")
-_REASONING = os.getenv("MODEL_TIER_REASONING", "o3")
+# Model tier defaults — optimized March 22 2026
+_ORCHESTRATOR = os.getenv("MODEL_TIER_ORCHESTRATOR", "gpt-5.4")
+_REASONING = os.getenv("MODEL_TIER_REASONING", "o4-mini")
 _PREMIUM = os.getenv("MODEL_TIER_PREMIUM", "gpt-5.4-pro")
-_MERLIN = os.getenv("MODEL_TIER_MERLIN", "gpt-5.4-pro")
+_MERLIN = os.getenv("MODEL_TIER_MERLIN", "o3")
 _WORKHORSE = os.getenv("MODEL_TIER_WORKHORSE", "gpt-5.4")
+_FAST = os.getenv("MODEL_TIER_FAST", "gpt-5.4-mini")
+_LIGHTWEIGHT = os.getenv("MODEL_TIER_LIGHTWEIGHT", "gpt-5.4-nano")
 _VISION = os.getenv("FOUNDRY_VISION_MODEL_NAME", "gpt-5.4")
 
 # Agent registry: name → (model, system_prompt, description)
@@ -160,7 +162,7 @@ AGENT_REGISTRY = {
         "description": "Pipeline Orchestrator — coordinates all agents in the evaluation workflow",
     },
     "belle": {
-        "model": _WORKHORSE,
+        "model": _FAST,
         "prompt": BELLE_ANALYZER_PROMPT,
         "description": "Document Intelligence — PDF/DOCX parsing, section detection, OCR",
     },
@@ -190,7 +192,7 @@ AGENT_REGISTRY = {
         "description": "Counter-Evaluator — consistency audit, bias check, quality gate",
     },
     "aurora": {
-        "model": _WORKHORSE,
+        "model": _LIGHTWEIGHT,
         "prompt": PRESENTER_PROMPT,
         "description": "Report Formatter — executive summary and presentation",
     },
@@ -200,12 +202,12 @@ AGENT_REGISTRY = {
         "description": "Video Analyst — video submission frame and audio analysis",
     },
     "moana": {
-        "model": _WORKHORSE,
+        "model": _FAST,
         "prompt": MOANA_PROMPT,
         "description": "School Context Analyst — contextualizes student achievements within school environment",
     },
     "naveen": {
-        "model": _WORKHORSE,
+        "model": _LIGHTWEIGHT,
         "prompt": NAVEEN_PROMPT,
         "description": "School Data Scientist — NCES data evaluation and component scoring",
     },
@@ -220,7 +222,7 @@ AGENT_REGISTRY = {
         "description": "Data Scientist — ML analysis, score normalization, alignment validation",
     },
     "bashful": {
-        "model": _WORKHORSE,
+        "model": _LIGHTWEIGHT,
         "prompt": BASHFUL_PROMPT,
         "description": "Summarizer — concise agent output summaries for committee review",
     },
