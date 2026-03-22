@@ -117,9 +117,13 @@ def upload():
                     except Exception:
                         pass
                 else:
-                    # Document file: text extraction WITH OCR for scanned pages
-                    # No AI analysis — Belle runs in the Smee pipeline background
-                    ocr_callback = _make_ocr_callback()
+                    # Document file: text extraction
+                    # Screening mode: skip OCR for speed (Merlin reads raw text)
+                    # Other modes: OCR for scanned pages
+                    if is_screening:
+                        ocr_callback = None
+                    else:
+                        ocr_callback = _make_ocr_callback()
                     application_text, file_type = DocumentProcessor.process_document(
                         temp_path, ocr_callback=ocr_callback
                     )
@@ -253,9 +257,10 @@ def upload():
                                 "agent_fields": {}
                             }
                         else:
-                            # Document: text extraction WITH OCR for scanned pages
+                            # Document: text extraction (no OCR for screening mode)
+                            _ocr_cb = None if is_screening else _make_ocr_callback()
                             application_text, file_type = DocumentProcessor.process_document(
-                                temp_path, ocr_callback=_make_ocr_callback()
+                                temp_path, ocr_callback=_ocr_cb
                             )
                             doc_analysis = {
                                 "document_type": "unknown",
