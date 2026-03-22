@@ -528,6 +528,10 @@ def upload():
                 if missing_fields:
                     db.set_missing_fields(application_id, missing_fields)
 
+                # Auto-start processing for 2026 applicants
+                if not is_training and not is_test:
+                    start_application_processing(application_id)
+
                 if is_training:
                     application_record = db.get_application(application_id) or {}
                     placeholder_fields = {}
