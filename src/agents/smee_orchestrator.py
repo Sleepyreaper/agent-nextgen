@@ -1176,68 +1176,12 @@ class SmeeOrchestrator(BaseAgent):
         
         document_name = application.get('file_name', 'application_document')
 
-        # ── Re-extract from blob with OCR if text looks thin ──
-        # Upload now skips OCR for speed; pipeline re-extracts with OCR
-        # so scanned pages (transcripts, etc.) get captured.
-        # Timeout: 90s max — if OCR takes longer, continue with existing text.
-        try:
-            student_id = application.get('student_id')
-            app_type = '2026'
-            if application.get('is_training_example') or application.get('istrainingexample'):
-                app_type = 'training'
-            if application.get('is_test_data') or application.get('istestdata'):
-                app_type = 'test'
-
-            if student_id and document_name and not document_name.lower().endswith('.mp4'):
-                from src.storage import storage
-                from src.document_processor import DocumentProcessor
-                import tempfile
-                import concurrent.futures
-
-                def _ocr_reextract():
-                    file_content = storage.download_file(student_id, document_name, app_type)
-                    if not file_content or len(file_content) < 100:
-                        return None
-                    with tempfile.NamedTemporaryFile(suffix=f'_{document_name}', delete=False) as tmp:
-                        tmp.write(file_content)
-                        tmp_path = tmp.name
-                    try:
-                        from extensions import _make_ocr_callback
-                        ocr_cb = _make_ocr_callback()
-                        ocr_text, _ = DocumentProcessor.process_document(tmp_path, ocr_callback=ocr_cb)
-                        return ocr_text
-                    finally:
-                        try:
-                            os.remove(tmp_path)
-                        except Exception:
-                            pass
-
-                with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
-                    future = executor.submit(_ocr_reextract)
-                    try:
-                        ocr_text = future.result(timeout=90)
-                        if ocr_text and len(ocr_text) > len(document_text) + 100:
-                            logger.info(
-                                "📖 STEP 1: OCR re-extraction boosted text from %d to %d chars",
-                                len(document_text), len(ocr_text)
-                            )
-                            document_text = ocr_text
-                            application['application_text'] = ocr_text
-                            application['_original_document_text'] = ocr_text
-                            if self.db and application_id:
-                                try:
-                                    self.db.update_application_fields(
-                                        application_id, {'application_text': ocr_text}
-                                    )
-                                except Exception:
-                                    pass
-                        else:
-                            logger.info("📖 STEP 1: OCR did not improve text (%d vs %d)",
-                                       len(ocr_text or ''), len(document_text))
-                    except concurrent.futures.TimeoutError:
-                        logger.warning("📖 STEP 1: OCR re-extraction timed out (90s) — continuing with existing text")
-        except Exception as _ocr_err:
-            logger.warning("📖 STEP 1: OCR re-extraction failed (non-blocking): %s", _ocr_err)
+        # ── OCR re-extraction DISABLED (v1.9.7) ──
+        # Was blocking the pipeline — vision API rate limits + thread deadlocks
+        # when running 4 concurrent evaluations. Scanned pages (transcripts)
+        # will use whatever PyMuPDF extracted during upload.
+        # TODO: Add OCR as an optional post-processing step, not in the hot path.
+        logger.info("📖 STEP 1: Using upload-extracted text (%d chars). OCR re-extraction disabled.", len(document_text))
 
         # Check if this application was sourced from a video (Mirabel extraction)
         is_video_source = (
