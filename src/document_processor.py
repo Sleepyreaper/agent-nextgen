@@ -13,9 +13,11 @@ logger = logging.getLogger(__name__)
 # Minimum characters on a page before it's considered "image-based"
 _IMAGE_PAGE_TEXT_THRESHOLD = 100
 
-# Regex matching pagination-only footers like "Name - #1234\n7 of 13"
+# Regex matching pagination-only pages where the ENTIRE content is just a footer
+# like "Grijalva, William - #1651\n3 of 8".  We check that the page has at most
+# two short lines (name-ID line + page-number line) and nothing else.
 _PAGINATION_FOOTER_RE = re.compile(
-    r'^\s*[\w\s,\'\-\.]+\s*-\s*#\d+\s*\n\s*\d+\s+of\s+\d+\s*$',
+    r'\A\s*[^\n]{1,80}-\s*#\d+\s*\n\s*\d+\s+of\s+\d+\s*\Z',
     re.IGNORECASE,
 )
 
