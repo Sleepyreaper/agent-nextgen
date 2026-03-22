@@ -240,6 +240,7 @@ from routes.schools import schools_bp
 from routes.governance import governance_bp
 from routes.calibration import calibration_bp
 from routes.diag import diag_bp
+from routes.pipeline import pipeline_bp
 
 app.register_blueprint(auth_bp)
 app.register_blueprint(feedback_bp)
@@ -253,6 +254,7 @@ app.register_blueprint(schools_bp)
 app.register_blueprint(governance_bp)
 app.register_blueprint(calibration_bp)
 app.register_blueprint(diag_bp)
+app.register_blueprint(pipeline_bp)
 
 # Start retention scheduler (moved from module-level to explicit call)
 from routes.admin import start_retention_scheduler

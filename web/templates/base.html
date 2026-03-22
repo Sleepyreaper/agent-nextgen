@@ -103,6 +103,9 @@
 
             <!-- System (admin only) -->
             <div class="sidebar-section-label text-[0.65rem] uppercase tracking-wider text-white/35 font-semibold px-3 mt-5 mb-2">System</div>
+            <a href="{{ url_for('pipeline.pipeline_dashboard') }}" class="sidebar-link {% if request.endpoint and 'pipeline.' in request.endpoint %}active{% endif %}">
+                <span class="nav-icon">🚀</span><span class="nav-label">Pipeline</span>
+            </a>
             <a href="{{ url_for('governance.dashboard') }}" class="sidebar-link {% if request.endpoint and 'governance.' in request.endpoint %}active{% endif %}">
                 <span class="nav-icon">🛡️</span><span class="nav-label">Trust & Governance</span>
             </a>

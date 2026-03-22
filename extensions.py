@@ -462,56 +462,19 @@ def refresh_foundry_dataset_async(reason: str) -> None:
 
 
 def start_application_processing(application_id: int) -> None:
-    """Start background application processing via Smee orchestrator."""
-    def run():
-        try:
-            application = db.get_application(application_id)
-            if not application:
-                logger.error(f"Processing: application {application_id} not found in DB")
-                return
-            orchestrator = get_orchestrator()
-            logger.info(f"Processing: starting orchestrator for application {application_id}")
-            result = run_async(orchestrator.coordinate_evaluation(
-                application=application,
-                evaluation_steps=['application_reader', 'grade_reader', 'recommendation_reader', 'school_context', 'data_scientist', 'student_evaluator', 'aurora']
-            ))
-            result_status = result.get('status') if isinstance(result, dict) else 'unknown'
-            result_keys = list(result.keys()) if isinstance(result, dict) else []
-            logger.info(f"Processing: orchestrator returned for {application_id}, status={result_status}, keys={result_keys}")
-            if result_status == 'paused':
-                db.update_application_status(application_id, 'Needs Docs')
-                logger.info(f"Processing: {application_id} paused — needs docs")
-                return
-            db.update_application_status(application_id, 'Completed')
-            logger.info(f"Processing: {application_id} marked Completed")
-        except Exception as e:
-            logger.error(f"Processing FAILED for {application_id}: {str(e)}", exc_info=True)
-            db.update_application_status(application_id, 'Uploaded')
-    db.update_application_status(application_id, 'Processing')
-    threading.Thread(target=run, daemon=True).start()
+    """Start background application processing via pipeline pool.
+    
+    Uses the concurrent pipeline from routes.pipeline which creates
+    a fresh Smee instance per evaluation (thread-safe, 4 concurrent).
+    """
+    from routes.pipeline import _run_pipeline
+    threading.Thread(target=_run_pipeline, args=(application_id, False), daemon=True).start()
 
 
 def start_training_processing(application_id: int) -> None:
-    """Start background training data processing via Smee orchestrator."""
-    def run():
-        try:
-            application = db.get_application(application_id)
-            if not application:
-                return
-            orchestrator = get_orchestrator()
-            result = run_async(orchestrator.coordinate_evaluation(
-                application=application,
-                evaluation_steps=['application_reader', 'grade_reader', 'recommendation_reader', 'school_context', 'data_scientist', 'student_evaluator', 'aurora']
-            ))
-            if result.get('status') == 'paused':
-                db.update_application_status(application_id, 'Needs Docs')
-                return
-            db.update_application_status(application_id, 'Completed')
-        except Exception as e:
-            logger.error(f"Training processing failed for application {application_id}: {str(e)}", exc_info=True)
-            db.update_application_status(application_id, 'Uploaded')
-    db.update_application_status(application_id, 'Processing')
-    threading.Thread(target=run, daemon=True).start()
+    """Start background training data processing via pipeline pool."""
+    from routes.pipeline import _run_pipeline
+    threading.Thread(target=_run_pipeline, args=(application_id, False), daemon=True).start()
 
 
 def start_incremental_processing(application_id: int) -> Dict[str, Any]:
