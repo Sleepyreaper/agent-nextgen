@@ -136,7 +136,7 @@ def _run_pipeline(application_id: int, batch_mode: bool = False):
                     if status == 'completed' and agent_id not in state.get('agents_completed', []):
                         state.setdefault('agents_completed', []).append(agent_id)
 
-        orchestrator._report_progress = _progress_cb
+        orchestrator._progress_callback = _progress_cb
 
         eval_steps = ['application_reader', 'grade_reader', 'recommendation_reader',
                       'school_context', 'data_scientist', 'student_evaluator', 'aurora']
@@ -259,7 +259,28 @@ def pipeline_status():
             reverse=True
         )[:100]
 
-    # Also get counts from DB for full picture
+    # If no in-memory state, fall back to DB for recent applications
+    if not entries:
+        try:
+            all_apps = db.get_all_applications()
+            for app in (all_apps or [])[:20]:
+                status = (app.get('status') or '').lower()
+                if status in ('processing', 'completed', 'uploaded', 'needs docs'):
+                    app_id = app.get('application_id') or app.get('applicationid')
+                    entries.append({
+                        'application_id': app_id,
+                        'applicant_name': app.get('applicant_name') or app.get('applicantname', ''),
+                        'status': 'completed' if status == 'completed' else ('running' if status == 'processing' else status),
+                        'queued_at': app.get('uploaded_date') or app.get('uploadeddate', ''),
+                        'completed_at': app.get('updated_date') or '',
+                        'current_agent': '-',
+                        'agents_completed': [],
+                        'from_db': True,
+                    })
+        except Exception:
+            pass
+
+    # Summary counts
     summary = {
         'active': len([e for e in entries if e.get('status') in ('running', 'queued')]),
         'completed': len([e for e in entries if e.get('status') == 'completed']),
