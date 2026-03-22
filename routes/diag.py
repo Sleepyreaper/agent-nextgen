@@ -1,5 +1,8 @@
 """Diagnostic endpoints for NextGen migration validation."""
-from flask import Blueprint, jsonify
+import time
+import asyncio
+import threading
+from flask import Blueprint, jsonify, request
 
 diag_bp = Blueprint('diag', __name__, url_prefix='/api/diag')
 
@@ -85,3 +88,89 @@ def recent_apps():
         return jsonify({'status': 'ok', 'apps': rows or []}), 200
     except Exception as e:
         return jsonify({'status': 'error', 'error': str(e)}), 500
+
+
+@diag_bp.route('/agent-test')
+def agent_test():
+    """Quick smoke test: call each agent model to verify connectivity.
+    
+    Optional query params:
+      ?agent=belle      — test one agent
+      ?agent=all        — test all agents (default)
+      ?prompt=hello     — custom test prompt
+    """
+    from src.config import config
+    from extensions import get_ai_client
+
+    target = request.args.get('agent', 'all').lower()
+    test_prompt = request.args.get('prompt', 'Respond with exactly: {"status":"ok","agent":"YOUR_NAME"}')
+
+    # Map agent names to their model tier
+    agent_models = {
+        'smee': ('gpt-5.4', config.model_tier_orchestrator),
+        'belle': ('gpt-5.4-mini', config.model_tier_fast),
+        'tiana': ('gpt-5.4', config.model_tier_workhorse),
+        'rapunzel': ('gpt-5.4-pro', config.model_tier_premium),
+        'mulan': ('gpt-5.4', config.model_tier_workhorse),
+        'merlin': ('o3', config.model_tier_merlin),
+        'gaston': ('o4-mini', config.model_tier_reasoning),
+        'aurora': ('gpt-5.4-nano', config.model_tier_lightweight),
+        'moana': ('gpt-5.4-mini', config.model_tier_fast),
+        'naveen': ('gpt-5.4-nano', config.model_tier_lightweight),
+        'pocahontas': ('gpt-5.4', config.model_tier_workhorse),
+        'milo': ('gpt-5.4-pro', config.model_tier_premium),
+        'bashful': ('gpt-5.4-nano', config.model_tier_lightweight),
+        'mirabel': ('gpt-5.4', getattr(config, 'foundry_vision_model_name', 'gpt-5.4')),
+    }
+
+    if target != 'all':
+        if target not in agent_models:
+            return jsonify({'error': f'Unknown agent: {target}', 'available': list(agent_models.keys())}), 400
+        agent_models = {target: agent_models[target]}
+
+    results = {}
+    client = get_ai_client()
+
+    for agent_name, (expected_model, actual_model) in agent_models.items():
+        start = time.time()
+        try:
+            # Skip o3/o4-mini for basic smoke test (reasoning models don't do simple prompts well)
+            if actual_model.startswith('o3') or actual_model.startswith('o4'):
+                resp = client.chat.completions.create(
+                    model=actual_model,
+                    messages=[{"role": "user", "content": f"You are {agent_name}. Say OK."}],
+                    max_completion_tokens=50,
+                )
+            else:
+                resp = client.chat.completions.create(
+                    model=actual_model,
+                    messages=[
+                        {"role": "system", "content": f"You are {agent_name}. {test_prompt}"},
+                        {"role": "user", "content": "Test"}
+                    ],
+                    max_tokens=100,
+                    temperature=0,
+                )
+            elapsed = round(time.time() - start, 2)
+            content = resp.choices[0].message.content[:200] if resp.choices else 'no response'
+            results[agent_name] = {
+                'status': 'ok',
+                'model': actual_model,
+                'response_preview': content,
+                'elapsed_seconds': elapsed,
+                'tokens': getattr(resp.usage, 'total_tokens', None),
+            }
+        except Exception as e:
+            elapsed = round(time.time() - start, 2)
+            results[agent_name] = {
+                'status': 'error',
+                'model': actual_model,
+                'error': str(e)[:200],
+                'elapsed_seconds': elapsed,
+            }
+
+    ok_count = sum(1 for r in results.values() if r['status'] == 'ok')
+    return jsonify({
+        'summary': f'{ok_count}/{len(results)} agents responding',
+        'results': results,
+    })
