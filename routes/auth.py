@@ -20,18 +20,39 @@ def login():
     """Login page and form handler."""
     error = None
     if request.method == 'POST':
-        username = request.form.get('username', '').strip()
+        username = request.form.get('username', '').strip().lower()
         password = request.form.get('password', '')
 
-        if (username == config.auth_username and
-                check_password_hash(config.auth_password_hash, password)):
+        # Multi-user auth: check auth_users dict first
+        authenticated = False
+        role = 'reviewer'
+        display_name = username
+
+        if config.auth_users and username in config.auth_users:
+            user_entry = config.auth_users[username]
+            stored_hash = user_entry.get('password_hash', '')
+            if stored_hash and check_password_hash(stored_hash, password):
+                authenticated = True
+                role = user_entry.get('role', 'reviewer')
+                display_name = user_entry.get('display_name', username)
+
+        # Fallback: single-user auth (backward compatible)
+        if not authenticated and config.auth_username:
+            if (username == config.auth_username.lower() and
+                    check_password_hash(config.auth_password_hash, password)):
+                authenticated = True
+                role = 'admin'
+                display_name = username
+
+        if authenticated:
             session.clear()
             session.permanent = True
             session['authenticated'] = True
             session['username'] = username
-            session['role'] = 'admin'
+            session['role'] = role
+            session['display_name'] = display_name
             session['login_time'] = datetime.now(timezone.utc).isoformat()
-            logger.info("User '%s' logged in successfully", username)
+            logger.info("User '%s' logged in (role=%s)", display_name, role)
             next_url = request.args.get('next') or url_for('index')
             if not next_url.startswith('/') or next_url.startswith('//'):
                 next_url = url_for('index')

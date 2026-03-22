@@ -79,7 +79,8 @@
                 <span class="nav-icon">📤</span><span class="nav-label">Upload Application</span>
             </a>
 
-            <!-- Training & Testing -->
+            <!-- Training & Testing (admin only) -->
+            {% if session.get('role') == 'admin' %}
             <div class="sidebar-section-label text-[0.65rem] uppercase tracking-wider text-white/35 font-semibold px-3 mt-5 mb-2">Training & Testing</div>
             <a href="{{ url_for('training.training') }}" class="sidebar-link {% if request.endpoint and 'training.' in request.endpoint %}active{% endif %}">
                 <span class="nav-icon">📚</span><span class="nav-label">Training Data</span>
@@ -91,7 +92,7 @@
                 <span class="nav-icon">🧪</span><span class="nav-label">Test Data</span>
             </a>
 
-            <!-- Data -->
+            <!-- Data (admin only) -->
             <div class="sidebar-section-label text-[0.65rem] uppercase tracking-wider text-white/35 font-semibold px-3 mt-5 mb-2">Data</div>
             <a href="{{ url_for('schools.schools_dashboard') }}" class="sidebar-link {% if request.endpoint and 'schools.' in request.endpoint %}active{% endif %}">
                 <span class="nav-icon">🏫</span><span class="nav-label">Schools</span>
@@ -100,7 +101,7 @@
                 <span class="nav-icon">🗄️</span><span class="nav-label">Data Management</span>
             </a>
 
-            <!-- System -->
+            <!-- System (admin only) -->
             <div class="sidebar-section-label text-[0.65rem] uppercase tracking-wider text-white/35 font-semibold px-3 mt-5 mb-2">System</div>
             <a href="{{ url_for('governance.dashboard') }}" class="sidebar-link {% if request.endpoint and 'governance.' in request.endpoint %}active{% endif %}">
                 <span class="nav-icon">🛡️</span><span class="nav-label">Trust & Governance</span>
@@ -115,7 +116,8 @@
                 <span class="nav-icon">📝</span><span class="nav-label">Feedback</span>
             </a>
 
-            <!-- Team -->
+            <!-- Team (visible to all) -->
+            {% endif %}{# end admin-only sections #}
             <div class="sidebar-section-label text-[0.65rem] uppercase tracking-wider text-white/35 font-semibold px-3 mt-5 mb-2">Team</div>
             <a href="{{ url_for('admin.team_page') }}" class="sidebar-link {% if request.endpoint == 'admin.team_page' %}active{% endif %}">
                 <span class="nav-icon">🏰</span><span class="nav-label">Meet the Team</span>
@@ -165,7 +167,7 @@
                     </svg>
                 </button>
                 {% if session.get('authenticated') %}
-                <span class="text-sm text-emory-gray-500">{{ session.get('username', '') }}</span>
+                <span class="text-sm text-emory-gray-500">{{ session.get('display_name', session.get('username', '')) }}</span>
                 <a href="{{ url_for('auth.logout') }}" class="btn-emory btn-emory-sm btn-emory-secondary" style="color: var(--emory-red);">Sign Out</a>
                 {% endif %}
             </div>

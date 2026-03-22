@@ -282,6 +282,19 @@ class Config:
         self.auth_password_hash: Optional[str] = self._get_secret("app-auth-password-hash", "APP_AUTH_PASSWORD_HASH")
         self.auth_session_hours: int = int(os.getenv("AUTH_SESSION_HOURS", "8"))
 
+        # Multi-user auth: JSON dict of users from Key Vault
+        # Format: {"brad": {"password_hash": "...", "role": "admin", "display_name": "Brad"},
+        #          "emily": {"password_hash": "...", "role": "reviewer", "display_name": "Emily"}}
+        # Falls back to single-user (auth_username/auth_password_hash) if not set.
+        _users_json = self._get_secret("app-auth-users", "APP_AUTH_USERS")
+        self.auth_users: Dict[str, Dict[str, str]] = {}
+        if _users_json:
+            try:
+                import json as _json
+                self.auth_users = _json.loads(_users_json)
+            except Exception:
+                pass
+
         # App metadata
         self.app_version: str = self._read_version_file() or self._read_env_version() or "0.1"
 
