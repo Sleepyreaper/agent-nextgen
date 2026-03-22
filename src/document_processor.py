@@ -60,7 +60,32 @@ class DocumentProcessor:
             for page_idx in range(total_pages):
                 page = doc[page_idx]
                 page_num = page_idx + 1
+                
+                # Extract tables first (preserves column structure for transcripts/grade tables)
+                table_text = ""
+                try:
+                    tables = page.find_tables()
+                    if tables and tables.tables:
+                        for tbl in tables.tables:
+                            try:
+                                df = tbl.to_pandas()
+                                # Format as pipe-delimited with header row
+                                header = " | ".join(str(c) for c in df.columns)
+                                rows = []
+                                for _, row in df.iterrows():
+                                    rows.append(" | ".join(str(v) if v is not None else "" for v in row.values))
+                                table_text += f"\n[TABLE]\n{header}\n" + "\n".join(rows) + "\n[/TABLE]\n"
+                            except Exception:
+                                pass
+                except Exception:
+                    pass  # find_tables() not available in older PyMuPDF versions
+                
+                # Get regular text content
                 page_text = page.get_text().strip()
+                
+                # Append table text if tables were found (tables supplement regular text)
+                if table_text.strip():
+                    page_text = page_text + "\n" + table_text.strip() if page_text else table_text.strip()
                 
                 is_pagination_only = bool(
                     _PAGINATION_FOOTER_RE.match(page_text)
@@ -188,15 +213,19 @@ class DocumentProcessor:
             # Extract tables (transcripts, grade tables, forms)
             for table_idx, table in enumerate(doc.tables):
                 table_rows: List[str] = []
-                for row in table.rows:
+                # First row is likely the header — preserve it for column identity
+                for row_idx, row in enumerate(table.rows):
                     cells = [cell.text.strip() for cell in row.cells]
                     # Deduplicate merged cells (Word repeats text for merged cells)
                     deduped: List[str] = []
                     for c in cells:
                         if not deduped or c != deduped[-1]:
                             deduped.append(c)
+                    # Preserve empty cells as "—" so columns stay aligned
+                    # (a missing credit-hours cell shouldn't shift Grade into Credits column)
+                    deduped = [c if c else "—" for c in deduped]
                     row_text = " | ".join(deduped)
-                    if row_text.replace("|", "").strip():
+                    if row_text.replace("|", "").replace("—", "").strip():
                         table_rows.append(row_text)
                 if table_rows:
                     parts.append(f"\n[Table {table_idx + 1}]")

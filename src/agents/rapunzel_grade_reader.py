@@ -843,15 +843,17 @@ OUTPUT STRUCTURE:
             r'\*{0,2}[Cc]umulative\s+GPA\*{0,2}\s*[:\s]+([0-9]+\.[0-9]+)',
             # "GPA estimation" or "GPA (unweighted)" etc. near a number
             r'\*{0,2}GPA\*{0,2}\s*(?:\(unweighted\))?\s*(?:estimation)?\s*[:\s]+([0-9]+\.[0-9]+)',
-            # Fallback: any "GPA: X.XX" but only if value looks like a real GPA (0.0-5.0)
-            r'\*{0,2}GPA\*{0,2}\s*[:\s]+([0-4]\.[0-9]+)',
+            # Fallback: any "GPA: X.XX" — accept up to 6.0 for weighted scales
+            r'\*{0,2}GPA\*{0,2}\s*[:\s]+([0-6]\.[0-9]+)',
         ]
         for gpa_pat in gpa_patterns:
             gpa_match = re.search(gpa_pat, response_text)
             if gpa_match:
                 try:
                     val = float(gpa_match.group(1))
-                    if 0.0 <= val <= 5.0:
+                    # Accept GPAs up to 6.0 to support weighted scales (5.0 and 6.0 scale schools)
+                    # Values > 6.0 are almost certainly parsing artifacts, not real GPAs
+                    if 0.0 <= val <= 6.0:
                         parsed['gpa'] = val
                         break
                 except ValueError:
