@@ -289,7 +289,11 @@ def start_screening():
     if not app_ids:
         status_filter = data.get('status_filter', '')
         try:
-            all_apps = db.get_all_applications()
+            all_apps = db.execute_query(
+                "SELECT application_id, applicant_name, status, application_text, "
+                "transcript_text, recommendation_text, agent_results "
+                "FROM applications ORDER BY application_id DESC LIMIT 500"
+            ) or []
             for a in (all_apps or []):
                 aid = a.get('application_id') or a.get('applicationid')
                 # Skip already-screened apps (have screening_score) unless forced
@@ -338,7 +342,11 @@ def screening_status():
 
     # Count pending (unscreened) applications
     try:
-        all_apps = db.get_all_applications()
+        all_apps = db.execute_query(
+            "SELECT application_id, applicant_name, status, application_text, "
+            "transcript_text, recommendation_text, agent_results "
+            "FROM applications ORDER BY application_id DESC LIMIT 500"
+        ) or []
         pending = []
         for a in (all_apps or []):
             aid = a.get('application_id') or a.get('applicationid')

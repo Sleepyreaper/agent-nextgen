@@ -207,7 +207,10 @@ def start_batch():
     if not app_ids:
         status_filter = data.get('status_filter', 'Uploaded')
         try:
-            all_apps = db.get_all_applications()
+            all_apps = db.execute_query(
+                "SELECT application_id, applicant_name, status, is_training_example "
+                "FROM applications ORDER BY application_id DESC LIMIT 500"
+            ) or []
             app_ids = [
                 a.get('application_id') or a.get('applicationid')
                 for a in all_apps
@@ -270,7 +273,10 @@ def pipeline_status():
     # If no in-memory state, fall back to DB for recent applications
     if not entries:
         try:
-            all_apps = db.get_all_applications()
+            all_apps = db.execute_query(
+                "SELECT application_id, applicant_name, status, uploaded_date, updated_date "
+                "FROM applications ORDER BY application_id DESC LIMIT 20"
+            ) or []
             for app in (all_apps or [])[:20]:
                 status = (app.get('status') or '').lower()
                 if status in ('processing', 'completed', 'uploaded', 'needs docs'):
