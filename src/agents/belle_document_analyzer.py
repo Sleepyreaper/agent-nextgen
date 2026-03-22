@@ -76,6 +76,88 @@ class BelleDocumentAnalyzer(BaseAgent):
             "school_info": ["school district", "high school", "school name", "institution", "university", "college", "campus"]
         }
     
+    def _extract_structured_data_with_ai(self, text_content: str, original_filename: str) -> Dict[str, Any]:
+        """Use the AI model to perform deep structured extraction from the document.
+        
+        This is the PRIMARY extraction path.  It sends the full document text
+        to the model with BELLE_ANALYZER_PROMPT and gets back rich structured
+        JSON including student_info, sections, agent_fields, and extracted_data
+        (grades, courses, GPA, activities, etc.).
+        
+        Regex/keyword extractors serve as fallbacks; this method is the brain.
+        """
+        import logging
+        _logger = logging.getLogger(__name__)
+
+        # Determine how much text to send.  The workhorse model handles large
+        # context windows, but we cap at a sensible limit so the extraction
+        # stays focused and we don't burn excessive tokens.
+        max_chars = 30000
+        doc_text = text_content[:max_chars] if len(text_content) > max_chars else text_content
+        truncated = len(text_content) > max_chars
+
+        user_prompt = (
+            f"Filename: {original_filename}\n"
+            f"{'[TRUNCATED — first ' + str(max_chars) + ' characters shown]' if truncated else ''}\n\n"
+            f"DOCUMENT CONTENT:\n{doc_text}\n\n"
+            "Analyze this document and return the structured JSON described in your instructions. "
+            "Extract ALL courses, grades, GPA, test scores, activities, and student info you can find. "
+            "Be thorough — every grade, every course, every detail matters for downstream evaluation."
+        )
+
+        messages = [
+            {"role": "system", "content": BELLE_ANALYZER_PROMPT},
+            {"role": "user", "content": user_prompt}
+        ]
+
+        try:
+            response = self._create_chat_completion(
+                operation="belle.structured_extraction",
+                model=self.model,
+                messages=messages,
+                max_completion_tokens=6000,
+                temperature=0
+            )
+
+            raw_text = response.choices[0].message.content.strip() if response else ""
+            if not raw_text:
+                _logger.warning("AI structured extraction returned empty response")
+                return {}
+
+            parsed = safe_load_json(raw_text)
+            if parsed and isinstance(parsed, dict):
+                _logger.info(
+                    "AI structured extraction succeeded: keys=%s",
+                    list(parsed.keys())
+                )
+                return parsed
+
+            # Try extracting JSON from markdown code fence
+            if "```json" in raw_text:
+                try:
+                    json_str = raw_text.split("```json")[1].split("```")[0].strip()
+                    parsed = json.loads(json_str)
+                    if isinstance(parsed, dict):
+                        return parsed
+                except (IndexError, json.JSONDecodeError):
+                    pass
+
+            if "```" in raw_text:
+                try:
+                    json_str = raw_text.split("```")[1].split("```")[0].strip()
+                    parsed = json.loads(json_str)
+                    if isinstance(parsed, dict):
+                        return parsed
+                except (IndexError, json.JSONDecodeError):
+                    pass
+
+            _logger.warning("AI structured extraction returned non-JSON: %s…", raw_text[:200])
+            return {}
+
+        except Exception as e:
+            _logger.error("AI structured extraction failed: %s", e)
+            return {}
+
     def analyze_document(self, text_content: str, original_filename: str, application_id: Optional[int] = None) -> Dict[str, Any]:
         """
         Analyze a document and extract structured information.
@@ -94,22 +176,97 @@ class BelleDocumentAnalyzer(BaseAgent):
         """
         
         with agent_run(self.name, "analyze_document", {"filename": original_filename}):
-            # Step 1: Identify document type
+            # Step 1: Identify document type (fast keyword scoring)
             doc_type, confidence = self._identify_document_type(text_content, original_filename)
 
             # Step 1.5: Detect document sections (transcript, recommendation, application pages)
-            # For multi-page PDFs, identify which pages belong to which section
             sections = self._detect_document_sections(text_content)
 
-            # Step 2: Extract type-specific data
+            # Step 2: Regex-based type-specific extraction (fast fallback)
             extracted_data = self._extract_data_by_type(text_content, doc_type)
 
-            # Step 3: Extract common student info across all documents
+            # Step 3: Extract common student info (uses AI for name + school)
             student_info = self._extract_student_info(text_content)
 
             # Step 4: Generate summary
         summary = self._generate_summary(text_content, doc_type, extracted_data)
 
+        # ── Step 5: AI-POWERED DEEP EXTRACTION (primary intelligence) ──
+        # Send the full document to the model with BELLE_ANALYZER_PROMPT.
+        # This is where grades, courses, GPA, activities, and all structured
+        # data actually get extracted.  Regex is the fallback, AI is the brain.
+        ai_result = self._extract_structured_data_with_ai(text_content, original_filename)
+
+        if ai_result and isinstance(ai_result, dict):
+            import logging as _ai_log
+            _ai_logger = _ai_log.getLogger(__name__)
+
+            # Override document type if AI is more confident
+            ai_doc_type = ai_result.get("document_type")
+            if ai_doc_type and isinstance(ai_doc_type, str):
+                doc_type = ai_doc_type
+                confidence = max(confidence, 0.8)
+
+            # Merge AI student_info over regex-extracted student_info
+            ai_student = ai_result.get("student_info", {})
+            if isinstance(ai_student, dict) and ai_student:
+                student_info = self._merge_dicts(student_info, ai_student)
+
+            # Merge AI extracted_data over regex-extracted data
+            ai_extracted = ai_result.get("extracted_data", {})
+            if isinstance(ai_extracted, dict) and ai_extracted:
+                extracted_data = self._merge_dicts(extracted_data, ai_extracted)
+
+            # AI section_map gives us precise content routing
+            ai_section_map = ai_result.get("section_map", {})
+            if isinstance(ai_section_map, dict) and ai_section_map:
+                # Override keyword-based sections with AI-detected ones
+                if ai_section_map.get("transcript") and not sections.get("transcript_text"):
+                    sections["transcript_text"] = ai_section_map["transcript"]
+                if ai_section_map.get("recommendation_letter") and not sections.get("recommendation_text"):
+                    sections["recommendation_text"] = ai_section_map["recommendation_letter"]
+                if ai_section_map.get("essay") and not sections.get("application_text"):
+                    sections["application_text"] = ai_section_map["essay"]
+                # Also check alternate key names
+                if ai_section_map.get("recommendation") and not sections.get("recommendation_text"):
+                    sections["recommendation_text"] = ai_section_map["recommendation"]
+                if ai_section_map.get("application") and not sections.get("application_text"):
+                    sections["application_text"] = ai_section_map["application"]
+
+            # AI agent_fields — the most important output for downstream agents
+            ai_agent_fields = ai_result.get("agent_fields", {})
+            if isinstance(ai_agent_fields, dict) and ai_agent_fields:
+                # These are pre-routed text blocks for Rapunzel, Tiana, Mulan
+                if ai_agent_fields.get("transcript_text") and not sections.get("transcript_text"):
+                    sections["transcript_text"] = ai_agent_fields["transcript_text"]
+                if ai_agent_fields.get("recommendation_text") and not sections.get("recommendation_text"):
+                    sections["recommendation_text"] = ai_agent_fields["recommendation_text"]
+                if ai_agent_fields.get("application_text") and not sections.get("application_text"):
+                    sections["application_text"] = ai_agent_fields["application_text"]
+
+            # AI-detected sections list
+            ai_sections_detected = ai_result.get("sections_detected", [])
+            if ai_sections_detected:
+                _ai_logger.info("AI detected sections: %s", ai_sections_detected)
+
+            # AI summary override if present
+            ai_summary = ai_result.get("summary")
+            if ai_summary and isinstance(ai_summary, str) and len(ai_summary) > len(summary or ""):
+                summary = ai_summary
+
+            # Document metadata from AI
+            ai_metadata = ai_result.get("document_metadata", {})
+            if isinstance(ai_metadata, dict):
+                extracted_data["_ai_document_metadata"] = ai_metadata
+
+            _ai_logger.info(
+                "AI extraction merged: doc_type=%s, student_keys=%s, data_keys=%s",
+                doc_type,
+                list((ai_student or {}).keys()),
+                list((ai_extracted or {}).keys())
+            )
+
+        # ── Content Processing Service (external API, if configured) ──
         enhanced = self._run_content_processing(text_content, original_filename)
         raw_extraction = enhanced if isinstance(enhanced, dict) else None
 
@@ -186,6 +343,17 @@ class BelleDocumentAnalyzer(BaseAgent):
             agent_fields["activities"] = extracted_data.get("activities")
         if extracted_data.get("interest"):
             agent_fields["interest"] = extracted_data.get("interest")
+        # Promote AI-extracted course/grade data into agent_fields for Rapunzel
+        if extracted_data.get("courses"):
+            agent_fields["courses"] = extracted_data["courses"]
+        if extracted_data.get("class_rank"):
+            agent_fields["class_rank"] = extracted_data["class_rank"]
+        if extracted_data.get("test_scores"):
+            agent_fields["test_scores"] = extracted_data["test_scores"]
+        if extracted_data.get("honors"):
+            agent_fields["honors"] = extracted_data["honors"]
+        if extracted_data.get("grade_level"):
+            agent_fields["grade_level"] = extracted_data["grade_level"]
         # Try to match and persist school using local school data when possible
         # Use provided application_id and db_connection if available
         student_name = student_info.get('name') if isinstance(student_info, dict) else None
