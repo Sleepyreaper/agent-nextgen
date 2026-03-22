@@ -329,6 +329,24 @@ def screening_status():
         )
         state['results'] = results
 
+    # Count pending (unscreened) applications
+    try:
+        all_apps = db.get_all_applications()
+        pending = []
+        for a in (all_apps or []):
+            aid = a.get('application_id') or a.get('applicationid')
+            name = a.get('applicant_name') or a.get('applicantname') or ''
+            status = a.get('status') or ''
+            has_text = bool((a.get('application_text') or a.get('applicationtext') or '').strip())
+            # Show all apps that could be screened
+            if has_text and not a.get('screening_score'):
+                pending.append({'id': aid, 'name': name, 'status': status})
+        state['pending_count'] = len(pending)
+        state['pending'] = pending[:20]  # Show first 20
+    except Exception:
+        state['pending_count'] = 0
+        state['pending'] = []
+
     return jsonify(state)
 
 

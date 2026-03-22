@@ -12,7 +12,7 @@
             </div>
             <div class="flex gap-3">
                 <button onclick="startScreening()" id="btn-start" class="px-4 py-2 bg-white/20 hover:bg-white/30 rounded-lg text-sm font-semibold transition">
-                    ⚡ Screen All Uploaded
+                    ⚡ Screen All (<span id="pending-count">0</span> pending)
                 </button>
                 <button onclick="refreshStatus()" class="px-4 py-2 bg-white/10 hover:bg-white/20 rounded-lg text-sm transition">
                     🔄 Refresh
@@ -73,6 +73,8 @@ async function refreshStatus() {
     try {
         const resp = await fetch('/api/screening/status');
         const data = await resp.json();
+
+        document.getElementById('pending-count').textContent = data.pending_count || 0;
 
         const prog = document.getElementById('progress-card');
         if (data.status === 'running' || data.status === 'completed') {
