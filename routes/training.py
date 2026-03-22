@@ -122,22 +122,6 @@ def view_training_detail(application_id):
             flash('Training example not found', 'error')
             return redirect(url_for('training.training'))
 
-        # Strip gaston from stored agent_results in application dict
-        try:
-            app_ar = application.get('agent_results')
-            if isinstance(app_ar, dict):
-                app_ar.pop('gaston', None)
-            ss = application.get('student_summary')
-            if isinstance(ss, dict):
-                ad = ss.get('agent_details')
-                if isinstance(ad, dict):
-                    ad.pop('gaston', None)
-                ac = ss.get('agents_completed')
-                if isinstance(ac, list) and 'gaston' in ac:
-                    ac.remove('gaston')
-        except Exception:
-            pass
-
         return render_template('application.html', 
                              application=application,
                              is_training=True)

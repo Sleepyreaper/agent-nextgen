@@ -1754,9 +1754,109 @@ class SmeeOrchestrator(BaseAgent):
                 logger.debug(f"Skipping DB persistence for {agent_id}")
 
         
-        # Gate check before Step 5
+        # Gate check before Step 4.5
         if self._is_cancelled():
             logger.info("🛑 Pipeline cancelled after Step 4")
+            return {'status': 'cancelled', 'completed_steps': self.evaluation_results.get('completed_steps', [])}
+        self._pace('pocahontas')
+
+        # ===== STEP 4.5: POCAHONTAS - Equity Analysis =====
+        # Runs after Naveen (school scores) and Moana (school narrative) are complete
+        # Produces equity_tier and context_multiplier consumed by Merlin
+        logger.info("🪶 STEP 4.5: Running Pocahontas equity analysis...")
+        if 'pocahontas' in self.agents and school_enrichment:
+            pocahontas = self.agents['pocahontas']
+            self._report_progress({
+                'type': 'agent_progress',
+                'agent_id': 'pocahontas',
+                'agent': 'Pocahontas',
+                'status': 'starting',
+                'message': '🪶 Pocahontas is analyzing equity context...'
+            })
+            try:
+                moana_result = self.evaluation_results['results'].get('school_context', {})
+                rapunzel_result = self.evaluation_results['results'].get('grade_reader', {})
+                naveen_scores = school_enrichment.get('component_scores', {})
+                if not naveen_scores:
+                    naveen_scores = school_enrichment.get('naveen_scores', {})
+
+                pocahontas_input = {
+                    'school_data': school_enrichment,
+                    'school_narrative': moana_result.get('narrative', '') if isinstance(moana_result, dict) else str(moana_result),
+                    'naveen_component_scores': naveen_scores,
+                    'grades': rapunzel_result.get('grades', {}) if isinstance(rapunzel_result, dict) else {},
+                    'activities': application.get('activities', []),
+                }
+
+                pocahontas_result = await pocahontas.process(pocahontas_input)
+                pocahontas_result = self._normalize_agent_result(pocahontas_result)
+                self.evaluation_results['results']['pocahontas'] = pocahontas_result
+
+                # Extract equity data for downstream agents (Merlin)
+                equity_tier = pocahontas_result.get('equity_tier', 3) if isinstance(pocahontas_result, dict) else 3
+                context_multiplier = pocahontas_result.get('context_multiplier', 1.0) if isinstance(pocahontas_result, dict) else 1.0
+                self.evaluation_results['results']['_context_multiplier'] = context_multiplier
+                self.evaluation_results['results']['_equity_tier'] = equity_tier
+
+                logger.info(
+                    "🪶 Pocahontas complete: equity_tier=%s, multiplier=%.2f, diamond=%s",
+                    equity_tier, context_multiplier,
+                    pocahontas_result.get('diamond_in_rough_flag', False) if isinstance(pocahontas_result, dict) else False
+                )
+
+                # Persist to DB
+                try:
+                    if self.db and application_id:
+                        existing = {}
+                        try:
+                            rec = self.db.get_application(application_id) or {}
+                            existing = rec.get('agent_results') or {}
+                            if isinstance(existing, str):
+                                existing = safe_load_json(existing)
+                        except Exception:
+                            existing = {}
+                        existing['pocahontas'] = pocahontas_result
+                        try:
+                            self.db.update_application(
+                                application_id=application_id,
+                                agent_results=json.dumps(existing)
+                            )
+                        except Exception:
+                            logger.debug('Could not persist pocahontas to agent_results')
+                except Exception:
+                    pass
+
+                self._report_progress({
+                    'type': 'agent_progress',
+                    'agent_id': 'pocahontas',
+                    'agent': 'Pocahontas',
+                    'status': 'completed',
+                    'message': f'🪶 Pocahontas complete — Tier {equity_tier}, multiplier {context_multiplier:.2f} ✓'
+                })
+                self._checkpoint_step('step_4_5_equity', application_id)
+            except Exception as e:
+                logger.error(f"❌ Pocahontas equity analysis failed: {e}", exc_info=True)
+                self._report_progress({
+                    'type': 'agent_progress',
+                    'agent_id': 'pocahontas',
+                    'agent': 'Pocahontas',
+                    'status': 'failed',
+                    'message': f'Equity analysis failed: {str(e)[:80]}'
+                })
+                # Non-blocking — pipeline continues with default equity (tier 3, multiplier 1.0)
+                self.evaluation_results['results']['_context_multiplier'] = 1.0
+                self.evaluation_results['results']['_equity_tier'] = 3
+        else:
+            if 'pocahontas' not in self.agents:
+                logger.info("🪶 Pocahontas not registered — skipping equity analysis")
+            elif not school_enrichment:
+                logger.info("🪶 No school data — skipping equity analysis (default tier 3)")
+            self.evaluation_results['results']['_context_multiplier'] = 1.0
+            self.evaluation_results['results']['_equity_tier'] = 3
+
+        # Gate check before Step 5
+        if self._is_cancelled():
+            logger.info("🛑 Pipeline cancelled after Step 4.5")
             return {'status': 'cancelled', 'completed_steps': self.evaluation_results.get('completed_steps', [])}
         self._pace('data_scientist')
         
@@ -1910,11 +2010,11 @@ class SmeeOrchestrator(BaseAgent):
                 'message': '🧙 Merlin is synthesizing all agent evaluations...'
             })
             try:
-                # Context routing: Merlin only gets relevant agent outputs (not raw Belle/Naveen data)
+                # Context routing: Merlin gets relevant agent outputs + equity context
                 _merlin_context = {}
-                _MERLIN_NEEDS = {'application_reader', 'grade_reader', 'recommendation_reader', 'school_context', 'data_scientist', 'milo'}
+                _MERLIN_NEEDS = {'application_reader', 'grade_reader', 'recommendation_reader', 'school_context', 'data_scientist', 'milo', 'pocahontas'}
                 for _k, _v in self.evaluation_results['results'].items():
-                    if _k in _MERLIN_NEEDS or _k in ('_normalized_scores', '_context_multiplier'):
+                    if _k in _MERLIN_NEEDS or _k in ('_normalized_scores', '_context_multiplier', '_equity_tier'):
                         # Cap per-agent context to 15K chars to prevent token overload
                         if isinstance(_v, str) and len(_v) > 15000:
                             _merlin_context[_k] = _v[:15000] + '\n[TRUNCATED]'

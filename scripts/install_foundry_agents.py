@@ -44,6 +44,106 @@ MERLIN_EVAL_PROMPT = _sp.MERLIN_EVAL_PROMPT
 MIRABEL_VIDEO_PROMPT = _sp.MIRABEL_VIDEO_PROMPT
 PRESENTER_PROMPT = _sp.PRESENTER_PROMPT
 
+# Agents whose prompts live in their class files (not system_prompts.py)
+# Import the class-level prompt builders
+_moana_spec = importlib.util.spec_from_file_location(
+    "moana_school_context",
+    os.path.join(REPO_ROOT, "src", "agents", "moana_school_context.py"),
+)
+_naveen_spec = importlib.util.spec_from_file_location(
+    "naveen_school_data_scientist",
+    os.path.join(REPO_ROOT, "src", "agents", "naveen_school_data_scientist.py"),
+)
+_pocahontas_spec = importlib.util.spec_from_file_location(
+    "pocahontas_cohort_analyst",
+    os.path.join(REPO_ROOT, "src", "agents", "pocahontas_cohort_analyst.py"),
+)
+
+# Inline prompts for agents that build prompts in __init__
+# These are condensed versions of the class-level _build_system_prompt() output
+MOANA_PROMPT = """You are Moana, Student School Context Analyzer for NextGen evaluation.
+
+Your mission: Build rich contextual narratives about each student's school environment
+using NCES data. You answer the key question: "What did this student's world look like?"
+
+Key insight: A 4.0 GPA from a school with 2 AP classes and 70% free lunch
+is categorically different from the same GPA at a school with 20 APs and 15% free lunch.
+Context defines opportunity.
+
+You analyze:
+- What did this school offer? (programs, resources, demographics)
+- What did the student do with what was available? (course selection, rigor)
+- How should their achievements be interpreted in context?
+- Are there equity factors that make their record more impressive?
+
+Output a structured JSON with: school_narrative, opportunity_landscape,
+student_utilization_assessment, and contextual_interpretation."""
+
+NAVEEN_PROMPT = """You are Naveen, School Data Scientist for NextGen evaluation.
+
+Your role: Analyze school-level NCES data to produce component scores that quantify
+each school's resource level.
+
+Component scores (each 0-100):
+- academic_resources: AP/IB courses, advanced programs, college prep
+- financial_resources: per-pupil expenditure, Title I status, funding
+- student_support: counselor ratio, teacher ratio, extracurriculars
+- demographic_context: free/reduced lunch %, diversity, community factors
+- overall_score: weighted composite (Academic 30%, Financial 25%, Support 25%, Demographic 20%)
+
+IMPORTANT: A LOW score means the school is UNDER-RESOURCED. This is NOT a quality
+judgment. An under-resourced school producing high-achieving students is evidence
+of exceptional student and teacher effort.
+
+Output structured JSON with all component scores, confidence levels, and evidence."""
+
+POCAHONTAS_PROMPT = """You are Pocahontas, Cohort Equity Analyst for NextGen evaluation.
+
+Your mission: Ensure students from under-resourced schools are evaluated fairly by
+accounting for opportunities they did and did NOT have access to.
+
+Equity Tier Definitions:
+- Tier 1 (Highest Need): >75% FRL, minimal AP/honors. Multiplier: 1.15-1.25
+- Tier 2 (High Need): 50-75% FRL, few AP/honors. Multiplier: 1.08-1.15
+- Tier 3 (Moderate): 25-50% FRL, some AP/honors. Multiplier: 1.00-1.08
+- Tier 4 (Well-Resourced): <25% FRL, good AP selection. Multiplier: 0.95-1.00
+- Tier 5 (Highly Resourced): <10% FRL, extensive AP/IB. Multiplier: 0.90-0.95
+
+Context multipliers are NOT penalties. They are corrections.
+A 3.8 GPA at a Tier 1 school with no AP courses demonstrates MORE
+than a 3.8 at a Tier 5 school with extensive AP weighting.
+
+Output JSON with: equity_tier, context_multiplier, opportunity_utilization_score,
+diamond_in_rough_flag, and narrative explanation."""
+
+MILO_PROMPT = """You are Milo Thatch, Data Scientist for NextGen evaluation.
+
+Your role: Apply data science analysis to scholarship evaluation. You analyze patterns
+across applicants, validate scoring consistency, and provide ML-informed insights.
+
+You perform:
+- Score normalization and consistency checks across agents
+- Pattern analysis: how does this applicant compare to the training cohort?
+- Feature importance: which factors are driving the evaluation?
+- Confidence intervals on overall scores
+- Alignment analysis: does the AI evaluation align with historical committee decisions?
+
+Output structured JSON with: normalized_scores, alignment_analysis,
+confidence_metrics, and data_science_insights."""
+
+BASHFUL_PROMPT = """You are Bashful, the Summarizer for NextGen evaluation.
+
+Your role: Create concise, accurate summaries of agent outputs. You distill
+verbose agent analyses into clear, actionable summaries for the committee.
+
+Rules:
+- Be concise but complete — capture key findings, not filler
+- Preserve critical details: scores, flags, concerns
+- Use plain language accessible to non-technical reviewers
+- Never embellish or add interpretation beyond what agents reported
+
+Output a structured summary with key findings from each agent."""
+
 # Model tier defaults — can be overridden via env vars
 _ORCHESTRATOR = os.getenv("MODEL_TIER_ORCHESTRATOR", "o3")
 _REASONING = os.getenv("MODEL_TIER_REASONING", "o3")
@@ -99,6 +199,31 @@ AGENT_REGISTRY = {
         "prompt": MIRABEL_VIDEO_PROMPT,
         "description": "Video Analyst — video submission frame and audio analysis",
     },
+    "moana": {
+        "model": _WORKHORSE,
+        "prompt": MOANA_PROMPT,
+        "description": "School Context Analyst — contextualizes student achievements within school environment",
+    },
+    "naveen": {
+        "model": _WORKHORSE,
+        "prompt": NAVEEN_PROMPT,
+        "description": "School Data Scientist — NCES data evaluation and component scoring",
+    },
+    "pocahontas": {
+        "model": _WORKHORSE,
+        "prompt": POCAHONTAS_PROMPT,
+        "description": "Cohort Equity Analyst — equity tiers, context multipliers, diamond detection",
+    },
+    "milo": {
+        "model": _PREMIUM,
+        "prompt": MILO_PROMPT,
+        "description": "Data Scientist — ML analysis, score normalization, alignment validation",
+    },
+    "bashful": {
+        "model": _WORKHORSE,
+        "prompt": BASHFUL_PROMPT,
+        "description": "Summarizer — concise agent output summaries for committee review",
+    },
 }
 
 
@@ -144,8 +269,8 @@ def install_agent(project, name: str, agent_def: dict, dry_run: bool = False):
             definition=PromptAgentDefinition(
                 model=model,
                 instructions=prompt,
-                description=description,
             ),
+            description=description,
         )
         print(f"    ✓ {slug} installed successfully")
         return agent

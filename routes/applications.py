@@ -1169,22 +1169,6 @@ def student_detail(application_id):
         except Exception as e:
             logger.debug(f"Failed to merge application.agent_results: {e}")
 
-        # Remove gaston from agent_results — agent was removed from workflow
-        agent_results.pop('gaston', None)
-
-        # Also strip gaston from any pre-computed student_summary.agent_details
-        try:
-            ss = application.get('student_summary')
-            if isinstance(ss, dict):
-                ad = ss.get('agent_details')
-                if isinstance(ad, dict):
-                    ad.pop('gaston', None)
-                ac = ss.get('agents_completed')
-                if isinstance(ac, list) and 'gaston' in ac:
-                    ac.remove('gaston')
-        except Exception:
-            pass
-
         # Get document download info
         document_path = application.get('evaluation_document_path')
         document_url = application.get('evaluation_document_url')
@@ -1350,14 +1334,6 @@ def student_detail(application_id):
         except Exception:
             nextgen_match = None
 
-        # Also strip gaston from the application dict itself (passed as summary=)
-        try:
-            app_ar = application.get('agent_results')
-            if isinstance(app_ar, dict):
-                app_ar.pop('gaston', None)
-        except Exception:
-            pass
-
         return render_template('student_detail.html', 
                      summary=application,
                      agent_results=agent_results,
@@ -1509,17 +1485,6 @@ def student_summary_json(application_id):
                             human_summary = ' '.join(parts)
         except Exception:
             human_summary = None
-
-        # Remove gaston from agent_results — agent was removed from workflow
-        agent_results.pop('gaston', None)
-
-        # Also strip gaston from the application dict
-        try:
-            app_ar = application.get('agent_results')
-            if isinstance(app_ar, dict):
-                app_ar.pop('gaston', None)
-        except Exception:
-            pass
 
         return render_template('student_summary_json.html',
                                application=application,

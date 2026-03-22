@@ -276,7 +276,7 @@ os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 logger.info("Flask app initialized", extra={'upload_folder': app.config['UPLOAD_FOLDER']})
 
 # Gaston cleanup migration removed (Issue #90) — data was cleaned in v1.0.x.
-# Agent was removed from the workflow; no new gaston data is created.
+# Gaston re-enabled as interleaved quality gate (v1.9.7) — reviews each core agent output.
 
 # Agent factories, OCR callback, and processing helpers moved to extensions.py (Issue #23)
 
